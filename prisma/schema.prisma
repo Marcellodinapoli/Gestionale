@@ -1,0 +1,407 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  nome      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  users     User[]
+  postazioni Postazione[]
+  mandanti  Mandante[]
+  debitori  Debitore[]
+  pratiche  Pratica[]
+  configs   ConfigurazioneSistema[]
+  auditLogs AuditLog[]
+}
+
+model User {
+  id            String     @id @default(cuid())
+  tenantId      String
+  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email         String
+  name          String
+  passwordHash  String
+  passwordChangedAt DateTime @default(now())
+  role          String
+  acronimo      String?
+  interno       String?
+  prefissoChiamata String?
+  active        Boolean    @default(true)
+  supervisorId  String?
+  gruppoNome    String?
+  gruppoMandanti String?
+  supervisor    User?      @relation("Team", fields: [supervisorId], references: [id])
+  operators     User[]     @relation("Team")
+  assigned      Pratica[]  @relation("Assegnatario")
+  titolari      Pratica[]  @relation("Titolare")
+  attivita      Attivita[]
+  incassi       Incasso[]
+  provvigioni   Provvigione[]
+  registrazioni RegistrazioneChiamata[]
+  auditLogs     AuditLog[]
+  messaggiAgenda MessaggioAgenda[]
+  impegniAgenda  ImpegnoAgenda[]
+  messaggiInviati MessaggioInterno[] @relation("MsgFrom")
+  messaggiRicevuti MessaggioInterno[] @relation("MsgTo")
+  postazioneId  String?
+  postazione    Postazione? @relation(fields: [postazioneId], references: [id])
+  praticaLocks  PraticaLock[]
+  passwordHistory PasswordHistory[]
+  lastLoginAt   DateTime?
+  lastLogoutAt  DateTime?
+  createdAt     DateTime   @default(now())
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Postazione {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nome        String
+  interno     String?
+  email       String?
+  numeroFisso String?
+  sede        String?
+  note        String?
+  active      Boolean  @default(true)
+  occupanti   User[]
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, nome])
+  @@index([tenantId])
+}
+
+model Mandante {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  codice          String
+  ragioneSociale  String
+  email           String?
+  telefono        String?
+  indirizzo       String?
+  citta           String?
+  cap             String?
+  provincia       String?
+  provvigionePerc Float?
+  provvigioniMetodo String?
+  incentivoTipo   String?
+  incentivoValore Float?
+  incentivoSoglia Float?
+  incentivoNote   String?
+  codiciScarico   String?
+  smsPreimpostati String?
+  perimetri       String?
+  pratiche        Pratica[]
+  createdAt       DateTime  @default(now())
+
+  @@unique([tenantId, codice])
+  @@index([tenantId])
+}
+
+model Debitore {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nome           String
+  cognome        String    @default("")
+  codiceFiscale  String?
+  telefono       String?
+  telefonoStato  String?
+  email          String?
+  indirizzo      String?
+  citta          String?
+  cap            String?
+  provincia      String?
+  ndg            String?
+  pratiche       Pratica[]
+  recapiti       DebitoreRecapito[]
+  createdAt      DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+model DebitoreRecapito {
+  id         String   @id @default(cuid())
+  debitoreId String
+  debitore   Debitore @relation(fields: [debitoreId], references: [id], onDelete: Cascade)
+  tipo       String
+  valore     String
+  stato      String?
+  ordine     Int      @default(1)
+  createdAt  DateTime @default(now())
+}
+
+model Pratica {
+  id              String      @id @default(cuid())
+  tenantId        String
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  numero          String
+  numeroMandante  String?
+  mandanteId      String
+  mandante        Mandante    @relation(fields: [mandanteId], references: [id])
+  debitoreId      String
+  debitore        Debitore    @relation(fields: [debitoreId], references: [id])
+  assegnatarioId        String?
+  assegnatario          User?       @relation("Assegnatario", fields: [assegnatarioId], references: [id])
+  operatoreTitolareId   String?
+  operatoreTitolare     User?       @relation("Titolare", fields: [operatoreTitolareId], references: [id])
+  stato           String      @default("NUOVA")
+  capitale        Float       @default(0)
+  interessi       Float       @default(0)
+  spese           Float       @default(0)
+  residuo         Float       @default(0)
+  codiceScarico  String?
+  dataAffido      DateTime?
+  scadenza        DateTime?
+  esitoContatto   String?
+  tipoContatto    String?
+  memoAt          DateTime?
+  promessaAt      DateTime?
+  promessaImporto Float?
+  note            String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  attivita        Attivita[]
+  incassi         Incasso[]
+  provvigioni     Provvigione[]
+  fatture         Fattura[]
+  documenti       Documento[]
+  rate            PianoRata[]
+  garanti         Garante[]
+  registrazioni   RegistrazioneChiamata[]
+  messaggiAgenda  MessaggioAgenda[]
+  messaggiInterni MessaggioInterno[]
+  lock            PraticaLock?
+
+  @@unique([tenantId, numero])
+  @@index([tenantId])
+}
+
+model PraticaLock {
+  id               String   @id @default(cuid())
+  praticaId        String   @unique
+  pratica          Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastHeartbeatAt  DateTime @default(now())
+  createdAt        DateTime @default(now())
+}
+
+model Garante {
+  id             String            @id @default(cuid())
+  praticaId      String
+  pratica        Pratica           @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  nome           String
+  cognome        String            @default("")
+  codiceFiscale  String?
+  telefono       String?
+  telefonoStato  String?
+  email          String?
+  indirizzo      String?
+  citta          String?
+  cap            String?
+  provincia      String?
+  ordine         Int               @default(1)
+  recapiti       GaranteRecapito[]
+  createdAt      DateTime          @default(now())
+}
+
+model GaranteRecapito {
+  id        String   @id @default(cuid())
+  garanteId String
+  garante   Garante  @relation(fields: [garanteId], references: [id], onDelete: Cascade)
+  tipo      String
+  valore    String
+  stato     String?
+  ordine    Int      @default(1)
+  createdAt DateTime @default(now())
+}
+
+model MessaggioInterno {
+  id          String    @id @default(cuid())
+  praticaId   String?
+  pratica     Pratica?  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  fromUserId  String
+  fromUser    User      @relation("MsgFrom", fields: [fromUserId], references: [id])
+  toUserId    String
+  toUser      User      @relation("MsgTo", fields: [toUserId], references: [id])
+  testo       String
+  letto       Boolean   @default(false)
+  lettoAt     DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model MessaggioAgenda {
+  id         String    @id @default(cuid())
+  praticaId  String
+  pratica    Pratica   @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  memoAt     DateTime
+  line       String
+  letto      Boolean   @default(false)
+  lettoAt    DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model ImpegnoAgenda {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  titolo       String
+  nota         String?
+  memoAt       DateTime
+  completato   Boolean   @default(false)
+  completatoAt DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model Attivita {
+  id           String    @id @default(cuid())
+  praticaId    String
+  pratica      Pratica   @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  tipo         String
+  esito        String?
+  nota         String?
+  scheduledAt  DateTime?
+  fissata      Boolean   @default(false)
+  importante   Boolean   @default(false)
+  bloccata     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+}
+
+model Incasso {
+  id          String   @id @default(cuid())
+  praticaId   String
+  pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  importo     Float
+  capitale    Float    @default(0)
+  interessi   Float    @default(0)
+  spese       Float    @default(0)
+  speseRec    Float    @default(0)
+  metodo      String   @default("bonifico")
+  modo        String   @default("VE")
+  causale     String   @default("")
+  data        DateTime @default(now())
+  dataScadenza DateTime?
+  createdAt   DateTime @default(now())
+  provvigione Provvigione?
+}
+
+model Provvigione {
+  id           String    @id @default(cuid())
+  incassoId    String    @unique
+  incasso      Incasso   @relation(fields: [incassoId], references: [id], onDelete: Cascade)
+  praticaId    String
+  pratica      Pratica   @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  operatoreId  String
+  operatore    User      @relation(fields: [operatoreId], references: [id])
+  baseImporto  Float
+  percentuale  Float
+  importo      Float
+  stato        String    @default("MATURATA")
+  liquidataAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model Fattura {
+  id           String   @id @default(cuid())
+  praticaId    String
+  pratica      Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  numero       String
+  causale      String   @default("")
+  dataFattura  DateTime
+  dataScadenza DateTime
+  importo      Float
+  pagato       Float    @default(0)
+  createdAt    DateTime @default(now())
+}
+
+model PianoRata {
+  id         String    @id @default(cuid())
+  praticaId  String
+  pratica    Pratica   @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  numeroRata Int
+  importo    Float
+  scadenza   DateTime
+  pagata     Boolean   @default(false)
+}
+
+model Documento {
+  id         String   @id @default(cuid())
+  praticaId  String
+  pratica    Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  nome       String
+  tipo       String   @default("allegato")
+  path       String?
+  createdAt  DateTime @default(now())
+}
+
+model RegistrazioneChiamata {
+  id          String   @id @default(cuid())
+  praticaId   String
+  pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  operatoreId String
+  operatore   User     @relation(fields: [operatoreId], references: [id])
+  numero      String
+  direzione   String   @default("uscita")
+  stato       String   @default("CONFERMATA_UI")
+  esito       String?
+  durataSec   Int      @default(0)
+  fileName    String   @default("")
+  evidenzaBackOffice Boolean @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  dettaglio String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model ConfigurazioneSistema {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chiave    String
+  valore    String
+  categoria String
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, chiave])
+  @@index([tenantId])
+}

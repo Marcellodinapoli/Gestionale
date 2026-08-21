@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+:root {
+  --navy: #132033;
+  --navy-2: #1b2d44;
+  --accent: #0f6e6a;
+  --line: #e4e8ee;
+  --muted: #5b6775;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #132033;
+  --danger: #b42318;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@keyframes f9-collegate-flash {
+  0%,
+  100% {
+    background: linear-gradient(to bottom, #b7e4c7, #74c69d);
+    border-color: #2d6a4f;
+    color: #1b4332;
+    box-shadow: none;
+    transform: scale(1);
+  }
+  50% {
+    background: linear-gradient(to bottom, #fef08a, #facc15);
+    border-color: #a16207;
+    color: #422006;
+    box-shadow:
+      0 0 0 4px #fde047,
+      0 0 18px 4px rgba(250, 204, 21, 0.95);
+    transform: scale(1.1);
+  }
+}
+
+.f9-collegate-flash-wrap {
+  position: relative;
+  z-index: 50;
+  display: inline-flex;
+  overflow: visible;
+}
+
+.f9-collegate-flash {
+  animation: f9-collegate-flash 0.8s ease-in-out 5;
+  position: relative;
+  z-index: 50;
+  transform-origin: center bottom;
+  border-width: 1px;
+  border-style: solid;
+  overflow: visible;
+}
+
+.f9-bar-flashing {
+  position: relative;
+  z-index: 50;
+  overflow: visible !important;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+@layer utilities {
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .page-gutter {
+    padding-left: 1cm;
+    padding-right: 1cm;
+  }
+}
+
+@media print {
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    background: white;
+  }
+
+  @page {
+    size: A4;
+    margin: 10mm 14mm;
+  }
+
+  .stampa-print tr,
+  .stampa-print li,
+  .stampa-print p,
+  .stampa-print h1,
+  .stampa-print h2,
+  .stampa-print h3,
+  .stampa-print h4,
+  .stampa-print header,
+  .stampa-print dl {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .stampa-print h2,
+  .stampa-print h3,
+  .stampa-print p.font-semibold {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+}
