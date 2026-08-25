@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { formatDataIso } from "@/lib/lavorateOggi";
+import { formatDataIso } from "@/lib/lavorateOggiUi";
 import { LavorazioneAggiornaButton } from "@/components/lavorazione/LavorazioneRefresh";
 
 function buildHref(giorno: string, gruppo?: string) {

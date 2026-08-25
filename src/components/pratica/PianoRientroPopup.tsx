@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createPianoAction } from "@/actions/core";
-import { euro } from "@/lib/domain";
+import { euro } from "@/lib/domainFormat";
 
 export function PianoRientroPopup({
   praticaId,

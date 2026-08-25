@@ -39,8 +39,8 @@ serviceAccountKey.json
 **/serviceAccountKey.json
 *-firebase-adminsdk-*.json
 
-/prisma/dev.db
-/prisma/dev.db-journal
+# Types-only stub created by prisma generate (never app DB)
+/src/lib/firebase/.types-only.db
 /uploads
 
 # vercel

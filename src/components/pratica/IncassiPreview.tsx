@@ -1,4 +1,4 @@
-import { dataIt, importoIt } from "@/lib/domain";
+import { dataIt, importoIt } from "@/lib/domainFormat";
 import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 
 type Incasso = {

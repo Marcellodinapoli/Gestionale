@@ -18,7 +18,8 @@ import {
   Shield,
   Settings,
 } from "lucide-react";
-import type { TelephonyCapabilities, TenantTelephonyConfig } from "@/lib/telephony";
+import type { TelephonyCapabilities } from "@/lib/telephony/types";
+import type { TenantTelephonyConfig } from "@/lib/telephony/clientConfig";
 
 function CapRow({
   label,

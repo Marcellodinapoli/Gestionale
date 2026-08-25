@@ -1,9 +1,9 @@
 "use client";
 
 import { Fragment } from "react";
-import type { StatisticheRiga, StatisticheSezione } from "@/lib/statisticheGruppo";
+import type { StatisticheRiga, StatisticheSezione } from "@/lib/statisticheGruppoUi";
 import { fmtPct } from "@/lib/scarico";
-import { fmtImportoTabella } from "@/lib/statisticheGruppo";
+import { fmtImportoTabella } from "@/lib/statisticheGruppoUi";
 
 function Cell({
   children,

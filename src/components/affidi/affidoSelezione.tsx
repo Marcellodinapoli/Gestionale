@@ -308,7 +308,7 @@ function AffidoEquoPanel({
             <TipoAffidoSelect
               showRipristina={false}
               onChange={(v) => {
-                setTipo(v);
+                setTipo(parseTipoAffido(v));
                 setStep("edit");
               }}
             />

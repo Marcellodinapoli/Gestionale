@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { AltriFiltriFormBody } from "@/components/filtri/AltriFiltriFormBody";
-import type { AltriFiltri } from "@/lib/praticheAltriFiltri";
+import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 export function LavorazioneVoceFiltriModal({
   open,

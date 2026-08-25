@@ -6,7 +6,7 @@ import { useTransition } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { deleteLavorazionePianoAction } from "@/actions/lavorazioneSuggerita";
 import { LavorazioneSuggeritaBar } from "@/components/lavorazione/LavorazioneSuggeritaBar";
-import type { PerimetroRigaLavorazione, VoceLavorazioneConConteggi } from "@/lib/lavorazioneSuggerita";
+import type { PerimetroRigaLavorazione, VoceLavorazioneConConteggi } from "@/lib/lavorazioneSuggeritaUi";
 
 export type PianoLavorazioneSalvato = {
   data: string;

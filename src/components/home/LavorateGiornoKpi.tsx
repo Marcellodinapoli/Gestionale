@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { LavorateDataPicker } from "@/components/home/LavorateDataPicker";
 import { Modal } from "@/components/Modal";
-import type { OperatoreLavorateGiorno, PraticaCambioCodiceGiorno } from "@/lib/lavorateOggi";
+import type { OperatoreLavorateGiorno, PraticaCambioCodiceGiorno } from "@/lib/lavorateOggiUi";
 
 const base =
   "flex h-full flex-col rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 shadow-sm border-l-[3px] border-l-[var(--accent)]";

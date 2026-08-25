@@ -10,7 +10,7 @@ import {
   type FiltroCollegata,
   praticaMatchFiltro,
 } from "@/lib/praticaCollegata";
-import { dataIt, euro } from "@/lib/domain";
+import { dataIt, euro } from "@/lib/domainFormat";
 import { STATO_LABELS } from "@/lib/permissions";
 
 type Voce = {

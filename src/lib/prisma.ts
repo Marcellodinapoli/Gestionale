@@ -1,44 +1,54 @@
-import { PrismaClient } from "@prisma/client";
+import "server-only";
+import type { PrismaClient } from "@prisma/client";
+import { assertOperationalBackendReady } from "@/lib/dataAccess";
+import { createFirebasePrisma } from "@/lib/firebase/firebasePrisma";
 
 const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClient;
+  firebasePrisma?: PrismaClient;
 };
 
-function createClient() {
-  return new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-  });
-}
-
-function isClientReady(client: PrismaClient) {
-  return "registrazioneChiamata" in client && "impegnoAgenda" in client;
-}
-
-function getClient(): PrismaClient {
-  const cached = globalForPrisma.prisma;
-  if (cached && isClientReady(cached)) return cached;
-
-  if (cached) {
-    void cached.$disconnect();
+function getFirebaseClient(): PrismaClient {
+  if (typeof window !== "undefined") {
+    throw new Error("Firebase ops solo lato server");
   }
-
-  const client = createClient();
-  if (!isClientReady(client)) {
-    throw new Error(
-      "Client Prisma non aggiornato: esegui `npx prisma generate` e riavvia il server."
-    );
-  }
-
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.prisma = client;
-  }
+  assertOperationalBackendReady();
+  if (globalForPrisma.firebasePrisma) return globalForPrisma.firebasePrisma;
+  const client = createFirebasePrisma();
+  globalForPrisma.firebasePrisma = client;
   return client;
 }
 
+/**
+ * Client dati operativo: sempre Firestore.
+ * `prisma` è solo il nome storico dell’API; non c’è SQLite/Postgres a runtime.
+ * I tipi `@prisma/client` arrivano da `src/lib/firebase/schema.prisma`.
+ */
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, prop, receiver) {
-    const client = getClient();
-    const value = Reflect.get(client, prop, receiver);
-    return typeof value === "function" ? value.bind(client) : value;
+    if (prop === "$transaction" || prop === "$connect" || prop === "$disconnect") {
+      return (...args: unknown[]) => {
+        const client = getFirebaseClient();
+        const value = Reflect.get(client, prop, receiver) as
+          | ((...a: unknown[]) => unknown)
+          | undefined;
+        return typeof value === "function" ? value.apply(client, args) : value;
+      };
+    }
+    return new Proxy(
+      {},
+      {
+        get(_t, method) {
+          return (...args: unknown[]) => {
+            const client = getFirebaseClient();
+            const delegate = Reflect.get(client, prop) as Record<string, unknown>;
+            const fn = delegate?.[method as string];
+            if (typeof fn !== "function") {
+              throw new Error(`Firebase ops: ${String(prop)}.${String(method)} non disponibile`);
+            }
+            return fn.apply(delegate, args);
+          };
+        },
+      }
+    );
   },
 });

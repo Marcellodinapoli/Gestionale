@@ -9,7 +9,7 @@ import {
   terminaSessioneChiamata,
   type CallSessionDetail,
 } from "@/lib/callSession";
-import type { RecordingMode } from "@/lib/recordingConfig";
+import type { RecordingMode } from "@/lib/recordingMode";
 
 const BTN_BASE =
   "inline-flex h-7 items-center justify-center gap-1 whitespace-nowrap rounded border px-2 text-[10px] font-semibold leading-none";

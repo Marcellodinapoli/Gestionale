@@ -6,23 +6,23 @@ export function parseTipoAffido(value?: string | null): TipoAffido {
 }
 
 export function isAffidoTemporaneo(pratica: {
-  assegnatarioId: string | null;
-  operatoreTitolareId: string | null;
+  assegnatarioId?: string | null;
+  operatoreTitolareId?: string | null;
 }) {
   const tit = pratica.operatoreTitolareId;
   return Boolean(tit && pratica.assegnatarioId && tit !== pratica.assegnatarioId);
 }
 
 export function idOperatoreTitolare(pratica: {
-  assegnatarioId: string | null;
-  operatoreTitolareId: string | null;
+  assegnatarioId?: string | null;
+  operatoreTitolareId?: string | null;
 }) {
   return pratica.operatoreTitolareId ?? pratica.assegnatarioId;
 }
 
 export function etichettaTipoAffido(pratica: {
-  assegnatarioId: string | null;
-  operatoreTitolareId: string | null;
+  assegnatarioId?: string | null;
+  operatoreTitolareId?: string | null;
 }) {
   if (isAffidoTemporaneo(pratica)) return "Temporaneo";
   if (pratica.assegnatarioId) return "Definitivo";

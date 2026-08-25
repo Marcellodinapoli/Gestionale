@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { euro } from "@/lib/domain";
+import { euro } from "@/lib/domainFormat";
 
 export type RiepilogoOperatoreProvvigioni = {
   id: string;

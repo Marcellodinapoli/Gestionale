@@ -2,7 +2,7 @@ import Link from "next/link";
 import {
   COLONNE_CODICI,
   type RigaCodiciMandantePerimetro,
-} from "@/lib/codiciMandantePerimetro";
+} from "@/lib/codiciMandantePerimetroUi";
 import { CODICE_SCARICO_LABELS, type CodiceScarico } from "@/lib/scarico";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
 

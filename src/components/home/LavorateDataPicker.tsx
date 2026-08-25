@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { formatDataIso } from "@/lib/lavorateOggi";
+import { formatDataIso } from "@/lib/lavorateOggiUi";
 
 export function LavorateDataPicker({
   value,

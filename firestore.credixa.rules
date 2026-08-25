@@ -1,0 +1,50 @@
+rules_version = '2';
+// Addon Credixa — da pubblicare sul progetto creditform-d505d.
+// Admin SDK (server Credixa) bypassa queste rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function credixaTenant() {
+      return signedIn() && request.auth.token.credixaTenantId is string
+        ? request.auth.token.credixaTenantId
+        : null;
+    }
+
+    function sameCredixaTenant(tenantId) {
+      return credixaTenant() != null && credixaTenant() == tenantId;
+    }
+
+    // Formazione (CreditForm / Store)
+    match /users/{userId} {
+      allow read: if isSelf(userId);
+      allow write: if false;
+    }
+
+    match /userProgress/{userId} {
+      allow read, write: if isSelf(userId);
+      match /{document=**} {
+        allow read, write: if isSelf(userId);
+      }
+    }
+
+    match /courses/{courseId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Mirror gestionale (Prisma → Firestore). Scritture solo Admin SDK.
+    // Lettura client solo se custom claim credixaTenantId coincide.
+    match /credixa/{tenantId}/{document=**} {
+      allow read: if sameCredixaTenant(tenantId);
+      allow write: if false;
+    }
+  }
+}

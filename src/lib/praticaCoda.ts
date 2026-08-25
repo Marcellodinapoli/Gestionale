@@ -10,7 +10,7 @@ import {
   startOfNextDay,
   startOfToday,
   type LavorateFascia,
-} from "@/lib/lavorateOggi";
+} from "@/lib/lavorateOggiUi";
 import {
   parseNonToccateDa,
   praticheNonToccateWhere,
@@ -28,7 +28,7 @@ import {
   hasAltriFiltri,
   parseAltriFiltri,
   type AltriFiltri,
-} from "@/lib/praticheAltriFiltri";
+} from "@/lib/praticheAltriFiltriUi";
 
 export type CodaFiltro = {
   q?: string;

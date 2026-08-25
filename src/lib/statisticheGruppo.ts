@@ -1,6 +1,5 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { importoIt } from "@/lib/domain";
 import { operatorSigla } from "@/lib/noteFormat";
 import type { GruppoLavoro } from "@/lib/gruppoLavoro";
 import { gruppoLavoroPraticaWhere } from "@/lib/gruppoLavoro";
@@ -13,44 +12,22 @@ import {
   pctPezzi,
   pctSuAffidato,
   praticaAffidato,
-  type CodiceScarico,
 } from "@/lib/scarico";
 
-export type StatisticheFiltri = {
-  affidoDa?: Date;
-  affidoA?: Date;
-  mandanteId?: string;
-  /** Uno o più perimetri (numeroMandante). */
-  lotti?: string[];
-};
+export {
+  fmtImportoTabella,
+  type StatisticheFiltri,
+  type ScaricoColonna,
+  type StatisticheRiga,
+  type StatisticheSezione,
+} from "@/lib/statisticheGruppoUi";
 
-export type ScaricoColonna = {
-  codice: CodiceScarico | "N/D";
-  importo: number;
-  nr: number;
-  pctAffidato: number;
-  pctPezzi: number;
-};
-
-export type StatisticheRiga = {
-  esa: string;
-  mandato: string;
-  lottoCg: string;
-  nrPrt: number;
-  affidato: number;
-  incassato: number;
-  nrPzInc: number;
-  pctPzIncAffidato: number;
-  pctPzIncPezzi: number;
-  scarichi: ScaricoColonna[];
-  isTotale?: boolean;
-};
-
-export type StatisticheSezione = {
-  perimetro: string;
-  righe: StatisticheRiga[];
-  subtotale: StatisticheRiga;
-};
+import type {
+  ScaricoColonna,
+  StatisticheRiga,
+  StatisticheSezione,
+  StatisticheFiltri,
+} from "@/lib/statisticheGruppoUi";
 
 function emptyScarichi(): ScaricoColonna[] {
   return [
@@ -285,10 +262,6 @@ export function completaSezioniPerimetriConfigurate(
   return [...byPerimetro.values()].sort((a, b) =>
     a.perimetro.localeCompare(b.perimetro, "it", { numeric: true })
   );
-}
-
-export function fmtImportoTabella(value: number) {
-  return importoIt(value);
 }
 
 export { fmtPct };

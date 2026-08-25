@@ -2,13 +2,14 @@
 
 Nucleo operativo ispirato a **CG32** e **Ulisse**: pratiche, affidi, lavorazione telefonica, incassi, ruoli con limiti.
 
-L’app English (Alinea) non è toccata. Questo è un progetto separato.
+**Database: solo Firebase (Firestore).** Niente SQLite, Postgres o Neon.
 
 ## Avvio
 
+1. Copia `.env.example` → `.env` e imposta service account + `NEXT_PUBLIC_FIREBASE_*`.
+2. Seed demo su Firestore:
+
 ```powershell
-cd "C:\Users\271\Desktop\Marcello\Esiti test\Gestionale"
-npx prisma migrate dev --name init
 npm run db:seed
 npm run dev
 ```
@@ -26,6 +27,8 @@ Apri [http://localhost:3001](http://localhost:3001)
 | Operatore 2 | operatore2@gestionale.local |
 | Manutenzione (UI senza dati) | manutenzione@gestionale.local |
 
+Codice azienda: **demo** (anche **alfa**).
+
 ## Limiti
 
 - **Operatore**: solo pratiche affidate a lui; esiti/note/agenda; niente import, affidi, incassi, utenti.
@@ -41,3 +44,7 @@ Separatore `;`
 `mandante;nome;cognome;cf;telefono;citta;capitale;interessi;spese`
 
 Esempio in `public/esempio-pratiche.csv`.
+
+## Nota tecnica
+
+`src/lib/firebase/schema.prisma` serve **solo** a generare tipi TypeScript per l’adapter Firestore. Non c’è database locale.

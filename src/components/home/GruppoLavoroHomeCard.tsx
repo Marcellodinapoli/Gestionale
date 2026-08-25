@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { GruppoLavoro } from "@/lib/gruppoLavoro";
+import type { GruppoLavoro } from "@/lib/gruppoLavoroUi";
 import {
   GruppoOperatoriLista,
   MembroGruppoRiga,

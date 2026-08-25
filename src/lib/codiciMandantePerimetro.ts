@@ -8,35 +8,24 @@ import {
   gruppoMandantiPraticaWhere,
   type GruppoMandanteAssegnazione,
 } from "@/lib/gruppoMandanti";
+import { codiceScaricoPratica } from "@/lib/scarico";
+
+export {
+  COLONNE_CODICI,
+  emptyConteggi,
+  type CodiceConteggioKey,
+  type RigaCodiciMandantePerimetro,
+  type RigaInLavorazionePerimetro,
+  type RigaDaAffidarePerimetro,
+} from "@/lib/codiciMandantePerimetroUi";
+
 import {
-  CODICI_SCARICO,
-  codiceScaricoPratica,
-  type CodiceScarico,
-} from "@/lib/scarico";
-
-export type CodiceConteggioKey = CodiceScarico | "ND";
-
-export type RigaCodiciMandantePerimetro = {
-  mandanteId: string;
-  mandanteCodice: string;
-  mandanteNome: string;
-  perimetro: string;
-  /** Pratiche con operatore assegnato (sit. affido = affidata). */
-  affidate: number;
-  conteggi: Record<CodiceConteggioKey, number>;
-  totale: number;
-};
-
-function emptyConteggi(): Record<CodiceConteggioKey, number> {
-  return {
-    PTC: 0,
-    PPC: 0,
-    MOV: 0,
-    LPP: 0,
-    LPT: 0,
-    ND: 0,
-  };
-}
+  emptyConteggi,
+  type CodiceConteggioKey,
+  type RigaCodiciMandantePerimetro,
+  type RigaInLavorazionePerimetro,
+  type RigaDaAffidarePerimetro,
+} from "@/lib/codiciMandantePerimetroUi";
 
 export type GruppoPerimetroOpts = {
   /**
@@ -147,21 +136,9 @@ export async function codiciPerMandantePerimetro(
   return sortPerimetroRows([...byKey.values()]);
 }
 
-export const COLONNE_CODICI: { key: CodiceConteggioKey; label: string }[] = [
-  ...CODICI_SCARICO.map((c) => ({ key: c as CodiceConteggioKey, label: c })),
-  { key: "ND", label: "Senza" },
-];
-
-export type RigaInLavorazionePerimetro = {
-  mandanteId: string;
-  mandanteCodice: string;
-  perimetro: string;
-  count: number;
-};
-
+/** Pratiche in lavorazione per mandante e perimetro. Con gruppo: solo perimetri del gruppo. */
 const STATI_IN_LAVORAZIONE = ["AFFIDATA", "IN_LAVORAZIONE", "PROMESSA"] as const;
 
-/** Pratiche in lavorazione per mandante e perimetro. Con gruppo: solo perimetri del gruppo. */
 export async function inLavorazionePerPerimetro(
   user: SessionUser,
   opts?: GruppoPerimetroOpts
@@ -200,8 +177,6 @@ export async function inLavorazionePerPerimetro(
 
   return sortPerimetroRows([...byKey.values()]);
 }
-
-export type RigaDaAffidarePerimetro = RigaInLavorazionePerimetro;
 
 /**
  * Pratiche aperte senza operatore, solo sui perimetri assegnati al gruppo di lavoro.

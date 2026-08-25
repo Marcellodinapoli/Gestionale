@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { CODICI_SCARICO, CODICE_SCARICO_LABELS } from "@/lib/scarico";
-import type { AltriFiltri } from "@/lib/praticheAltriFiltri";
+import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 const fieldClass =
   "h-9 w-full rounded border border-[var(--line)] px-2 text-sm text-[var(--navy)]";

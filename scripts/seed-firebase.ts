@@ -1,10 +1,37 @@
-import { PrismaClient } from "@prisma/client";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRegistrazioniDemo } from "./seedRegistrazioni";
 import { emptyLatoEconomico, serializePerimetri } from "../src/lib/mandantePerimetri";
 import { serializeGruppoMandanti } from "../src/lib/gruppoMandanti";
+import { createFirebasePrisma } from "../src/lib/firebase/firebasePrisma";
 
-const prisma = new PrismaClient();
+/** Carica .env prima di Firebase Admin (tsx non lo fa da solo). */
+function loadEnvFile() {
+  const envPath = resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return;
+  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const i = t.indexOf("=");
+    if (i < 0) continue;
+    const key = t.slice(0, i).trim();
+    let val = t.slice(i + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = val;
+  }
+}
+
+loadEnvFile();
+process.env.OPERATIONAL_BACKEND = "firebase";
+
+const prisma: PrismaClient = createFirebasePrisma();
 
 function latoProvvigioneDemo() {
   return {
@@ -668,7 +695,7 @@ async function main() {
     });
   }
 
-  console.log("Seed ok. Password Demo123! — aziende: demo | alfa");
+  console.log("Seed ok su Firebase. Password Demo123! — aziende: demo | alfa");
 }
 
 main()

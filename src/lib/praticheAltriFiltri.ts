@@ -2,109 +2,23 @@ import type { Prisma } from "@prisma/client";
 import { parseDataIso, startOfDay, startOfNextDay } from "@/lib/lavorateOggi";
 import { prisma } from "@/lib/prisma";
 import { rateScaduteSomeWhere } from "@/lib/rate";
-
-/**
- * Filtri avanzati coda pratiche (gestione + «Altri filtri»).
- * `aggiuntivo` solo nel modal, non nella griglia principale.
- */
-export const ALTRI_FILTRI_KEYS = [
-  "debitore",
-  "capDa",
-  "capA",
-  "citta",
-  "prov",
-  "telefono",
-  "affidoDa",
-  "affidoA",
-  "scadenzaDa",
-  "scadenzaA",
-  "mandato",
-  "lotto",
-  "operatore",
-  "codScarico",
-  "sitAffido",
-  "affidoProvvisorio",
-  "importoRataDa",
-  "importoRataA",
-  "residuoDa",
-  "residuoA",
-  "totIncassatoDa",
-  "totIncassatoA",
-  "importoTotDa",
-  "importoTotA",
-  "cfPiva",
-  "garante",
-  "note",
-  "nPraticaDa",
-  "nPraticaA",
-  "promPagDa",
-  "promPagA",
-  "incassatoDa",
-  "incassatoA",
-  "memoDa",
-  "memoA",
-  "rateScadute",
-  "aggiuntivo",
-] as const;
-
-export type AltriFiltriKey = (typeof ALTRI_FILTRI_KEYS)[number];
-
-/** Chiavi mostrate sulla griglia gestione (senza Aggiuntivo). */
-export const FILTRI_GESTIONE_KEYS = ALTRI_FILTRI_KEYS.filter((k) => k !== "aggiuntivo");
-
-export type SitAffidoFiltro = "affidata" | "non_affidata" | "temporanea";
-
-export type AltriFiltri = {
-  debitore?: string;
-  capDa?: string;
-  capA?: string;
-  citta?: string;
-  prov?: string;
-  telefono?: string;
-  affidoDa?: string;
-  affidoA?: string;
-  scadenzaDa?: string;
-  scadenzaA?: string;
-  mandato?: string;
-  lotto?: string;
-  operatore?: string;
-  codScarico?: string;
-  sitAffido?: SitAffidoFiltro;
-  /** "1" = solo affidi temporanei / provvisori */
-  affidoProvvisorio?: string;
-  importoRataDa?: string;
-  importoRataA?: string;
-  residuoDa?: string;
-  residuoA?: string;
-  totIncassatoDa?: string;
-  totIncassatoA?: string;
-  importoTotDa?: string;
-  importoTotA?: string;
-  cfPiva?: string;
-  garante?: string;
-  note?: string;
-  nPraticaDa?: string;
-  nPraticaA?: string;
-  promPagDa?: string;
-  promPagA?: string;
-  incassatoDa?: string;
-  incassatoA?: string;
-  memoDa?: string;
-  memoA?: string;
-  /** "1" = con almeno una rata non pagata scaduta; "0" = senza rate scadute */
-  rateScadute?: string;
-  /** Solo modal — elenco da popolare */
-  aggiuntivo?: string;
-};
+export {
+  ALTRI_FILTRI_KEYS,
+  FILTRI_GESTIONE_KEYS,
+  parseAltriFiltri,
+  hasAltriFiltri,
+  describeAltriFiltri,
+  sanitizeAltriFiltri,
+  appendAltriFiltriParams,
+  type AltriFiltri,
+  type AltriFiltriKey,
+  type SitAffidoFiltro,
+} from "@/lib/praticheAltriFiltriUi";
+import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 function trimOrUndef(v?: string | null) {
   const t = v?.trim();
   return t || undefined;
-}
-
-function parseSitAffido(v?: string | null): SitAffidoFiltro | undefined {
-  if (v === "affidata" || v === "non_affidata" || v === "temporanea") return v;
-  return undefined;
 }
 
 function parseNum(v?: string | null): number | undefined {
@@ -150,146 +64,18 @@ function numRange(da?: string, a?: string): { gte?: number; lte?: number } | und
   };
 }
 
-export function parseAltriFiltri(sp: Record<string, string | null | undefined>): AltriFiltri | undefined {
-  const f: AltriFiltri = {
-    debitore: trimOrUndef(sp.debitore),
-    capDa: trimOrUndef(sp.capDa),
-    capA: trimOrUndef(sp.capA),
-    citta: trimOrUndef(sp.citta),
-    prov: trimOrUndef(sp.prov),
-    telefono: trimOrUndef(sp.telefono),
-    affidoDa: trimOrUndef(sp.affidoDa),
-    affidoA: trimOrUndef(sp.affidoA),
-    scadenzaDa: trimOrUndef(sp.scadenzaDa),
-    scadenzaA: trimOrUndef(sp.scadenzaA),
-    mandato: trimOrUndef(sp.mandato),
-    lotto: trimOrUndef(sp.lotto),
-    operatore: trimOrUndef(sp.operatore),
-    codScarico: trimOrUndef(sp.codScarico),
-    sitAffido: parseSitAffido(sp.sitAffido),
-    affidoProvvisorio: sp.affidoProvvisorio === "1" ? "1" : undefined,
-    importoRataDa: trimOrUndef(sp.importoRataDa),
-    importoRataA: trimOrUndef(sp.importoRataA),
-    residuoDa: trimOrUndef(sp.residuoDa),
-    residuoA: trimOrUndef(sp.residuoA),
-    totIncassatoDa: trimOrUndef(sp.totIncassatoDa),
-    totIncassatoA: trimOrUndef(sp.totIncassatoA),
-    importoTotDa: trimOrUndef(sp.importoTotDa),
-    importoTotA: trimOrUndef(sp.importoTotA),
-    cfPiva: trimOrUndef(sp.cfPiva),
-    garante: trimOrUndef(sp.garante),
-    note: trimOrUndef(sp.note),
-    nPraticaDa: trimOrUndef(sp.nPraticaDa),
-    nPraticaA: trimOrUndef(sp.nPraticaA),
-    promPagDa: trimOrUndef(sp.promPagDa),
-    promPagA: trimOrUndef(sp.promPagA),
-    incassatoDa: trimOrUndef(sp.incassatoDa),
-    incassatoA: trimOrUndef(sp.incassatoA),
-    memoDa: trimOrUndef(sp.memoDa),
-    memoA: trimOrUndef(sp.memoA),
-    rateScadute: sp.rateScadute === "1" || sp.rateScadute === "0" ? sp.rateScadute : undefined,
-    aggiuntivo: trimOrUndef(sp.aggiuntivo),
-  };
-  if (!ALTRI_FILTRI_KEYS.some((k) => f[k])) return undefined;
-  return f;
-}
-
-export function hasAltriFiltri(f?: AltriFiltri | null) {
-  return Boolean(f && ALTRI_FILTRI_KEYS.some((k) => f[k]));
-}
-
-function fmtDataFiltro(iso?: string) {
-  if (!iso) return "…";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    return new Date(`${iso}T12:00:00`).toLocaleDateString("it-IT");
-  }
-  return iso;
-}
-
-const FILTRI_DESCRIZIONI: Partial<Record<AltriFiltriKey, (f: AltriFiltri) => string | undefined>> = {
-  debitore: (f) => (f.debitore ? `Debitore: ${f.debitore}` : undefined),
-  citta: (f) => (f.citta ? `Città: ${f.citta}` : undefined),
-  affidoDa: (f) =>
-    f.affidoDa || f.affidoA
-      ? `Affido ${fmtDataFiltro(f.affidoDa)}–${fmtDataFiltro(f.affidoA)}`
-      : undefined,
-  promPagDa: (f) =>
-    f.promPagDa || f.promPagA
-      ? `Prom. pag. ${fmtDataFiltro(f.promPagDa)}–${fmtDataFiltro(f.promPagA)}`
-      : undefined,
-  scadenzaDa: (f) =>
-    f.scadenzaDa || f.scadenzaA
-      ? `Scadenza ${fmtDataFiltro(f.scadenzaDa)}–${fmtDataFiltro(f.scadenzaA)}`
-      : undefined,
-  codScarico: (f) => (f.codScarico ? `Cod. ${f.codScarico}` : undefined),
-  lotto: (f) => (f.lotto ? `Lotto ${f.lotto}` : undefined),
-  mandato: (f) => (f.mandato ? `Mandato` : undefined),
-  sitAffido: (f) =>
-    f.sitAffido === "affidata"
-      ? "Affidata"
-      : f.sitAffido === "non_affidata"
-        ? "Non affidata"
-        : f.sitAffido === "temporanea"
-          ? "Affido temp."
-          : undefined,
-  rateScadute: (f) =>
-    f.rateScadute === "1" ? "Rate scadute" : f.rateScadute === "0" ? "No rate scadute" : undefined,
-};
-
-/** Chiavi «Al» già incluse nel riepilogo della rispettiva «Da». */
-const FILTRI_RANGE_A_KEYS = new Set<AltriFiltriKey>([
-  "capA",
-  "affidoA",
-  "scadenzaA",
-  "importoRataA",
-  "residuoA",
-  "totIncassatoA",
-  "importoTotA",
-  "nPraticaA",
-  "promPagA",
-  "incassatoA",
-  "memoA",
-]);
-
-/** Breve riepilogo testuale dei filtri attivi. */
-export function describeAltriFiltri(f?: AltriFiltri | null, max = 4): string {
-  if (!f || !hasAltriFiltri(f)) return "Nessun filtro";
-  const parts: string[] = [];
-  for (const k of ALTRI_FILTRI_KEYS) {
-    if (FILTRI_RANGE_A_KEYS.has(k)) continue;
-    const fn = FILTRI_DESCRIZIONI[k];
-    const label = fn?.(f);
-    if (label) parts.push(label);
-    else if (f[k] && !fn) parts.push(String(f[k]));
-    if (parts.length >= max) break;
-  }
-  const total = ALTRI_FILTRI_KEYS.filter((k) => f[k]).length;
-  if (total > max) return `${parts.join(" · ")}… (+${total - max})`;
-  return parts.join(" · ");
-}
-
-export function sanitizeAltriFiltri(raw: unknown): AltriFiltri {
-  if (!raw || typeof raw !== "object") return {};
-  return parseAltriFiltri(raw as Record<string, string | null | undefined>) ?? {};
-}
-
-export function appendAltriFiltriParams(sp: URLSearchParams, f?: AltriFiltri | null) {
-  if (!f) return;
-  for (const k of ALTRI_FILTRI_KEYS) {
-    const v = f[k];
-    if (v) sp.set(k, v);
-  }
-}
-
 export async function idsAffidoTemporaneo(tenantId: string): Promise<string[]> {
-  const rows = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT id FROM Pratica
-    WHERE tenantId = ${tenantId}
-      AND assegnatarioId IS NOT NULL
-      AND operatoreTitolareId IS NOT NULL
-      AND assegnatarioId != operatoreTitolareId
-  `;
-  return rows.map((r) => r.id);
+  const rows = await prisma.pratica.findMany({
+    where: {
+      tenantId,
+      assegnatarioId: { not: null },
+      operatoreTitolareId: { not: null },
+    },
+    select: { id: true, assegnatarioId: true, operatoreTitolareId: true },
+  });
+  return rows
+    .filter((r) => r.assegnatarioId && r.operatoreTitolareId && r.assegnatarioId !== r.operatoreTitolareId)
+    .map((r) => r.id);
 }
 
 /** Pratiche con (capitale+interessi+spese) nel range. */
@@ -301,28 +87,18 @@ export async function idsImportoTotale(
   const from = parseNum(da);
   const to = parseNum(a);
   if (from == null && to == null) return null;
-  let rows: { id: string }[];
-  if (from != null && to != null) {
-    rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM Pratica
-      WHERE tenantId = ${tenantId}
-        AND (capitale + interessi + spese) >= ${from}
-        AND (capitale + interessi + spese) <= ${to}
-    `;
-  } else if (from != null) {
-    rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM Pratica
-      WHERE tenantId = ${tenantId}
-        AND (capitale + interessi + spese) >= ${from}
-    `;
-  } else {
-    rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM Pratica
-      WHERE tenantId = ${tenantId}
-        AND (capitale + interessi + spese) <= ${to!}
-    `;
-  }
-  return rows.map((r) => r.id);
+  const rows = await prisma.pratica.findMany({
+    where: { tenantId },
+    select: { id: true, capitale: true, interessi: true, spese: true },
+  });
+  return rows
+    .filter((r) => {
+      const tot = (r.capitale || 0) + (r.interessi || 0) + (r.spese || 0);
+      if (from != null && tot < from) return false;
+      if (to != null && tot > to) return false;
+      return true;
+    })
+    .map((r) => r.id);
 }
 
 /** Pratiche con SUM(incassi.importo) nel range. */
@@ -334,37 +110,26 @@ export async function idsTotIncassato(
   const from = parseNum(da);
   const to = parseNum(a);
   if (from == null && to == null) return null;
-  let rows: { id: string }[];
-  if (from != null && to != null) {
-    rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT p.id AS id
-      FROM Pratica p
-      LEFT JOIN Incasso i ON i.praticaId = p.id
-      WHERE p.tenantId = ${tenantId}
-      GROUP BY p.id
-      HAVING COALESCE(SUM(i.importo), 0) >= ${from}
-         AND COALESCE(SUM(i.importo), 0) <= ${to}
-    `;
-  } else if (from != null) {
-    rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT p.id AS id
-      FROM Pratica p
-      LEFT JOIN Incasso i ON i.praticaId = p.id
-      WHERE p.tenantId = ${tenantId}
-      GROUP BY p.id
-      HAVING COALESCE(SUM(i.importo), 0) >= ${from}
-    `;
-  } else {
-    rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT p.id AS id
-      FROM Pratica p
-      LEFT JOIN Incasso i ON i.praticaId = p.id
-      WHERE p.tenantId = ${tenantId}
-      GROUP BY p.id
-      HAVING COALESCE(SUM(i.importo), 0) <= ${to!}
-    `;
+  const pratiche = await prisma.pratica.findMany({
+    where: { tenantId },
+    select: { id: true },
+  });
+  const incassi = await prisma.incasso.findMany({
+    where: { pratica: { tenantId } },
+    select: { praticaId: true, importo: true },
+  });
+  const sumBy = new Map<string, number>();
+  for (const i of incassi) {
+    sumBy.set(i.praticaId, (sumBy.get(i.praticaId) || 0) + (i.importo || 0));
   }
-  return rows.map((r) => r.id);
+  return pratiche
+    .filter((p) => {
+      const tot = sumBy.get(p.id) || 0;
+      if (from != null && tot < from) return false;
+      if (to != null && tot > to) return false;
+      return true;
+    })
+    .map((p) => p.id);
 }
 
 export function altriFiltriWhere(

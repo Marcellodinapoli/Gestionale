@@ -6,9 +6,9 @@ import { SlidersHorizontal, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { STATO_LABELS } from "@/lib/permissions";
 import { ESITO_CONTATTO_LABELS } from "@/lib/contatto";
-import { formatDataIso, startOfToday } from "@/lib/lavorateOggi";
+import { formatDataIso, startOfToday } from "@/lib/lavorateOggiUi";
 import { CODICI_SCARICO, CODICE_SCARICO_LABELS } from "@/lib/scarico";
-import { hasAltriFiltri, type AltriFiltri } from "@/lib/praticheAltriFiltri";
+import { hasAltriFiltri, type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 const modalField =
   "h-9 w-full rounded border border-[var(--line)] px-2 text-sm text-[var(--navy)]";

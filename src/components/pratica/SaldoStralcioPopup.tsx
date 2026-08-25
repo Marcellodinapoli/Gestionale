@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { euro } from "@/lib/domain";
+import { euro } from "@/lib/domainFormat";
 
 export function SaldoStralcioPopup({ residuo }: { residuo: number }) {
   const [percentuale, setPercentuale] = useState(70);

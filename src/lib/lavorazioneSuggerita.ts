@@ -14,7 +14,7 @@ import {
   isCodiceScarico,
   type CodiceScarico,
 } from "@/lib/scarico";
-import type { AltriFiltri } from "@/lib/praticheAltriFiltri";
+import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 import {
   altriFiltriWhere,
   appendAltriFiltriParams,
@@ -27,44 +27,31 @@ import {
 } from "@/lib/praticheAltriFiltri";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
 
-export const STATO_LAVORAZIONE_FISSO = "IN_LAVORAZIONE" as const;
-
-export type VoceLavorazioneSuggerita = {
-  id: string;
-  /** Descrizione del tipo di lavoro da fare. */
-  descrizione: string;
-  /** Codice scarico target (PTC, PPC, …). */
-  codiceScarico: CodiceScarico | "";
-  /** Filtri pratiche personalizzati (come «Altri filtri» in elenco pratiche). */
-  filtri: AltriFiltri;
-  /** Intervallo per conteggio pratiche lavorate — da (ISO yyyy-mm-dd). Default: giorno piano. */
-  lavorateDa: string;
-  /** Intervallo per conteggio pratiche lavorate — a (ISO yyyy-mm-dd). Default: giorno piano. */
-  lavorateA: string;
-  /** Note libere del supervisor/admin. */
-  note: string;
-  /** Note aggiuntive (secondo campo note). */
-  noteAggiuntive: string;
-  /** Contesto perimetro scelto sulla riga (in affido / in lavorazione). */
-  contestoPerimetro?: "affido" | "lavorazione";
-};
-
-export type OperatoreConteggiLavorazione = {
-  id: string;
-  name: string;
-  totale: number;
-  lavorate: number;
-  hrefTotale: string;
-  hrefLavorate: string;
-};
-
-export type VoceLavorazioneConConteggi = VoceLavorazioneSuggerita & {
-  totale: number;
-  lavorate: number;
-  hrefTotale: string;
-  hrefLavorate: string;
-  operatori: OperatoreConteggiLavorazione[];
-};
+export {
+  STATO_LAVORAZIONE_FISSO,
+  emptyVoce,
+  CODICI_SCARICO_VOCE,
+  matchPerimetroRiga,
+  situazioneRigaVoce,
+  applyPerimetroRiga,
+  clearPerimetroRiga,
+  codiciScaricoPerRiga,
+  labelPerimetroVoce,
+  type VoceLavorazioneSuggerita,
+  type OperatoreConteggiLavorazione,
+  type VoceLavorazioneConConteggi,
+  type PerimetroRigaLavorazione,
+} from "@/lib/lavorazioneSuggeritaUi";
+import {
+  STATO_LAVORAZIONE_FISSO,
+  emptyVoce,
+  CODICI_SCARICO_VOCE,
+  clearPerimetroRiga,
+  type VoceLavorazioneSuggerita,
+  type OperatoreConteggiLavorazione,
+  type VoceLavorazioneConConteggi,
+  type PerimetroRigaLavorazione,
+} from "@/lib/lavorazioneSuggeritaUi";
 
 function newId() {
   return `lav-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -91,20 +78,6 @@ function parseLavorateFields(o: Record<string, unknown>, fallback: string) {
   const lavorateA =
     String(o.lavorateA || o.dataLavA || o.dataLavorazione || lavorateDa).trim() || lavorateDa;
   return { lavorateDa, lavorateA };
-}
-
-export function emptyVoce(descrizione = "", data?: string): VoceLavorazioneSuggerita {
-  const giorno = data && parseDataIso(data) ? data : formatDataIso(new Date());
-  return {
-    id: newId(),
-    descrizione,
-    codiceScarico: "",
-    filtri: {},
-    lavorateDa: giorno,
-    lavorateA: giorno,
-    note: "",
-    noteAggiuntive: "",
-  };
 }
 
 export function defaultVociLavorazione(): VoceLavorazioneSuggerita[] {
@@ -265,23 +238,20 @@ export async function saveLavorazioneStore(supervisorId: string, store: Lavorazi
   await saveSupervisorLavorazione(supervisorId, serializeLavorazioneStore(store));
 }
 
-/** Lettura/scrittura raw finché il client Prisma non include `lavorazioneSuggerita`. */
+/** Lettura/scrittura piano lavorazione sul campo User.lavorazioneSuggerita. */
 export async function loadSupervisorLavorazione(supervisorId: string, tenantId: string) {
-  const rows = await prisma.$queryRaw<
-    Array<{ lavorazioneSuggerita: string | null; name: string; gruppoNome: string | null }>
-  >`
-    SELECT lavorazioneSuggerita, name, gruppoNome
-    FROM User
-    WHERE id = ${supervisorId} AND tenantId = ${tenantId}
-    LIMIT 1
-  `;
-  return rows[0] ?? null;
+  const row = await prisma.user.findFirst({
+    where: { id: supervisorId, tenantId },
+    select: { lavorazioneSuggerita: true, name: true, gruppoNome: true },
+  });
+  return row ?? null;
 }
 
 export async function saveSupervisorLavorazione(supervisorId: string, json: string) {
-  await prisma.$executeRaw`
-    UPDATE User SET lavorazioneSuggerita = ${json} WHERE id = ${supervisorId}
-  `;
+  await prisma.user.update({
+    where: { id: supervisorId },
+    data: { lavorazioneSuggerita: json },
+  });
 }
 
 function voceFiltriEffectivi(voce: VoceLavorazioneSuggerita): AltriFiltri {
@@ -498,11 +468,6 @@ export async function conteggiLavorazioneSuggerita(
   return out;
 }
 
-export const CODICI_SCARICO_VOCE = [
-  { value: "", label: "— Nessuno —" },
-  ...CODICI_SCARICO.map((c) => ({ value: c, label: c })),
-] as const;
-
 export function voceToAltriFiltri(voce: VoceLavorazioneSuggerita): AltriFiltri {
   return voceFiltriEffectivi(voce);
 }
@@ -510,16 +475,6 @@ export function voceToAltriFiltri(voce: VoceLavorazioneSuggerita): AltriFiltri {
 export function mostraPromoPag(_voce: VoceLavorazioneSuggerita) {
   return false;
 }
-
-export type PerimetroRigaLavorazione = {
-  key: string;
-  situazione: "affido" | "lavorazione";
-  mandanteId: string;
-  mandanteCodice: string;
-  perimetro: string;
-  label: string;
-  codici: Array<{ codice: CodiceScarico | ""; count: number }>;
-};
 
 function chiavePerimetroCodice(mandanteId: string, perimetro: string, codice: CodiceConteggioKey) {
   return `${mandanteId}|${perimetro}|${codice}`;
@@ -627,52 +582,36 @@ export function buildPerimetriRigaLavorazione(
   return sortPerimetriRiga([...byKey.values()]);
 }
 
-export function matchPerimetroRiga(
-  voce: VoceLavorazioneSuggerita,
-  perimetri: PerimetroRigaLavorazione[]
-): string {
-  const mandato = voce.filtri.mandato;
-  if (!mandato) return "";
-  const lotto = voce.filtri.lotto ?? "—";
-  const situazione = situazioneRigaVoce(voce);
-  if (!situazione) return "";
-  const prefix = situazione === "affido" ? "aff" : "lav";
-  const key = `${prefix}|${mandato}|${lotto}`;
-  return perimetri.some((p) => p.key === key) ? key : "";
-}
+/**
+ * Garantisce voci perimetro anche senza pratiche (solo anagrafica mandante/gruppo),
+ * così in modifica piano la colonna Perimetro resta utilizzabile.
+ */
+export function mergePerimetriRigaConConfig(
+  existing: PerimetroRigaLavorazione[],
+  config: Array<{ mandanteId: string; mandanteCodice: string; perimetro: string }>
+): PerimetroRigaLavorazione[] {
+  if (!config.length) return existing;
+  const byKey = new Map(existing.map((e) => [e.key, e]));
 
-export function situazioneRigaVoce(
-  voce: VoceLavorazioneSuggerita
-): "affido" | "lavorazione" | "" {
-  if (voce.contestoPerimetro) return voce.contestoPerimetro;
-  if (!voce.filtri.mandato && voce.filtri.sitAffido !== "affidata") return "";
-  return voce.filtri.sitAffido === "affidata" ? "affido" : "lavorazione";
-}
+  for (const c of config) {
+    const perimetro = c.perimetro.trim() || "—";
+    for (const situazione of ["affido", "lavorazione"] as const) {
+      const prefix = situazione === "affido" ? "aff" : "lav";
+      const key = `${prefix}|${c.mandanteId}|${perimetro}`;
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
+        key,
+        situazione,
+        mandanteId: c.mandanteId,
+        mandanteCodice: c.mandanteCodice,
+        perimetro,
+        label: labelPerimetro({ mandanteCodice: c.mandanteCodice, perimetro }),
+        codici: [],
+      });
+    }
+  }
 
-export function applyPerimetroRiga(
-  voce: VoceLavorazioneSuggerita,
-  perimetro: PerimetroRigaLavorazione
-): VoceLavorazioneSuggerita {
-  const filtri = { ...voce.filtri, mandato: perimetro.mandanteId };
-  if (perimetro.perimetro !== "—") filtri.lotto = perimetro.perimetro;
-  else delete filtri.lotto;
-  delete filtri.codScarico;
-  if (perimetro.situazione === "affido") filtri.sitAffido = "affidata";
-  else delete filtri.sitAffido;
-
-  const codiciValidi = new Set(perimetro.codici.map((c) => c.codice));
-  const codiceScarico = codiciValidi.has(voce.codiceScarico) ? voce.codiceScarico : "";
-
-  return { ...voce, codiceScarico, filtri, contestoPerimetro: perimetro.situazione };
-}
-
-export function clearPerimetroRiga(voce: VoceLavorazioneSuggerita): VoceLavorazioneSuggerita {
-  const filtri = { ...voce.filtri };
-  delete filtri.mandato;
-  delete filtri.lotto;
-  delete filtri.sitAffido;
-  delete filtri.codScarico;
-  return { ...voce, codiceScarico: "", filtri, contestoPerimetro: undefined };
+  return sortPerimetriRiga([...byKey.values()]);
 }
 
 export function applySituazioneRiga(
@@ -687,28 +626,4 @@ export function applySituazioneRiga(
   if (situazione === "affido") filtri.sitAffido = "affidata";
   else delete filtri.sitAffido;
   return { ...voce, codiceScarico: "", filtri, contestoPerimetro: situazione };
-}
-
-export function codiciScaricoPerRiga(
-  voce: VoceLavorazioneSuggerita,
-  perimetri: PerimetroRigaLavorazione[]
-) {
-  const periKey = matchPerimetroRiga(voce, perimetri);
-  if (!periKey) return CODICI_SCARICO_VOCE;
-  const peri = perimetri.find((p) => p.key === periKey);
-  if (!peri?.codici.length) return CODICI_SCARICO_VOCE;
-  const allowed = new Set(peri.codici.map((c) => c.codice));
-  return CODICI_SCARICO_VOCE.filter((o) => o.value === "" || allowed.has(o.value));
-}
-
-export function labelPerimetroVoce(
-  voce: VoceLavorazioneSuggerita,
-  perimetri: PerimetroRigaLavorazione[]
-): string {
-  const key = matchPerimetroRiga(voce, perimetri);
-  if (!key) return "—";
-  const peri = perimetri.find((p) => p.key === key);
-  if (!peri) return "—";
-  const situazione = peri.situazione === "affido" ? "In affido" : "In lavorazione";
-  return `${situazione} · ${peri.label}`;
 }

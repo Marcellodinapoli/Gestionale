@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { DialClientConfig } from "@/lib/telephony/config";
+import type { DialClientConfig } from "@/lib/telephony/clientConfig";
 import {
   chiamaNumero as chiamaNumeroRaw,
   withPrefisso,

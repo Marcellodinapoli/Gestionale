@@ -33,7 +33,7 @@ import {
 import { useEscBack } from "@/lib/useEscBack";
 import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
-import type { RecordingMode } from "@/lib/recordingConfig";
+import type { RecordingMode } from "@/lib/recordingMode";
 
 type Voce = {
   id: string;

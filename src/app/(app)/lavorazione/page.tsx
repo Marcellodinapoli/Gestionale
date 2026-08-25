@@ -12,8 +12,11 @@ import {
   elencoDatePiano,
   conteggiAffidatePerCodicePerimetro,
   buildPerimetriRigaLavorazione,
+  mergePerimetriRigaConConfig,
 } from "@/lib/lavorazioneSuggerita";
 import { codiciPerMandantePerimetro } from "@/lib/codiciMandantePerimetro";
+import { parsePerimetriList } from "@/lib/mandantePerimetri";
+import { elencoPerimetriGruppoConfig } from "@/lib/affidiPerimetro";
 import { formatDataIso, parseDataIso } from "@/lib/lavorateOggi";
 import { PageHeader } from "@/components/ui";
 import { LavorazioneSuggeritaBar } from "@/components/lavorazione/LavorazioneSuggeritaBar";
@@ -116,7 +119,7 @@ export default async function LavorazionePage({
       prisma.mandante.findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
-        select: { id: true, codice: true, ragioneSociale: true },
+        select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
       }),
       prisma.pratica.findMany({
         where: scope,
@@ -127,9 +130,45 @@ export default async function LavorazionePage({
       conteggiAffidatePerCodicePerimetro(scope),
     ]);
 
-  const perimetriRiga = buildPerimetriRigaLavorazione(
-    righeCodiciPerimetro,
-    affidatePerCodice
+  const mandantiOptions = mandantiListRaw.map((m) => ({
+    id: m.id,
+    codice: m.codice,
+    ragioneSociale: m.ragioneSociale,
+    perimetri: parsePerimetriList(m.perimetri),
+  }));
+
+  const configPerimetri =
+    gruppo.gruppoMandanti.length > 0
+      ? elencoPerimetriGruppoConfig(gruppo.gruppoMandanti, mandantiOptions)
+      : mandantiOptions.flatMap((m) =>
+          m.perimetri.length
+            ? m.perimetri
+                .filter((p) => p.nomeMandante.trim())
+                .map((p) => ({
+                  mandanteId: m.id,
+                  mandanteCodice: m.codice,
+                  mandanteNome: m.ragioneSociale,
+                  perimetro: p.nomeMandante.trim(),
+                  perimetroLabel: p.label,
+                }))
+            : [
+                {
+                  mandanteId: m.id,
+                  mandanteCodice: m.codice,
+                  mandanteNome: m.ragioneSociale,
+                  perimetro: "—",
+                  perimetroLabel: "—",
+                },
+              ]
+        );
+
+  const perimetriRiga = mergePerimetriRigaConConfig(
+    buildPerimetriRigaLavorazione(righeCodiciPerimetro, affidatePerCodice),
+    configPerimetri.map((c) => ({
+      mandanteId: c.mandanteId,
+      mandanteCodice: c.mandanteCodice,
+      perimetro: c.perimetro,
+    }))
   );
 
   const mandantiList =

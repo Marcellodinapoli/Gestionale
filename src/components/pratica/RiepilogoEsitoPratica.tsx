@@ -1,5 +1,5 @@
 import { CODICE_SCARICO_LABELS, codiceScaricoPratica } from "@/lib/scarico";
-import { dataIt } from "@/lib/domain";
+import { dataIt } from "@/lib/domainFormat";
 
 function formatDataOra(value?: string | Date | null) {
   if (!value) return null;

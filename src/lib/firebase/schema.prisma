@@ -2,9 +2,14 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ============================================================
+// NON È UN DATABASE.
+// Catalogo modelli → tipi TypeScript per l’adapter Firestore.
+// Runtime: solo Firebase. Non usare migrate / db push.
+// ============================================================
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  url      = "file:./.types-only.db"
 }
 
 model Tenant {

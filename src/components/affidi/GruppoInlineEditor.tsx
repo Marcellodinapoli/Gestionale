@@ -14,7 +14,7 @@ import { GruppoMandantiSection } from "./GruppoMandantiSection";
 import {
   etichettaGruppoMandanti,
   type GruppoMandanteAssegnazione,
-} from "@/lib/gruppoMandanti";
+} from "@/lib/gruppoMandantiUi";
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 
 type OperatoreAnagrafica = {

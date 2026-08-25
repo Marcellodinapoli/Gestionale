@@ -22,7 +22,7 @@ function loadServiceAccount(): Record<string, unknown> {
     process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
 
   if (filePath) {
-    const absolute = resolve(process.cwd(), filePath);
+    const absolute = resolve(/*turbopackIgnore: true*/ process.cwd(), filePath);
     try {
       return JSON.parse(readFileSync(absolute, "utf8")) as Record<string, unknown>;
     } catch {

@@ -87,7 +87,7 @@ function splitTableAtRow(tr: HTMLElement, fillPx: number) {
   const nextSection = section.cloneNode(false) as HTMLElement;
   let node: ChildNode | null = tr;
   while (node) {
-    const next = node.nextSibling;
+    const next: ChildNode | null = node.nextSibling;
     nextSection.appendChild(node);
     node = next;
   }

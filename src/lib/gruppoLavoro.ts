@@ -1,16 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { isManutenzione, type SessionUser } from "@/lib/permissions";
-import { parseGruppoMandanti, type GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
+import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
 
-export type GruppoLavoro = {
-  supervisorId: string | null;
-  supervisorName: string | null;
-  gruppoNome: string | null;
-  gruppoMandanti: GruppoMandanteAssegnazione[];
-  members: Array<{ id: string; name: string; role: string; email: string }>;
-  memberIds: string[];
-};
+export type { GruppoLavoro } from "@/lib/gruppoLavoroUi";
+import type { GruppoLavoro } from "@/lib/gruppoLavoroUi";
 
 export async function getGruppoLavoro(user: SessionUser): Promise<GruppoLavoro> {
   if (isManutenzione(user)) {

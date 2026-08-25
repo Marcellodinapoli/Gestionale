@@ -1,0 +1,26 @@
+# Netlify — Credixa (Next.js) su Firebase
+#
+# Obbligatorio in Site settings → Environment variables:
+#   OPERATIONAL_BACKEND=firebase
+#   SESSION_SECRET=stringa lunga casuale
+#   FIREBASE_SERVICE_ACCOUNT_JSON=<contenuto intero serviceAccountKey.json>
+#   NEXT_PUBLIC_FIREBASE_API_KEY=...
+#   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=creditform-d505d.firebaseapp.com
+#   NEXT_PUBLIC_FIREBASE_PROJECT_ID=creditform-d505d
+#   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+#   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+#   NEXT_PUBLIC_FIREBASE_APP_ID=...
+#
+# Nessun DATABASE_URL / Postgres / Neon / SQLite.
+# Seed dati: in locale `npm run db:seed` (Firestore).
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  OPERATIONAL_BACKEND = "firebase"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

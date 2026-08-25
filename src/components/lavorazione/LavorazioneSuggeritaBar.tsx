@@ -7,7 +7,6 @@ import { Plus, Pencil, Save, SlidersHorizontal, Trash2 } from "lucide-react";
 import { saveLavorazioneSuggeritaAction } from "@/actions/lavorazioneSuggerita";
 import { LavorazioneVoceFiltriModal } from "@/components/lavorazione/LavorazioneVoceFiltriModal";
 import { useLavorazioneRefreshRegister } from "@/components/lavorazione/LavorazioneRefresh";
-import { describeAltriFiltri, hasAltriFiltri } from "@/lib/praticheAltriFiltri";
 import {
   CODICI_SCARICO_VOCE,
   emptyVoce,
@@ -19,7 +18,8 @@ import {
   type PerimetroRigaLavorazione,
   type VoceLavorazioneConConteggi,
   type VoceLavorazioneSuggerita,
-} from "@/lib/lavorazioneSuggerita";
+} from "@/lib/lavorazioneSuggeritaUi";
+import { describeAltriFiltri, hasAltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 function ConteggioCell({
   totale,
@@ -89,11 +89,12 @@ function VoceRiga({
 
   const filtroLabel = describeAltriFiltri(voce.filtri);
   const haFiltri = hasAltriFiltri(voce.filtri);
-  const mostraPerimetro = Boolean(perimetriRiga?.length);
-  const perimetroSelezionato = mostraPerimetro ? matchPerimetroRiga(voce, perimetriRiga!) : "";
+  const haOpzioniPerimetro = Boolean(perimetriRiga?.length);
+  const mostraPerimetro = canEdit || haOpzioniPerimetro;
+  const perimetroSelezionato = haOpzioniPerimetro ? matchPerimetroRiga(voce, perimetriRiga!) : "";
   const perimetriAffido = perimetriRiga?.filter((p) => p.situazione === "affido") ?? [];
   const perimetriLavorazione = perimetriRiga?.filter((p) => p.situazione === "lavorazione") ?? [];
-  const codiciScaricoVoce = mostraPerimetro
+  const codiciScaricoVoce = haOpzioniPerimetro
     ? perimetroSelezionato
       ? codiciScaricoPerRiga(voce, perimetriRiga!)
       : [{ value: "" as const, label: "—" }]
@@ -125,8 +126,11 @@ function VoceRiga({
               }}
               className="h-7 w-full min-w-[10rem] rounded border border-[var(--line)] px-1 text-xs"
               title="Perimetro"
+              disabled={!haOpzioniPerimetro}
             >
-              <option value="">— Perimetro —</option>
+              <option value="">
+                {haOpzioniPerimetro ? "— Perimetro —" : "Nessun perimetro (configura in Affidi)"}
+              </option>
               {perimetriAffido.length ? (
                 <optgroup label="In affido">
                   {perimetriAffido.map((p) => (
@@ -148,7 +152,7 @@ function VoceRiga({
             </select>
           ) : (
             <span className="text-xs text-[var(--navy)]">
-              {labelPerimetroVoce(voce, perimetriRiga!)}
+              {haOpzioniPerimetro ? labelPerimetroVoce(voce, perimetriRiga!) : "—"}
             </span>
           )}
         </td>
@@ -176,7 +180,7 @@ function VoceRiga({
               })
             }
             className="h-7 min-w-[4.5rem] rounded border border-[var(--line)] px-1 text-xs uppercase"
-            disabled={mostraPerimetro && !perimetroSelezionato}
+            disabled={haOpzioniPerimetro && !perimetroSelezionato}
           >
             {codiciScaricoVoce.map((o) => (
               <option key={o.value || "none"} value={o.value}>
@@ -315,6 +319,7 @@ export function LavorazioneSuggeritaBar({
   const [pending, startTransition] = useTransition();
   const [voci, setVoci] = useState<VoceLavorazioneConConteggi[]>(initialVoci);
   const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
   const [conteggiOverride, setConteggiOverride] = useState<VoceLavorazioneConConteggi[] | null>(
     null
   );
@@ -322,14 +327,28 @@ export function LavorazioneSuggeritaBar({
   const [filtriModalIndex, setFiltriModalIndex] = useState<number | null>(null);
   const refreshTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
+  const initialVociKey = `${dataPiano}|${pianoSalvato ? "1" : "0"}|${initialVoci.map((v) => v.id).join(",")}`;
+
   useEffect(() => {
+    dirtyRef.current = false;
     setVoci(initialVoci);
     setDirty(false);
     setConteggiOverride(null);
     setLoadingRows(new Set());
     refreshTimers.current.forEach((t) => clearTimeout(t));
     refreshTimers.current.clear();
-  }, [dataPiano, initialVoci]);
+    // Solo quando cambia giorno / piano salvato / id voci server — non a ogni refresh conteggi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialVociKey stabilizza
+  }, [initialVociKey]);
+
+  function markDirty() {
+    dirtyRef.current = true;
+    setDirty(true);
+  }
+
+  function baseVoci(prev: VoceLavorazioneConConteggi[]) {
+    return dirtyRef.current ? prev : initialVoci;
+  }
 
   const displayVoci = dirty ? voci : (conteggiOverride ?? initialVoci);
 
@@ -367,7 +386,7 @@ export function LavorazioneSuggeritaBar({
         const merge = (base: VoceLavorazioneConConteggi[]) =>
           base.map((v, i) => (i === index ? { ...v, ...voce, ...data } : v));
 
-        if (dirty) {
+        if (dirtyRef.current) {
           setVoci((prev) => merge(prev.length ? prev : initialVoci));
         } else {
           setConteggiOverride((prev) => merge(prev ?? initialVoci));
@@ -380,11 +399,11 @@ export function LavorazioneSuggeritaBar({
         });
       }
     },
-    [dirty, fetchConteggiVoce, initialVoci]
+    [fetchConteggiVoce, initialVoci]
   );
 
   const refreshAllConteggi = useCallback(async () => {
-    const base = dirty ? voci : (conteggiOverride ?? initialVoci);
+    const base = dirtyRef.current ? voci : (conteggiOverride ?? initialVoci);
     if (!base.length) return;
     setLoadingRows(new Set(base.map((_, i) => i)));
     try {
@@ -394,7 +413,7 @@ export function LavorazioneSuggeritaBar({
           return data ? { ...voce, ...data } : voce;
         })
       );
-      if (dirty) {
+      if (dirtyRef.current) {
         setVoci(updated);
       } else {
         setConteggiOverride(updated);
@@ -402,7 +421,7 @@ export function LavorazioneSuggeritaBar({
     } finally {
       setLoadingRows(new Set());
     }
-  }, [conteggiOverride, dirty, fetchConteggiVoce, initialVoci, voci]);
+  }, [conteggiOverride, fetchConteggiVoce, initialVoci, voci]);
 
   useLavorazioneRefreshRegister(`bar-${supervisorId}-${dataPiano}`, refreshAllConteggi);
 
@@ -421,10 +440,9 @@ export function LavorazioneSuggeritaBar({
   );
 
   function updateVoce(index: number, next: VoceLavorazioneSuggerita) {
-    setDirty(true);
+    markDirty();
     setVoci((prev) => {
-      const base = dirty ? prev : initialVoci;
-      const merged = base.map((v, i) => (i === index ? { ...v, ...next } : v));
+      const merged = baseVoci(prev).map((v, i) => (i === index ? { ...v, ...next } : v));
       const voce = merged[index];
       if (voce) scheduleRefresh(index, voce);
       return merged;
@@ -432,27 +450,23 @@ export function LavorazioneSuggeritaBar({
   }
 
   function addVoce() {
-    setDirty(true);
+    markDirty();
     setVoci((prev) => {
-      const base = dirty ? prev : initialVoci;
       const v = emptyVoce("", dataPiano);
       return [
-        ...base,
+        ...baseVoci(prev),
         { ...v, totale: 0, lavorate: 0, hrefTotale: "/pratiche", hrefLavorate: "/pratiche", operatori: [] },
       ];
     });
   }
 
   function removeVoce(index: number) {
-    setDirty(true);
-    setVoci((prev) => {
-      const base = dirty ? prev : initialVoci;
-      return base.filter((_, i) => i !== index);
-    });
+    markDirty();
+    setVoci((prev) => baseVoci(prev).filter((_, i) => i !== index));
   }
 
   function salva() {
-    const payload = (dirty ? voci : initialVoci).map(
+    const payload = (dirtyRef.current ? voci : initialVoci).map(
       ({
         id,
         descrizione,
@@ -481,6 +495,7 @@ export function LavorazioneSuggeritaBar({
       fd.set("dataPiano", dataPiano);
       fd.set("voci", JSON.stringify(payload));
       await saveLavorazioneSuggeritaAction(fd);
+      dirtyRef.current = false;
       setDirty(false);
       setConteggiOverride(null);
       const sp = new URLSearchParams();
@@ -497,12 +512,14 @@ export function LavorazioneSuggeritaBar({
       `Eliminare il piano non pubblicato del ${dataLabel}?\nLe modifiche non salvate andranno perse.`
     );
     if (!ok) return;
-    setDirty(false);
+    markDirty();
+    setVoci([]);
     setConteggiOverride(null);
     if (eliminaRedirectGiorno === dataPiano) {
-      router.refresh();
       return;
     }
+    dirtyRef.current = false;
+    setDirty(false);
     const sp = new URLSearchParams();
     sp.set("giorno", eliminaRedirectGiorno);
     if (gruppoId) sp.set("gruppo", gruppoId);
@@ -533,7 +550,7 @@ export function LavorazioneSuggeritaBar({
 
   const totalePratiche = displayVoci.reduce((s, v) => s + v.totale, 0);
   const lavoratePratiche = displayVoci.reduce((s, v) => s + v.lavorate, 0);
-  const mostraColonnaPerimetro = Boolean(perimetriRiga?.length);
+  const mostraColonnaPerimetro = canEdit || Boolean(perimetriRiga?.length);
   const colspanBase = 5 + (mostraColonnaPerimetro ? 1 : 0);
 
   return (
@@ -560,7 +577,7 @@ export function LavorazioneSuggeritaBar({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-[var(--muted)]">
           {canEdit
-            ? "Clicca «Aggiungi filtro» per definire quali pratiche includere. Il verde indica le lavorate dal salvataggio del piano."
+            ? "Scegli il perimetro su ogni riga, poi «Aggiungi filtro» se serve restringere. Il verde indica le lavorate dal salvataggio del piano."
             : "Il verde indica le pratiche lavorate dal salvataggio del piano. Clicca un numero per aprire l'elenco."}
         </p>
         {canEdit ? (

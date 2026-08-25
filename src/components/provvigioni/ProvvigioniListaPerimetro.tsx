@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { euro } from "@/lib/domain";
+import { euro } from "@/lib/domainFormat";
 import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
 import {
   etichettaIncentiviCash,
@@ -8,7 +8,7 @@ import {
   provvigioniCodiceLabelEntries,
   provvigioniMetodoLabelEntries,
   scaglioneProvvigioneAttuale,
-} from "@/lib/provvigioniPerimetro";
+} from "@/lib/provvigioniPerimetroUi";
 
 export type ProvvigioneRigaLista = {
   id: string;

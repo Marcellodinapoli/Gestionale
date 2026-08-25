@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { RigaDaAffidarePerimetro } from "@/lib/codiciMandantePerimetro";
+import type { RigaDaAffidarePerimetro } from "@/lib/codiciMandantePerimetroUi";
 import { buildAffidiHref } from "@/components/affidi/AffidiCaricoOperatori";
 
 const base =

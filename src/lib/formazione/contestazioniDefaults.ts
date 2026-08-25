@@ -233,9 +233,9 @@ export function resolveContestazioneItems(
     for (const [key, value] of Object.entries(rawItems)) {
       const id = String(value.id ?? key);
       const defaults = defaultContestazioneItem(id);
-      const read = (k: keyof ContestazioneTrainingItem) => {
+      const read = (k: keyof ContestazioneTrainingItem): string => {
         const v = value[k as string];
-        if (v == null || v === "") return defaults[k];
+        if (v == null || v === "") return String(defaults[k] ?? "");
         return String(v);
       };
 

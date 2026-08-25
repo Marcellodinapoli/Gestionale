@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { RigaInLavorazionePerimetro } from "@/lib/codiciMandantePerimetro";
+import type { RigaInLavorazionePerimetro } from "@/lib/codiciMandantePerimetroUi";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
 
 const base =

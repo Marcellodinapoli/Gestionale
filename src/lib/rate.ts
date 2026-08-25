@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { startOfDay } from "@/lib/lavorateOggi";
+import { startOfDay } from "@/lib/lavorateOggiUi";
 
 /** Rata non pagata con scadenza precedente a oggi (inizio giornata). */
 export function isRataScaduta(

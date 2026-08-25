@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { dateInputValue, datetimeLocalValue, euro, dataIt } from "@/lib/domain";
+import { dateInputValue, datetimeLocalValue, euro, dataIt } from "@/lib/domainFormat";
 import { formatNotaLine } from "@/lib/noteFormat";
 import { RegistroNote } from "@/components/pratica/RegistroNote";
 import { PraticaFunzioniBar } from "@/components/pratica/PraticaFunzioniBar";
@@ -22,7 +22,7 @@ import {
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCoda";
 import { codiceScaricoPratica } from "@/lib/scarico";
 import { countRateScadute } from "@/lib/rate";
-import type { RecordingMode } from "@/lib/recordingConfig";
+import type { RecordingMode } from "@/lib/recordingMode";
 
 type AnagraficaPersona = {
   id?: string;

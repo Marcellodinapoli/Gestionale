@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { updateGruppoMandantiAction } from "@/actions/gruppoOperatori";
-import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
+import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandantiUi";
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 
 type MandanteOption = {

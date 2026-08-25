@@ -212,7 +212,7 @@ export async function affidoEquoMassivoAction(formData: FormData) {
       : {
           tenantId: user.tenantId,
           active: true,
-          role: { in: ["OPERATOR", "SUPERVISOR"] as const },
+          role: { in: ["OPERATOR", "SUPERVISOR"] },
         };
 
   const team = await prisma.user.findMany({

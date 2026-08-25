@@ -34,20 +34,21 @@ export default async function StampaPraticaPage({
   });
   if (!pratica) notFound();
 
-  const d = pratica.debitore;
-  const totale = pratica.capitale + pratica.interessi + pratica.spese;
+  const praticaOk = pratica;
+  const d = praticaOk.debitore;
+  const totale = praticaOk.capitale + praticaOk.interessi + praticaOk.spese;
   const indirizzo = [d.indirizzo, [d.cap, d.citta, d.provincia].filter(Boolean).join(" ")]
     .filter(Boolean)
     .join(" — ");
-  const fatturePagate = pratica.fatture.filter((f) => f.importo - f.pagato <= 0.009);
-  const fattureAperte = pratica.fatture.filter((f) => f.importo - f.pagato > 0.009);
+  const fatturePagate = praticaOk.fatture.filter((f) => f.importo - f.pagato <= 0.009);
+  const fattureAperte = praticaOk.fatture.filter((f) => f.importo - f.pagato > 0.009);
 
   function FattureTable({
     title,
     rows,
   }: {
     title: string;
-    rows: typeof pratica.fatture;
+    rows: typeof praticaOk.fatture;
   }) {
     const totImp = rows.reduce((s, f) => s + f.importo, 0);
     const totPag = rows.reduce((s, f) => s + f.pagato, 0);
