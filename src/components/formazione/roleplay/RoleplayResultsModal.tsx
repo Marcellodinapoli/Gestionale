@@ -6,6 +6,7 @@ import {
   difficultyLabel,
   personalityLabel,
   practiceDataForDisplay,
+  resolveAiProvider,
   resolveDifficulty,
   resolvePersonality,
   resolveSimulationPrompt,
@@ -26,6 +27,7 @@ export function buildSimulationPayload(data: Record<string, unknown>) {
     scenarioWeights: data.scenarioWeights,
     difficulty: resolveDifficulty(data),
     personality: resolvePersonality(data),
+    aiProvider: resolveAiProvider(data),
   };
 }
 

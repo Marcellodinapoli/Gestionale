@@ -13,8 +13,10 @@ import { callFormazioneFunction } from "@/lib/formazione/callable";
 import { SollecitoRecuperoTabs } from "@/components/formazione/warmup/WarmupUi";
 import {
   difficultyLabel,
+  normalizePracticeData,
   personalityLabel,
   practiceDataForDisplay,
+  resolveAiProvider,
   resolveDifficulty,
   resolvePersonality,
   resolveSimulationPrompt,
@@ -43,6 +45,7 @@ type RoleplaySimulation = {
   difficulty: string;
   personality: string;
   prompt: string;
+  aiProvider: string;
   dateMs?: number;
 };
 
@@ -68,7 +71,9 @@ function parseSimulation(id: string, data: DocumentData): RoleplaySimulation {
     practiceData: practiceDataForDisplay(data.practiceData),
     difficulty: resolveDifficulty(raw),
     personality: resolvePersonality(raw),
+    // Prompt ufficiale dal backoffice (`roleplay/{id}.prompt` / legacy gptPrompt).
     prompt: resolveSimulationPrompt(raw),
+    aiProvider: resolveAiProvider(raw),
     dateMs: tsToMs(data.date),
   };
 }
@@ -194,13 +199,16 @@ function SimulationsList({ category }: { category: string }) {
     async (sim: RoleplaySimulation) => {
       setActiveSim(sim);
       setStartedAt(Date.now());
+      // Prompt e parametri sempre dal documento BK in Firestore (live).
+      const prompt = resolveSimulationPrompt(sim.raw);
+      const practiceData = normalizePracticeData(sim.raw.practiceData);
       await voice.start({
         sessionId: `${sim.id}_${Date.now()}`,
-        prompt: sim.prompt,
-        practiceData: (sim.raw.practiceData as unknown[]) ?? [],
+        prompt,
+        practiceData,
         scenarioWeights: sim.raw.scenarioWeights,
-        difficulty: sim.difficulty,
-        personality: sim.personality,
+        difficulty: resolveDifficulty(sim.raw),
+        personality: resolvePersonality(sim.raw),
       });
     },
     [voice]
@@ -245,7 +253,8 @@ function SimulationsList({ category }: { category: string }) {
 
     setGenerating(true);
     try {
-      const practiceText = resultsSim.practiceData
+      const practiceRows = normalizePracticeData(resultsSim.raw.practiceData);
+      const practiceText = practiceRows
         .map((row) => (row.label ? `${row.label}: ${row.value}` : row.value))
         .join("; ");
 
@@ -253,13 +262,13 @@ function SimulationsList({ category }: { category: string }) {
         functions,
         "roleplaySuggestion",
         {
-          prompt: resultsSim.prompt,
+          prompt: resolveSimulationPrompt(resultsSim.raw),
           title: resultsSim.title,
           history: detail.history,
-          practiceData: resultsSim.raw.practiceData ?? [],
+          practiceData: practiceRows,
           practiceText,
-          difficulty: resultsSim.difficulty,
-          personality: resultsSim.personality,
+          difficulty: resolveDifficulty(resultsSim.raw),
+          personality: resolvePersonality(resultsSim.raw),
         }
       );
 

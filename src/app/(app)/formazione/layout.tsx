@@ -4,6 +4,7 @@ import {
   FormazioneProvider,
   FormazioneGate,
 } from "@/components/formazione/FormazioneProvider";
+import { FormazioneIntroHost } from "@/components/formazione/FormazioneIntro";
 import { FormazioneNav } from "@/components/formazione/FormazioneNav";
 
 export default async function FormazioneLayout({
@@ -16,12 +17,14 @@ export default async function FormazioneLayout({
 
   return (
     <FormazioneProvider>
-      <div className="mx-auto w-full max-w-[1300px] px-4 sm:px-6">
-        <FormazioneNav canMonitor={canMonitor} />
-        <div className="mt-4">
-          <FormazioneGate>{children}</FormazioneGate>
+      <FormazioneIntroHost canMonitor={canMonitor}>
+        <div className="mx-auto w-full max-w-[1300px] px-4 sm:px-6">
+          <FormazioneNav canMonitor={canMonitor} />
+          <div className="mt-4">
+            <FormazioneGate>{children}</FormazioneGate>
+          </div>
         </div>
-      </div>
+      </FormazioneIntroHost>
     </FormazioneProvider>
   );
 }

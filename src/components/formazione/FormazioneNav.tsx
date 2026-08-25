@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
+  CircleHelp,
   Headphones,
   LineChart,
   MessagesSquare,
   Users,
 } from "lucide-react";
+import { useFormazioneIntro } from "@/components/formazione/FormazioneIntro";
 
 const BASE_ITEMS = [
   {
@@ -67,53 +69,65 @@ function collaboratorNavBack(pathname: string): string | null {
 
 export function FormazioneNav({ canMonitor = false }: { canMonitor?: boolean }) {
   const pathname = usePathname();
+  const { openIntro } = useFormazioneIntro();
   const courseDetail = isCourseDetail(pathname);
   const collaboratorBackHref = collaboratorNavBack(pathname);
   const items = getFormazioneMenuItems(canMonitor);
 
   return (
     <nav className="mt-6 border-b border-[var(--line)]">
-      <div className="flex flex-wrap gap-6">
-        {items.map(({ href, label, icon: Icon }) => {
-          const active = isActive(pathname, href);
-          const showBack =
-            (href === "/formazione/corsi" && courseDetail) ||
-            (href === "/formazione/collaboratori" && collaboratorBackHref != null);
-          const linkHref =
-            href === "/formazione/corsi" && courseDetail
-              ? "/formazione/corsi"
-              : href === "/formazione/collaboratori" && collaboratorBackHref
-                ? collaboratorBackHref
-                : href;
-          const NavIcon = showBack ? ArrowLeft : Icon;
-          const backTitle =
-            href === "/formazione/collaboratori" && collaboratorBackHref
-              ? collaboratorBackHref === "/formazione/collaboratori"
-                ? "Torna a Collaboratori"
-                : "Torna ai progressi"
-              : "Torna a Corsi";
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="flex flex-wrap gap-6">
+          {items.map(({ href, label, icon: Icon }) => {
+            const active = isActive(pathname, href);
+            const showBack =
+              (href === "/formazione/corsi" && courseDetail) ||
+              (href === "/formazione/collaboratori" && collaboratorBackHref != null);
+            const linkHref =
+              href === "/formazione/corsi" && courseDetail
+                ? "/formazione/corsi"
+                : href === "/formazione/collaboratori" && collaboratorBackHref
+                  ? collaboratorBackHref
+                  : href;
+            const NavIcon = showBack ? ArrowLeft : Icon;
+            const backTitle =
+              href === "/formazione/collaboratori" && collaboratorBackHref
+                ? collaboratorBackHref === "/formazione/collaboratori"
+                  ? "Torna a Collaboratori"
+                  : "Torna ai progressi"
+                : "Torna a Corsi";
 
-          return (
-            <Link
-              key={href}
-              href={linkHref}
-              title={showBack ? backTitle : label}
-              aria-label={showBack ? backTitle : label}
-              className={`-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
-                active
-                  ? "border-[#FB8C00] text-[var(--navy)]"
-                  : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
-              }`}
-            >
-              <NavIcon
-                className={`h-4 w-4 shrink-0 ${
-                  showBack ? "text-[var(--accent,#0e7490)]" : "opacity-80"
+            return (
+              <Link
+                key={href}
+                href={linkHref}
+                title={showBack ? backTitle : label}
+                aria-label={showBack ? backTitle : label}
+                className={`-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
+                  active
+                    ? "border-[#FB8C00] text-[var(--navy)]"
+                    : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
                 }`}
-              />
-              {label}
-            </Link>
-          );
-        })}
+              >
+                <NavIcon
+                  className={`h-4 w-4 shrink-0 ${
+                    showBack ? "text-[var(--accent,#0e7490)]" : "opacity-80"
+                  }`}
+                />
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={openIntro}
+          title="Riapri il percorso di formazione"
+          className="-mb-px inline-flex items-center gap-1.5 border-b-2 border-transparent pb-3 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--navy)]"
+        >
+          <CircleHelp className="h-4 w-4 shrink-0 opacity-80" />
+          Percorso
+        </button>
       </div>
     </nav>
   );

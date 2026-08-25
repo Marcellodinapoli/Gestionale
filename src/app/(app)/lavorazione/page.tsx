@@ -207,7 +207,7 @@ export default async function LavorazionePage({
 
   const subtitle =
     user.role === "OPERATOR"
-      ? "Lavorazioni suggerite dal tuo supervisor"
+      ? "Lavorazioni suggerite per non lasciare pratiche dormienti e per il fine di raggiungere le migliori performance"
       : user.role === "SUPERVISOR"
         ? gruppo.gruppoNome
           ? `Piano lavorazione · ${gruppo.gruppoNome}`

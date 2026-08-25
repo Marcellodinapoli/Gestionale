@@ -18,10 +18,12 @@ export function CompletaRichiamoButton({
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
-  async function onSubmit(formData: FormData) {
+  async function onClick() {
     setPending(true);
     try {
-      await clearMemoPraticaAction(formData);
+      const fd = new FormData();
+      fd.set("praticaId", praticaId);
+      await clearMemoPraticaAction(fd);
       onCleared?.();
       router.refresh();
     } finally {
@@ -30,18 +32,16 @@ export function CompletaRichiamoButton({
   }
 
   return (
-    <form action={onSubmit}>
-      <input type="hidden" name="praticaId" value={praticaId} />
-      <button
-        type="submit"
-        disabled={pending}
-        className={
-          className ||
-          "h-8 rounded border border-[var(--line)] bg-white px-3 text-xs font-medium text-[#132033] hover:bg-slate-50 disabled:opacity-60"
-        }
-      >
-        {pending ? "…" : label}
-      </button>
-    </form>
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => void onClick()}
+      className={
+        className ||
+        "h-8 rounded border border-[var(--line)] bg-white px-3 text-xs font-medium text-[#132033] hover:bg-slate-50 disabled:opacity-60"
+      }
+    >
+      {pending ? "…" : label}
+    </button>
   );
 }
