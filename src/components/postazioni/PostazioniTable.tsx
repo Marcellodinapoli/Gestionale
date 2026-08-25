@@ -15,16 +15,21 @@ type PostazioneRow = {
   interno: string | null;
   email: string | null;
   numeroFisso: string | null;
-  sede: string | null;
+  sedeId: string | null;
+  sedeNome: string | null;
   note: string | null;
   active: boolean;
   occupanti: string[];
 };
 
+type SedeOpt = { id: string; nome: string };
+
 export function PostazioniTable({
   postazioni,
+  sedi,
 }: {
   postazioni: PostazioneRow[];
+  sedi: SedeOpt[];
 }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -33,7 +38,7 @@ export function PostazioniTable({
     interno: "",
     email: "",
     numeroFisso: "",
-    sede: "",
+    sedeId: "",
     note: "",
   });
 
@@ -44,7 +49,7 @@ export function PostazioniTable({
       interno: p.interno || "",
       email: p.email || "",
       numeroFisso: p.numeroFisso || "",
-      sede: p.sede || "",
+      sedeId: p.sedeId || "",
       note: p.note || "",
     });
   }
@@ -56,7 +61,7 @@ export function PostazioniTable({
     fd.set("interno", form.interno);
     fd.set("email", form.email);
     fd.set("numeroFisso", form.numeroFisso);
-    fd.set("sede", form.sede);
+    fd.set("sedeId", form.sedeId);
     fd.set("note", form.note);
     await aggiornaPostazioneAction(fd);
     setEditingId(null);
@@ -86,8 +91,7 @@ export function PostazioniTable({
     );
   }
 
-  const inputCls =
-    "h-8 w-full rounded border border-[var(--line)] px-2 text-xs";
+  const inputCls = "h-8 w-full rounded border border-[var(--line)] px-2 text-xs";
 
   return (
     <div className="overflow-x-auto">
@@ -120,7 +124,6 @@ export function PostazioniTable({
                     value={form.interno}
                     onChange={(e) => setForm((f) => ({ ...f, interno: e.target.value }))}
                     className={`${inputCls} font-mono`}
-                    placeholder="201"
                   />
                 </td>
                 <td>
@@ -134,17 +137,26 @@ export function PostazioniTable({
                 <td>
                   <input
                     value={form.numeroFisso}
-                    onChange={(e) => setForm((f) => ({ ...f, numeroFisso: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, numeroFisso: e.target.value }))
+                    }
                     className={inputCls}
-                    placeholder="06 1234567"
                   />
                 </td>
                 <td>
-                  <input
-                    value={form.sede}
-                    onChange={(e) => setForm((f) => ({ ...f, sede: e.target.value }))}
+                  <select
+                    value={form.sedeId}
+                    onChange={(e) => setForm((f) => ({ ...f, sedeId: e.target.value }))}
                     className={inputCls}
-                  />
+                    required
+                  >
+                    <option value="">—</option>
+                    {sedi.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nome}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td colSpan={3}>
                   <div className="flex gap-1">
@@ -166,9 +178,7 @@ export function PostazioniTable({
             ) : (
               <tr
                 key={p.id}
-                className={`border-t border-[var(--line)] ${
-                  !p.active ? "opacity-50" : ""
-                }`}
+                className={`border-t border-[var(--line)] ${!p.active ? "opacity-50" : ""}`}
               >
                 <td className="py-2">
                   <span className="flex items-center gap-1.5 font-medium">
@@ -179,7 +189,7 @@ export function PostazioniTable({
                 <td className="font-mono text-xs">{p.interno || "—"}</td>
                 <td className="text-xs text-[var(--muted)]">{p.email || "—"}</td>
                 <td className="text-xs">{p.numeroFisso || "—"}</td>
-                <td className="text-xs">{p.sede || "—"}</td>
+                <td className="text-xs">{p.sedeNome || "—"}</td>
                 <td>
                   {p.occupanti.length > 0 ? (
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">

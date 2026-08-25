@@ -18,6 +18,17 @@ import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import { PageHeader } from "@/components/ui";
 import { StatisticheGriglia } from "@/components/statistiche/StatisticheGriglia";
 import { StatisticheFiltriForm } from "@/components/statistiche/StatisticheFiltriForm";
+import {
+  MissingSedeBanner,
+  RicaviAltreSediNascostiBanner,
+} from "@/components/sedi/MissingSedeBanner";
+import { SedeRendimentoFilter } from "@/components/sedi/SedeRendimentoFilter";
+import {
+  canViewRicaviFatturatiSede,
+  intersectUserIds,
+  sedeScopeForRendimento,
+  userIdsInSede,
+} from "@/lib/sedeScope";
 
 function defaultAffidoDa() {
   return "2026-08-04";
@@ -42,6 +53,7 @@ export default async function StatistichePage({
     mandanteId?: string;
     lotto?: string;
     gruppo?: string;
+    sede?: string;
   }>;
 }) {
   const user = await requirePermission("statistiche:view");
@@ -52,21 +64,40 @@ export default async function StatistichePage({
   const affidoA = parseDateInput(affidoAStr);
   if (affidoA) affidoA.setHours(23, 59, 59, 999);
 
+  const { sedeId: sedeScopeId } = sedeScopeForRendimento(user, sp.sede);
+  const mostraRicavi = canViewRicaviFatturatiSede(user, sedeScopeId);
+  const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
+  const sediOpts =
+    user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
+      ? await prisma.sede.findMany({
+          where: { tenantId: user.tenantId, active: true },
+          orderBy: { nome: "asc" },
+          select: { id: true, nome: true },
+        })
+      : [];
+
   const lottiSelezionati = parseLottiFiltro(sp.lotto);
 
   const canFilterGruppo = ["ADMIN", "AMMINISTRAZIONE"].includes(user.role);
   const supervisori = canFilterGruppo
     ? await prisma.user.findMany({
-        where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
+        where: {
+          tenantId: user.tenantId,
+          role: "SUPERVISOR",
+          active: true,
+          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+        },
         orderBy: { name: "asc" },
         select: { id: true, name: true, gruppoNome: true },
       })
     : [];
 
-  const tutteLePratiche = user.role === "ADMIN" && canFilterGruppo && !sp.gruppo;
-  /** AMMINISTRAZIONE: obbligo gruppo (default primo supervisor), no vista tutta l'azienda. */
-  const gruppoIdEffettivo =
-    sp.gruppo || (user.role === "AMMINISTRAZIONE" ? supervisori[0]?.id : undefined);
+  const tutteLePratiche =
+    (user.role === "ADMIN" || user.role === "AMMINISTRAZIONE") &&
+    canFilterGruppo &&
+    !sp.gruppo;
+  /** Default gruppo solo se Amministrazione non ha scelto "tutti". */
+  const gruppoIdEffettivo = sp.gruppo || undefined;
 
   let gruppo: Awaited<ReturnType<typeof getGruppoLavoro>>;
 
@@ -116,6 +147,16 @@ export default async function StatistichePage({
     };
   } else {
     gruppo = await getGruppoLavoro(user);
+  }
+
+  if (sedeUserIds) {
+    const filteredIds = intersectUserIds(gruppo.memberIds, sedeUserIds);
+    const filteredMembers = gruppo.members.filter((m) => filteredIds.includes(m.id));
+    gruppo = {
+      ...gruppo,
+      members: filteredMembers,
+      memberIds: filteredIds,
+    };
   }
 
   /** Operatore/supervisor (e admin su un gruppo): solo perimetri del gruppo; sempre tutti i membri. */
@@ -210,11 +251,11 @@ export default async function StatistichePage({
       mandanteId: sp.mandanteId,
       lotti: lottiSelezionati,
     },
-    tutteLePratiche
+    tutteLePratiche && !sedeScopeId
       ? { tenantId: user.tenantId, tutteLePratiche: true }
       : {
           extraWhere: periScope,
-          richiedePerimetriGruppo: true,
+          richiedePerimetriGruppo: usaPerimetriGruppo,
         }
   );
 
@@ -222,7 +263,7 @@ export default async function StatistichePage({
 
   const operatoriGruppo = gruppo.members.filter((m) => m.role === "OPERATOR");
   const subtitle = canFilterGruppo
-    ? sp.gruppo || user.role === "AMMINISTRAZIONE"
+    ? sp.gruppo
       ? `Gruppo di ${gruppo.supervisorName || "—"} · ${operatoriGruppo.map((m) => m.name).join(", ") || "nessun operatore"}`
       : "Tutti i gruppi"
     : gruppo.supervisorName
@@ -232,6 +273,26 @@ export default async function StatistichePage({
   return (
     <div className="h-full min-h-0 overflow-y-auto pb-2">
       <PageHeader title="Statistiche" subtitle={subtitle} />
+
+      {user.role === "ADMIN" || user.role === "AMMINISTRAZIONE" ? (
+        <SedeRendimentoFilter
+          sedi={sediOpts}
+          sedeId={sedeScopeId}
+          basePath="/statistiche"
+          keepParams={{
+            affidoDa: affidoDaStr,
+            affidoA: affidoAStr,
+            mandanteId: sp.mandanteId,
+            lotto: lottiSelezionati.join(",") || undefined,
+            gruppo: gruppoIdEffettivo,
+          }}
+        />
+      ) : null}
+
+      {user.role === "AMMINISTRAZIONE" && !user.sedeId ? <MissingSedeBanner /> : null}
+      {user.role === "AMMINISTRAZIONE" && !mostraRicavi ? (
+        <RicaviAltreSediNascostiBanner sedeNomePropria={user.sedeNome} />
+      ) : null}
 
       <Suspense fallback={null}>
         <StatisticheFiltriForm
@@ -243,7 +304,7 @@ export default async function StatistichePage({
           lottiSelezionati={lottiSelezionati}
           gruppoId={gruppoIdEffettivo}
           supervisori={supervisori}
-          consentiTuttiGruppi={user.role === "ADMIN"}
+          consentiTuttiGruppi={user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"}
         />
       </Suspense>
 
@@ -260,6 +321,7 @@ export default async function StatistichePage({
           affidoDa={affidoDa ? dataIt(affidoDa) : affidoDaStr}
           affidoA={affidoA ? dataIt(affidoA) : affidoAStr}
           mostraTotaliAzienda={canViewRicaviIncassiAzienda(user)}
+          nascondiImporti={!mostraRicavi}
         />
       ) : (
         <p className="rounded-lg border border-[var(--line)] bg-white p-6 text-sm text-[var(--muted)]">

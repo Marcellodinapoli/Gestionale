@@ -4,19 +4,36 @@ import { Card, PageHeader } from "@/components/ui";
 import { creaPostazioneAction } from "@/actions/postazione";
 import { PostazioniTable } from "@/components/postazioni/PostazioniTable";
 
-export default async function PostazioniPage() {
+export default async function PostazioniPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sede?: string }>;
+}) {
   const user = await requirePermission("operatori:manage");
+  const sp = await searchParams;
+  const sedeFiltro = String(sp.sede || "").trim() || null;
 
-  const postazioni = await prisma.postazione.findMany({
-    where: { tenantId: user.tenantId },
-    orderBy: { nome: "asc" },
-    include: {
-      occupanti: {
-        where: { active: true, tenantId: user.tenantId },
-        select: { id: true, name: true },
+  const [postazioni, sedi] = await Promise.all([
+    prisma.postazione.findMany({
+      where: {
+        tenantId: user.tenantId,
+        ...(sedeFiltro ? { sedeId: sedeFiltro } : {}),
       },
-    },
-  });
+      orderBy: [{ sedeRef: { nome: "asc" } }, { nome: "asc" }],
+      include: {
+        sedeRef: { select: { id: true, nome: true } },
+        occupanti: {
+          where: { active: true, tenantId: user.tenantId },
+          select: { id: true, name: true },
+        },
+      },
+    }),
+    prisma.sede.findMany({
+      where: { tenantId: user.tenantId, active: true },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
+    }),
+  ]);
 
   const lista = postazioni.map((p) => ({
     id: p.id,
@@ -24,7 +41,8 @@ export default async function PostazioniPage() {
     interno: p.interno,
     email: p.email,
     numeroFisso: p.numeroFisso,
-    sede: p.sede,
+    sedeId: p.sedeId,
+    sedeNome: p.sedeRef?.nome || null,
     note: p.note,
     active: p.active,
     occupanti: p.occupanti.map((o) => o.name),
@@ -53,6 +71,21 @@ export default async function PostazioniPage() {
           </label>
           <label>
             <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
+              Sede *
+            </span>
+            <select name="sedeId" required className={inputCls} defaultValue="">
+              <option value="" disabled>
+                Seleziona sede…
+              </option>
+              {sedi.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
               Interno
             </span>
             <input name="interno" className={inputCls} placeholder="es. 201" />
@@ -71,12 +104,6 @@ export default async function PostazioniPage() {
           </label>
           <label>
             <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-              Sede
-            </span>
-            <input name="sede" className={inputCls} placeholder="es. Piano 1" />
-          </label>
-          <label>
-            <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
               Note
             </span>
             <input name="note" className={inputCls} />
@@ -90,7 +117,29 @@ export default async function PostazioniPage() {
       </Card>
 
       <Card>
-        <PostazioniTable postazioni={lista} />
+        <form className="mb-3 flex flex-wrap items-end gap-2 text-sm">
+          <label>
+            <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
+              Filtra sede
+            </span>
+            <select
+              name="sede"
+              defaultValue={sedeFiltro || ""}
+              className="mt-1 h-9 rounded-lg border border-[var(--line)] px-2 text-sm"
+            >
+              <option value="">Tutte</option>
+              {sedi.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm hover:bg-slate-50">
+            Applica
+          </button>
+        </form>
+        <PostazioniTable postazioni={lista} sedi={sedi} />
       </Card>
     </div>
   );

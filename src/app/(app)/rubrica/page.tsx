@@ -25,7 +25,7 @@ export default async function RubricaPage() {
           interno: true,
           email: true,
           numeroFisso: true,
-          sede: true,
+          sedeRef: { select: { nome: true } },
         },
       },
     },
@@ -38,7 +38,15 @@ export default async function RubricaPage() {
     roleLabel: ROLE_LABELS[u.role as Role] || u.role,
     acronimo: u.acronimo,
     online: !!u.postazione,
-    postazione: u.postazione,
+    postazione: u.postazione
+      ? {
+          nome: u.postazione.nome,
+          interno: u.postazione.interno,
+          email: u.postazione.email,
+          numeroFisso: u.postazione.numeroFisso,
+          sede: u.postazione.sedeRef?.nome || null,
+        }
+      : null,
   }));
 
   return (

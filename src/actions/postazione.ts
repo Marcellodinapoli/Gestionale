@@ -53,18 +53,25 @@ export async function creaPostazioneAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
 
   const nome = String(formData.get("nome") || "").trim();
-  if (!nome) return { error: "Nome obbligatorio" };
+  if (!nome) throw new Error("Nome obbligatorio");
+
+  const sedeId = String(formData.get("sedeId") || "").trim();
+  if (!sedeId) throw new Error("Sede obbligatoria");
+
+  const sede = await prisma.sede.findFirst({
+    where: { id: sedeId, tenantId: user.tenantId, active: true },
+  });
+  if (!sede) throw new Error("Sede non valida");
 
   const interno = String(formData.get("interno") || "").trim() || null;
   const email = String(formData.get("email") || "").trim() || null;
   const numeroFisso = String(formData.get("numeroFisso") || "").trim() || null;
-  const sede = String(formData.get("sede") || "").trim() || null;
   const note = String(formData.get("note") || "").trim() || null;
 
   const exists = await prisma.postazione.findFirst({
     where: { tenantId: user.tenantId, nome },
   });
-  if (exists) return { error: "Nome postazione già esistente" };
+  if (exists) throw new Error("Nome postazione già esistente");
 
   await prisma.postazione.create({
     data: {
@@ -73,7 +80,7 @@ export async function creaPostazioneAction(formData: FormData) {
       interno,
       email,
       numeroFisso,
-      sede,
+      sedeId,
       note,
     },
   });
@@ -84,6 +91,7 @@ export async function creaPostazioneAction(formData: FormData) {
     action: "crea_postazione",
     entity: "postazione",
     entityId: nome,
+    dettaglio: `${nome} · ${sede.nome}`,
   });
 
   revalidatePath("/postazioni");
@@ -94,30 +102,37 @@ export async function aggiornaPostazioneAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
 
   const id = String(formData.get("id") || "");
-  if (!id) return { error: "ID mancante" };
+  if (!id) throw new Error("ID mancante");
 
   const nome = String(formData.get("nome") || "").trim();
-  if (!nome) return { error: "Nome obbligatorio" };
+  if (!nome) throw new Error("Nome obbligatorio");
+
+  const sedeId = String(formData.get("sedeId") || "").trim();
+  if (!sedeId) throw new Error("Sede obbligatoria");
+
+  const sede = await prisma.sede.findFirst({
+    where: { id: sedeId, tenantId: user.tenantId },
+  });
+  if (!sede) throw new Error("Sede non valida");
 
   const interno = String(formData.get("interno") || "").trim() || null;
   const email = String(formData.get("email") || "").trim() || null;
   const numeroFisso = String(formData.get("numeroFisso") || "").trim() || null;
-  const sede = String(formData.get("sede") || "").trim() || null;
   const note = String(formData.get("note") || "").trim() || null;
 
   const current = await prisma.postazione.findFirst({
     where: { id, tenantId: user.tenantId },
   });
-  if (!current) return { error: "Postazione non trovata" };
+  if (!current) throw new Error("Postazione non trovata");
 
   const duplicato = await prisma.postazione.findFirst({
     where: { tenantId: user.tenantId, nome, NOT: { id } },
   });
-  if (duplicato) return { error: "Nome postazione già esistente" };
+  if (duplicato) throw new Error("Nome postazione già esistente");
 
   await prisma.postazione.update({
     where: { id },
-    data: { nome, interno, email, numeroFisso, sede, note },
+    data: { nome, interno, email, numeroFisso, sedeId, note },
   });
 
   revalidatePath("/postazioni");

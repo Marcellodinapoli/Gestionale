@@ -32,6 +32,7 @@ import {
   ClipboardList,
   GraduationCap,
   Wrench,
+  MapPin,
 } from "lucide-react";
 import { logoutAction } from "@/actions/core";
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
@@ -43,7 +44,7 @@ import {
   PraticaHeaderSlotDisplay,
   PraticaHeaderSlotProvider,
 } from "@/components/layout/PraticaHeaderSlot";
-import { ROLE_LABELS, can, type SessionUser } from "@/lib/permissions";
+import { ROLE_LABELS, can, canManageSedi, isFormazioneOnly, type SessionUser } from "@/lib/permissions";
 import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
 
 const PRATICHE_BACK_KEY = "credixa:pratiche-back";
@@ -73,49 +74,64 @@ type NavLink = {
 };
 
 const MAIN_LINKS: NavLink[] = [
-  { href: "/", label: "Home", icon: Home, show: () => true },
-  { href: "/pratiche", label: "Pratiche", icon: Briefcase, show: () => true },
+  { href: "/", label: "Home", icon: Home, show: (u) => !isFormazioneOnly(u) },
+  {
+    href: "/pratiche",
+    label: "Pratiche",
+    icon: Briefcase,
+    show: (u) => !isFormazioneOnly(u),
+  },
   {
     href: "/affidi",
     label: "Affidi",
     icon: Users,
-    show: (u) => can(u, "pratiche:assign"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "pratiche:assign"),
   },
   {
     href: "/agenda",
     label: "Agenda",
     icon: CalendarDays,
-    show: (u) => can(u, "agenda:view"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "agenda:view"),
   },
   {
     href: "/messaggi",
     label: "Messaggi",
     icon: MessageSquare,
-    show: (u) => can(u, "agenda:view"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "agenda:view"),
   },
   {
     href: "/statistiche",
     label: "Statistiche",
     icon: PieChart,
-    show: (u) => can(u, "statistiche:view"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "statistiche:view"),
   },
   {
     href: "/provigioni",
-    label: "Provigioni",
+    label: "Provvigioni",
     icon: Wallet,
-    show: (u) => can(u, "provigioni:view"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "provigioni:view"),
   },
   {
     href: "/report",
     label: "Registrazioni",
     icon: Headphones,
-    show: (u) => can(u, "report:view"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "report:view"),
   },
-  { href: "/rubrica", label: "Rubrica", icon: BookUser, show: () => true },
-  { href: "/lavorazione", label: "Lavorazione", icon: ClipboardList, show: (u) => can(u, "lavorazione:view") },
+  {
+    href: "/rubrica",
+    label: "Rubrica",
+    icon: BookUser,
+    show: (u) => !isFormazioneOnly(u),
+  },
+  {
+    href: "/lavorazione",
+    label: "Lavorazione",
+    icon: ClipboardList,
+    show: (u) => !isFormazioneOnly(u) && can(u, "lavorazione:view"),
+  },
   { href: "/account", label: "Account", icon: UserCircle, show: () => true },
   { href: "/formazione/progressi", label: "Formazione", icon: GraduationCap, show: (u) => can(u, "formazione:view") },
-  { href: "/strumenti/ricerca-normativa", label: "Strumenti AI", icon: Wrench, show: (u) => can(u, "formazione:view") },
+  { href: "/strumenti/ricerca-normativa", label: "Strumenti AI", icon: Wrench, show: (u) => !isFormazioneOnly(u) && can(u, "formazione:view") },
 ];
 
 const ADMIN_LINKS: NavLink[] = [
@@ -142,6 +158,12 @@ const ADMIN_LINKS: NavLink[] = [
     label: "Operatori",
     icon: UserCog,
     show: (u) => can(u, "operatori:manage"),
+  },
+  {
+    href: "/sedi",
+    label: "Sedi",
+    icon: MapPin,
+    show: (u) => canManageSedi(u),
   },
   {
     href: "/postazioni",

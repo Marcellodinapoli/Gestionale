@@ -50,6 +50,8 @@ export function StatisticheFiltriForm({
           const val = String(fd.get(key) || "").trim();
           if (val) qs.set(key, val);
         }
+        const keepSede = sp.get("sede");
+        if (keepSede) qs.set("sede", keepSede);
         const keep = sp.get("vista");
         if (keep) qs.set("vista", keep);
         if (lotti.length) qs.set("lotto", lotti.join(","));

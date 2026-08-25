@@ -27,6 +27,9 @@ import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
 import { getGruppoLavoro, getGruppoLavoroForSupervisor } from "@/lib/gruppoLavoro";
 import { DashboardKpi } from "@/components/home/DashboardStat";
+import { MissingSedeBanner, RicaviAltreSediNascostiBanner } from "@/components/sedi/MissingSedeBanner";
+import { SedeRendimentoFilter } from "@/components/sedi/SedeRendimentoFilter";
+import { sedeScopeForRendimento, canViewRicaviFatturatiSede } from "@/lib/sedeScope";
 import { GruppoLavoroHomeCard } from "@/components/home/GruppoLavoroHomeCard";
 import { FormazioneMonitorHomeCard } from "@/components/home/FormazioneMonitorHomeCard";
 import { HomeGruppoPicker } from "@/components/home/HomeGruppoPicker";
@@ -54,11 +57,24 @@ type RiepilogoMandante = {
   percentuale: number;
 };
 
-async function riepilogoMandanti(tenantId: string): Promise<RiepilogoMandante[]> {
+async function riepilogoMandanti(
+  tenantId: string,
+  sedeId?: string | null
+): Promise<RiepilogoMandante[]> {
+  const praticheWhere: Prisma.PraticaWhereInput | undefined = sedeId
+    ? {
+        OR: [
+          { assegnatario: { sedeId } },
+          { operatoreTitolare: { sedeId } },
+        ],
+      }
+    : undefined;
+
   const mandanti = await prisma.mandante.findMany({
     where: { tenantId },
     include: {
       pratiche: {
+        where: praticheWhere,
         select: {
           capitale: true,
           interessi: true,
@@ -184,11 +200,18 @@ export default async function HomePage({
     incMandante?: string;
     incPerimetro?: string;
     gruppo?: string;
+    sede?: string;
   }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const { lavorateData: lavorateDataRaw, incMandante, incPerimetro, gruppo: gruppoRaw } = sp;
+  const {
+    lavorateData: lavorateDataRaw,
+    incMandante,
+    incPerimetro,
+    gruppo: gruppoRaw,
+    sede: sedeRaw,
+  } = sp;
   const dataLavorate = parseDataIso(lavorateDataRaw) ?? startOfToday();
   const dataIso = formatDataIso(dataLavorate);
 
@@ -276,9 +299,20 @@ export default async function HomePage({
   );
 
   if (user.role === "AMMINISTRAZIONE") {
+    const { sedeId: sedeFiltro } = sedeScopeForRendimento(user, sedeRaw);
+    const mostraRicavi = canViewRicaviFatturatiSede(user, sedeFiltro || user.sedeId || null);
+    // Contatori operativi: tutte le sedi (o filtro sede se scelto).
+    // Ricavi/provvigioni: solo propria sede.
     const oggi = new Date();
     oggi.setHours(0, 0, 0, 0);
     const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
+    const sedeOps = sedeFiltro || undefined;
+    const sedeRicavi = user.sedeId || undefined;
+    const sediOpts = await prisma.sede.findMany({
+      where: { tenantId: user.tenantId, active: true },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
+    });
     const [
       totPratiche,
       provvigioniMese,
@@ -286,30 +320,93 @@ export default async function HomePage({
       mandantiCount,
       operatoriCount,
     ] = await Promise.all([
-      prisma.pratica.count(),
-      prisma.provvigione.aggregate({
-        _sum: { importo: true },
-        where: { createdAt: { gte: inizioMese } },
+      prisma.pratica.count({
+        where: {
+          tenantId: user.tenantId,
+          ...(sedeOps
+            ? {
+                OR: [
+                  { assegnatario: { sedeId: sedeOps } },
+                  { operatoreTitolare: { sedeId: sedeOps } },
+                ],
+              }
+            : {}),
+        },
       }),
-      prisma.provvigione.aggregate({
-        _sum: { importo: true },
-        where: { stato: "MATURATA" },
+      sedeRicavi
+        ? prisma.provvigione.aggregate({
+            _sum: { importo: true },
+            where: {
+              createdAt: { gte: inizioMese },
+              pratica: { tenantId: user.tenantId },
+              operatore: { sedeId: sedeRicavi },
+            },
+          })
+        : Promise.resolve({ _sum: { importo: null as number | null } }),
+      sedeRicavi
+        ? prisma.provvigione.aggregate({
+            _sum: { importo: true },
+            where: {
+              stato: "MATURATA",
+              pratica: { tenantId: user.tenantId },
+              operatore: { sedeId: sedeRicavi },
+            },
+          })
+        : Promise.resolve({ _sum: { importo: null as number | null } }),
+      prisma.mandante.count({ where: { tenantId: user.tenantId } }),
+      prisma.user.count({
+        where: {
+          tenantId: user.tenantId,
+          role: { in: ["OPERATOR", "SUPERVISOR"] },
+          active: true,
+          ...(sedeOps ? { sedeId: sedeOps } : {}),
+        },
       }),
-      prisma.mandante.count(),
-      prisma.user.count({ where: { role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true } }),
     ]);
 
     return (
       <div className="space-y-5 pb-8">
-        <PageHeader title="Home" subtitle="Amministrazione · provvigioni e anagrafiche" />
+        <PageHeader
+          title="Home"
+          subtitle="Amministrazione · tutte le sedi (ricavi solo sede propria)"
+        />
+
+        <SedeRendimentoFilter
+          sedi={sediOpts}
+          sedeId={sedeFiltro}
+          basePath="/"
+          keepParams={{
+            lavorateData: lavorateDataRaw,
+            incMandante,
+            incPerimetro,
+            gruppo: gruppoRaw,
+          }}
+        />
+
+        {!user.sedeId ? <MissingSedeBanner /> : null}
+        {user.sedeId && sedeFiltro && sedeFiltro !== user.sedeId ? (
+          <RicaviAltreSediNascostiBanner sedeNomePropria={user.sedeNome} />
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
-          <DashboardKpi title="Provvigioni mese" value={euro(provvigioniMese._sum.importo || 0)} />
-          <DashboardKpi
-            title="Provv. da liquidare"
-            value={euro(provvigioniDaLiquidare._sum.importo || 0)}
-            hint="Totale maturate non ancora erogate"
-          />
+          {mostraRicavi && sedeRicavi ? (
+            <>
+              <DashboardKpi
+                title="Provvigioni mese (tua sede)"
+                value={euro(provvigioniMese._sum.importo || 0)}
+              />
+              <DashboardKpi
+                title="Provv. da liquidare (tua sede)"
+                value={euro(provvigioniDaLiquidare._sum.importo || 0)}
+                hint="Totale maturate non ancora erogate"
+              />
+            </>
+          ) : (
+            <>
+              <DashboardKpi title="Provvigioni mese" value="—" hint="Solo sulla tua sede" />
+              <DashboardKpi title="Provv. da liquidare" value="—" hint="Solo sulla tua sede" />
+            </>
+          )}
           <DashboardKpi title="Pratiche totali" value={totPratiche} />
           <DashboardKpi title="Provvigioni" value="Dettaglio" href="/provigioni" />
         </div>
@@ -326,11 +423,34 @@ export default async function HomePage({
     const oggi = new Date();
     oggi.setHours(0, 0, 0, 0);
 
+    const { sedeId: sedeScopeId } = sedeScopeForRendimento(user, sedeRaw);
+    const sediOpts = await prisma.sede.findMany({
+      where: { tenantId: user.tenantId, active: true },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
+    });
+    const sedePraticaWhere: Prisma.PraticaWhereInput | undefined = sedeScopeId
+      ? {
+          OR: [
+            { assegnatario: { sedeId: sedeScopeId } },
+            { operatoreTitolare: { sedeId: sedeScopeId } },
+          ],
+        }
+      : undefined;
+    const sedeUserFilter = sedeScopeId ? { sedeId: sedeScopeId } : {};
+
     const [operatoriCountAdmin] = await Promise.all([
-      prisma.user.count({ where: { role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true } }),
+      prisma.user.count({
+        where: {
+          tenantId: user.tenantId,
+          role: { in: ["OPERATOR", "SUPERVISOR"] },
+          active: true,
+          ...sedeUserFilter,
+        },
+      }),
     ]);
 
-    const mandantiRiepilogo = await riepilogoMandanti(user.tenantId);
+    const mandantiRiepilogo = await riepilogoMandanti(user.tenantId, sedeScopeId);
     const totAffidato = mandantiRiepilogo.reduce((s, r) => s + r.affidato, 0);
     const totIncassato = mandantiRiepilogo.reduce((s, r) => s + r.incassato, 0);
     const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
@@ -391,6 +511,7 @@ export default async function HomePage({
       tenantId: user.tenantId,
       ...(mandanteFiltroOk ? { mandanteId: mandanteFiltroOk } : {}),
       ...(perimetroFiltroOk ? { numeroMandante: perimetroFiltroOk } : {}),
+      ...(sedePraticaWhere ? sedePraticaWhere : {}),
     };
     const incassoWhereBase: Prisma.IncassoWhereInput = {
       pratica: praticaIncassoFilter,
@@ -438,7 +559,12 @@ export default async function HomePage({
       _count: true,
     });
     const operatoriAttivi = await prisma.user.findMany({
-      where: { tenantId: user.tenantId, role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true },
+      where: {
+        tenantId: user.tenantId,
+        role: { in: ["OPERATOR", "SUPERVISOR"] },
+        active: true,
+        ...sedeUserFilter,
+      },
       select: { id: true, name: true, supervisorId: true },
       orderBy: { name: "asc" },
     });
@@ -449,7 +575,12 @@ export default async function HomePage({
 
     // Distribuzione carico per gruppo
     const supervisori = await prisma.user.findMany({
-      where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
+      where: {
+        tenantId: user.tenantId,
+        role: "SUPERVISOR",
+        active: true,
+        ...sedeUserFilter,
+      },
       select: { id: true, name: true, gruppoNome: true },
       orderBy: { name: "asc" },
     });
@@ -457,19 +588,32 @@ export default async function HomePage({
       supervisori.map(async (s) => {
         const memberIds = [
           s.id,
-          ...(await prisma.user.findMany({
-            where: { tenantId: user.tenantId, supervisorId: s.id, active: true },
-            select: { id: true },
-          })).map((u) => u.id),
+          ...(
+            await prisma.user.findMany({
+              where: {
+                tenantId: user.tenantId,
+                supervisorId: s.id,
+                active: true,
+                ...sedeUserFilter,
+              },
+              select: { id: true },
+            })
+          ).map((u) => u.id),
         ];
         const [aperte, totali] = await Promise.all([
           prisma.pratica.count({
             where: {
               assegnatarioId: { in: memberIds },
               stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
+              ...(sedePraticaWhere || {}),
             },
           }),
-          prisma.pratica.count({ where: { assegnatarioId: { in: memberIds } } }),
+          prisma.pratica.count({
+            where: {
+              assegnatarioId: { in: memberIds },
+              ...(sedePraticaWhere || {}),
+            },
+          }),
         ]);
         return {
           nome: s.gruppoNome || s.name,
@@ -483,7 +627,11 @@ export default async function HomePage({
     // Esiti contatto
     const esitiContatto = await prisma.pratica.groupBy({
       by: ["esitoContatto"],
-      where: { esitoContatto: { not: null } },
+      where: {
+        tenantId: user.tenantId,
+        esitoContatto: { not: null },
+        ...(sedePraticaWhere || {}),
+      },
       _count: true,
     });
     const totEsiti = esitiContatto.reduce((s, e) => s + e._count, 0);
@@ -494,18 +642,27 @@ export default async function HomePage({
     const [scadute, inScadenza7gg, nonAssegnate] = await Promise.all([
       prisma.pratica.count({
         where: {
+          tenantId: user.tenantId,
           scadenza: { lt: oggi },
           stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
+          ...(sedePraticaWhere || {}),
         },
       }),
       prisma.pratica.count({
         where: {
+          tenantId: user.tenantId,
           scadenza: { gte: oggi, lte: tra7gg },
           stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
+          ...(sedePraticaWhere || {}),
         },
       }),
       prisma.pratica.count({
-        where: { assegnatarioId: null, stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] } },
+        where: {
+          tenantId: user.tenantId,
+          assegnatarioId: null,
+          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
+          ...(sedePraticaWhere || {}),
+        },
       }),
     ]);
 
@@ -529,7 +686,13 @@ export default async function HomePage({
       for (const m of mandantiAttivi) {
         const agg = await prisma.incasso.aggregate({
           _sum: { importo: true },
-          where: { data: { gte: da, lte: a }, pratica: { mandanteId: m.id } },
+          where: {
+            data: { gte: da, lte: a },
+            pratica: {
+              mandanteId: m.id,
+              ...(sedePraticaWhere || {}),
+            },
+          },
         });
         const imp = agg._sum.importo || 0;
         mandantiMese.push({ codice: m.codice, importo: imp });
@@ -544,9 +707,32 @@ export default async function HomePage({
     const maxMese = Math.max(...incassiPerMandanteMese.map((m) => m.totale), 1);
     const colori = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#be185d", "#65a30d"];
 
+    const sedeNomeAttiva = sedeScopeId
+      ? sediOpts.find((s) => s.id === sedeScopeId)?.nome
+      : null;
+
     return (
       <div className="space-y-5 pb-8">
-        <PageHeader title="Home" subtitle="Pannello di controllo amministratore azienda" />
+        <PageHeader
+          title="Home"
+          subtitle={
+            sedeNomeAttiva
+              ? `Amministratore · sede ${sedeNomeAttiva}`
+              : "Pannello di controllo amministratore azienda"
+          }
+        />
+
+        <SedeRendimentoFilter
+          sedi={sediOpts}
+          sedeId={sedeScopeId}
+          basePath="/"
+          keepParams={{
+            lavorateData: lavorateDataRaw,
+            incMandante,
+            incPerimetro,
+            gruppo: gruppoRaw,
+          }}
+        />
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
           <DashboardKpi title="Totale affidato" value={euro(totAffidato)} />
@@ -569,6 +755,7 @@ export default async function HomePage({
                 mandanti={mandantiFiltriUi}
                 mandanteId={mandanteFiltroOk}
                 perimetro={perimetroFiltroOk}
+                sedeId={sedeScopeId}
               />
             </Suspense>
             {tipologieIncasso.length === 0 ? (
@@ -934,9 +1121,7 @@ export default async function HomePage({
         />
       ) : null}
 
-      {user.role === "SUPERVISOR" || user.role === "ADMIN" ? (
-        <FormazioneMonitorHomeCard />
-      ) : null}
+      {user.role === "SUPERVISOR" ? <FormazioneMonitorHomeCard /> : null}
 
     </div>
   );

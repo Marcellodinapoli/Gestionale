@@ -21,8 +21,9 @@ export default async function SelezionaPostazionePage() {
 
   const postazioni = await prisma.postazione.findMany({
     where: { active: true, tenantId: user.tenantId },
-    orderBy: { nome: "asc" },
+    orderBy: [{ sedeRef: { nome: "asc" } }, { nome: "asc" }],
     include: {
+      sedeRef: { select: { nome: true } },
       occupanti: {
         where: { active: true, id: { not: user.id }, tenantId: user.tenantId },
         select: { id: true, name: true },
@@ -36,7 +37,7 @@ export default async function SelezionaPostazionePage() {
     interno: p.interno,
     email: p.email,
     numeroFisso: p.numeroFisso,
-    sede: p.sede,
+    sede: p.sedeRef?.nome || null,
     occupante: p.occupanti[0]?.name || null,
   }));
 
@@ -57,6 +58,35 @@ export default async function SelezionaPostazionePage() {
               Nessuna postazione configurata per questa azienda. Chiedi a un
               amministratore di crearne almeno una in <strong>Gestione → Postazioni</strong>.
             </p>
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="h-10 w-full rounded-lg border border-[var(--line)] bg-white text-sm font-semibold text-[var(--navy)] hover:bg-slate-50"
+              >
+                Esci e torna al login
+              </button>
+            </form>
+          </div>
+        ) : lista.every((p) => p.occupante) ? (
+          <div className="space-y-4">
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Ci sono {lista.length} postazione/i, ma <strong>tutte occupate</strong> in
+              questo momento. Attendi che qualcuno esca o chiedi all&apos;amministratore di
+              aggiungerne altre in <strong>Gestione → Postazioni</strong>.
+            </p>
+            <ul className="space-y-2 text-sm">
+              {lista.map((p) => (
+                <li
+                  key={p.id}
+                  className="rounded-lg border border-[var(--line)] bg-slate-50 px-3 py-2"
+                >
+                  <span className="font-semibold text-[var(--navy)]">{p.nome}</span>
+                  {p.occupante ? (
+                    <span className="text-[var(--muted)]"> — occupata da {p.occupante}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
             <form action={logoutAction}>
               <button
                 type="submit"

@@ -14,10 +14,12 @@ export function IncassiTipologiaFiltri({
   mandanti,
   mandanteId,
   perimetro,
+  sedeId,
 }: {
   mandanti: MandanteFiltroIncassi[];
   mandanteId?: string;
   perimetro?: string;
+  sedeId?: string | null;
 }) {
   const router = useRouter();
   const [mandante, setMandante] = useState(mandanteId || "");
@@ -32,19 +34,24 @@ export function IncassiTipologiaFiltri({
     return mandanti.find((m) => m.id === mandante)?.perimetri ?? [];
   }, [mandante, mandanti]);
 
+  function buildHref(nextMandante: string, nextPeri: string) {
+    const qs = new URLSearchParams();
+    if (nextMandante) qs.set("incMandante", nextMandante);
+    if (nextPeri) qs.set("incPerimetro", nextPeri);
+    if (sedeId) qs.set("sede", sedeId);
+    const s = qs.toString();
+    return s ? `/?${s}` : "/";
+  }
+
   function applica(e: React.FormEvent) {
     e.preventDefault();
-    const qs = new URLSearchParams();
-    if (mandante) qs.set("incMandante", mandante);
-    if (peri) qs.set("incPerimetro", peri);
-    const s = qs.toString();
-    router.push(s ? `/?${s}` : "/");
+    router.push(buildHref(mandante, peri));
   }
 
   function reset() {
     setMandante("");
     setPeri("");
-    router.push("/");
+    router.push(buildHref("", ""));
   }
 
   return (

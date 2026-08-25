@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Check, X, Pencil } from "lucide-react";
-import { Trash2 } from "lucide-react";
+import { KeyRound, Check, X, Pencil, Trash2 } from "lucide-react";
 import {
   updateAcronimoAction,
   resetPasswordAmministrazioneAction,
   deleteOperatoreAction,
   updateRuoloAction,
+  updateSedeUtenteAction,
+  updateFormazioneOnlyAction,
 } from "@/actions/operatoriAdmin";
+import { ROLE_LABELS, ruoliCreabiliDa, type Role } from "@/lib/permissions";
 
 type Utente = {
   id: string;
@@ -18,12 +20,17 @@ type Utente = {
   role: string;
   roleLabel: string;
   acronimo: string | null;
+  formazioneOnly: boolean;
   lastLoginAt: string | null;
   lastLogoutAt: string | null;
   postazione: string | null;
   interno: string | null;
   supervisorName: string | null;
+  sedeId: string | null;
+  sedeNome: string | null;
 };
+
+type SedeOpt = { id: string; nome: string };
 
 function fmtOra(iso: string | null) {
   if (!iso) return "—";
@@ -36,7 +43,19 @@ function fmtOra(iso: string | null) {
   });
 }
 
-export function OperatoriGestione({ utenti }: { utenti: Utente[] }) {
+export function OperatoriGestione({
+  utenti,
+  sedi,
+  creatorRole,
+}: {
+  utenti: Utente[];
+  sedi: SedeOpt[];
+  creatorRole: Role;
+}) {
+  const ruoliAssegnabili = [
+    ...ruoliCreabiliDa(creatorRole),
+    ...(creatorRole === "ADMIN" ? (["ADMIN"] as Role[]) : []),
+  ];
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -45,6 +64,8 @@ export function OperatoriGestione({ utenti }: { utenti: Utente[] }) {
             <th className="py-2">Nome</th>
             <th>Email</th>
             <th>Ruolo</th>
+            <th>Accesso</th>
+            <th>Sede</th>
             <th>Team</th>
             <th>Acronimo</th>
             <th>Postazione</th>
@@ -57,7 +78,12 @@ export function OperatoriGestione({ utenti }: { utenti: Utente[] }) {
         </thead>
         <tbody>
           {utenti.map((u) => (
-            <RigaOperatore key={u.id} utente={u} />
+            <RigaOperatore
+              key={u.id}
+              utente={u}
+              sedi={sedi}
+              ruoliAssegnabili={ruoliAssegnabili}
+            />
           ))}
         </tbody>
       </table>
@@ -65,7 +91,15 @@ export function OperatoriGestione({ utenti }: { utenti: Utente[] }) {
   );
 }
 
-function RigaOperatore({ utente }: { utente: Utente }) {
+function RigaOperatore({
+  utente,
+  sedi,
+  ruoliAssegnabili,
+}: {
+  utente: Utente;
+  sedi: SedeOpt[];
+  ruoliAssegnabili: Role[];
+}) {
   const router = useRouter();
   const [editAcr, setEditAcr] = useState(false);
   const [acronimo, setAcronimo] = useState(utente.acronimo || "");
@@ -117,22 +151,70 @@ function RigaOperatore({ utente }: { utente: Utente }) {
       <td className="py-2 font-medium">{utente.name}</td>
       <td className="text-xs text-[var(--muted)]">{utente.email}</td>
       <td>
+        {ruoliAssegnabili.includes(utente.role as Role) ||
+        utente.role === "ADMIN" ? (
+          <select
+            defaultValue={utente.role}
+            onChange={async (e) => {
+              const fd = new FormData();
+              fd.set("userId", utente.id);
+              fd.set("role", e.target.value);
+              await updateRuoloAction(fd);
+              router.refresh();
+            }}
+            className="h-7 rounded border border-[var(--line)] bg-transparent px-1 text-xs"
+          >
+            {ruoliAssegnabili.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABELS[r]}
+              </option>
+            ))}
+            {utente.role === "ADMIN" && !ruoliAssegnabili.includes("ADMIN") ? (
+              <option value="ADMIN">{ROLE_LABELS.ADMIN}</option>
+            ) : null}
+          </select>
+        ) : (
+          <span className="text-xs">{utente.roleLabel}</span>
+        )}
+      </td>
+      <td>
+        {["ADMIN", "AMMINISTRAZIONE"].includes(utente.role) ? (
+          <span className="text-xs text-[var(--muted)]">Completo</span>
+        ) : (
+          <select
+            defaultValue={utente.formazioneOnly ? "formazione" : "completo"}
+            onChange={async (e) => {
+              const fd = new FormData();
+              fd.set("userId", utente.id);
+              fd.set("accesso", e.target.value);
+              await updateFormazioneOnlyAction(fd);
+              router.refresh();
+            }}
+            className="h-7 max-w-[8.5rem] rounded border border-[var(--line)] bg-transparent px-1 text-xs"
+          >
+            <option value="completo">Completo</option>
+            <option value="formazione">Solo formazione</option>
+          </select>
+        )}
+      </td>
+      <td>
         <select
-          defaultValue={utente.role}
+          defaultValue={utente.sedeId || ""}
           onChange={async (e) => {
             const fd = new FormData();
             fd.set("userId", utente.id);
-            fd.set("role", e.target.value);
-            await updateRuoloAction(fd);
+            fd.set("sedeId", e.target.value);
+            await updateSedeUtenteAction(fd);
             router.refresh();
           }}
-          className="h-7 rounded border border-[var(--line)] bg-transparent px-1 text-xs"
+          className="h-7 max-w-[9rem] rounded border border-[var(--line)] bg-transparent px-1 text-xs"
         >
-          <option value="OPERATOR">Operatore</option>
-          <option value="BACK_OFFICE">Back office</option>
-          <option value="SUPERVISOR">Supervisor</option>
-          <option value="AMMINISTRAZIONE">Amministrazione</option>
-          <option value="ADMIN">Admin</option>
+          <option value="">—</option>
+          {sedi.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.nome}
+            </option>
+          ))}
         </select>
       </td>
       <td>{utente.supervisorName || "—"}</td>
@@ -178,14 +260,18 @@ function RigaOperatore({ utente }: { utente: Utente }) {
           </span>
         )}
       </td>
-      <td className="text-xs">{utente.postazione || <span className="text-[var(--muted)]">—</span>}</td>
-      <td className="font-mono text-xs font-semibold text-[var(--accent)]">
-        {utente.interno || <span className="font-normal text-[var(--muted)]">—</span>}
+      <td className="text-xs">
+        {utente.postazione || <span className="text-[var(--muted)]">—</span>}
       </td>
-      <td className="text-xs text-[var(--muted)] whitespace-nowrap">
+      <td className="font-mono text-xs font-semibold text-[var(--accent)]">
+        {utente.interno || (
+          <span className="font-normal text-[var(--muted)]">—</span>
+        )}
+      </td>
+      <td className="whitespace-nowrap text-xs text-[var(--muted)]">
         {fmtOra(utente.lastLoginAt)}
       </td>
-      <td className="text-xs text-[var(--muted)] whitespace-nowrap">
+      <td className="whitespace-nowrap text-xs text-[var(--muted)]">
         {fmtOra(utente.lastLogoutAt)}
       </td>
       <td>
@@ -214,11 +300,11 @@ function RigaOperatore({ utente }: { utente: Utente }) {
             >
               <X className="h-3.5 w-3.5" />
             </button>
-            {pwdMsg && (
+            {pwdMsg ? (
               <span className="text-[10px] font-semibold text-emerald-600">
                 {pwdMsg}
               </span>
-            )}
+            ) : null}
           </span>
         ) : (
           <button

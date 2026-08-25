@@ -65,6 +65,7 @@ export async function loginAction(formData: FormData) {
       tenantId: user.tenantId,
       tenantSlug: tenant.slug,
       tenantNome: tenant.nome,
+      formazioneOnly: user.formazioneOnly,
     }),
     prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), postazioneId: null } }),
     writeAudit({
@@ -80,7 +81,13 @@ export async function loginAction(formData: FormData) {
     redirect("/cambia-password");
   }
 
-  const needsPostazione = requiresPostazione({ role: user.role as Role });
+  const needsPostazione = requiresPostazione({
+    role: user.role as Role,
+    formazioneOnly: user.formazioneOnly,
+  });
+  if (user.formazioneOnly) {
+    redirect("/formazione/progressi");
+  }
   redirect(needsPostazione ? "/seleziona-postazione" : "/");
 }
 

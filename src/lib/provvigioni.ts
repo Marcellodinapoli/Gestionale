@@ -61,10 +61,20 @@ export function resolveProvvigionePercentualeLato(
   return PROVVIGIONE_PERCENTUALE;
 }
 
-export function provvigioniWhere(user: SessionUser): Prisma.ProvvigioneWhereInput {
+export function provvigioniWhere(
+  user: SessionUser,
+  opts?: { sedeId?: string | null }
+): Prisma.ProvvigioneWhereInput {
   if (isManutenzione(user)) return { id: "__nessun-dato__" };
   const tenantScope = { pratica: { tenantId: user.tenantId } };
-  if (user.role === "ADMIN" || user.role === "AMMINISTRAZIONE") return tenantScope;
+  const sedeId = opts?.sedeId !== undefined ? opts.sedeId : null;
+
+  if (user.role === "ADMIN" || user.role === "AMMINISTRAZIONE") {
+    if (sedeId) {
+      return { AND: [tenantScope, { operatore: { sedeId } }] };
+    }
+    return tenantScope;
+  }
   if (user.role === "OPERATOR") {
     return { AND: [tenantScope, { operatoreId: user.id }] };
   }

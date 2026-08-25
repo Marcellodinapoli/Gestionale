@@ -18,6 +18,13 @@ import { ProvvigioniTableAdmin } from "@/components/provvigioni/ProvvigioniTable
 import { ProvvigioniListaPerimetro } from "@/components/provvigioni/ProvvigioniListaPerimetro";
 import { ProvvigioniRiepilogoOperatori } from "@/components/provvigioni/ProvvigioniRiepilogoOperatori";
 import { ProvvigioniFiltriAmministrazione } from "@/components/provvigioni/ProvvigioniFiltriAmministrazione";
+import { MissingSedeBanner, RicaviAltreSediNascostiBanner } from "@/components/sedi/MissingSedeBanner";
+import { SedeRendimentoFilter } from "@/components/sedi/SedeRendimentoFilter";
+import {
+  canViewRicaviFatturatiSede,
+  sedeScopeForRendimento,
+  userIdsInSede,
+} from "@/lib/sedeScope";
 
 function inizioMese(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
@@ -84,6 +91,7 @@ export default async function ProvigioniPage({
     gruppo?: string;
     operatore?: string;
     perimetro?: string;
+    sede?: string;
   }>;
 }) {
   const user = await requirePermission("provigioni:view");
@@ -93,7 +101,28 @@ export default async function ProvigioniPage({
     gruppo: gruppoId,
     operatore: operatoreId,
     perimetro: perimetroRaw,
+    sede: sedeRaw,
   } = await searchParams;
+
+  const { sedeId: sedeScopeId } = sedeScopeForRendimento(user, sedeRaw);
+  const mostraRicavi = canViewRicaviFatturatiSede(user, sedeScopeId);
+  // Amministrazione: importi solo sulla propria sede; se filtro "tutte"/altra sede → niente ricavi.
+  const sedePerImporti =
+    user.role === "AMMINISTRAZIONE"
+      ? mostraRicavi
+        ? sedeScopeId || user.sedeId
+        : "__nessuna__"
+      : sedeScopeId;
+
+  const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
+  const sediOpts =
+    user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
+      ? await prisma.sede.findMany({
+          where: { tenantId: user.tenantId, active: true },
+          orderBy: { nome: "asc" },
+          select: { id: true, nome: true },
+        })
+      : [];
 
   const ref = meseRaw ? new Date(`${meseRaw}-01T12:00:00`) : new Date();
   const da = inizioMese(ref);
@@ -110,6 +139,7 @@ export default async function ProvigioniPage({
           tenantId: user.tenantId,
           role: { in: ["OPERATOR", "SUPERVISOR"] },
           active: true,
+          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
         },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
@@ -135,9 +165,13 @@ export default async function ProvigioniPage({
     ragioneSociale,
   }));
 
-  const supervisori = isAdmin
+  const supervisori = isAdmin || isAmministrazione
     ? await prisma.user.findMany({
-        where: { tenantId: user.tenantId, role: "SUPERVISOR" },
+        where: {
+          tenantId: user.tenantId,
+          role: "SUPERVISOR",
+          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+        },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       })
@@ -189,7 +223,9 @@ export default async function ProvigioniPage({
     avvisoPerimetri = true;
   }
 
-  const scope = provvigioniWhere(user);
+  const scope = provvigioniWhere(user, {
+    sedeId: sedePerImporti === "__nessuna__" ? "__no-sede__" : sedePerImporti,
+  });
   const praticaAmministrazione = isAmministrazione
     ? praticaFiltroAmministrazione(mandanteId, perimetroValido)
     : undefined;
@@ -206,11 +242,16 @@ export default async function ProvigioniPage({
   );
   const operatorIdsTeam = membriGruppo.filter((m) => m.role === "OPERATOR").map((m) => m.id);
 
+  const operatoreEffettivo =
+    operatoreId && sedeUserIds && !sedeUserIds.includes(operatoreId)
+      ? "__nessuno__"
+      : operatoreId;
+
   const wherePeriodo: Prisma.ProvvigioneWhereInput = {
     ...scope,
     createdAt: { gte: da, lte: a },
-    ...(operatoreId
-      ? { operatoreId }
+    ...(operatoreEffettivo
+      ? { operatoreId: operatoreEffettivo }
       : isAdmin && gruppoId
         ? { operatore: { OR: [{ id: gruppoId }, { supervisorId: gruppoId }] } }
         : {}),
@@ -343,6 +384,26 @@ export default async function ProvigioniPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Provigioni" subtitle={subtitle} />
+
+      {isAdmin || isAmministrazione ? (
+        <SedeRendimentoFilter
+          sedi={sediOpts}
+          sedeId={sedeScopeId}
+          basePath="/provigioni"
+          keepParams={{
+            mese: meseValue,
+            mandante: mandanteId,
+            gruppo: gruppoId,
+            operatore: operatoreId,
+            perimetro: perimetroRaw,
+          }}
+        />
+      ) : null}
+
+      {isAmministrazione && !user.sedeId ? <MissingSedeBanner /> : null}
+      {isAmministrazione && !mostraRicavi ? (
+        <RicaviAltreSediNascostiBanner sedeNomePropria={user.sedeNome} />
+      ) : null}
 
       {avvisoPerimetri ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">

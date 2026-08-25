@@ -68,6 +68,7 @@ function InfoItem({ label, value }: { label: string; value: ReactNode }) {
 export function AccountEditor({
   user,
   showFormazione,
+  showStrumenti = true,
 }: {
   user: {
     name: string;
@@ -80,6 +81,7 @@ export function AccountEditor({
     giorniAllaScadenza: number;
   };
   showFormazione?: boolean;
+  showStrumenti?: boolean;
 }) {
   const router = useRouter();
   const [telefoniaMsg, setTelefoniaMsg] = useState<string | null>(null);
@@ -120,7 +122,7 @@ export function AccountEditor({
               {showFormazione ? (
                 <FormazioneAccountMenu canMonitor={canMonitorFormazione} />
               ) : null}
-              {showFormazione ? <StrumentiAccountMenu /> : null}
+              {showStrumenti ? <StrumentiAccountMenu /> : null}
             </div>
           </div>
         </div>

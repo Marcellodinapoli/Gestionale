@@ -65,6 +65,7 @@ async function main() {
   await prisma.mandante.deleteMany();
   await prisma.postazione.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.sede.deleteMany();
   await prisma.tenant.deleteMany();
 
   const tenant = await prisma.tenant.create({
@@ -74,6 +75,16 @@ async function main() {
     data: { slug: "alfa", nome: "Alfa Credit S.p.A." },
   });
 
+  const sedeRoma = await prisma.sede.create({
+    data: { tenantId: tenant.id, nome: "Sede Roma" },
+  });
+  await prisma.sede.create({
+    data: { tenantId: tenant.id, nome: "Sede Milano" },
+  });
+  const sedeMilano = await prisma.sede.create({
+    data: { tenantId: tenantAlfa.id, nome: "Sede Milano" },
+  });
+
   const admin = await prisma.user.create({
     data: {
       tenantId: tenant.id,
@@ -81,6 +92,7 @@ async function main() {
       name: "Anna",
       passwordHash,
       role: "ADMIN",
+      sedeId: sedeRoma.id,
     },
   });
 
@@ -91,6 +103,7 @@ async function main() {
       name: "Sara Supervisor",
       passwordHash,
       role: "SUPERVISOR",
+      sedeId: sedeRoma.id,
     },
   });
 
@@ -101,6 +114,7 @@ async function main() {
       name: "Bruno Backoffice",
       passwordHash,
       role: "BACK_OFFICE",
+      sedeId: sedeRoma.id,
     },
   });
 
@@ -111,6 +125,7 @@ async function main() {
       name: "Carla Amministrazione",
       passwordHash,
       role: "AMMINISTRAZIONE",
+      sedeId: sedeRoma.id,
     },
   });
 
@@ -122,6 +137,7 @@ async function main() {
       passwordHash,
       role: "OPERATOR",
       supervisorId: supervisor.id,
+      sedeId: sedeRoma.id,
     },
   });
 
@@ -133,6 +149,7 @@ async function main() {
       passwordHash,
       role: "OPERATOR",
       supervisorId: supervisor.id,
+      sedeId: sedeRoma.id,
     },
   });
 
@@ -164,7 +181,7 @@ async function main() {
         interno: "201",
         email: "post1@gestionale.local",
         numeroFisso: "06 11112222",
-        sede: "Sede Roma",
+        sedeId: sedeRoma.id,
       },
       {
         tenantId: tenant.id,
@@ -172,21 +189,21 @@ async function main() {
         interno: "202",
         email: "post2@gestionale.local",
         numeroFisso: "06 11113333",
-        sede: "Sede Roma",
+        sedeId: sedeRoma.id,
       },
       {
         tenantId: tenant.id,
         nome: "Postazione 3",
         interno: "203",
         email: "post3@gestionale.local",
-        sede: "Sede Roma",
+        sedeId: sedeRoma.id,
       },
       {
         tenantId: tenantAlfa.id,
         nome: "Postazione Alfa 1",
         interno: "301",
         email: "post1@alfa.local",
-        sede: "Sede Milano",
+        sedeId: sedeMilano.id,
       },
     ],
   });

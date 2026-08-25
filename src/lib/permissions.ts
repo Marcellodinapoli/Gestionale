@@ -20,7 +20,14 @@ export type SessionUser = {
   prefissoChiamata?: string | null;
   postazioneEmail?: string | null;
   postazioneNome?: string | null;
+  sedeId?: string | null;
+  sedeNome?: string | null;
+  formazioneOnly?: boolean;
 };
+
+export { isFormazioneOnly } from "@/lib/formazioneOnlyAccess";
+
+const FORMAZIONE_ONLY_PERMISSIONS: Permission[] = ["formazione:view"];
 
 export type Permission =
   | "users:manage"
@@ -74,9 +81,26 @@ export function isManutenzione(user: { role: string } | null | undefined) {
 }
 
 /** Ruoli che devono scegliere una postazione al login. */
-export function requiresPostazione(user: { role: Role } | null | undefined) {
+export function requiresPostazione(
+  user: { role: Role; formazioneOnly?: boolean } | null | undefined
+) {
   if (!user) return false;
+  if (user.formazioneOnly) return false;
   return !["ADMIN", "AMMINISTRAZIONE"].includes(user.role);
+}
+
+/** Ruoli assegnabili in creazione account, in base al creatore. */
+export function ruoliCreabiliDa(creatorRole: Role): Role[] {
+  if (creatorRole === "ADMIN") {
+    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE"];
+  }
+  if (creatorRole === "AMMINISTRAZIONE") {
+    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE"];
+  }
+  if (creatorRole === "BACK_OFFICE") {
+    return ["OPERATOR"];
+  }
+  return [];
 }
 
 /** Ricavi e incassi totali dell'azienda (dashboard globale): solo amministratore azienda. */
@@ -85,15 +109,32 @@ export function canViewRicaviIncassiAzienda(user: { role: Role } | null | undefi
   return user.role === "ADMIN";
 }
 
+/** Alias: solo Admin vede ricavi/fatturati delle altre sedi (e totali azienda). */
+export function canViewRendimentoAltreSedi(user: { role: Role } | null | undefined) {
+  return canViewRicaviIncassiAzienda(user);
+}
+
+/** CRUD sedi (e gestione cross-sede): Admin e Amministrazione. */
+export function canManageSedi(user: { role: Role } | null | undefined) {
+  if (!user || isManutenzione(user)) return false;
+  return user.role === "ADMIN" || user.role === "AMMINISTRAZIONE";
+}
+
 /** Creazione e modifica perimetri/commesse nella scheda mandante. */
 export function canManageMandantePerimetri(user: { role: Role } | null | undefined) {
   if (!user || isManutenzione(user)) return false;
   return user.role === "ADMIN" || user.role === "AMMINISTRAZIONE";
 }
 
-export function can(user: { role: Role } | null | undefined, permission: Permission) {
+export function can(
+  user: { role: Role; formazioneOnly?: boolean } | null | undefined,
+  permission: Permission
+) {
   if (!user) return false;
   if (isManutenzione(user)) return true;
+  if (user.formazioneOnly) {
+    return FORMAZIONE_ONLY_PERMISSIONS.includes(permission);
+  }
   return MAP[permission].includes(user.role);
 }
 

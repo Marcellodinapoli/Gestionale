@@ -18,6 +18,7 @@ export async function createSession(user: SessionUser) {
     role: user.role,
     supervisorId: user.supervisorId,
     tenantId: user.tenantId,
+    formazioneOnly: Boolean(user.formazioneOnly),
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -52,6 +53,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       include: {
         tenant: { select: { id: true, slug: true, nome: true, active: true } },
         postazione: { select: { interno: true, email: true, nome: true } },
+        sede: { select: { id: true, nome: true } },
       },
     });
     if (!user || !user.active) return null;
@@ -70,6 +72,9 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       prefissoChiamata: user.prefissoChiamata?.trim() || null,
       postazioneEmail: user.postazione?.email ?? null,
       postazioneNome: user.postazione?.nome ?? null,
+      sedeId: user.sedeId,
+      sedeNome: user.sede?.nome ?? null,
+      formazioneOnly: user.formazioneOnly,
     };
   } catch {
     return null;

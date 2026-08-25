@@ -14,12 +14,27 @@ model Tenant {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   users     User[]
+  sedi      Sede[]
   postazioni Postazione[]
   mandanti  Mandante[]
   debitori  Debitore[]
   pratiche  Pratica[]
   configs   ConfigurazioneSistema[]
   auditLogs AuditLog[]
+}
+
+model Sede {
+  id         String       @id @default(cuid())
+  tenantId   String
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nome       String
+  active     Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  postazioni Postazione[]
+  users      User[]
+
+  @@unique([tenantId, nome])
+  @@index([tenantId])
 }
 
 model User {
@@ -32,6 +47,8 @@ model User {
   passwordChangedAt DateTime @default(now())
   role          String
   acronimo      String?
+  // Accesso limitato alla sola sezione Formazione
+  formazioneOnly Boolean   @default(false)
   interno       String?
   prefissoChiamata String?
   active        Boolean    @default(true)
@@ -54,6 +71,8 @@ model User {
   messaggiRicevuti MessaggioInterno[] @relation("MsgTo")
   postazioneId  String?
   postazione    Postazione? @relation(fields: [postazioneId], references: [id])
+  sedeId        String?
+  sede          Sede?       @relation(fields: [sedeId], references: [id], onDelete: SetNull)
   praticaLocks  PraticaLock[]
   passwordHistory PasswordHistory[]
   lastLoginAt   DateTime?
@@ -62,6 +81,7 @@ model User {
 
   @@unique([tenantId, email])
   @@index([tenantId])
+  @@index([sedeId])
 }
 
 model PasswordHistory {
@@ -82,7 +102,10 @@ model Postazione {
   interno     String?
   email       String?
   numeroFisso String?
-  sede        String?
+  // Legacy testo libero (colonna DB sede); migrato in sedeId
+  sedeLegacy  String?  @map("sede")
+  sedeId      String?
+  sedeRef     Sede?    @relation(fields: [sedeId], references: [id], onDelete: Restrict)
   note        String?
   active      Boolean  @default(true)
   occupanti   User[]
@@ -90,6 +113,7 @@ model Postazione {
 
   @@unique([tenantId, nome])
   @@index([tenantId])
+  @@index([sedeId])
 }
 
 model Mandante {

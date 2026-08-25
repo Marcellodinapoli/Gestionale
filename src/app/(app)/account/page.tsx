@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { AccountEditor } from "@/components/account/AccountEditor";
 import { giorniAllaScadenzaPassword } from "@/lib/passwordPolicy";
-import { can, type Role } from "@/lib/permissions";
+import { can, isFormazioneOnly, type Role } from "@/lib/permissions";
 
 export default async function AccountPage() {
   const session = await requireUser();
@@ -30,6 +30,7 @@ export default async function AccountPage() {
       />
       <AccountEditor
         showFormazione={can(session, "formazione:view")}
+        showStrumenti={can(session, "formazione:view") && !isFormazioneOnly(session)}
         user={{
           name: user.name,
           email: user.email,

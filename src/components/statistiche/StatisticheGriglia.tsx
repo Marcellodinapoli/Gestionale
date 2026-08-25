@@ -27,22 +27,39 @@ function Cell({
   );
 }
 
-function Riga({ riga }: { riga: StatisticheRiga }) {
+function importoCell(value: number, nascondiImporti: boolean) {
+  if (nascondiImporti) return "—";
+  return fmtImportoTabella(value);
+}
+
+function Riga({
+  riga,
+  nascondiImporti,
+}: {
+  riga: StatisticheRiga;
+  nascondiImporti: boolean;
+}) {
   return (
     <tr className={riga.isTotale ? "outline outline-2 outline-[#132033]" : ""}>
       <Cell bold={riga.isTotale}>{riga.esa}</Cell>
       <Cell>{riga.mandato}</Cell>
       <Cell>{riga.lottoCg}</Cell>
       <Cell right>{riga.nrPrt}</Cell>
-      <Cell right>{fmtImportoTabella(riga.affidato)}</Cell>
-      <Cell right>{fmtImportoTabella(riga.incassato)}</Cell>
+      <Cell right muted={nascondiImporti}>
+        {importoCell(riga.affidato, nascondiImporti)}
+      </Cell>
+      <Cell right muted={nascondiImporti}>
+        {importoCell(riga.incassato, nascondiImporti)}
+      </Cell>
       <Cell right>{riga.nrPzInc}</Cell>
-      <Cell right>{fmtPct(riga.pctPzIncAffidato)}</Cell>
+      <Cell right muted={nascondiImporti}>
+        {nascondiImporti ? "—" : fmtPct(riga.pctPzIncAffidato)}
+      </Cell>
       <Cell right muted>
         {fmtPct(riga.pctPzIncPezzi)}
       </Cell>
       {riga.scarichi.map((s) => (
-        <FragmentRow key={s.codice} scarico={s} />
+        <FragmentRow key={s.codice} scarico={s} nascondiImporti={nascondiImporti} />
       ))}
     </tr>
   );
@@ -50,14 +67,20 @@ function Riga({ riga }: { riga: StatisticheRiga }) {
 
 function FragmentRow({
   scarico,
+  nascondiImporti,
 }: {
   scarico: StatisticheRiga["scarichi"][number];
+  nascondiImporti: boolean;
 }) {
   return (
     <>
-      <Cell right>{fmtImportoTabella(scarico.importo)}</Cell>
+      <Cell right muted={nascondiImporti}>
+        {importoCell(scarico.importo, nascondiImporti)}
+      </Cell>
       <Cell right>{scarico.nr}</Cell>
-      <Cell right>{fmtPct(scarico.pctAffidato)}</Cell>
+      <Cell right muted={nascondiImporti}>
+        {nascondiImporti ? "—" : fmtPct(scarico.pctAffidato)}
+      </Cell>
       <Cell right muted>
         {fmtPct(scarico.pctPezzi)}
       </Cell>
@@ -137,6 +160,7 @@ export function StatisticheGriglia({
   affidoDa,
   affidoA,
   mostraTotaliAzienda = true,
+  nascondiImporti = false,
 }: {
   sezioni: StatisticheSezione[];
   totale: StatisticheRiga;
@@ -144,6 +168,8 @@ export function StatisticheGriglia({
   affidoDa: string;
   affidoA: string;
   mostraTotaliAzienda?: boolean;
+  /** Nasconde affidato/incassato e importi correlati (Amministrazione fuori dalla propria sede). */
+  nascondiImporti?: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -172,6 +198,7 @@ export function StatisticheGriglia({
                 <Riga
                   key={`${riga.esa}-${riga.mandato}-${riga.lottoCg}-${i}`}
                   riga={riga}
+                  nascondiImporti={nascondiImporti}
                 />
               ))}
               {!sez.righe.length ? (
@@ -184,7 +211,7 @@ export function StatisticheGriglia({
                   </td>
                 </tr>
               ) : null}
-              <Riga riga={sez.subtotale} />
+              <Riga riga={sez.subtotale} nascondiImporti={nascondiImporti} />
             </tbody>
           </table>
         </div>
@@ -198,7 +225,7 @@ export function StatisticheGriglia({
           <table className="w-full min-w-[1200px] border-collapse">
             <Intestazione />
             <tbody>
-              <Riga riga={totale} />
+              <Riga riga={totale} nascondiImporti={nascondiImporti} />
             </tbody>
           </table>
         </div>
