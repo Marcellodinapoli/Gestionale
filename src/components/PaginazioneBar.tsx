@@ -15,7 +15,7 @@ export function buildPraticheQuery(params: {
   lavorate?: boolean;
   lavorateData?: string;
   lavorateOggi?: boolean;
-  nonToccateDa?: 7 | 15;
+  nonToccateDa?: 10;
   sort?: string;
   dir?: string;
   page?: number;
@@ -26,8 +26,12 @@ export function buildPraticheQuery(params: {
   if (params.stato) sp.set("stato", String(params.stato));
   if (params.esito) sp.set("esito", String(params.esito));
   if (params.lavorate) sp.set("lavorate", "1");
-  if (params.lavorateData) sp.set("lavorateData", String(params.lavorateData));
-  else if (params.lavorateOggi) sp.set("lavorateOggi", "1");
+  if (params.lavorateDa) sp.set("lavorateDa", String(params.lavorateDa));
+  if (params.lavorateA) sp.set("lavorateA", String(params.lavorateA));
+  if (!params.lavorateDa && !params.lavorateA) {
+    if (params.lavorateData) sp.set("lavorateData", String(params.lavorateData));
+    else if (params.lavorateOggi) sp.set("lavorateOggi", "1");
+  }
   if (params.lavorateFascia) sp.set("lavorateFascia", String(params.lavorateFascia));
   if (params.nonToccateDa) sp.set("nonToccateDa", String(params.nonToccateDa));
   if (params.sort) sp.set("sort", String(params.sort));
@@ -70,6 +74,7 @@ export function buildPraticheQuery(params: {
     "incassatoA",
     "memoDa",
     "memoA",
+    "rateScadute",
     "aggiuntivo",
   ] as const;
   for (const k of altriKeys) {

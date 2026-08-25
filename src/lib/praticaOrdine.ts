@@ -1,16 +1,15 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-/** Ruoli le cui note non contano come lavorazione operativa. */
-export const RUOLI_NOTA_NON_LAVORAZIONE = [
-  "ADMIN",
-  "BACK_OFFICE",
-  "AMMINISTRAZIONE",
-] as const;
+/** Ruoli le cui attività contano come lavorazione (note, SMS, e-mail, telefonate, …). */
+export const RUOLI_LAVORAZIONE = ["OPERATOR", "SUPERVISOR"] as const;
 
-/** Filtro attività: solo lavorazione (esclude note massiva / note staff admin-BO-amm). */
+/**
+ * Qualsiasi evento sul registro (nota, SMS, e-mail, telefonata, lettera, messaggio, …)
+ * creato da Operatore o Supervisor.
+ */
 export const attivitaLavorazioneWhere: Prisma.AttivitaWhereInput = {
-  user: { role: { notIn: [...RUOLI_NOTA_NON_LAVORAZIONE] } },
+  user: { role: { in: [...RUOLI_LAVORAZIONE] } },
 };
 
 export type SortField =
@@ -32,6 +31,7 @@ export type SortField =
   | "ultimaLavorazione"
   | "residuo"
   | "importoRata"
+  | "rateScadute"
   | "totIncassato"
   | "importoTot"
   | "cfPiva"
@@ -58,6 +58,7 @@ export const SORT_COLUMNS: { key: SortField; label: string }[] = [
   { key: "ultimaLavorazione", label: "Ultima lavorazione" },
   { key: "residuo", label: "Residuo" },
   { key: "importoRata", label: "Imp. rata" },
+  { key: "rateScadute", label: "Rate scad." },
   { key: "totIncassato", label: "Tot. inc." },
   { key: "importoTot", label: "Imp. tot." },
   { key: "cfPiva", label: "C.F. / P.IVA" },
@@ -118,6 +119,8 @@ export function buildOrderBy(
       return { residuo: dir };
     case "importoRata":
       return { rate: { _count: dir } };
+    case "rateScadute":
+      return { rate: { _count: dir } };
     case "totIncassato":
       return { incassi: { _count: dir } };
     case "importoTot":
@@ -141,8 +144,8 @@ export function buildOrderBy(
 export async function orderPraticaIdsByUltimaLavorazione(
   where: Prisma.PraticaWhereInput,
   dir: SortDir,
-  skip: number,
-  take: number
+  skip = 0,
+  take?: number
 ): Promise<string[]> {
   const rows = await prisma.pratica.findMany({
     where,
@@ -171,7 +174,9 @@ export async function orderPraticaIdsByUltimaLavorazione(
     return a.numero.localeCompare(b.numero, "it");
   });
 
-  return rows.slice(skip, skip + take).map((r) => r.id);
+  const ids = rows.map((r) => r.id);
+  if (take == null) return ids;
+  return ids.slice(skip, skip + take);
 }
 
 export const ultimaLavorazioneInclude = {

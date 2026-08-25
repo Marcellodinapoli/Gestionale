@@ -3,7 +3,7 @@ import { PageHeader, Card } from "@/components/ui";
 import { ImportForm } from "@/components/ImportForm";
 import { importCsvAction, importIncassiCsvAction } from "@/actions/core";
 import { prisma } from "@/lib/prisma";
-import { parsePerimetri } from "@/lib/mandantePerimetri";
+import { parsePerimetriList } from "@/lib/mandantePerimetri";
 import { isManutenzione } from "@/lib/permissions";
 
 export default async function ImportPage() {
@@ -26,10 +26,7 @@ export default async function ImportPage() {
     id: m.id,
     codice: m.codice,
     ragioneSociale: m.ragioneSociale,
-    perimetri: parsePerimetri(m.perimetri).map((p) => ({
-      id: p.id,
-      nome: p.nome,
-    })),
+    perimetri: parsePerimetriList(m.perimetri),
   }));
 
   return (

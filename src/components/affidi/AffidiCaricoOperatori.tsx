@@ -30,13 +30,29 @@ export function etichettaCodaAffidi(coda?: CodaAffidi) {
   return CODE_LAVORAZIONE.find((c) => c.key === coda)?.label.toLowerCase() || coda;
 }
 
-export function buildAffidiHref(operatore?: string, coda?: CodaAffidi) {
+export type AffidiSezione = "affida";
+
+export type AffidiNavParams = {
+  operatore?: string;
+  coda?: CodaAffidi;
+  mandato?: string;
+  perimetro?: string;
+  sezione?: AffidiSezione;
+};
+
+export function buildAffidiHref(params?: AffidiNavParams): string {
   const sp = new URLSearchParams();
-  if (operatore) sp.set("operatore", operatore);
-  if (coda) sp.set("coda", coda);
+  if (params?.mandato) sp.set("mandato", params.mandato);
+  if (params?.perimetro) sp.set("perimetro", encodeURIComponent(params.perimetro));
+  if (params?.operatore) sp.set("operatore", params.operatore);
+  if (params?.coda) sp.set("coda", params.coda);
+  if (params?.sezione) sp.set("sezione", params.sezione);
   const qs = sp.toString();
   return qs ? `/affidi?${qs}` : "/affidi";
 }
+
+/** URL padre in Affidi (sottoviste con filtri in query string). */
+export { affidiBackHrefFromSearch, resolveAffidiBackNav } from "@/lib/affidiNavBack";
 
 export function filtraPraticheAffido(
   pratiche: PraticaAffido[],
@@ -79,7 +95,7 @@ function CountLink({
   return (
     <Link
       href={href}
-      className={`underline ${
+      className={`cursor-pointer underline ${
         active ? "font-bold text-[var(--navy)]" : "text-[var(--accent)]"
       } ${muted ? "text-[var(--muted)]" : ""}`}
     >
@@ -95,6 +111,8 @@ export type PraticaAffido = {
   residuo: number;
   scadenza: Date | null;
   codiceScarico: string | null;
+  mandanteId: string;
+  numeroMandante: string | null;
   debitore: { nome: string; cognome: string };
   mandante: { codice: string };
   assegnatarioId: string | null;
@@ -143,11 +161,15 @@ export function AffidiCaricoOperatori({
   carico,
   selezionatoId,
   coda,
+  nav,
 }: {
   carico: OperatoreCarico[];
   selezionatoId?: string;
   coda?: CodaAffidi;
+  nav?: Pick<AffidiNavParams, "mandato" | "perimetro">;
 }) {
+  const href = (operatore?: string, codaKey?: CodaAffidi) =>
+    buildAffidiHref({ ...nav, operatore, coda: codaKey });
   const tot = (key: string) => carico.reduce((s, o) => s + (o.perStato[key] || 0), 0);
   const totAperte = carico.reduce((s, o) => s + o.totAperte, 0);
   const totScadute = carico.reduce((s, o) => s + o.scadute, 0);
@@ -182,7 +204,7 @@ export function AffidiCaricoOperatori({
               >
                 <td className="py-2">
                   <Link
-                    href={buildAffidiHref(o.id)}
+                    href={href(o.id)}
                     className={`font-medium ${onOp && !coda ? "text-[var(--navy)]" : "text-[var(--accent)] underline"}`}
                   >
                     {o.name}
@@ -194,7 +216,7 @@ export function AffidiCaricoOperatori({
                 <td className="text-right font-semibold">
                   <CountLink
                     n={o.totAperte}
-                    href={buildAffidiHref(o.id, "aperte")}
+                    href={href(o.id, "aperte")}
                     active={onOp && coda === "aperte"}
                   />
                 </td>
@@ -202,7 +224,7 @@ export function AffidiCaricoOperatori({
                   <td key={c.key} className="text-right">
                     <CountLink
                       n={o.perStato[c.key] || 0}
-                      href={buildAffidiHref(o.id, c.key)}
+                      href={href(o.id, c.key)}
                       active={onOp && coda === c.key}
                     />
                   </td>
@@ -210,14 +232,14 @@ export function AffidiCaricoOperatori({
                 <td className="text-right">
                   <CountLink
                     n={o.scadute}
-                    href={buildAffidiHref(o.id, "scadute")}
+                    href={href(o.id, "scadute")}
                     active={onOp && coda === "scadute"}
                   />
                 </td>
                 <td className="text-right">
                   {o.totAperte ? (
                     <Link
-                      href={buildAffidiHref(o.id, "aperte")}
+                      href={href(o.id, "aperte")}
                       className={`underline ${onOp && coda === "aperte" ? "font-bold text-[var(--navy)]" : "text-[var(--accent)]"}`}
                     >
                       {euro(o.residuo)}
@@ -229,7 +251,7 @@ export function AffidiCaricoOperatori({
                 <td className="text-right">
                   <CountLink
                     n={o.totChiuse}
-                    href={buildAffidiHref(o.id, "chiuse")}
+                    href={href(o.id, "chiuse")}
                     active={onOp && coda === "chiuse"}
                     muted
                   />
@@ -240,29 +262,29 @@ export function AffidiCaricoOperatori({
           {!selezionatoId ? (
           <tr className="border-t-2 border-[#132033] font-semibold">
             <td className="py-2">
-              <Link href="/affidi" className="hover:underline">
+              <Link href={buildAffidiHref(nav)} className="hover:underline">
                 Totale gruppo
               </Link>
             </td>
             <td className="text-right">
-              <CountLink n={totAperte} href={buildAffidiHref(undefined, "aperte")} active={!selezionatoId && coda === "aperte"} />
+              <CountLink n={totAperte} href={href(undefined, "aperte")} active={!selezionatoId && coda === "aperte"} />
             </td>
             {CODE_LAVORAZIONE.map((c) => (
               <td key={c.key} className="text-right">
                 <CountLink
                   n={tot(c.key)}
-                  href={buildAffidiHref(undefined, c.key)}
+                  href={href(undefined, c.key)}
                   active={!selezionatoId && coda === c.key}
                 />
               </td>
             ))}
             <td className="text-right">
-              <CountLink n={totScadute} href={buildAffidiHref(undefined, "scadute")} active={!selezionatoId && coda === "scadute"} />
+              <CountLink n={totScadute} href={href(undefined, "scadute")} active={!selezionatoId && coda === "scadute"} />
             </td>
             <td className="text-right">
               {totAperte ? (
                 <Link
-                  href={buildAffidiHref(undefined, "aperte")}
+                  href={href(undefined, "aperte")}
                   className={`underline ${!selezionatoId && coda === "aperte" ? "font-bold text-[var(--navy)]" : "text-[var(--accent)]"}`}
                 >
                   {euro(totResiduo)}
@@ -274,7 +296,7 @@ export function AffidiCaricoOperatori({
             <td className="text-right">
               <CountLink
                 n={totChiuse}
-                href={buildAffidiHref(undefined, "chiuse")}
+                href={href(undefined, "chiuse")}
                 active={!selezionatoId && coda === "chiuse"}
                 muted
               />

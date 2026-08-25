@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Briefcase,
@@ -15,6 +15,7 @@ import {
   Headphones,
   Home,
   LogOut,
+  Menu,
   Phone,
   ScrollText,
   Shield,
@@ -26,6 +27,11 @@ import {
   Monitor,
   BookUser,
   UserCircle,
+  MessageSquare,
+  ArrowLeft,
+  ClipboardList,
+  GraduationCap,
+  Wrench,
 } from "lucide-react";
 import { logoutAction } from "@/actions/core";
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
@@ -38,6 +44,26 @@ import {
   PraticaHeaderSlotProvider,
 } from "@/components/layout/PraticaHeaderSlot";
 import { ROLE_LABELS, can, type SessionUser } from "@/lib/permissions";
+import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
+
+const PRATICHE_BACK_KEY = "credixa:pratiche-back";
+
+function isPratichePath(pathname: string) {
+  return pathname === "/pratiche" || pathname.startsWith("/pratiche/");
+}
+
+function sectionLabelFromHref(href: string) {
+  try {
+    const path = href.startsWith("http") ? new URL(href).pathname : href.split("?")[0] || "/";
+    if (path === "/") return "Home";
+    const hit = [...MAIN_LINKS, ...ADMIN_LINKS].find(
+      (l) => path === l.href || path.startsWith(`${l.href}/`)
+    );
+    return hit?.label || "pagina precedente";
+  } catch {
+    return "pagina precedente";
+  }
+}
 
 type NavLink = {
   href: string;
@@ -62,6 +88,12 @@ const MAIN_LINKS: NavLink[] = [
     show: (u) => can(u, "agenda:view"),
   },
   {
+    href: "/messaggi",
+    label: "Messaggi",
+    icon: MessageSquare,
+    show: (u) => can(u, "agenda:view"),
+  },
+  {
     href: "/statistiche",
     label: "Statistiche",
     icon: PieChart,
@@ -73,8 +105,17 @@ const MAIN_LINKS: NavLink[] = [
     icon: Wallet,
     show: (u) => can(u, "provigioni:view"),
   },
+  {
+    href: "/report",
+    label: "Registrazioni",
+    icon: Headphones,
+    show: (u) => can(u, "report:view"),
+  },
   { href: "/rubrica", label: "Rubrica", icon: BookUser, show: () => true },
+  { href: "/lavorazione", label: "Lavorazione", icon: ClipboardList, show: (u) => can(u, "lavorazione:view") },
   { href: "/account", label: "Account", icon: UserCircle, show: () => true },
+  { href: "/formazione/progressi", label: "Formazione", icon: GraduationCap, show: (u) => can(u, "formazione:view") },
+  { href: "/strumenti/ricerca-normativa", label: "Strumenti AI", icon: Wrench, show: (u) => can(u, "formazione:view") },
 ];
 
 const ADMIN_LINKS: NavLink[] = [
@@ -89,12 +130,6 @@ const ADMIN_LINKS: NavLink[] = [
     label: "Mandanti",
     icon: Building2,
     show: (u) => can(u, "mandanti:manage"),
-  },
-  {
-    href: "/report",
-    label: "Registrazioni",
-    icon: Headphones,
-    show: (u) => can(u, "report:view"),
   },
   {
     href: "/telefonia",
@@ -138,28 +173,47 @@ function NavItem({
   link,
   pathname,
   compact,
+  forceLabel,
+  backHref,
+  backNavHref,
+  backLabel,
 }: {
   link: NavLink;
   pathname: string;
   compact?: boolean;
+  forceLabel?: boolean;
+  backHref?: string | null;
+  backNavHref?: string;
+  backLabel?: string;
 }) {
   const Icon = link.icon;
   const active = navActive(pathname, link.href);
+  const showBack = Boolean(backHref) && active && link.href === backNavHref;
+  const href = showBack && backHref ? backHref : link.href;
+  const title = showBack
+    ? backLabel || `Torna a ${sectionLabelFromHref(backHref!)}`
+    : link.label;
+  const showLabel = forceLabel || compact;
+
   return (
     <Link
-      href={link.href}
+      href={href}
       className={`flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
         active
           ? "bg-white font-semibold text-[#132033]"
           : "text-white/75 hover:bg-white/10 hover:text-white"
       }`}
-      title={link.label}
+      title={title}
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      {!compact ? (
-        <span className="hidden whitespace-nowrap lg:inline">{link.label}</span>
+      {showBack ? (
+        <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" aria-hidden />
       ) : (
+        <Icon className="h-4 w-4 shrink-0" />
+      )}
+      {showLabel ? (
         <span className="whitespace-nowrap">{link.label}</span>
+      ) : (
+        <span className="hidden whitespace-nowrap lg:inline">{link.label}</span>
       )}
     </Link>
   );
@@ -229,12 +283,16 @@ function HeaderUserActions({
   );
 }
 
-function AdminNavMenu({
+function NavDropdownMenu({
   links,
   pathname,
+  label,
+  icon: Icon,
 }: {
   links: NavLink[];
   pathname: string;
+  label: string;
+  icon: LucideIcon;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -291,7 +349,7 @@ function AdminNavMenu({
             className="fixed z-[200] min-w-[12.5rem] rounded-lg border border-[var(--line)] bg-white py-1 shadow-lg"
           >
             {links.map((link) => {
-              const Icon = link.icon;
+              const ItemIcon = link.icon;
               const itemActive = navActive(pathname, link.href);
               return (
                 <Link
@@ -305,7 +363,7 @@ function AdminNavMenu({
                       : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <Icon className="h-4 w-4 shrink-0 opacity-70" />
+                  <ItemIcon className="h-4 w-4 shrink-0 opacity-70" />
                   {link.label}
                 </Link>
               );
@@ -332,13 +390,167 @@ function AdminNavMenu({
             : "text-white/75 hover:bg-white/10 hover:text-white"
         }`}
       >
-        <Shield className="h-4 w-4 shrink-0" />
-        <span className="hidden whitespace-nowrap lg:inline">Gestione</span>
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="hidden whitespace-nowrap lg:inline">{label}</span>
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
       {menu}
+    </>
+  );
+}
+
+const NAV_GAP = 2;
+const OVERFLOW_MENU_LABEL = "Menu";
+const OVERFLOW_MENU_BTN_WIDTH = 80;
+const GESTIONE_BTN_WIDTH = 92;
+
+function useLgNavLabels() {
+  const [lg, setLg] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setLg(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return lg;
+}
+
+function ResponsiveMainNav({
+  links,
+  pathname,
+  praticheBackHref,
+  affidiBackHref,
+  affidiBackLabel,
+  adminLinks,
+}: {
+  links: NavLink[];
+  pathname: string;
+  praticheBackHref: string | null;
+  affidiBackHref: string | null;
+  affidiBackLabel?: string;
+  adminLinks: NavLink[];
+}) {
+  const navRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(links.length);
+  const [mergedOverflowMenu, setMergedOverflowMenu] = useState(false);
+  const lgLabels = useLgNavLabels();
+
+  const recalculate = useCallback(() => {
+    const navEl = navRef.current;
+    const measureEl = measureRef.current;
+    if (!navEl || !measureEl || !links.length) return;
+
+    const widths = Array.from(measureEl.children).map(
+      (el) => (el as HTMLElement).offsetWidth
+    );
+    const available = navEl.clientWidth;
+    const totalMain =
+      widths.reduce((sum, w) => sum + w, 0) + Math.max(0, widths.length - 1) * NAV_GAP;
+
+    const adminReserve = adminLinks.length ? GESTIONE_BTN_WIDTH : 0;
+    if (totalMain <= available - adminReserve) {
+      setVisibleCount(links.length);
+      setMergedOverflowMenu(false);
+      return;
+    }
+
+    let budget = available - OVERFLOW_MENU_BTN_WIDTH;
+    let count = 0;
+    for (let i = 0; i < widths.length; i++) {
+      const need = widths[i] + (i > 0 ? NAV_GAP : 0);
+      if (need > budget) break;
+      budget -= need;
+      count++;
+    }
+    setVisibleCount(Math.max(1, count));
+    setMergedOverflowMenu(true);
+  }, [links, adminLinks.length]);
+
+  useEffect(() => {
+    recalculate();
+  }, [recalculate, pathname, lgLabels]);
+
+  useEffect(() => {
+    const navEl = navRef.current;
+    if (!navEl) return;
+    const ro = new ResizeObserver(() => recalculate());
+    ro.observe(navEl);
+    window.addEventListener("resize", recalculate);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", recalculate);
+    };
+  }, [recalculate]);
+
+  const visibleLinks = links.slice(0, visibleCount);
+  const overflowLinks = links.slice(visibleCount);
+  const mergedMenuLinks = mergedOverflowMenu
+    ? [...overflowLinks, ...adminLinks]
+    : [];
+
+  const navBackProps = (link: NavLink) => {
+    if (link.href === "/pratiche") {
+      return { backHref: praticheBackHref, backNavHref: "/pratiche" as const, backLabel: undefined };
+    }
+    if (link.href === "/affidi") {
+      return {
+        backHref: affidiBackHref,
+        backNavHref: "/affidi" as const,
+        backLabel: affidiBackLabel,
+      };
+    }
+    return { backHref: null as string | null, backNavHref: undefined, backLabel: undefined };
+  };
+
+  return (
+    <>
+      <div
+        ref={measureRef}
+        aria-hidden
+        className="pointer-events-none invisible absolute left-0 top-0 -z-10 flex gap-0.5"
+      >
+        {links.map((link) => (
+          <NavItem
+            key={link.href}
+            link={link}
+            pathname={pathname}
+            forceLabel={lgLabels}
+            {...navBackProps(link)}
+          />
+        ))}
+      </div>
+      <div
+        ref={navRef}
+        className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5"
+      >
+        {visibleLinks.map((link) => (
+          <NavItem
+            key={link.href}
+            link={link}
+            pathname={pathname}
+            {...navBackProps(link)}
+          />
+        ))}
+        {mergedOverflowMenu && mergedMenuLinks.length > 0 ? (
+          <NavDropdownMenu
+            links={mergedMenuLinks}
+            pathname={pathname}
+            label={OVERFLOW_MENU_LABEL}
+            icon={Menu}
+          />
+        ) : adminLinks.length > 0 ? (
+          <NavDropdownMenu
+            links={adminLinks}
+            pathname={pathname}
+            label="Gestione"
+            icon={Shield}
+          />
+        ) : null}
+      </div>
     </>
   );
 }
@@ -351,11 +563,43 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [embedded, setEmbedded] = useState(false);
+  const [praticheBackHref, setPraticheBackHref] = useState<string | null>(null);
+
+  const affidiBack =
+    pathname === "/affidi"
+      ? resolveAffidiBackNav(searchParams.toString())
+      : null;
+  const affidiBackHref = affidiBack?.href ?? null;
+  const affidiBackLabel = affidiBack?.label;
 
   useEffect(() => {
     setEmbedded(window.self !== window.top);
   }, []);
+
+  // Memorizza l’ultima sezione fuori da Pratiche; in Pratiche mostra ← verso quella.
+  useEffect(() => {
+    const qs = window.location.search.replace(/^\?/, "");
+    const full = qs ? `${pathname}?${qs}` : pathname;
+
+    if (isPratichePath(pathname)) {
+      try {
+        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
+        const savedPath = saved?.split("?")[0] || "";
+        setPraticheBackHref(saved && !isPratichePath(savedPath) ? saved : null);
+      } catch {
+        setPraticheBackHref(null);
+      }
+    } else {
+      setPraticheBackHref(null);
+      try {
+        sessionStorage.setItem(PRATICHE_BACK_KEY, full);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [pathname, searchParams]);
 
   if (embedded) {
     return (
@@ -390,13 +634,15 @@ export function AppShell({
             </div>
           </div>
 
-          <nav className="order-3 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-x-auto pb-0.5 [scrollbar-width:none] xl:order-2 xl:flex-1 xl:pb-0 [&::-webkit-scrollbar]:hidden">
-            {mainLinks.map((link) => (
-              <NavItem key={link.href} link={link} pathname={pathname} />
-            ))}
-            {adminLinks.length > 0 ? (
-              <AdminNavMenu links={adminLinks} pathname={pathname} />
-            ) : null}
+          <nav className="relative order-3 flex min-w-0 flex-nowrap items-center pb-0.5 xl:order-2 xl:flex-1 xl:pb-0">
+            <ResponsiveMainNav
+              links={mainLinks}
+              pathname={pathname}
+              praticheBackHref={praticheBackHref}
+              affidiBackHref={affidiBackHref}
+              affidiBackLabel={affidiBackLabel}
+              adminLinks={adminLinks}
+            />
           </nav>
 
           <div className="order-2 hidden shrink-0 items-center gap-2 text-xs xl:order-3 xl:flex">

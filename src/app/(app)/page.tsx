@@ -1,27 +1,46 @@
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
-import { can, isManutenzione, STATO_LABELS } from "@/lib/permissions";
-import { praticaWhere, euro, dataIt, nessunDatoWhere } from "@/lib/domain";
+import { can, isManutenzione } from "@/lib/permissions";
+import { euro, dataIt, nessunDatoWhere } from "@/lib/domain";
 import {
   formatDataIso,
   isOggi,
   lavoratePerOperatoreInGiornata,
-  riepilogoCodiciLavorazioneInGiornata,
+  praticheLavorateInGiornata,
+  praticheConCambioCodiceInGiornata,
   parseDataIso,
   startOfToday,
+  completaOperatoriGruppo,
+  applicaCambiCodicePerOperatore,
 } from "@/lib/lavorateOggi";
+import {
+  praticaScopeWhere,
+  resolveGruppoPerimetroContext,
+  gruppoPerimetroOptsFromContext,
+  buildGruppoPerimetroContextFromGruppo,
+  praticaScopeForGruppoContext,
+} from "@/lib/gruppoPerimetroScope";
 import { PageHeader } from "@/components/ui";
 import { esitoContattoLabel } from "@/lib/contatto";
 import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
-import { praticheNonToccateWhere } from "@/lib/praticheInattive";
-import { getGruppoLavoro } from "@/lib/gruppoLavoro";
-import { DashboardKpi, DashboardStato } from "@/components/home/DashboardStat";
+import { getGruppoLavoro, getGruppoLavoroForSupervisor } from "@/lib/gruppoLavoro";
+import { DashboardKpi } from "@/components/home/DashboardStat";
 import { GruppoLavoroHomeCard } from "@/components/home/GruppoLavoroHomeCard";
+import { FormazioneMonitorHomeCard } from "@/components/home/FormazioneMonitorHomeCard";
+import { HomeGruppoPicker } from "@/components/home/HomeGruppoPicker";
 import { LavorateGiornoKpi } from "@/components/home/LavorateGiornoKpi";
+import { CodiciMandantePerimetroTable } from "@/components/home/CodiciMandantePerimetroTable";
+import { InLavorazionePerimetroCard } from "@/components/home/InLavorazionePerimetroCard";
+import { DaAffidarePerimetroCard } from "@/components/home/DaAffidarePerimetroCard";
 import { IncassiTipologiaFiltri } from "@/components/home/IncassiTipologiaFiltri";
 import { parsePerimetri } from "@/lib/mandantePerimetri";
+import {
+  codiciPerMandantePerimetro,
+  daAffidarePerPerimetroGruppo,
+  inLavorazionePerPerimetro,
+} from "@/lib/codiciMandantePerimetro";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 
@@ -72,7 +91,13 @@ async function riepilogoMandanti(tenantId: string): Promise<RiepilogoMandante[]>
   });
 }
 
-function RiepilogoMandantiTable({ righe }: { righe: RiepilogoMandante[] }) {
+function RiepilogoMandantiTable({
+  righe,
+  mostraTotali = true,
+}: {
+  righe: RiepilogoMandante[];
+  mostraTotali?: boolean;
+}) {
   const totAffidato = righe.reduce((s, r) => s + r.affidato, 0);
   const totIncassato = righe.reduce((s, r) => s + r.incassato, 0);
   const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
@@ -89,9 +114,13 @@ function RiepilogoMandantiTable({ righe }: { righe: RiepilogoMandante[] }) {
               <th className="px-3 py-2">Codice</th>
               <th>Mandante</th>
               <th className="text-right">Pratiche</th>
-              <th className="text-right">Affidato</th>
-              <th className="text-right">Incassato</th>
-              <th className="text-right">% Recupero</th>
+              {mostraTotali ? (
+                <>
+                  <th className="text-right">Affidato</th>
+                  <th className="text-right">Incassato</th>
+                  <th className="text-right">% Recupero</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -104,34 +133,42 @@ function RiepilogoMandantiTable({ righe }: { righe: RiepilogoMandante[] }) {
                 </td>
                 <td>{r.ragioneSociale}</td>
                 <td className="text-right">{r.pratiche}</td>
-                <td className="text-right">{euro(r.affidato)}</td>
-                <td className="text-right font-semibold">{euro(r.incassato)}</td>
+                {mostraTotali ? (
+                  <>
+                    <td className="text-right">{euro(r.affidato)}</td>
+                    <td className="text-right font-semibold">{euro(r.incassato)}</td>
+                    <td className="text-right">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          r.percentuale >= 50
+                            ? "bg-emerald-100 text-emerald-800"
+                            : r.percentuale >= 20
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {r.percentuale.toFixed(1)}%
+                      </span>
+                    </td>
+                  </>
+                ) : null}
+              </tr>
+            ))}
+            {mostraTotali ? (
+              <tr className="border-t-2 border-[var(--navy)] bg-slate-50 font-semibold">
+                <td className="px-3 py-2" colSpan={2}>
+                  Totale
+                </td>
+                <td className="text-right">{righe.reduce((s, r) => s + r.pratiche, 0)}</td>
+                <td className="text-right">{euro(totAffidato)}</td>
+                <td className="text-right">{euro(totIncassato)}</td>
                 <td className="text-right">
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      r.percentuale >= 50
-                        ? "bg-emerald-100 text-emerald-800"
-                        : r.percentuale >= 20
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-red-100 text-red-800"
-                    }`}
-                  >
-                    {r.percentuale.toFixed(1)}%
+                  <span className="inline-flex rounded-full bg-[var(--navy)] px-2 py-0.5 text-xs text-white">
+                    {totPerc.toFixed(1)}%
                   </span>
                 </td>
               </tr>
-            ))}
-            <tr className="border-t-2 border-[var(--navy)] bg-slate-50 font-semibold">
-              <td className="px-3 py-2" colSpan={2}>Totale</td>
-              <td className="text-right">{righe.reduce((s, r) => s + r.pratiche, 0)}</td>
-              <td className="text-right">{euro(totAffidato)}</td>
-              <td className="text-right">{euro(totIncassato)}</td>
-              <td className="text-right">
-                <span className="inline-flex rounded-full bg-[var(--navy)] px-2 py-0.5 text-xs text-white">
-                  {totPerc.toFixed(1)}%
-                </span>
-              </td>
-            </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -146,22 +183,63 @@ export default async function HomePage({
     lavorateData?: string;
     incMandante?: string;
     incPerimetro?: string;
+    gruppo?: string;
   }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const { lavorateData: lavorateDataRaw, incMandante, incPerimetro } = sp;
+  const { lavorateData: lavorateDataRaw, incMandante, incPerimetro, gruppo: gruppoRaw } = sp;
   const dataLavorate = parseDataIso(lavorateDataRaw) ?? startOfToday();
   const dataIso = formatDataIso(dataLavorate);
-  const where = praticaWhere(user);
 
-  const [totali, nuove, inLavoro, scadute, incassiOggi, perStato, lavoratePerOperatore, codiciLavorazione, gruppo, nonToccate7, nonToccate15] =
+  const isBackOfficeGruppo = user.role === "BACK_OFFICE" && !isManutenzione(user);
+  const supervisoriHome = isBackOfficeGruppo
+    ? await prisma.user.findMany({
+        where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, gruppoNome: true },
+      })
+    : [];
+
+  let gruppo = await getGruppoLavoro(user);
+  let periCtx = await resolveGruppoPerimetroContext(user);
+  let where = await praticaScopeWhere(user);
+
+  const targetSupervisorId =
+    isBackOfficeGruppo && supervisoriHome.length
+      ? supervisoriHome.some((s) => s.id === gruppoRaw)
+        ? gruppoRaw!
+        : supervisoriHome[0]!.id
+      : null;
+
+  if (isBackOfficeGruppo && targetSupervisorId) {
+    gruppo = await getGruppoLavoroForSupervisor(user.tenantId, targetSupervisorId);
+    periCtx = await buildGruppoPerimetroContextFromGruppo(user.tenantId, gruppo);
+    where = await praticaScopeForGruppoContext(user.tenantId, periCtx);
+  }
+
+  const mostraGruppo =
+    !isManutenzione(user) &&
+    Boolean(gruppo.supervisorName) &&
+    gruppo.members.some((m) => m.role === "SUPERVISOR") &&
+    (user.role === "OPERATOR" ||
+      user.role === "SUPERVISOR" ||
+      user.role === "BACK_OFFICE");
+
+  const gruppoPerimetroOpts =
+    gruppoPerimetroOptsFromContext(periCtx) ??
+    (mostraGruppo ? { gruppoMandanti: gruppo.gruppoMandanti } : undefined);
+  const gruppoPerimetriConfigurati = periCtx.nelGruppo
+    ? !periCtx.nessunPerimetroGruppo
+    : gruppo.gruppoMandanti.length > 0;
+  const vistaGruppoLavorate =
+    user.role === "SUPERVISOR" || user.role === "BACK_OFFICE";
+  const lavorateOpts = { data: dataLavorate, scopeWhere: where };
+
+  const [totali, inLavoroPerPerimetro, scadute, incassiOggi, lavoratePerOperatoreRaw, praticheLavorateGruppo, praticheCambioCodice, codiciMandantePerimetro, daAffidareGruppo] =
     await Promise.all([
       prisma.pratica.count({ where }),
-      prisma.pratica.count({ where: { ...where, stato: "NUOVA" } }),
-      prisma.pratica.count({
-        where: { ...where, stato: { in: ["AFFIDATA", "IN_LAVORAZIONE", "PROMESSA"] } },
-      }),
+      inLavorazionePerPerimetro(user, gruppoPerimetroOpts),
       prisma.pratica.count({
         where: {
           ...where,
@@ -177,29 +255,25 @@ export default async function HomePage({
             ? { data: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } }
             : { userId: user.id, data: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
       }),
-      prisma.pratica.groupBy({
-        by: ["stato"],
-        where,
-        _count: true,
-      }),
-      lavoratePerOperatoreInGiornata(user, { data: dataLavorate }),
-      riepilogoCodiciLavorazioneInGiornata(user, { data: dataLavorate }),
-      getGruppoLavoro(user),
-      prisma.pratica.count({ where: { ...where, ...praticheNonToccateWhere(7) } }),
-      prisma.pratica.count({ where: { ...where, ...praticheNonToccateWhere(15) } }),
+      lavoratePerOperatoreInGiornata(user, lavorateOpts),
+      vistaGruppoLavorate
+        ? praticheLavorateInGiornata(user, lavorateOpts)
+        : Promise.resolve([]),
+      praticheConCambioCodiceInGiornata(user, lavorateOpts),
+      isManutenzione(user)
+        ? Promise.resolve([])
+        : codiciPerMandantePerimetro(user, gruppoPerimetroOpts),
+      mostraGruppo && !isManutenzione(user)
+        ? daAffidarePerPerimetroGruppo(user.tenantId, gruppo.gruppoMandanti)
+        : Promise.resolve([]),
     ]);
 
-  const mostraGruppo =
-    !isManutenzione(user) &&
-    Boolean(gruppo.supervisorName) &&
-    gruppo.members.some((m) => m.role === "SUPERVISOR") &&
-    (user.role === "OPERATOR" || user.role === "SUPERVISOR");
-
-  const conteggiStato = Object.entries(STATO_LABELS).map(([stato, label]) => ({
-    stato,
-    label,
-    count: perStato.find((p) => p.stato === stato)?._count ?? 0,
-  }));
+  const lavoratePerOperatore = applicaCambiCodicePerOperatore(
+    vistaGruppoLavorate
+      ? completaOperatoriGruppo(lavoratePerOperatoreRaw, gruppo.members)
+      : lavoratePerOperatoreRaw,
+    praticheCambioCodice
+  );
 
   if (user.role === "AMMINISTRAZIONE") {
     const oggi = new Date();
@@ -207,22 +281,12 @@ export default async function HomePage({
     const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
     const [
       totPratiche,
-      incassiOggiAmm,
-      incassiMese,
       provvigioniMese,
       provvigioniDaLiquidare,
       mandantiCount,
       operatoriCount,
     ] = await Promise.all([
       prisma.pratica.count(),
-      prisma.incasso.aggregate({
-        _sum: { importo: true },
-        where: { data: { gte: oggi } },
-      }),
-      prisma.incasso.aggregate({
-        _sum: { importo: true },
-        where: { data: { gte: inizioMese } },
-      }),
       prisma.provvigione.aggregate({
         _sum: { importo: true },
         where: { createdAt: { gte: inizioMese } },
@@ -235,31 +299,25 @@ export default async function HomePage({
       prisma.user.count({ where: { role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true } }),
     ]);
 
-    const mandantiRiepilogo = await riepilogoMandanti(user.tenantId);
-
     return (
       <div className="space-y-5 pb-8">
-        <PageHeader title="Home" subtitle="Ufficio amministrazione · panoramica contabile" />
+        <PageHeader title="Home" subtitle="Amministrazione · provvigioni e anagrafiche" />
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
-          <DashboardKpi title="Incassi oggi" value={euro(incassiOggiAmm._sum.importo || 0)} />
-          <DashboardKpi title="Incassi mese" value={euro(incassiMese._sum.importo || 0)} />
           <DashboardKpi title="Provvigioni mese" value={euro(provvigioniMese._sum.importo || 0)} />
           <DashboardKpi
             title="Provv. da liquidare"
             value={euro(provvigioniDaLiquidare._sum.importo || 0)}
             hint="Totale maturate non ancora erogate"
           />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
           <DashboardKpi title="Pratiche totali" value={totPratiche} />
-          <DashboardKpi title="Mandanti" value={mandantiCount} href="/mandanti" />
-          <DashboardKpi title="Operatori attivi" value={operatoriCount} href="/operatori" />
           <DashboardKpi title="Provvigioni" value="Dettaglio" href="/provigioni" />
         </div>
 
-        <RiepilogoMandantiTable righe={mandantiRiepilogo} />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
+          <DashboardKpi title="Mandanti" value={mandantiCount} href="/mandanti" />
+          <DashboardKpi title="Operatori attivi" value={operatoriCount} href="/operatori" />
+        </div>
       </div>
     );
   }
@@ -302,7 +360,7 @@ export default async function HomePage({
     }
 
     const mandantiFiltriUi = mandantiFiltro.map((m) => {
-      const fromConfig = parsePerimetri(m.perimetri).map((p) => p.nome);
+      const fromConfig = parsePerimetri(m.perimetri).map((p) => p.nomeMandante);
       const fromPratiche = [...(lottiMap.get(m.id) ?? [])];
       const perimetri = [...new Set([...fromConfig, ...fromPratiche])].sort((a, b) =>
         a.localeCompare(b, "it")
@@ -775,24 +833,59 @@ export default async function HomePage({
         : user.role === "SUPERVISOR"
           ? "Portafoglio del team e affidi"
           : user.role === "BACK_OFFICE"
-            ? "Carichi, documenti e incassi"
+            ? gruppo.gruppoNome
+              ? `Monitoraggio gruppo · ${gruppo.gruppoNome}`
+              : "Monitoraggio gruppi di lavoro"
             : "Controllo complessivo delle pratiche";
 
   const dataLabel = dataIt(dataLavorate);
-  const totaleLavorate = lavoratePerOperatore.reduce((s, o) => s + o.count, 0);
-  const hintGiorno = totaleLavorate
-    ? `${dataLabel} · ${totaleLavorate === 1 ? "1 pratica" : `${totaleLavorate} pratiche`} lavorate · ${codiciLavorazione.totalePratiche} con cambio codice`
-    : `${dataLabel} · nessuna lavorazione`;
-  const titoloLavorate = isOggi(dataLavorate) ? "Lavorate oggi" : "Lavorate";
+  const totaleLavorateGruppo = vistaGruppoLavorate
+    ? praticheLavorateGruppo.length
+    : lavoratePerOperatore.reduce((s, o) => s + o.count, 0);
+  const hintGiorno = vistaGruppoLavorate
+    ? totaleLavorateGruppo
+      ? `${gruppo.gruppoNome || "Gruppo"} · ${dataLabel} · ${totaleLavorateGruppo === 1 ? "1 pratica lavorata in totale dal gruppo" : `${totaleLavorateGruppo} pratiche lavorate in totale dal gruppo`}`
+      : `${gruppo.gruppoNome || "Gruppo"} · ${dataLabel} · nessuna lavorazione nel gruppo`
+    : totaleLavorateGruppo
+      ? `${dataLabel} · ${totaleLavorateGruppo === 1 ? "1 pratica lavorata" : `${totaleLavorateGruppo} pratiche lavorate`}`
+      : `${dataLabel} · nessuna lavorazione`;
+  const titoloLavorate = isOggi(dataLavorate)
+    ? vistaGruppoLavorate
+      ? "Lavorate oggi · gruppo"
+      : "Lavorate oggi"
+    : vistaGruppoLavorate
+      ? "Lavorate · gruppo"
+      : "Lavorate";
 
   return (
     <div className="space-y-5 pb-8">
       <PageHeader title="Home" subtitle={subtitle} />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
+      {isBackOfficeGruppo && supervisoriHome.length && targetSupervisorId ? (
+        <HomeGruppoPicker
+          supervisori={supervisoriHome}
+          gruppoId={targetSupervisorId}
+          lavorateData={lavorateDataRaw}
+        />
+      ) : null}
+
+      <div
+        className={`grid grid-cols-2 gap-2 lg:gap-3 ${
+          mostraGruppo ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+        }`}
+      >
         <DashboardKpi title="Pratiche visibili" value={totali} />
-        <DashboardKpi title="Da affidare" value={nuove} />
-        <DashboardKpi title="In lavorazione" value={inLavoro} />
+        <InLavorazionePerimetroCard
+          righe={inLavoroPerPerimetro}
+          gruppoSenzaPerimetri={mostraGruppo && !gruppoPerimetriConfigurati}
+        />
+        {mostraGruppo ? (
+          <DaAffidarePerimetroCard
+            righe={daAffidareGruppo}
+            canAssign={can(user, "pratiche:assign")}
+            gruppoConfigurato={gruppoPerimetriConfigurati}
+          />
+        ) : null}
         <DashboardKpi
           title={can(user, "incassi:create") ? "Incassi oggi" : "Scadute"}
           value={
@@ -801,63 +894,48 @@ export default async function HomePage({
               : scadute
           }
         />
-        <div className="col-span-2 sm:col-span-4">
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:gap-3">
+        <div>
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Sintesi lavorazione
+          </h2>
           <LavorateGiornoKpi
             title={titoloLavorate}
             hint={hintGiorno}
             dataIso={dataIso}
             operatori={lavoratePerOperatore}
-            codiciLavorazione={codiciLavorazione}
+            praticheCambioCodice={praticheCambioCodice}
             href={buildPraticheQuery({ lavorateData: dataIso })}
+            vistaGruppo={vistaGruppoLavorate}
+            totaleLavorateGruppo={vistaGruppoLavorate ? totaleLavorateGruppo : undefined}
           />
         </div>
-      </div>
 
-      <div>
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-          Sintesi lavorazione
-        </h2>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8 lg:gap-2">
-          {conteggiStato.map(({ stato, label, count }) => (
-            <DashboardStato
-              key={stato}
-              label={label}
-              count={count}
-              stato={stato}
-              href={buildPraticheQuery({ stato })}
-            />
-          ))}
-        </div>
-      </div>
-
-      {!isManutenzione(user) ? (
-        <div>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Pratiche inattive
-          </h2>
-          <div className="grid grid-cols-2 gap-2 sm:max-w-md lg:gap-3">
-            <DashboardKpi
-              title="Non toccate da 7+ gg"
-              value={nonToccate7}
-              hint="Aperte · ultimo aggiornamento"
-              href={buildPraticheQuery({ nonToccateDa: 7 })}
-            />
-            <DashboardKpi
-              title="Non toccate da 15+ gg"
-              value={nonToccate15}
-              hint="Aperte · ultimo aggiornamento"
-              href={buildPraticheQuery({ nonToccateDa: 15 })}
+        {!isManutenzione(user) ? (
+          <div className="min-w-0">
+            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Codici scarico per mandante e perimetro
+            </h2>
+            <CodiciMandantePerimetroTable
+              righe={codiciMandantePerimetro}
+              gruppoSenzaPerimetri={mostraGruppo && !gruppoPerimetriConfigurati}
             />
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {mostraGruppo ? (
         <GruppoLavoroHomeCard
           gruppo={gruppo}
           currentUserId={user.id}
-          canManage={user.role === "SUPERVISOR"}
+          canManage={user.role === "SUPERVISOR" || user.role === "BACK_OFFICE"}
         />
+      ) : null}
+
+      {user.role === "SUPERVISOR" || user.role === "ADMIN" ? (
+        <FormazioneMonitorHomeCard />
       ) : null}
 
     </div>

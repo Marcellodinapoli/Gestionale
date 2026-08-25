@@ -1,8 +1,9 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { validatePasswordComplexity } from "@/lib/passwordRules";
 
+export { PASSWORD_MIN_LENGTH } from "@/lib/passwordRules";
 export const PASSWORD_MAX_AGE_DAYS = 30;
-export const PASSWORD_MIN_LENGTH = 6;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -48,9 +49,8 @@ export async function assertPasswordNotReused(userId: string, newPassword: strin
 
 /** Archivia la password corrente e imposta quella nuova (mai riusata). */
 export async function rotateUserPassword(userId: string, newPassword: string) {
-  if (newPassword.length < PASSWORD_MIN_LENGTH) {
-    throw new Error(`La password deve avere almeno ${PASSWORD_MIN_LENGTH} caratteri`);
-  }
+  const complexityErr = validatePasswordComplexity(newPassword);
+  if (complexityErr) throw new Error(complexityErr);
 
   await assertPasswordNotReused(userId, newPassword);
 

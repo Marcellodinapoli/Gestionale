@@ -46,12 +46,17 @@ export function StatoBadge({ stato }: { stato: string }) {
 export function Card({
   title,
   children,
+  id,
 }: {
   title?: string;
   children: ReactNode;
+  id?: string;
 }) {
   return (
-    <section className="min-w-0 rounded-xl border border-[var(--line)] bg-white p-4 shadow-sm">
+    <section
+      id={id}
+      className="min-w-0 rounded-xl border border-[var(--line)] bg-white p-4 shadow-sm"
+    >
       {title ? (
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
           {title}

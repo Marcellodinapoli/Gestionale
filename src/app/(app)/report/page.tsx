@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/guard";
-import { praticaWhere, dataOraIt } from "@/lib/domain";
+import { dataOraIt } from "@/lib/domain";
+import { getGruppoLavoro } from "@/lib/gruppoLavoro";
+import { registrazioniWhere } from "@/lib/registrazioniScope";
 import { esitoContattoLabel } from "@/lib/contatto";
 import { isManutenzione } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
@@ -20,47 +22,49 @@ export default async function ReportPage({
   const { operatore, q, da, a } = await searchParams;
   const query = (q || "").trim();
 
-  const operatori = isManutenzione(user)
+  const isSupervisor = user.role === "SUPERVISOR";
+  const gruppo = isSupervisor ? await getGruppoLavoro(user) : null;
+  const memberIds = gruppo?.memberIds ?? [];
+  const memberIdSet = new Set(memberIds);
+
+  const allOperatori = isManutenzione(user)
     ? []
     : await prisma.user.findMany({
-        where:
-          user.role === "SUPERVISOR"
-            ? { tenantId: user.tenantId, OR: [{ id: user.id }, { supervisorId: user.id }], role: { in: ["OPERATOR", "SUPERVISOR"] } }
-            : { tenantId: user.tenantId, role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true },
+        where: {
+          tenantId: user.tenantId,
+          role: { in: ["OPERATOR", "SUPERVISOR"] },
+          active: true,
+        },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       });
 
-  const isSupervisor = user.role === "SUPERVISOR";
+  const operatoriGruppo = isSupervisor
+    ? allOperatori.filter((o) => memberIdSet.has(o.id))
+    : allOperatori;
+  const operatoriAltri = isSupervisor
+    ? allOperatori.filter((o) => !memberIdSet.has(o.id))
+    : [];
+
+  const externalOperatore = Boolean(
+    operatore && isSupervisor && !memberIdSet.has(operatore)
+  );
+
   const oggi = new Date().toISOString().slice(0, 10);
   const effDa = da ?? (isSupervisor && !operatore && !q ? oggi : undefined);
   const effA = a ?? (isSupervisor && !operatore && !q ? oggi : undefined);
 
-  const createdAt: { gte?: Date; lte?: Date } = {};
-  if (effDa) createdAt.gte = new Date(`${effDa}T00:00:00`);
-  if (effA) {
-    const end = new Date(`${effA}T00:00:00`);
-    end.setHours(23, 59, 59, 999);
-    createdAt.lte = end;
-  }
+  const where = await registrazioniWhere(user, {
+    operatore,
+    q: query,
+    da: effDa,
+    a: effA,
+    memberIds,
+    externalOperatore,
+  });
 
   const rows = await prisma.registrazioneChiamata.findMany({
-    where: {
-      pratica: praticaWhere(user),
-      ...(user.role === "BACK_OFFICE" ? { evidenzaBackOffice: true } : {}),
-      ...(operatore ? { operatoreId: operatore } : {}),
-      ...(Object.keys(createdAt).length ? { createdAt } : {}),
-      ...(query
-        ? {
-            OR: [
-              { numero: { contains: query } },
-              { pratica: { numero: { contains: query } } },
-              { pratica: { debitore: { cognome: { contains: query } } } },
-              { pratica: { debitore: { nome: { contains: query } } } },
-            ],
-          }
-        : {}),
-    },
+    where,
     include: {
       operatore: { select: { id: true, name: true } },
       pratica: {
@@ -81,7 +85,9 @@ export default async function ReportPage({
         subtitle={
           user.role === "BACK_OFFICE"
             ? "Registrazioni evidenziate dagli operatori per il back office"
-            : "Ascolta le telefonate registrate dagli operatori"
+            : isSupervisor
+              ? "Ascolta le telefonate del tuo gruppo o cerca un altro operatore"
+              : "Ascolta le telefonate registrate dagli operatori"
         }
       />
 
@@ -92,7 +98,7 @@ export default async function ReportPage({
             <input
               name="q"
               defaultValue={query}
-              placeholder="Pratica, debitore, numero"
+              placeholder="Pratica, debitore, operatore"
               className="h-9 w-52 rounded-lg border border-[var(--line)] px-2 text-sm"
             />
           </label>
@@ -103,12 +109,41 @@ export default async function ReportPage({
               defaultValue={operatore || ""}
               className="h-9 min-w-[160px] rounded-lg border border-[var(--line)] px-2 text-sm"
             >
-              <option value="">{user.role === "BACK_OFFICE" ? "Tutti i segnalati" : "Tutti"}</option>
-              {operatori.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
+              <option value="">
+                {user.role === "BACK_OFFICE"
+                  ? "Tutti i segnalati"
+                  : isSupervisor
+                    ? "Tutto il gruppo"
+                    : "Tutti"}
+              </option>
+              {isSupervisor ? (
+                <>
+                  {operatoriGruppo.length ? (
+                    <optgroup label="Il mio gruppo">
+                      {operatoriGruppo.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {operatoriAltri.length ? (
+                    <optgroup label="Altri operatori">
+                      {operatoriAltri.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                </>
+              ) : (
+                allOperatori.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
           <label className="text-xs">

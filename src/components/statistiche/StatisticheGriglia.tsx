@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import type { StatisticheRiga } from "@/lib/statisticheGruppo";
+import type { StatisticheRiga, StatisticheSezione } from "@/lib/statisticheGruppo";
 import { fmtPct } from "@/lib/scarico";
 import { fmtImportoTabella } from "@/lib/statisticheGruppo";
 
@@ -65,25 +65,89 @@ function FragmentRow({
   );
 }
 
+function Intestazione() {
+  const th =
+    "border border-[#b8c4d0] bg-white px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight text-[#132033]";
+  return (
+    <thead>
+      <tr>
+        <th className={th} rowSpan={2}>
+          Esa
+        </th>
+        <th className={th} rowSpan={2}>
+          Mandato
+        </th>
+        <th className={th} rowSpan={2}>
+          Perimetro
+        </th>
+        <th className={th} rowSpan={2}>
+          Nr Prt
+        </th>
+        <th className={th} rowSpan={2}>
+          Affidato
+        </th>
+        <th className={th} rowSpan={2}>
+          Incassato
+        </th>
+        <th className={th} rowSpan={2}>
+          Nr Pz Inc
+        </th>
+        <th className={th} colSpan={2}>
+          % Pz Inc
+        </th>
+        <th className={th} colSpan={4}>
+          N/D
+        </th>
+        <th className={th} colSpan={4}>
+          PTC
+        </th>
+        <th className={th} colSpan={4}>
+          PPC
+        </th>
+        <th className={th} colSpan={4}>
+          MOV
+        </th>
+        <th className={th} colSpan={4}>
+          LPP
+        </th>
+        <th className={th} colSpan={4}>
+          LPT
+        </th>
+      </tr>
+      <tr>
+        <th className={th}>% Aff.</th>
+        <th className={th}>% Pz</th>
+        {["N/D", "PTC", "PPC", "MOV", "LPP", "LPT"].map((code) => (
+          <Fragment key={code}>
+            <th className={th}>{code}</th>
+            <th className={th}>Nr.</th>
+            <th className={th}>% Aff.</th>
+            <th className={th}>% Pz</th>
+          </Fragment>
+        ))}
+      </tr>
+    </thead>
+  );
+}
+
 export function StatisticheGriglia({
-  righe,
+  sezioni,
   totale,
   dataReport,
   affidoDa,
   affidoA,
+  mostraTotaliAzienda = true,
 }: {
-  righe: StatisticheRiga[];
+  sezioni: StatisticheSezione[];
   totale: StatisticheRiga;
   dataReport: string;
   affidoDa: string;
   affidoA: string;
+  mostraTotaliAzienda?: boolean;
 }) {
-  const th =
-    "border border-[#b8c4d0] bg-white px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight text-[#132033]";
-
   return (
-    <div className="overflow-auto rounded border border-[#b8c4d0] bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#b8c4d0] bg-[#f5f7fa] px-3 py-2 text-xs text-[#132033]">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-[#b8c4d0] bg-[#f5f7fa] px-3 py-2 text-xs text-[#132033]">
         <span>
           <span className="font-semibold">Data:</span> {dataReport}
         </span>
@@ -92,75 +156,57 @@ export function StatisticheGriglia({
           <span className="font-semibold">Affido / Scadenza:</span> {affidoDa} — {affidoA}
         </span>
       </div>
-      <table className="w-full min-w-[1200px] border-collapse">
-        <thead>
-          <tr>
-            <th className={th} rowSpan={2}>
-              Esa
-            </th>
-            <th className={th} rowSpan={2}>
-              Mandato
-            </th>
-            <th className={th} rowSpan={2}>
-              Perimetro
-            </th>
-            <th className={th} rowSpan={2}>
-              Nr Prt
-            </th>
-            <th className={th} rowSpan={2}>
-              Affidato
-            </th>
-            <th className={th} rowSpan={2}>
-              Incassato
-            </th>
-            <th className={th} rowSpan={2}>
-              Nr Pz Inc
-            </th>
-            <th className={th} colSpan={2}>
-              % Pz Inc
-            </th>
-            <th className={th} colSpan={4}>
-              N/D
-            </th>
-            <th className={th} colSpan={4}>
-              PTC
-            </th>
-            <th className={th} colSpan={4}>
-              PPC
-            </th>
-            <th className={th} colSpan={4}>
-              MOV
-            </th>
-            <th className={th} colSpan={4}>
-              LPP
-            </th>
-            <th className={th} colSpan={4}>
-              LPT
-            </th>
-          </tr>
-          <tr>
-            <th className={th}>% Aff.</th>
-            <th className={th}>% Pz</th>
-            {["N/D", "PTC", "PPC", "MOV", "LPP", "LPT"].map((code) => (
-              <Fragment key={code}>
-                <th className={th}>{code}</th>
-                <th className={th}>Nr.</th>
-                <th className={th}>% Aff.</th>
-                <th className={th}>% Pz</th>
-              </Fragment>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {righe.map((riga, i) => (
-            <Riga key={`${riga.esa}-${riga.mandato}-${riga.lottoCg}-${i}`} riga={riga} />
-          ))}
-          <Riga riga={totale} />
-        </tbody>
-      </table>
-      <p className="border-t border-[#b8c4d0] bg-[#f5f7fa] px-3 py-1.5 text-[10px] text-[var(--muted)]">
+
+      {sezioni.map((sez) => (
+        <div
+          key={sez.perimetro}
+          className="overflow-auto rounded border border-[#b8c4d0] bg-white shadow-sm"
+        >
+          <div className="border-b border-[#b8c4d0] bg-[#e8eef4] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#132033]">
+            Perimetro {sez.perimetro}
+          </div>
+          <table className="w-full min-w-[1200px] border-collapse">
+            <Intestazione />
+            <tbody>
+              {sez.righe.map((riga, i) => (
+                <Riga
+                  key={`${riga.esa}-${riga.mandato}-${riga.lottoCg}-${i}`}
+                  riga={riga}
+                />
+              ))}
+              {!sez.righe.length ? (
+                <tr>
+                  <td
+                    colSpan={30}
+                    className="border border-[#b8c4d0] bg-white px-3 py-4 text-center text-xs text-[var(--muted)]"
+                  >
+                    Nessuna pratica nel periodo · tutti gli operatori del gruppo
+                  </td>
+                </tr>
+              ) : null}
+              <Riga riga={sez.subtotale} />
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      {mostraTotaliAzienda && sezioni.length > 1 ? (
+        <div className="overflow-auto rounded border-2 border-[#132033] bg-white shadow-sm">
+          <div className="border-b border-[#132033] bg-[#132033] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white">
+            Totale agenzia · tutti i perimetri
+          </div>
+          <table className="w-full min-w-[1200px] border-collapse">
+            <Intestazione />
+            <tbody>
+              <Riga riga={totale} />
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <p className="text-[10px] text-[var(--muted)]">
         % Aff. = percentuale importo su affidato · % Pz = percentuale pezzi su Nr Prt · N/D = senza
-        codice scarico (non ancora lavorate)
+        codice scarico (non ancora lavorate). Ogni perimetro ha il proprio subtotale.
       </p>
     </div>
   );

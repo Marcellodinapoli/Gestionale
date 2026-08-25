@@ -29,20 +29,116 @@ export function etichettaTipoAffido(pratica: {
   return "—";
 }
 
-/** Distribuisce le pratiche a round-robin tra gli operatori (parti uguali). */
+export type StatoAffidoPratica = {
+  assegnatarioId: string | null;
+  operatoreTitolareId: string | null;
+};
+
+export function titolarePratica(
+  p: StatoAffidoPratica,
+  titolareEsplicito?: string | null
+): string | null {
+  return p.operatoreTitolareId ?? p.assegnatarioId ?? titolareEsplicito ?? null;
+}
+
+/** Messaggio errore se l'affido non è applicabile; null se ok. */
+export function validaAffidoPratica(
+  p: StatoAffidoPratica,
+  tipo: TipoAffido,
+  assegnatarioId: string | null,
+  titolareEsplicito?: string | null
+): string | null {
+  const titolare = titolarePratica(p, titolareEsplicito);
+
+  if (tipo === "ripristina") {
+    if (!isAffidoTemporaneo(p)) return "Non è un affido temporaneo";
+    if (!titolare) return "Nessun titolare da ripristinare";
+    if (p.assegnatarioId === titolare) return "La pratica è già presso il titolare";
+    return null;
+  }
+
+  if (!assegnatarioId) return "Seleziona un operatore";
+
+  if (tipo === "temporaneo") {
+    if (!titolare) return "Indica il titolare (affido definitivo)";
+    if (assegnatarioId === titolare) return "Seleziona un operatore diverso dal titolare";
+    return null;
+  }
+
+  return null;
+}
+
+export function validaAffidoSelezione(
+  ids: string[],
+  pratiche: Record<string, StatoAffidoPratica>,
+  tipo: TipoAffido,
+  assegnatarioId: string | null,
+  titolareEsplicito?: string | null
+): string | null {
+  if (!ids.length) return "Seleziona almeno una pratica";
+  const errori: string[] = [];
+  for (const id of ids) {
+    const p = pratiche[id];
+    if (!p) continue;
+    const err = validaAffidoPratica(p, tipo, assegnatarioId, titolareEsplicito);
+    if (err) errori.push(err);
+  }
+  if (!errori.length) return null;
+  const unici = [...new Set(errori)];
+  return unici.length === 1
+    ? unici[0]!
+    : `${unici.slice(0, 2).join(" · ")}${unici.length > 2 ? "…" : ""}`;
+}
+
+export function selezioneRichiedeTitolare(
+  ids: string[],
+  pratiche: Record<string, StatoAffidoPratica>,
+  tipo: TipoAffido
+): boolean {
+  if (tipo !== "temporaneo") return false;
+  return ids.some((id) => {
+    const p = pratiche[id];
+    return p ? !titolarePratica(p) : false;
+  });
+}
+
+export function selezioneConsenteRipristina(
+  ids: string[],
+  pratiche: Record<string, StatoAffidoPratica>
+): boolean {
+  if (!ids.length) return false;
+  return ids.every((id) => {
+    const p = pratiche[id];
+    return p ? isAffidoTemporaneo(p) : false;
+  });
+}
+
+/** Distribuisce le pratiche in parti uguali; eventuale resto all'ultimo operatore. */
 export function dividePraticheEquamente(
   praticaIds: string[],
   operatoreIds: string[]
 ): Array<{ operatoreId: string; praticaIds: string[] }> {
   const ops = [...new Set(operatoreIds.filter(Boolean))];
   if (!ops.length) return [];
+
   const buckets = ops.map((operatoreId) => ({
     operatoreId,
     praticaIds: [] as string[],
   }));
-  praticaIds.forEach((id, i) => {
-    buckets[i % ops.length].praticaIds.push(id);
-  });
+
+  const n = praticaIds.length;
+  const base = Math.floor(n / ops.length);
+  const resto = n % ops.length;
+
+  let idx = 0;
+  for (let i = 0; i < ops.length; i++) {
+    const count = i === ops.length - 1 ? base + resto : base;
+    for (let j = 0; j < count; j++) {
+      buckets[i]!.praticaIds.push(praticaIds[idx]!);
+      idx++;
+    }
+  }
+
   return buckets;
 }
 

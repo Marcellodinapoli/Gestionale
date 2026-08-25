@@ -1,8 +1,47 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRegistrazioniDemo } from "./seedRegistrazioni";
+import { emptyLatoEconomico, serializePerimetri } from "../src/lib/mandantePerimetri";
+import { serializeGruppoMandanti } from "../src/lib/gruppoMandanti";
 
 const prisma = new PrismaClient();
+
+function latoProvvigioneDemo() {
+  return {
+    ...emptyLatoEconomico(),
+    provvigionePerc: 8,
+  };
+}
+
+const PERIMETRI_BNL = serializePerimetri([
+  {
+    id: "per-112608",
+    nomeInterno: "112608",
+    nomeMandante: "112608",
+    ricevuta: emptyLatoEconomico(),
+    pagata: latoProvvigioneDemo(),
+    codiciScarico: [],
+    smsPreimpostati: [],
+  },
+  {
+    id: "per-1426001",
+    nomeInterno: "1426001",
+    nomeMandante: "1426001",
+    ricevuta: emptyLatoEconomico(),
+    pagata: latoProvvigioneDemo(),
+    codiciScarico: [],
+    smsPreimpostati: [],
+  },
+  {
+    id: "per-1426055",
+    nomeInterno: "1426055",
+    nomeMandante: "1426055",
+    ricevuta: emptyLatoEconomico(),
+    pagata: latoProvvigioneDemo(),
+    codiciScarico: [],
+    smsPreimpostati: [],
+  },
+]);
 
 async function main() {
   const passwordHash = await bcrypt.hash("Demo123!", 10);
@@ -39,7 +78,7 @@ async function main() {
     data: {
       tenantId: tenant.id,
       email: "admin@gestionale.local",
-      name: "Anna Amministratore",
+      name: "Anna",
       passwordHash,
       role: "ADMIN",
     },
@@ -159,6 +198,20 @@ async function main() {
       ragioneSociale: "Banca Esempio S.p.A.",
       email: "affidi@bancaesempio.it",
       telefono: "06 12345678",
+      perimetri: PERIMETRI_BNL,
+    },
+  });
+
+  await prisma.user.update({
+    where: { id: supervisor.id },
+    data: {
+      gruppoNome: "Gruppo Sara",
+      gruppoMandanti: serializeGruppoMandanti([
+        {
+          mandanteId: mandante.id,
+          perimetriIds: ["per-112608", "per-1426001", "per-1426055"],
+        },
+      ]),
     },
   });
 

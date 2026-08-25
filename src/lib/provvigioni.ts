@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { isManutenzione, type SessionUser } from "@/lib/permissions";
 
+import type { LatoEconomico } from "@/lib/mandantePerimetri";
+
 /** Percentuale provvigione sull'importo incassato (default demo). */
 export const PROVVIGIONE_PERCENTUALE = 8;
 
@@ -39,6 +41,23 @@ export function resolveProvvigionePercentuale(
   const perMetodo = parseProvvigioniMetodo(mandante.provvigioniMetodo);
   if (perMetodo[metodo] != null) return perMetodo[metodo];
   if (mandante.provvigionePerc != null) return mandante.provvigionePerc;
+  return PROVVIGIONE_PERCENTUALE;
+}
+
+/** Risolve la % provvigione dal lato economico perimetro (modalità > codice scarico > base). */
+export function resolveProvvigionePercentualeLato(
+  lato: Pick<LatoEconomico, "provvigionePerc" | "provvigioniMetodo" | "provvigioniCodice">,
+  metodo: string,
+  codiceScarico?: string | null
+) {
+  if (lato.provvigioniMetodo[metodo] != null) {
+    return lato.provvigioniMetodo[metodo]!;
+  }
+  const codice = codiceScarico?.trim().toUpperCase() || "";
+  if (codice && lato.provvigioniCodice?.[codice] != null) {
+    return lato.provvigioniCodice[codice]!;
+  }
+  if (lato.provvigionePerc != null) return lato.provvigionePerc;
   return PROVVIGIONE_PERCENTUALE;
 }
 

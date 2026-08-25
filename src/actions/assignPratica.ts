@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { canAccessPratica, writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
-import { parseTipoAffido, dividePraticheEquamente, type TipoAffido } from "@/lib/affido";
+import { parseTipoAffido, dividePraticheEquamente, validaAffidoPratica, titolarePratica, type TipoAffido } from "@/lib/affido";
 import { assertPraticaNotLockedByOther } from "@/lib/praticaLock";
 import { operatorSigla } from "@/lib/noteFormat";
 import type { SessionUser } from "@/lib/permissions";
@@ -26,7 +26,8 @@ async function assegnaPratica(
   user: SessionUser,
   praticaId: string,
   assegnatarioId: string | null,
-  tipo: TipoAffido
+  tipo: TipoAffido,
+  titolareEsplicito?: string | null
 ) {
   const pratica = await prisma.pratica.findUnique({ where: { id: praticaId } });
   if (!pratica) fail("Pratica non trovata");
@@ -35,14 +36,12 @@ async function assegnaPratica(
   }
   await assertPraticaNotLockedByOther(user.id, praticaId);
 
-  const titolareCorrente =
-    pratica.operatoreTitolareId ?? pratica.assegnatarioId;
+  const err = validaAffidoPratica(pratica, tipo, assegnatarioId, titolareEsplicito);
+  if (err) fail(err);
+
+  const titolareCorrente = titolarePratica(pratica, titolareEsplicito);
 
   if (tipo === "ripristina") {
-    if (!titolareCorrente) fail("Nessun titolare da ripristinare");
-    if (pratica.assegnatarioId === titolareCorrente) {
-      fail("La pratica è già presso il titolare");
-    }
     await prisma.pratica.update({
       where: { id: praticaId },
       data: { assegnatarioId: titolareCorrente },
@@ -79,19 +78,12 @@ async function assegnaPratica(
   }
 
   if (tipo === "temporaneo") {
-    if (!titolareCorrente) {
-      fail("Per l'affido temporaneo serve prima un titolare (affido definitivo)");
-    }
-    if (assegnatarioId === titolareCorrente) {
-      fail("Seleziona un operatore diverso dal titolare");
-    }
     await prisma.pratica.update({
       where: { id: praticaId },
       data: {
         assegnatarioId,
         operatoreTitolareId: titolareCorrente,
-        stato:
-          pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
+        stato: pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
       },
     });
     await writeAudit({
@@ -107,8 +99,7 @@ async function assegnaPratica(
       data: {
         assegnatarioId,
         operatoreTitolareId: assegnatarioId,
-        stato:
-          pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
+        stato: pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
       },
     });
     await writeAudit({
@@ -127,16 +118,23 @@ function revalidateListe() {
   revalidatePath("/affidi");
 }
 
+function titolareDaForm(formData: FormData) {
+  const raw = String(formData.get("titolareId") || "").trim();
+  return raw || null;
+}
+
 export async function assignPraticaAction(formData: FormData) {
   const user = await requireWritablePermission("pratiche:assign");
   const praticaId = String(formData.get("praticaId") || "");
   const tipo = parseTipoAffido(String(formData.get("tipoAffido") || ""));
+  const titolareId = titolareDaForm(formData);
   const assegnatarioId =
     tipo === "ripristina"
       ? null
       : String(formData.get("assegnatarioId") || "") || null;
   if (tipo !== "ripristina") await assertPuoAffidareA(user, assegnatarioId);
-  await assegnaPratica(user, praticaId, assegnatarioId, tipo);
+  if (tipo === "temporaneo" && titolareId) await assertPuoAffidareA(user, titolareId);
+  await assegnaPratica(user, praticaId, assegnatarioId, tipo, titolareId);
   revalidateListe();
 }
 
@@ -144,6 +142,7 @@ export async function assignPraticheMassiveAction(formData: FormData) {
   const user = await requireWritablePermission("pratiche:assign");
   const ids = [...new Set(formData.getAll("praticaId").map(String).filter(Boolean))];
   const tipo = parseTipoAffido(String(formData.get("tipoAffido") || ""));
+  const titolareId = titolareDaForm(formData);
   const assegnatarioId =
     tipo === "ripristina"
       ? null
@@ -152,10 +151,25 @@ export async function assignPraticheMassiveAction(formData: FormData) {
   if (tipo !== "ripristina" && !assegnatarioId) fail("Seleziona un operatore");
   if (ids.length > 200) fail("Massimo 200 pratiche per affido massivo");
   if (tipo !== "ripristina") await assertPuoAffidareA(user, assegnatarioId);
+  if (tipo === "temporaneo" && titolareId) await assertPuoAffidareA(user, titolareId);
+
+  const errors: string[] = [];
   for (const praticaId of ids) {
-    await assegnaPratica(user, praticaId, assegnatarioId, tipo);
+    try {
+      await assegnaPratica(user, praticaId, assegnatarioId, tipo, titolareId);
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : "errore");
+    }
   }
   revalidateListe();
+  if (errors.length) {
+    const unici = [...new Set(errors)];
+    fail(
+      errors.length === ids.length
+        ? unici[0]!
+        : `Affido parziale: ${ids.length - errors.length} ok, ${errors.length} errori. ${unici.slice(0, 2).join(" · ")}`
+    );
+  }
 }
 
 function parseCodiciRaw(raw: string) {
@@ -178,6 +192,7 @@ export async function affidoEquoMassivoAction(formData: FormData) {
   const user = await requireWritablePermission("pratiche:assign");
   const ids = [...new Set(formData.getAll("praticaId").map(String).filter(Boolean))];
   const tipo = parseTipoAffido(String(formData.get("tipoAffido") || ""));
+  const titolareId = titolareDaForm(formData);
   const codici = parseCodiciRaw(String(formData.get("codiciOperatori") || ""));
   const conferma = String(formData.get("conferma") || "") === "1";
 
@@ -225,12 +240,14 @@ export async function affidoEquoMassivoAction(formData: FormData) {
     await assertPuoAffidareA(user, opId);
   }
 
+  if (tipo === "temporaneo" && titolareId) await assertPuoAffidareA(user, titolareId);
+
   const buckets = dividePraticheEquamente(ids, operatoriIds);
   const errors: string[] = [];
   for (const bucket of buckets) {
     for (const praticaId of bucket.praticaIds) {
       try {
-        await assegnaPratica(user, praticaId, bucket.operatoreId, tipo);
+        await assegnaPratica(user, praticaId, bucket.operatoreId, tipo, titolareId);
       } catch (e) {
         errors.push(
           `${praticaId.slice(0, 8)}…: ${e instanceof Error ? e.message : "errore"}`

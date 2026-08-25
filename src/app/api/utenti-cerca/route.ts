@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { requireApiUser } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { ROLE_LABELS, isManutenzione, type Role } from "@/lib/permissions";
 import { operatorSigla } from "@/lib/noteFormat";
 
 export async function GET(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ users: [] }, { status: 401 });
+  const user = await requireApiUser();
+  if (user instanceof NextResponse) return user;
   if (isManutenzione(user)) return NextResponse.json({ users: [] });
 
   const url = new URL(req.url);
@@ -14,15 +14,25 @@ export async function GET(req: Request) {
   const ruolo = url.searchParams.get("ruolo") || "";
   const elenco = url.searchParams.get("elenco") === "1";
 
+  // Destinatari: tutti i ruoli operativi, esclusa manutenzione (e se stessi).
   const all = await prisma.user.findMany({
-    where: { active: true, id: { not: user.id }, tenantId: user.tenantId },
+    where: {
+      active: true,
+      id: { not: user.id },
+      tenantId: user.tenantId,
+      role: { not: "MANUTENZIONE" },
+    },
     select: { id: true, name: true, role: true },
-    orderBy: { name: "asc" },
+    orderBy: [{ role: "asc" }, { name: "asc" }],
   });
 
   const users = all
     .filter((u) => {
-      if (ruolo && u.role !== ruolo) return false;
+      if (ruolo === "OPERATOR" || ruolo === "BACK_OFFICE") {
+        if (u.role !== ruolo) return false;
+      } else if (ruolo && u.role !== ruolo) {
+        return false;
+      }
       if (!elenco && q.length < 1) return false;
       if (q) {
         const sigla = operatorSigla(u.name).toLowerCase();

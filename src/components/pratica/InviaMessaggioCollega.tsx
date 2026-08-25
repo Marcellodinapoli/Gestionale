@@ -25,7 +25,7 @@ export function InviaMessaggioCollega({
   const router = useRouter();
   const [q, setQ] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("ALL");
-  const [elencoAperto, setElencoAperto] = useState(false);
+  const [elencoAperto, setElencoAperto] = useState(Boolean(standalone || inModal));
   const [hits, setHits] = useState<Hit[]>([]);
   const [dest, setDest] = useState<Hit | null>(null);
   const [testo, setTesto] = useState("");
@@ -34,6 +34,7 @@ export function InviaMessaggioCollega({
   const [sending, setSending] = useState(false);
   const [collegata, setCollegata] = useState(Boolean(praticaId));
   const boxRef = useRef<HTMLDivElement>(null);
+  const elencoInFlow = Boolean(standalone || inModal);
 
   const destGruppo = dest?.id === "__ALL__";
   const ruoloInvio: Filtro | "" = destGruppo
@@ -66,6 +67,7 @@ export function InviaMessaggioCollega({
   }, [q, dest, filtro, elencoAperto]);
 
   useEffect(() => {
+    if (elencoInFlow) return;
     function onDoc(e: MouseEvent) {
       if (!boxRef.current?.contains(e.target as Node)) {
         setElencoAperto(false);
@@ -74,7 +76,7 @@ export function InviaMessaggioCollega({
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+  }, [elencoInFlow]);
 
   function apriElenco(ruolo: Filtro) {
     setDest(null);
@@ -135,6 +137,55 @@ export function InviaMessaggioCollega({
       setSending(false);
     }
   }
+
+  const elencoLista =
+    !dest && elencoAperto ? (
+      <ul
+        className={
+          elencoInFlow
+            ? "mt-1 max-h-[min(50vh,22rem)] min-h-[14rem] overflow-auto rounded border border-[var(--line)] bg-white text-sm shadow-sm"
+            : "absolute z-30 mt-0.5 max-h-56 w-full overflow-auto rounded border border-[var(--line)] bg-white text-sm shadow-lg"
+        }
+      >
+        {showTuttiVoce ? (
+          <li>
+            <button
+              type="button"
+              onClick={() => scegliTutti(filtro)}
+              className="flex w-full items-center justify-between border-b border-[var(--line)] bg-[#eef4f8] px-2 py-1.5 text-left font-semibold hover:bg-[#dceaf3]"
+            >
+              <span>
+                <span className="font-mono text-xs font-bold">TUTTI</span>{" "}
+                {etichettaGruppo(filtro)}
+              </span>
+              <span className="text-[10px] text-[var(--muted)]">Gruppo</span>
+            </button>
+          </li>
+        ) : null}
+        {hits.map((h) => (
+          <li key={h.id}>
+            <button
+              type="button"
+              onClick={() => {
+                setDest(h);
+                setQ("");
+                setHits([]);
+                setElencoAperto(false);
+              }}
+              className="flex w-full items-center justify-between px-2 py-1.5 text-left hover:bg-[#eef4f8]"
+            >
+              <span>
+                <span className="font-mono text-xs font-bold">{h.sigla}</span> {h.name}
+              </span>
+              <span className="text-[10px] text-[var(--muted)]">{h.ruolo}</span>
+            </button>
+          </li>
+        ))}
+        {!hits.length && !showTuttiVoce ? (
+          <li className="px-2 py-1.5 text-[var(--muted)]">Nessun risultato</li>
+        ) : null}
+      </ul>
+    ) : null;
 
   return (
     <form
@@ -217,8 +268,14 @@ export function InviaMessaggioCollega({
             {elencoAperto && filtro === "ALL" ? "Chiudi elenco" : "Elenco aziendale"}
           </button>
         </div>
-        <div className="grid gap-2 md:grid-cols-[240px_1fr_auto]">
-          <div className="relative">
+        <div
+          className={
+            elencoInFlow
+              ? "grid gap-2"
+              : "grid gap-2 md:grid-cols-[240px_1fr_auto]"
+          }
+        >
+          <div className={elencoInFlow ? "" : "relative"}>
             <input
               value={dest ? `${dest.sigla} — ${dest.name}` : q}
               onChange={(e) => {
@@ -233,70 +290,38 @@ export function InviaMessaggioCollega({
               placeholder="Cerca per nome…"
               className="h-9 w-full rounded border border-[var(--line)] bg-white px-2 text-sm"
             />
-            {!dest && elencoAperto ? (
-              <ul className="absolute z-30 mt-0.5 max-h-56 w-full overflow-auto rounded border border-[var(--line)] bg-white text-sm shadow-lg">
-                {showTuttiVoce ? (
-                  <li>
-                    <button
-                      type="button"
-                      onClick={() => scegliTutti(filtro)}
-                      className="flex w-full items-center justify-between border-b border-[var(--line)] bg-[#eef4f8] px-2 py-1.5 text-left font-semibold hover:bg-[#dceaf3]"
-                    >
-                      <span>
-                        <span className="font-mono text-xs font-bold">TUTTI</span>{" "}
-                        {etichettaGruppo(filtro)}
-                      </span>
-                      <span className="text-[10px] text-[var(--muted)]">Gruppo</span>
-                    </button>
-                  </li>
-                ) : null}
-                {hits.map((h) => (
-                  <li key={h.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDest(h);
-                        setQ("");
-                        setHits([]);
-                        setElencoAperto(false);
-                      }}
-                      className="flex w-full items-center justify-between px-2 py-1.5 text-left hover:bg-[#eef4f8]"
-                    >
-                      <span>
-                        <span className="font-mono text-xs font-bold">{h.sigla}</span>{" "}
-                        {h.name}
-                      </span>
-                      <span className="text-[10px] text-[var(--muted)]">{h.ruolo}</span>
-                    </button>
-                  </li>
-                ))}
-                {!hits.length && !showTuttiVoce ? (
-                  <li className="px-2 py-1.5 text-[var(--muted)]">Nessun risultato</li>
-                ) : null}
-              </ul>
-            ) : null}
+            {!elencoInFlow ? elencoLista : null}
           </div>
-          <input
-            value={testo}
-            onChange={(e) => setTesto(e.target.value)}
-            placeholder="Testo del messaggio"
-            className="h-9 rounded border border-[var(--line)] bg-white px-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={sending}
-            className="h-9 rounded bg-[#132033] px-3 text-sm font-medium text-white disabled:opacity-60"
+          {elencoInFlow ? elencoLista : null}
+          <div
+            className={
+              elencoInFlow
+                ? "grid gap-2 sm:grid-cols-[1fr_auto]"
+                : "contents"
+            }
           >
-            {sending
-              ? "…"
-              : ruoloInvio === "ALL"
-                ? "Invia a tutti"
-                : ruoloInvio === "OPERATOR"
-                  ? "Invia agli operatori"
-                  : ruoloInvio === "BACK_OFFICE"
-                    ? "Invia al back office"
-                    : "Invia"}
-          </button>
+            <input
+              value={testo}
+              onChange={(e) => setTesto(e.target.value)}
+              placeholder="Testo del messaggio"
+              className="h-9 rounded border border-[var(--line)] bg-white px-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={sending}
+              className="h-9 rounded bg-[#132033] px-3 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {sending
+                ? "…"
+                : ruoloInvio === "ALL"
+                  ? "Invia a tutti"
+                  : ruoloInvio === "OPERATOR"
+                    ? "Invia agli operatori"
+                    : ruoloInvio === "BACK_OFFICE"
+                      ? "Invia al back office"
+                      : "Invia"}
+            </button>
+          </div>
         </div>
       </div>
       {destGruppo ? (

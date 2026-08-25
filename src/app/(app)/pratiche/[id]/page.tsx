@@ -22,7 +22,6 @@ import {
 import { buildOrderBy, isUltimaLavorazioneSort, orderPraticaIdsByUltimaLavorazione } from "@/lib/praticaOrdine";
 import { getRecordingMode } from "@/lib/recordingConfig";
 import { getPraticaWorkContext } from "@/lib/praticaLock";
-import { paginateParams } from "@/components/PaginazioneBar";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
 import { PraticaSchedaOperatore } from "@/components/pratica/PraticaSchedaOperatore";
 import { PraticaLockWatcher } from "@/components/pratica/PraticaLockWatcher";
@@ -108,7 +107,6 @@ export default async function PraticaDetailPage({
     ? null
     : usaCodaNav && codaNav
       ? await (async () => {
-          const { skip, pageSize } = paginateParams(String(codaNav.listPage));
           const whereCoda = {
             ...praticaWhere(user),
             ...(codaNav.filtro ? codaFiltroWhere(codaNav.filtro) : {}),
@@ -116,9 +114,7 @@ export default async function PraticaDetailPage({
           if (isUltimaLavorazioneSort(codaNav.sort)) {
             const ids = await orderPraticaIdsByUltimaLavorazione(
               whereCoda,
-              codaNav.dir,
-              skip,
-              pageSize
+              codaNav.dir
             );
             return ids.map((id) => ({ id }));
           }
@@ -126,8 +122,6 @@ export default async function PraticaDetailPage({
             where: whereCoda,
             select: { id: true },
             orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
-            skip,
-            take: pageSize,
           });
         })()
       : await prisma.pratica.findMany({

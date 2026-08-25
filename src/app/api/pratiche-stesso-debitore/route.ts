@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { requireApiUser } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import {
   canAccessPratica,
@@ -37,8 +37,8 @@ function mapVoce(
 }
 
 export async function GET(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  const user = await requireApiUser();
+  if (user instanceof NextResponse) return user;
 
   const praticaId = new URL(req.url).searchParams.get("id") || "";
   if (!praticaId) return NextResponse.json({ error: "Pratica mancante" }, { status: 400 });

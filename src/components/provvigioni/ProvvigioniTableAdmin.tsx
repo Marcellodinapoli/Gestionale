@@ -9,6 +9,8 @@ import {
   liquidaMassivaAction,
   updateImportoProvvigioneAction,
 } from "@/actions/provvigioniAdmin";
+import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
+import { ProvvigioniPannelloEconomico } from "@/components/provvigioni/ProvvigioniListaPerimetro";
 
 type Riga = {
   id: string;
@@ -22,6 +24,7 @@ type Riga = {
   importo: number;
   stato: string;
   statoLabel: string;
+  perimetro: string;
 };
 
 function euro(value: number) {
@@ -32,14 +35,15 @@ function euro(value: number) {
 }
 
 export function ProvvigioniTableAdmin({
-  righe,
+  sezioni,
 }: {
-  righe: Riga[];
+  sezioni: SezioneProvvigioni<Riga>[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [liquidando, setLiquidando] = useState(false);
 
+  const righe = sezioni.flatMap((s) => s.righe);
   const maturate = righe.filter((r) => r.stato === "MATURATA");
   const allSelected = maturate.length > 0 && maturate.every((r) => selected.has(r.id));
 
@@ -74,10 +78,18 @@ export function ProvvigioniTableAdmin({
     }
   }
 
+  if (!sezioni.length) {
+    return (
+      <p className="rounded-xl border border-[var(--line)] bg-white p-8 text-center text-[var(--muted)]">
+        Nessuna provvigione nel mese selezionato.
+      </p>
+    );
+  }
+
   return (
     <div>
       {maturate.length > 0 && (
-        <div className="mb-2 flex items-center gap-3">
+        <div className="mb-3 flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white px-3 py-2">
           <label className="flex items-center gap-1.5 text-xs">
             <input
               type="checkbox"
@@ -100,40 +112,63 @@ export function ProvvigioniTableAdmin({
           )}
         </div>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-[var(--muted)]">
-            <tr>
-              <th className="px-2 py-2 w-8" />
-              <th className="px-3 py-2">Data</th>
-              <th>Operatore</th>
-              <th>Pratica</th>
-              <th>Debitore</th>
-              <th>Incasso</th>
-              <th>%</th>
-              <th>Provvigione</th>
-              <th>Stato</th>
-              <th className="w-16" />
-            </tr>
-          </thead>
-          <tbody>
-            {righe.map((r) => (
-              <RigaProvvigione
-                key={r.id}
-                r={r}
-                checked={selected.has(r.id)}
-                onToggle={() => toggle(r.id)}
-              />
-            ))}
-            {!righe.length && (
-              <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-[var(--muted)]">
-                  Nessuna provvigione nel mese selezionato.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="space-y-5">
+        {sezioni.map((sez) => (
+          <section
+            key={sez.perimetro}
+            className="overflow-hidden rounded-xl border-2 border-[#1a4f7a]/25 bg-white shadow-sm"
+          >
+            <header className="border-b border-[#1a4f7a]/20 bg-[#1a4f7a] px-4 py-2.5 text-white">
+              <p className="text-[10px] font-semibold uppercase tracking-widest opacity-90">
+                Perimetro
+              </p>
+              <h3 className="text-base font-bold tracking-tight">
+                {sez.perimetro}
+                <span className="ml-2 text-sm font-normal opacity-90">
+                  · Mandato {sez.mandanteCodice}
+                </span>
+              </h3>
+            </header>
+
+            <ProvvigioniPannelloEconomico sez={sez} />
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-[var(--muted)]">
+                  <tr>
+                    <th className="w-8 px-2 py-2" />
+                    <th className="px-3 py-2">Data</th>
+                    <th>Operatore</th>
+                    <th>Pratica</th>
+                    <th>Debitore</th>
+                    <th>Incasso</th>
+                    <th>%</th>
+                    <th>Provvigione</th>
+                    <th>Stato</th>
+                    <th className="w-16" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sez.righe.map((r) => (
+                    <RigaProvvigione
+                      key={r.id}
+                      r={r}
+                      checked={selected.has(r.id)}
+                      onToggle={() => toggle(r.id)}
+                    />
+                  ))}
+                  {!sez.righe.length ? (
+                    <tr>
+                      <td colSpan={10} className="px-3 py-4 text-center text-[var(--muted)]">
+                        Nessun movimento in questo perimetro nel mese selezionato.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );

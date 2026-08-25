@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 
+import type { PerimetroListItem } from "@/lib/mandantePerimetri";
+
 export type MandanteImportOption = {
   id: string;
   codice: string;
   ragioneSociale: string;
-  perimetri: Array<{ id: string; nome: string }>;
+  perimetri: PerimetroListItem[];
 };
 
 function todayInputValue() {
@@ -85,16 +87,16 @@ export function ImportForm({
             value={perimetro}
             disabled={!mandanteId}
             onChange={(e) => {
-              const nome = e.target.value;
-              setPerimetro(nome);
-              if (!lotto.trim()) setLotto(nome);
+              const nomeMandante = e.target.value;
+              setPerimetro(nomeMandante);
+              if (!lotto.trim()) setLotto(nomeMandante);
             }}
             className={fieldCls}
           >
             <option value="">Seleziona perimetro…</option>
             {perimetri.map((p) => (
-              <option key={p.id} value={p.nome}>
-                {p.nome}
+              <option key={p.id} value={p.nomeMandante}>
+                {p.label}
               </option>
             ))}
           </select>

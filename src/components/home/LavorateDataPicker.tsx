@@ -14,7 +14,12 @@ export function LavorateDataPicker({
 
   function navigate(next: string) {
     if (home) {
-      router.push(next === formatDataIso(new Date()) ? "/" : `/?lavorateData=${next}`);
+      const sp = new URLSearchParams(window.location.search);
+      const gruppo = sp.get("gruppo");
+      const qs = new URLSearchParams();
+      if (gruppo) qs.set("gruppo", gruppo);
+      if (next !== formatDataIso(new Date())) qs.set("lavorateData", next);
+      router.push(qs.size ? `/?${qs.toString()}` : "/");
       return;
     }
     const sp = new URLSearchParams(window.location.search);

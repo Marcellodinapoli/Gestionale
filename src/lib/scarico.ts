@@ -22,6 +22,16 @@ export function codiceScaricoDaStato(stato: string): CodiceScarico | null {
   return STATO_SCARICO[stato] ?? null;
 }
 
+/** Stato pratica tipicamente associato a un codice scarico. */
+export function statoDaCodiceScarico(codice: string): string | null {
+  const entry = Object.entries(STATO_SCARICO).find(([, c]) => c === codice);
+  return entry?.[0] ?? null;
+}
+
+export function isCodiceScarico(value?: string | null): value is CodiceScarico {
+  return Boolean(value && CODICI_SCARICO.includes(value as CodiceScarico));
+}
+
 export function codiceScaricoPratica(stato: string, codiceScarico?: string | null) {
   if (codiceScarico && CODICI_SCARICO.includes(codiceScarico as CodiceScarico)) {
     return codiceScarico as CodiceScarico;

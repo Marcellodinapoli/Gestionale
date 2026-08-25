@@ -38,6 +38,7 @@ model User {
   supervisorId  String?
   gruppoNome    String?
   gruppoMandanti String?
+  lavorazioneSuggerita String?
   supervisor    User?      @relation("Team", fields: [supervisorId], references: [id])
   operators     User[]     @relation("Team")
   assigned      Pratica[]  @relation("Assegnatario")
@@ -99,6 +100,10 @@ model Mandante {
   ragioneSociale  String
   email           String?
   telefono        String?
+  referente       String?
+  referenteTelefono String?
+  referenteEmail  String?
+  pec             String?
   indirizzo       String?
   citta           String?
   cap             String?
@@ -171,7 +176,8 @@ model Pratica {
   interessi       Float       @default(0)
   spese           Float       @default(0)
   residuo         Float       @default(0)
-  codiceScarico  String?
+  codiceScarico   String?
+  codiceScaricoAt DateTime?
   dataAffido      DateTime?
   scadenza        DateTime?
   esitoContatto   String?

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { markMessaggioInternoLettoAction } from "@/actions/core";
-import { markMessaggioAgendaLettoAction } from "@/actions/agendaMessaggi";
+import { markMessaggioAgendaLettoAction, markMessaggiPraticaLettiAction } from "@/actions/agendaMessaggi";
 
 export function SegnaMessaggioInternoLettoButton({
   messageId,
@@ -39,7 +39,13 @@ export function SegnaMessaggioInternoLettoButton({
   );
 }
 
-export function SegnaMessaggioAgendaLettoButton({ messageId }: { messageId: string }) {
+export function SegnaMessaggioAgendaLettoButton({
+  messageId,
+  label = "Setta già letto",
+}: {
+  messageId: string;
+  label?: string;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
@@ -62,7 +68,41 @@ export function SegnaMessaggioAgendaLettoButton({ messageId }: { messageId: stri
       disabled={pending}
       className="rounded border border-[var(--line)] bg-white px-2 py-1 text-xs hover:bg-[#eef4f8] disabled:opacity-60"
     >
-      {pending ? "…" : "Segna letto"}
+      {pending ? "…" : label}
+    </button>
+  );
+}
+
+export function SegnaPraticaAgendaLettoButton({
+  praticaId,
+  label = "Setta già letto",
+}: {
+  praticaId: string;
+  label?: string;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+
+  async function onClick() {
+    setPending(true);
+    try {
+      const fd = new FormData();
+      fd.set("praticaId", praticaId);
+      await markMessaggiPraticaLettiAction(fd);
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={pending}
+      className="rounded border border-[var(--line)] bg-white px-2 py-1 text-xs hover:bg-[#eef4f8] disabled:opacity-60"
+    >
+      {pending ? "…" : label}
     </button>
   );
 }

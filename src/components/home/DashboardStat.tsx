@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 
 const base =
-  "group block rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 shadow-sm transition hover:border-[#c5cdd8] hover:shadow";
+  "group flex h-full flex-col rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 shadow-sm transition hover:border-[#c5cdd8] hover:shadow";
 
 export function DashboardKpi({
   title,

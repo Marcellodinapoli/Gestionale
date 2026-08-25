@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { requireApiUser } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { euro, praticaWhere } from "@/lib/domain";
+import { euro } from "@/lib/domain";
+import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { STATO_LABELS } from "@/lib/permissions";
 import {
   buildPraticaCercaWhere,
@@ -11,8 +12,10 @@ import {
 const LIMIT = 30;
 
 export async function GET(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  const user = await requireApiUser();
+  if (user instanceof NextResponse) return user;
+
+  const baseScope = await praticaScopeWhere(user);
 
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() || "";
@@ -27,7 +30,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ pratiche: [], total: 0, minChars: 2 });
   }
 
-  const where = { AND: [praticaWhere(user), filtro] };
+  const where = { AND: [baseScope, filtro] };
   const term = q.trim();
 
   const [total, rows] = await Promise.all([

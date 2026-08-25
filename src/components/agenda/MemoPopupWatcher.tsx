@@ -98,13 +98,7 @@ function MemoPopup({
 
         {isMsgInterno ? (
           <Link
-            href={alert.praticaId ? `/pratiche/${alert.praticaId}` : "/agenda?tab=messaggi"}
-            onClick={() => {
-              if (!alert.id) return;
-              const fd = new FormData();
-              fd.set("messageId", alert.id);
-              void markMessaggioInternoLettoAction(fd);
-            }}
+            href={alert.praticaId ? `/pratiche/${alert.praticaId}` : "/messaggi"}
             className={`block min-h-[72px] whitespace-pre-wrap border p-2 font-mono text-sm leading-snug hover:bg-[#f7fbff] ${
               isSanzione
                 ? "border-red-400 bg-white font-semibold text-red-900"
@@ -115,7 +109,7 @@ function MemoPopup({
             <span className="mt-2 block text-xs font-sans font-semibold text-[#1a73e8]">
               {alert.praticaId
                 ? `Clicca per aprire la pratica ${alert.numero}`
-                : "Clicca per aprire Agenda/Messaggi"}
+                : "Clicca per aprire Messaggi"}
             </span>
           </Link>
         ) : (
@@ -148,13 +142,7 @@ function MemoPopup({
           </button>
           {isMsgInterno && !alert.praticaId ? (
             <Link
-              href="/agenda?tab=messaggi"
-              onClick={() => {
-                if (!alert.id) return;
-                const fd = new FormData();
-                fd.set("messageId", alert.id);
-                void markMessaggioInternoLettoAction(fd);
-              }}
+              href="/messaggi"
               className="border border-dotted border-[#808080] bg-gradient-to-b from-[#f0f0f0] to-[#d4d4d4] px-2 py-1 text-xs font-semibold hover:from-[#fafafa]"
             >
               apri messaggi
@@ -162,13 +150,6 @@ function MemoPopup({
           ) : alert.praticaId ? (
             <Link
               href={`/pratiche/${alert.praticaId}`}
-              onClick={() => {
-                if (isMsgInterno && alert.id) {
-                  const fd = new FormData();
-                  fd.set("messageId", alert.id);
-                  void markMessaggioInternoLettoAction(fd);
-                }
-              }}
               className={
                 isMsgInterno
                   ? "border border-dotted border-[#808080] bg-gradient-to-b from-[#f0f0f0] to-[#d4d4d4] px-2 py-1 text-xs font-semibold hover:from-[#fafafa]"

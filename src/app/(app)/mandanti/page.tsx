@@ -29,7 +29,7 @@ export default async function MandantiPage() {
         <table className="w-full text-sm">
           <thead className="text-left text-[var(--muted)]">
             <tr>
-              <th className="py-2">Codice</th>
+              <th className="py-2">Acronimo interno</th>
               <th>Ragione sociale</th>
               <th>Pratiche</th>
             </tr>

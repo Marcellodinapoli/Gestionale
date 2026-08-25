@@ -15,6 +15,7 @@ import {
   etichettaGruppoMandanti,
   type GruppoMandanteAssegnazione,
 } from "@/lib/gruppoMandanti";
+import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 
 type OperatoreAnagrafica = {
   id: string;
@@ -34,7 +35,7 @@ type MandanteOption = {
   id: string;
   codice: string;
   ragioneSociale: string;
-  perimetri: Array<{ id: string; nome: string }>;
+  perimetri: PerimetroListItem[];
 };
 
 export function GruppoInlineEditor({

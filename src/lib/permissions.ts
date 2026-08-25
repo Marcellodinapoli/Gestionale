@@ -41,7 +41,9 @@ export type Permission =
   | "agenda:view"
   | "telephony:manage"
   | "operatori:manage"
-  | "pratiche:nota-massiva";
+  | "pratiche:nota-massiva"
+  | "lavorazione:view"
+  | "formazione:view";
 
 const MAP: Record<Permission, Role[]> = {
   "users:manage": ["ADMIN"],
@@ -63,6 +65,8 @@ const MAP: Record<Permission, Role[]> = {
   "agenda:view": ["ADMIN", "SUPERVISOR", "OPERATOR", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "telephony:manage": ["ADMIN"],
   "operatori:manage": ["ADMIN", "AMMINISTRAZIONE"],
+  "lavorazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
+  "formazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
 };
 
 export function isManutenzione(user: { role: string } | null | undefined) {
@@ -73,6 +77,18 @@ export function isManutenzione(user: { role: string } | null | undefined) {
 export function requiresPostazione(user: { role: Role } | null | undefined) {
   if (!user) return false;
   return !["ADMIN", "AMMINISTRAZIONE"].includes(user.role);
+}
+
+/** Ricavi e incassi totali dell'azienda (dashboard globale): solo amministratore azienda. */
+export function canViewRicaviIncassiAzienda(user: { role: Role } | null | undefined) {
+  if (!user || isManutenzione(user)) return false;
+  return user.role === "ADMIN";
+}
+
+/** Creazione e modifica perimetri/commesse nella scheda mandante. */
+export function canManageMandantePerimetri(user: { role: Role } | null | undefined) {
+  if (!user || isManutenzione(user)) return false;
+  return user.role === "ADMIN" || user.role === "AMMINISTRAZIONE";
 }
 
 export function can(user: { role: Role } | null | undefined, permission: Permission) {
@@ -88,11 +104,11 @@ export function assertCan(user: { role: Role } | null | undefined, permission: P
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
-  ADMIN: "Amministratore azienda",
+  ADMIN: "Admin",
   SUPERVISOR: "Supervisor",
   BACK_OFFICE: "Back office",
   OPERATOR: "Operatore",
-  AMMINISTRAZIONE: "Ufficio amministrazione",
+  AMMINISTRAZIONE: "Amministrazione",
   MANUTENZIONE: "Manutenzione",
 };
 

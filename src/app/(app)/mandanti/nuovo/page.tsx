@@ -14,6 +14,10 @@ export default async function NuovaMandantePage() {
         ragioneSociale: "",
         email: null,
         telefono: null,
+        referente: null,
+        referenteTelefono: null,
+        referenteEmail: null,
+        pec: null,
         indirizzo: null,
         citta: null,
         cap: null,
@@ -26,6 +30,7 @@ export default async function NuovaMandantePage() {
         incentivoNote: null,
         codiciScarico: null,
         smsPreimpostati: null,
+        perimetri: null,
         pratiche: 0,
       }}
     />

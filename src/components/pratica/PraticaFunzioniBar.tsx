@@ -21,6 +21,9 @@ import { Modal } from "@/components/Modal";
 import { InviaMessaggioCollega } from "@/components/pratica/InviaMessaggioCollega";
 import { CercaPraticaPopup } from "@/components/pratica/CercaPraticaPopup";
 import { AgendaMemoPopup } from "@/components/pratica/AgendaMemoPopup";
+import { CalcolatricePopup } from "@/components/pratica/CalcolatricePopup";
+import { PianoRientroPopup } from "@/components/pratica/PianoRientroPopup";
+import { SaldoStralcioPopup } from "@/components/pratica/SaldoStralcioPopup";
 import { InserisciNotaServizio } from "@/components/pratica/RegistroNote";
 import {
   buildPraticaCollegataElencoHref,
@@ -40,7 +43,15 @@ type Voce = {
   mandanteNome: string;
 };
 
-type PopupKey = "cerca" | "agenda" | "nota" | "messaggi" | "sms";
+type PopupKey =
+  | "cerca"
+  | "agenda"
+  | "nota"
+  | "messaggi"
+  | "sms"
+  | "piano"
+  | "stralcio"
+  | "calcolatrice";
 
 const BTN_BASE =
   "inline-flex h-7 w-14 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap px-0.5 text-center text-[10px] font-semibold leading-none";
@@ -52,6 +63,10 @@ const BTN_INT_LAV = `${BTN_BASE} rounded border border-[#2d6a4f] bg-gradient-to-
 const BTN_INT_CHIUSE = `${BTN_BASE} rounded border border-[#c2410c] bg-gradient-to-b from-[#fed7aa] to-[#fb923c] text-[#7c2d12] hover:from-[#ffedd5]`;
 
 const BTN_ESC = `${BTN_BASE} rounded border border-[var(--line)] bg-white text-[var(--muted)] hover:bg-[#eef4f8]`;
+
+/** Tasti strumenti (non Fn): testo, stile flat blu, più larghi */
+const BTN_TOOL =
+  "inline-flex h-7 shrink-0 items-center justify-center whitespace-nowrap rounded border border-[#1a4f7a] bg-[#e8f1f8] px-2.5 text-[10px] font-bold tracking-wide text-[#123a5c] hover:bg-[#d4e6f4] disabled:cursor-not-allowed disabled:opacity-45";
 
 const ICON = "h-3.5 w-3.5 shrink-0";
 
@@ -109,11 +124,11 @@ export function PraticaFunzioniBar({
   attivo,
   canEditNotes,
   praticaLocked = false,
-  esitoContatto,
-  tipoContatto,
+  codiceScarico,
   memoAt,
   promessaAt,
   promessaImporto,
+  residuo = 0,
   nextPraticaHref,
   showRecordingControl,
   recordingMode = "manual",
@@ -122,11 +137,11 @@ export function PraticaFunzioniBar({
   attivo?: "fatture" | "estratto" | "incassi";
   canEditNotes?: boolean;
   praticaLocked?: boolean;
-  esitoContatto?: string | null;
-  tipoContatto?: string | null;
+  codiceScarico?: string | null;
   memoAt?: string | null;
   promessaAt?: string | null;
   promessaImporto?: number | null;
+  residuo?: number;
   nextPraticaHref?: string | null;
   showRecordingControl?: boolean;
   recordingMode?: RecordingMode;
@@ -395,6 +410,41 @@ export function PraticaFunzioniBar({
             <FunzioneLabel f="F11" icon={<Printer className={ICON} />} />
           </Link>
         </Hint>
+
+        <span
+          className="ml-3 inline-flex flex-wrap items-center gap-1 border-l border-[#a8b4c0] pl-3"
+          aria-label="Strumenti pratica"
+        >
+          <Hint label="Piano di rientro">
+            <button
+              type="button"
+              className={BTN_TOOL}
+              onClick={() => setPopup("piano")}
+              disabled={azioniBloccate}
+            >
+              Piano di rientro
+            </button>
+          </Hint>
+          <Hint label="Saldo a stralcio">
+            <button
+              type="button"
+              className={BTN_TOOL}
+              onClick={() => setPopup("stralcio")}
+            >
+              Saldo a stralcio
+            </button>
+          </Hint>
+          <Hint label="Calcolatrice">
+            <button
+              type="button"
+              className={BTN_TOOL}
+              onClick={() => setPopup("calcolatrice")}
+            >
+              Calcolatrice
+            </button>
+          </Hint>
+        </span>
+
         {showRecordingControl ? (
           <RegistrazioneTelefonataControl praticaId={praticaId} mode={recordingMode} />
         ) : null}
@@ -441,9 +491,7 @@ export function PraticaFunzioniBar({
         {canEditNotes ? (
           <InserisciNotaServizio
             praticaId={praticaId}
-            esitoContatto={esitoContatto}
-            tipoContatto={tipoContatto}
-            memoAt={memoAt}
+            codiceScarico={codiceScarico}
             promessaAt={promessaAt}
             promessaImporto={promessaImporto}
             bozzaNota={notaBozza?.testo}
@@ -476,6 +524,33 @@ export function PraticaFunzioniBar({
         </div>
       </Modal>
 
+      <Modal
+        open={popup === "piano"}
+        title="Piano di rientro"
+        onClose={() => setPopup(null)}
+      >
+        <PianoRientroPopup
+          praticaId={praticaId}
+          residuo={residuo}
+          onDone={() => setPopup(null)}
+        />
+      </Modal>
+
+      <Modal
+        open={popup === "stralcio"}
+        title="Saldo a stralcio"
+        onClose={() => setPopup(null)}
+      >
+        <SaldoStralcioPopup residuo={residuo} />
+      </Modal>
+
+      <Modal
+        open={popup === "calcolatrice"}
+        title="Calcolatrice"
+        onClose={() => setPopup(null)}
+      >
+        <CalcolatricePopup />
+      </Modal>
     </>
   );
 }

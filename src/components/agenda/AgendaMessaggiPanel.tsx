@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Modal } from "@/components/Modal";
+import { ApriMessaggioIndipendente } from "@/components/agenda/ApriMessaggioIndipendente";
 import { InviaMessaggioCollega } from "@/components/pratica/InviaMessaggioCollega";
 import {
   SegnaMessaggioAgendaLettoButton,
   SegnaMessaggioInternoLettoButton,
 } from "@/components/agenda/SegnaLettoButton";
+import { GestisciMessaggioInviato } from "@/components/agenda/GestisciMessaggioInviato";
 
 type FiltroMessaggi = "da_leggere" | "letti" | "inviati" | "tutti";
 
@@ -122,8 +124,8 @@ export function AgendaMessaggiPanel({
   }, [filtro, messaggiPratica]);
 
   function hrefFiltro(f: FiltroMessaggi) {
-    if (f === "da_leggere") return "/agenda?tab=messaggi";
-    return `/agenda?tab=messaggi&filtro=${f}`;
+    if (f === "da_leggere") return "/messaggi";
+    return `/messaggi?filtro=${f}`;
   }
 
   return (
@@ -186,12 +188,13 @@ export function AgendaMessaggiPanel({
         <ul className="divide-y divide-[var(--line)] text-sm">
           {colleghiFiltrati.map((m) => {
             const inviato = m.fromUserId === userId;
+            const indipendente = !m.praticaId;
             return (
               <li key={m.id} className="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-[var(--muted)]">
                     {inviato ? `Inviato a ${m.toName}` : `Ricevuto da ${m.fromName}`}
-                    {m.praticaId ? "" : " · indipendente"}
+                    {indipendente ? " · senza pratica" : ""}
                   </p>
                   {m.praticaId ? (
                     <p className="mt-0.5">
@@ -204,7 +207,15 @@ export function AgendaMessaggiPanel({
                       {m.debitore ? ` · ${m.debitore}` : null}
                     </p>
                   ) : null}
-                  <p className="mt-1 whitespace-pre-wrap">{m.testo}</p>
+                  {indipendente && !inviato ? (
+                    <ApriMessaggioIndipendente
+                      fromName={m.fromName}
+                      testo={m.testo}
+                      createdAtLabel={formatData(m.createdAt)}
+                    />
+                  ) : (
+                    <p className="mt-1 whitespace-pre-wrap">{m.testo}</p>
+                  )}
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     {formatData(m.createdAt)}
                     {m.lettoAt ? ` · letto ${formatData(m.lettoAt)}` : ""}
@@ -212,8 +223,14 @@ export function AgendaMessaggiPanel({
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <BadgeStato inviato={inviato} letto={m.letto} />
+                  {inviato ? (
+                    <GestisciMessaggioInviato messageId={m.id} testoIniziale={m.testo} />
+                  ) : null}
                   {!inviato && !m.letto ? (
-                    <SegnaMessaggioInternoLettoButton messageId={m.id} />
+                    <SegnaMessaggioInternoLettoButton
+                      messageId={m.id}
+                      label="Setta già letto"
+                    />
                   ) : null}
                 </div>
               </li>
@@ -265,7 +282,7 @@ export function AgendaMessaggiPanel({
       ) : null}
 
       <Modal open={nuovoOpen} title="Nuovo messaggio a un collega" onClose={() => setNuovoOpen(false)} wide>
-        <div className="p-3">
+        <div className="min-h-[28rem] p-3">
           <InviaMessaggioCollega standalone />
         </div>
       </Modal>

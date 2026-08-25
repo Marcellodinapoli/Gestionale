@@ -10,7 +10,7 @@ import {
   AnagraficaField,
   indirizzoCompleto,
 } from "@/components/pratica/anagraficaUi";
-import { PraticaStatoHeaderBridge } from "@/components/pratica/PraticaStatoHeaderBridge";
+import { StatoPraticaBar } from "@/components/pratica/StatoPraticaBar";
 import { RiepilogoEsitoPratica } from "@/components/pratica/RiepilogoEsitoPratica";
 import { PaginazioneBar } from "@/components/PaginazioneBar";
 import { ContabilePreviewPanel } from "@/components/pratica/ContabilePreviewPanel";
@@ -19,7 +19,9 @@ import {
   buildPraticaCollegataHref,
   etichettaFiltroCollegata,
 } from "@/lib/praticaCollegata";
-import { buildPraticaCodaHref, type CodaNav } from "@/lib/praticaCoda";
+import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCoda";
+import { codiceScaricoPratica } from "@/lib/scarico";
+import { countRateScadute } from "@/lib/rate";
 import type { RecordingMode } from "@/lib/recordingConfig";
 
 type AnagraficaPersona = {
@@ -51,6 +53,8 @@ type PraticaData = {
   note: string | null;
   esitoContatto: string | null;
   tipoContatto: string | null;
+  codiceScarico: string | null;
+  codiceScaricoAt: Date | null;
   memoAt: Date | null;
   promessaAt: Date | null;
   promessaImporto: number | null;
@@ -107,26 +111,42 @@ function HeaderRigaDati({
   numeroMandante,
   dataAffido,
   scadenza,
+  praticaId,
+  stato,
+  promessaAt,
+  canEditStato,
 }: {
   numeroMandante: string | null;
   dataAffido: Date | null;
   scadenza: Date | null;
+  praticaId: string;
+  stato: string;
+  promessaAt?: string | null;
+  canEditStato: boolean;
 }) {
   const affido = dataAffido ? dataIt(dataAffido) : null;
   const scad = scadenza ? dataIt(scadenza) : null;
-  if (!numeroMandante && !affido && !scad) return null;
 
   const boxCls =
     "rounded border border-[var(--line)] bg-white px-1.5 py-px font-mono text-xs leading-tight text-[var(--navy)]";
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {numeroMandante ? (
-        <span className="inline-flex items-center gap-1">
-          <span className="text-xs font-bold">Pr</span>
-          <span className={boxCls}>{numeroMandante}</span>
-        </span>
-      ) : null}
+      <span className="inline-flex items-center gap-1.5">
+        {numeroMandante ? (
+          <>
+            <span className="text-xs font-bold">Contratto</span>
+            <span className={boxCls}>{numeroMandante}</span>
+          </>
+        ) : null}
+        <StatoPraticaBar
+          praticaId={praticaId}
+          stato={stato}
+          promessaAt={promessaAt}
+          canEdit={canEditStato}
+          compact
+        />
+      </span>
       {affido || scad ? (
         <span className="inline-flex items-center gap-1">
           <span className="text-xs font-bold">Aff/Scad</span>
@@ -176,7 +196,7 @@ export function PraticaSchedaOperatore({
   const totale = pratica.capitale + pratica.interessi + pratica.spese;
   const rateAperte = pratica.rate.filter((r) => !r.pagata);
   const impRata = rateAperte[0]?.importo ?? (rateAperte.length ? null : pratica.residuo);
-  const nRate = rateAperte.length || pratica.rate.length;
+  const nRateScadute = countRateScadute(pratica.rate);
 
   const attivitaLines = [...pratica.attivita]
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -201,6 +221,7 @@ export function PraticaSchedaOperatore({
   const affido = pratica.assegnatario?.name?.trim();
   const affidoVisibile = affido && affido !== currentUserName?.trim();
   const praticaBloccata = Boolean(lockedByName);
+  const elencoHref = buildPraticheListaHref(nav.codaNav);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[#f5f7fa] shadow-sm max-lg:overflow-visible xl:min-h-0">
@@ -209,14 +230,18 @@ export function PraticaSchedaOperatore({
           Pratica bloccata — in lavorazione da {lockedByName}. Puoi solo consultare in lettura.
         </div>
       ) : null}
-      <PraticaStatoHeaderBridge
-        praticaId={pratica.id}
-        stato={pratica.stato}
-        promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
-        canEdit={canEditStato}
-      />
       <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--line)] bg-[#dce4ec] px-3 py-1.5 text-sm text-[var(--navy)] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          {!nav.filtroCollegata && nav.codaNav ? (
+            <Link
+              href={elencoHref}
+              className="flex shrink-0 items-center gap-1 rounded border border-[var(--line)] bg-white px-2 py-0.5 text-[11px] font-semibold text-[var(--navy)] hover:bg-[#eef4f8]"
+              title="Torna all'elenco pratiche"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Elenco
+            </Link>
+          ) : null}
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate font-bold">{debitoreLabel}</span>
             <span className="shrink-0 text-[var(--muted)]">·</span>
@@ -226,9 +251,13 @@ export function PraticaSchedaOperatore({
             numeroMandante={pratica.numeroMandante}
             dataAffido={pratica.dataAffido}
             scadenza={pratica.scadenza}
+            praticaId={pratica.id}
+            stato={pratica.stato}
+            promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
+            canEditStato={canEditStato}
           />
           {affidoVisibile ? (
-            <span className="truncate text-xs text-[var(--muted)]">Affido: {affido}</span>
+            <span className="truncate text-xs text-[var(--muted)]">Affidata a: {affido}</span>
           ) : null}
           {nav.filtroCollegata ? (
             <span className="truncate text-xs text-[var(--muted)]">
@@ -318,7 +347,12 @@ export function PraticaSchedaOperatore({
           <AnagraficaField label="Spese" value={euro(pratica.spese)} compact accent />
           <AnagraficaField label="Tot." value={euro(totale)} compact accent />
           <AnagraficaField label="Rata" value={impRata != null ? euro(impRata) : "—"} compact accent />
-          <AnagraficaField label="Rate" value={nRate || "—"} compact accent />
+          <AnagraficaField
+            label="Rate scad."
+            value={nRateScadute > 0 ? nRateScadute : "—"}
+            compact
+            accent
+          />
         </div>
       </div>
 
@@ -342,11 +376,11 @@ export function PraticaSchedaOperatore({
           praticaId={pratica.id}
           canEditNotes={canEditNotes}
           praticaLocked={praticaBloccata}
-          esitoContatto={pratica.esitoContatto}
-          tipoContatto={pratica.tipoContatto}
+          codiceScarico={codiceScaricoPratica(pratica.stato, pratica.codiceScarico)}
           memoAt={datetimeLocalValue(pratica.memoAt)}
           promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
           promessaImporto={pratica.promessaImporto}
+          residuo={pratica.residuo}
           showRecordingControl={
             !praticaBloccata &&
             ["OPERATOR", "SUPERVISOR", "BACK_OFFICE"].includes(currentUserRole || "")
@@ -388,9 +422,9 @@ export function PraticaSchedaOperatore({
           totalPages={nav.totalPages}
           left={
             <RiepilogoEsitoPratica
-              esitoContatto={pratica.esitoContatto}
-              tipoContatto={pratica.tipoContatto}
-              memoAt={datetimeLocalValue(pratica.memoAt)}
+              stato={pratica.stato}
+              codiceScarico={pratica.codiceScarico}
+              codiceScaricoAt={pratica.codiceScaricoAt}
               promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
             />
           }

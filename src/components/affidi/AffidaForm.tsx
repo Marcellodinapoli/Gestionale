@@ -1,65 +1,121 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { assignPraticaAction } from "@/actions/assignPratica";
 import { TipoAffidoSelect } from "@/components/affidi/TipoAffidoSelect";
+import {
+  isAffidoTemporaneo,
+  parseTipoAffido,
+  selezioneRichiedeTitolare,
+  validaAffidoPratica,
+  type StatoAffidoPratica,
+  type TipoAffido,
+} from "@/lib/affido";
 
 export function AffidaForm({
   praticaId,
   operatori,
-  defaultAssegnatarioId,
-  allowNone,
-  showRipristina,
+  statoAffido,
   titolareName,
   submitLabel = "Affida",
-  hideTipoAffido,
 }: {
   praticaId: string;
   operatori: Array<{ id: string; name: string }>;
-  defaultAssegnatarioId?: string;
-  allowNone?: boolean;
-  showRipristina?: boolean;
+  statoAffido: StatoAffidoPratica;
   titolareName?: string | null;
   submitLabel?: string;
-  hideTipoAffido?: boolean;
 }) {
-  const [tipo, setTipo] = useState("definitivo");
-  const ripristina = !hideTipoAffido && tipo === "ripristina";
+  const router = useRouter();
+  const [tipo, setTipo] = useState<TipoAffido>("definitivo");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const ripristina = tipo === "ripristina";
+  const temporaneo = isAffidoTemporaneo(statoAffido);
+  const richiedeTitolare = selezioneRichiedeTitolare(
+    [praticaId],
+    { [praticaId]: statoAffido },
+    tipo
+  );
+
+  async function invia(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const assegnatarioId = ripristina
+      ? null
+      : String(fd.get("assegnatarioId") || "") || null;
+    const titolareId = String(fd.get("titolareId") || "") || null;
+    const err = validaAffidoPratica(statoAffido, tipo, assegnatarioId, titolareId);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      fd.set("praticaId", praticaId);
+      fd.set("tipoAffido", tipo);
+      await assignPraticaAction(fd);
+      router.refresh();
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Errore affido");
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
-    <form action={assignPraticaAction} className="flex flex-wrap items-center gap-2">
-      <input type="hidden" name="praticaId" value={praticaId} />
-      {hideTipoAffido ? (
-        <input type="hidden" name="tipoAffido" value="definitivo" />
-      ) : (
-        <TipoAffidoSelect showRipristina={showRipristina} onChange={setTipo} />
-      )}
+    <form onSubmit={invia} className="flex flex-wrap items-center gap-2">
+      <TipoAffidoSelect
+        showRipristina={temporaneo}
+        onChange={(v) => {
+          setTipo(parseTipoAffido(v));
+          setError(null);
+        }}
+      />
       {!ripristina ? (
-        <select
-          name="assegnatarioId"
-          required={!allowNone}
-          defaultValue={defaultAssegnatarioId || ""}
-          className="h-9 min-w-[160px] flex-1 rounded-lg border border-[var(--line)] px-2 text-sm"
-        >
-          {allowNone ? <option value="">— nessuno —</option> : null}
-          {operatori.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
+        <>
+          {richiedeTitolare ? (
+            <select
+              name="titolareId"
+              required
+              disabled={pending}
+              className="h-9 min-w-[140px] rounded-lg border border-[var(--line)] px-2 text-sm"
+            >
+              <option value="">Titolare…</option>
+              {operatori.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <select
+            name="assegnatarioId"
+            required
+            disabled={pending}
+            className="h-9 min-w-[140px] flex-1 rounded-lg border border-[var(--line)] px-2 text-sm"
+          >
+            <option value="">Operatore…</option>
+            {operatori.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </>
       ) : null}
       <button
         type="submit"
-        className="rounded-lg bg-[var(--navy)] px-3 text-sm text-white"
+        disabled={pending}
+        className="rounded-lg bg-[var(--navy)] px-3 text-sm text-white disabled:opacity-50"
       >
-        {ripristina ? "Ripristina" : submitLabel}
+        {pending ? "…" : ripristina ? "Ripristina" : submitLabel}
       </button>
-      {showRipristina && titolareName ? (
-        <span className="w-full text-xs text-[var(--muted)]">
-          Titolare: {titolareName}
-        </span>
+      {temporaneo && titolareName ? (
+        <span className="w-full text-xs text-[var(--muted)]">Titolare: {titolareName}</span>
       ) : null}
+      {error ? <span className="w-full text-xs font-semibold text-[var(--danger)]">{error}</span> : null}
     </form>
   );
 }

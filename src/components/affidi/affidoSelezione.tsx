@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
-import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   affidoEquoMassivoAction,
@@ -12,6 +11,12 @@ import {
   dividePraticheEquamente,
   parseCodiciOperatoriInput,
   riepilogoDivisioneEqua,
+  selezioneConsenteRipristina,
+  selezioneRichiedeTitolare,
+  validaAffidoSelezione,
+  parseTipoAffido,
+  type StatoAffidoPratica,
+  type TipoAffido,
 } from "@/lib/affido";
 import { operatorSigla } from "@/lib/noteFormat";
 
@@ -61,74 +66,169 @@ export function useSelezionePratiche(ids: string[]) {
   return { selected, allRef, allChecked, toggleAll, toggleOne };
 }
 
-function AffidoSingoloBar({
-  count,
+function SelectOperatore({
+  name,
+  operatori,
+  required,
+  disabled,
+  label,
+  excludeId,
+}: {
+  name: string;
+  operatori: OperatoreAffido[];
+  required?: boolean;
+  disabled?: boolean;
+  label: string;
+  excludeId?: string;
+}) {
+  const opts = excludeId ? operatori.filter((o) => o.id !== excludeId) : operatori;
+  return (
+    <select
+      name={name}
+      required={required}
+      disabled={disabled}
+      className="h-9 min-w-[160px] rounded-lg border border-[var(--line)] px-2 text-sm disabled:opacity-50"
+    >
+      <option value="">{label}</option>
+      {opts.map((o) => (
+        <option key={o.id} value={o.id}>
+          {codiceOp(o)} · {o.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function AffidoSingoloPanel({
+  selectedIds,
+  praticheStato,
   operatori,
   emptyHint,
   submitLabel,
   showRipristina,
   hideTipoAffido,
 }: {
-  count: number;
+  selectedIds: string[];
+  praticheStato: Record<string, StatoAffidoPratica>;
   operatori: OperatoreAffido[];
   emptyHint: string;
   submitLabel: string;
   showRipristina?: boolean;
   hideTipoAffido?: boolean;
 }) {
-  const { pending } = useFormStatus();
-  const [tipo, setTipo] = useState("definitivo");
+  const router = useRouter();
+  const [tipo, setTipo] = useState<TipoAffido>("definitivo");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   const ripristina = !hideTipoAffido && tipo === "ripristina";
+  const richiedeTitolare = selezioneRichiedeTitolare(selectedIds, praticheStato, tipo);
+  const consenteRipristina =
+    (showRipristina ?? false) && selezioneConsenteRipristina(selectedIds, praticheStato);
+
+  async function invia(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedIds.length) return;
+    const fd = new FormData(e.currentTarget);
+    const assegnatarioId = ripristina
+      ? null
+      : String(fd.get("assegnatarioId") || "") || null;
+    const titolareId = String(fd.get("titolareId") || "") || null;
+    const effectiveTipo: TipoAffido = hideTipoAffido ? "definitivo" : tipo;
+    const err = validaAffidoSelezione(
+      selectedIds,
+      praticheStato,
+      effectiveTipo,
+      assegnatarioId,
+      titolareId
+    );
+    if (err) {
+      setError(err);
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      for (const id of selectedIds) fd.append("praticaId", id);
+      fd.set("tipoAffido", effectiveTipo);
+      await assignPraticheMassiveAction(fd);
+      router.refresh();
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Errore affido");
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm text-[var(--muted)]">
-        {count
-          ? `${count} ${count === 1 ? "pratica selezionata" : "pratiche selezionate"}`
-          : emptyHint}
-      </span>
-      {hideTipoAffido ? (
-        <input type="hidden" name="tipoAffido" value="definitivo" />
-      ) : (
-        <TipoAffidoSelect showRipristina={showRipristina} onChange={setTipo} />
-      )}
-      {!ripristina ? (
-        <select
-          name="assegnatarioId"
-          required
-          disabled={!count || pending}
-          className="h-9 min-w-[160px] rounded-lg border border-[var(--line)] px-2 text-sm disabled:opacity-50"
+    <form onSubmit={invia} className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-[var(--muted)]">
+          {selectedIds.length
+            ? `${selectedIds.length} ${selectedIds.length === 1 ? "pratica selezionata" : "pratiche selezionate"}`
+            : emptyHint}
+        </span>
+        {hideTipoAffido ? null : (
+          <TipoAffidoSelect
+            showRipristina={consenteRipristina}
+            onChange={(v) => {
+              setTipo(parseTipoAffido(v));
+              setError(null);
+            }}
+          />
+        )}
+        {!ripristina ? (
+          <>
+            {richiedeTitolare ? (
+              <SelectOperatore
+                name="titolareId"
+                operatori={operatori}
+                required
+                disabled={!selectedIds.length || pending}
+                label="Titolare…"
+              />
+            ) : null}
+            <SelectOperatore
+              name="assegnatarioId"
+              operatori={operatori}
+              required
+              disabled={!selectedIds.length || pending}
+              label="Operatore…"
+            />
+          </>
+        ) : null}
+        <button
+          type="submit"
+          disabled={!selectedIds.length || pending}
+          className="rounded-lg bg-[var(--navy)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
-          <option value="">Operatore…</option>
-          {operatori.map((o) => (
-            <option key={o.id} value={o.id}>
-              {codiceOp(o)} · {o.name}
-            </option>
-          ))}
-        </select>
+          {pending ? "Affido in corso…" : submitLabel}
+        </button>
+      </div>
+      {richiedeTitolare && tipo === "temporaneo" ? (
+        <p className="text-xs text-[var(--muted)]">
+          Per le pratiche non ancora affidate indica il titolare (affido definitivo) e l&apos;operatore
+          temporaneo.
+        </p>
       ) : null}
-      <button
-        type="submit"
-        disabled={!count || pending}
-        className="rounded-lg bg-[var(--navy)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
-      >
-        {pending ? "Affido in corso…" : submitLabel}
-      </button>
-    </div>
+      {error ? <p className="text-xs font-semibold text-[var(--danger)]">{error}</p> : null}
+    </form>
   );
 }
 
 function AffidoEquoPanel({
   selectedIds,
+  praticheStato,
   operatori,
   hideTipoAffido,
 }: {
   selectedIds: string[];
+  praticheStato: Record<string, StatoAffidoPratica>;
   operatori: OperatoreAffido[];
   hideTipoAffido?: boolean;
 }) {
   const router = useRouter();
-  const [tipo, setTipo] = useState("definitivo");
+  const [tipo, setTipo] = useState<TipoAffido>("definitivo");
+  const [titolareId, setTitolareId] = useState("");
   const [codiciRaw, setCodiciRaw] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +265,7 @@ function AffidoEquoPanel({
         )
       : [];
   const riepilogo = riepilogoDivisioneEqua(buckets, unici);
+  const richiedeTitolare = selezioneRichiedeTitolare(selectedIds, praticheStato, tipo);
 
   function fillAll() {
     setCodiciRaw(disponibili.map((o) => o.codice).join(", "));
@@ -174,12 +275,17 @@ function AffidoEquoPanel({
 
   async function conferma() {
     if (!selectedIds.length || !unici.length || missing.length) return;
+    if (tipo === "temporaneo" && richiedeTitolare && !titolareId) {
+      setError("Indica il titolare per l'affido temporaneo");
+      return;
+    }
     setPending(true);
     setError(null);
     try {
       const fd = new FormData();
       for (const id of selectedIds) fd.append("praticaId", id);
       fd.set("tipoAffido", hideTipoAffido ? "definitivo" : tipo);
+      if (titolareId) fd.set("titolareId", titolareId);
       fd.set("codiciOperatori", unici.map((o) => o.codice).join(","));
       fd.set("conferma", "1");
       await affidoEquoMassivoAction(fd);
@@ -208,6 +314,27 @@ function AffidoEquoPanel({
             />
           </label>
         )}
+        {richiedeTitolare && !hideTipoAffido && tipo === "temporaneo" ? (
+          <label className="text-xs">
+            <span className="mb-1 block font-semibold text-[var(--muted)]">Titolare</span>
+            <select
+              value={titolareId}
+              onChange={(e) => {
+                setTitolareId(e.target.value);
+                setStep("edit");
+                setError(null);
+              }}
+              className="h-9 min-w-[160px] rounded-lg border border-[var(--line)] bg-white px-2 text-sm"
+            >
+              <option value="">Titolare…</option>
+              {operatori.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {codiceOp(o)} · {o.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="min-w-[220px] flex-1 text-xs">
           <span className="mb-1 block font-semibold text-[var(--muted)]">
             Codici operatori (separati da virgola)
@@ -254,6 +381,12 @@ function AffidoEquoPanel({
         {disponibili.length
           ? disponibili.map((o) => `${o.codice} (${o.name})`).join(" · ")
           : "nessun operatore nel gruppo"}
+        {unici.length > 1 ? (
+          <>
+            {" "}
+            · Le pratiche in eccesso vanno all&apos;ultimo codice inserito
+          </>
+        ) : null}
       </p>
 
       {missing.length ? (
@@ -305,8 +438,27 @@ function AffidoEquoPanel({
   );
 }
 
+export function buildPraticheStato(
+  pratiche: Array<{
+    id: string;
+    assegnatarioId?: string | null;
+    operatoreTitolareId?: string | null;
+  }>
+): Record<string, StatoAffidoPratica> {
+  return Object.fromEntries(
+    pratiche.map((p) => [
+      p.id,
+      {
+        assegnatarioId: p.assegnatarioId ?? null,
+        operatoreTitolareId: p.operatoreTitolareId ?? null,
+      },
+    ])
+  );
+}
+
 export function AffidoMassivoForm({
   selectedIds,
+  praticheStato,
   operatori,
   emptyHint = "Seleziona le pratiche da affidare",
   submitLabel = "Affida selezionate",
@@ -315,6 +467,7 @@ export function AffidoMassivoForm({
   allowEquo = true,
 }: {
   selectedIds: string[];
+  praticheStato: Record<string, StatoAffidoPratica>;
   operatori: OperatoreAffido[];
   emptyHint?: string;
   submitLabel?: string;
@@ -356,23 +509,20 @@ export function AffidoMassivoForm({
       {modo === "equo" && allowEquo ? (
         <AffidoEquoPanel
           selectedIds={selectedIds}
+          praticheStato={praticheStato}
           operatori={operatori}
           hideTipoAffido={hideTipoAffido}
         />
       ) : (
-        <form action={assignPraticheMassiveAction}>
-          {selectedIds.map((id) => (
-            <input key={id} type="hidden" name="praticaId" value={id} />
-          ))}
-          <AffidoSingoloBar
-            count={selectedIds.length}
-            operatori={operatori}
-            emptyHint={emptyHint}
-            submitLabel={submitLabel}
-            showRipristina={showRipristina}
-            hideTipoAffido={hideTipoAffido}
-          />
-        </form>
+        <AffidoSingoloPanel
+          selectedIds={selectedIds}
+          praticheStato={praticheStato}
+          operatori={operatori}
+          emptyHint={emptyHint}
+          submitLabel={submitLabel}
+          showRipristina={showRipristina}
+          hideTipoAffido={hideTipoAffido}
+        />
       )}
     </div>
   );

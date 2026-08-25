@@ -22,7 +22,9 @@ export default async function CambiaPasswordPage() {
         </p>
         <h1 className="mt-2 text-2xl font-semibold">Password scaduta</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Ciao {user.name}, per continuare devi aggiornare la password.
+          Ciao {user.name}, la password non è stata cambiata negli ultimi 30 giorni. Devi
+          impostarne una nuova per accedere al gestionale: finché non la aggiorni non potrai
+          entrare nell&apos;applicazione.
         </p>
         <div className="mt-6">
           <CambioPasswordForm forced onSuccessHref={afterHref} />

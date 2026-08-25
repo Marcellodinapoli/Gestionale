@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
-import { assertCan, can, requiresPostazione, type Role } from "@/lib/permissions";
+import { assertCan, can, canManageMandantePerimetri, requiresPostazione, type Role } from "@/lib/permissions";
 import {
   canAccessPratica,
   parseDateOnly,
@@ -15,17 +15,20 @@ import {
 } from "@/lib/domain";
 import { syncMessaggioAgenda, markMessaggiLetti } from "@/lib/memoAgenda";
 import { formatMessaggioCollegaNota } from "@/lib/noteFormat";
-import { calcolaProvvigione, resolveProvvigionePercentuale } from "@/lib/provvigioni";
+import { calcolaProvvigione, resolveProvvigionePercentuale, resolveProvvigionePercentualeLato } from "@/lib/provvigioni";
+import { parsePerimetri, perimetroPerNome } from "@/lib/mandantePerimetri";
 import { requireWritablePermission, requireWritableUser } from "@/lib/guard";
 import { STATI_TELEFONO } from "@/lib/statoTelefono";
 import { assertPraticaLockHeld, assertPraticaNotLockedByOther, releaseAllUserLocks } from "@/lib/praticaLock";
 import { isPasswordExpired } from "@/lib/passwordPolicy";
+import { validatePasswordComplexity } from "@/lib/passwordRules";
 import { normalizeTenantSlug } from "@/lib/tenant";
 import { notificaSanzioneIncassoMassivo } from "@/lib/sanzioneIncassoMassivo";
 import {
   giornoAffidoRange,
   parseImportContesto,
 } from "@/lib/importContesto";
+import { isCodiceScarico, statoDaCodiceScarico } from "@/lib/scarico";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -653,44 +656,94 @@ export async function updateContattoPraticaAction(formData: FormData) {
   const user = await requireWritableUser();
   const praticaId = String(formData.get("praticaId") || "");
   await assertPraticaEditable(user, praticaId);
+
+  const aggiornaEsito = formData.has("esito");
   const esitoContatto = String(formData.get("esito") || "") || null;
+
+  const aggiornaTipo = formData.has("tipo");
   const tipoContatto = String(formData.get("tipo") || "") || null;
+
+  const aggiornaMemo = formData.has("scheduledAt");
   const scheduledAtRaw = String(formData.get("scheduledAt") || "");
   const memoAt = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
-  const promessaAt =
-    esitoContatto === "PROMESSA"
-      ? parseDateOnly(String(formData.get("promessaAt") || ""))
-      : undefined;
-  if (esitoContatto === "PROMESSA" && !promessaAt) {
+
+  const aggiornaCodice = formData.has("codScarico");
+  const codScaricoRaw = String(formData.get("codScarico") || "").trim();
+  const codiceScarico = codScaricoRaw || null;
+  if (aggiornaCodice && codiceScarico && !isCodiceScarico(codiceScarico)) {
+    fail("Codice scarico non valido");
+  }
+
+  const isPromessa =
+    (aggiornaCodice && codiceScarico === "PPC") ||
+    (aggiornaEsito && esitoContatto === "PROMESSA");
+
+  const promessaAt = isPromessa
+    ? parseDateOnly(String(formData.get("promessaAt") || ""))
+    : undefined;
+  if (isPromessa && !promessaAt) {
     fail("Inserisci la data della promessa di pagamento");
   }
   const promessaImportoRaw = String(formData.get("promessaImporto") || "").trim();
   let promessaImporto: number | null = null;
-  if (esitoContatto === "PROMESSA" && promessaImportoRaw) {
+  if (isPromessa && promessaImportoRaw) {
     promessaImporto = Number(promessaImportoRaw.replace(",", "."));
     if (Number.isNaN(promessaImporto)) {
       fail("Importo promessa non valido");
     }
   }
 
+  const statoDaCodice =
+    aggiornaCodice && codiceScarico ? statoDaCodiceScarico(codiceScarico) : null;
+
+  const praticaCorrente = aggiornaCodice
+    ? await prisma.pratica.findUnique({
+        where: { id: praticaId },
+        select: { codiceScarico: true },
+      })
+    : null;
+  const codiceScaricoCambiato =
+    aggiornaCodice &&
+    (praticaCorrente?.codiceScarico || null) !== (codiceScarico || null);
+
   await prisma.pratica.update({
     where: { id: praticaId },
     data: {
-      esitoContatto,
-      tipoContatto,
-      memoAt,
+      ...(aggiornaEsito ? { esitoContatto } : {}),
+      ...(aggiornaTipo ? { tipoContatto } : {}),
+      ...(aggiornaMemo ? { memoAt } : {}),
+      ...(aggiornaCodice
+        ? {
+            codiceScarico,
+            ...(codiceScaricoCambiato ? { codiceScaricoAt: new Date() } : {}),
+            ...(statoDaCodice ? { stato: statoDaCodice } : {}),
+            ...(codiceScarico === "PPC" ? { esitoContatto: "PROMESSA" } : {}),
+          }
+        : {}),
       ...(promessaAt ? { promessaAt } : {}),
-      promessaImporto: esitoContatto === "PROMESSA" ? promessaImporto : null,
+      ...(isPromessa || aggiornaEsito || aggiornaCodice
+        ? {
+            promessaImporto: isPromessa ? promessaImporto : null,
+          }
+        : {}),
     },
   });
-  await syncMessaggioAgenda({ praticaId, userId: user.id, memoAt });
+  if (aggiornaMemo) {
+    await syncMessaggioAgenda({ praticaId, userId: user.id, memoAt });
+  }
+
+  const dettaglioParts = [
+    aggiornaCodice ? codiceScarico || "" : "",
+    aggiornaTipo && tipoContatto ? tipoContatto : "",
+    aggiornaEsito ? esitoContatto || "" : "",
+  ].filter(Boolean);
 
   await writeAudit({
     userId: user.id,
-    action: "contatto_update",
+    action: aggiornaCodice ? "scarico_update" : "contatto_update",
     entity: "pratica",
     entityId: praticaId,
-    dettaglio: `${tipoContatto || ""} ${esitoContatto || ""}`.trim(),
+    dettaglio: dettaglioParts.join(" "),
   });
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath("/pratiche");
@@ -864,7 +917,7 @@ export async function sendMessaggioInternoAction(formData: FormData) {
         tenantId: user.tenantId,
         active: true,
         id: { not: user.id },
-        ...(toRole === "ALL" ? {} : { role: toRole }),
+        role: toRole === "ALL" ? { not: "MANUTENZIONE" } : toRole,
       },
       select: { id: true, name: true },
     });
@@ -917,6 +970,7 @@ export async function sendMessaggioInternoAction(formData: FormData) {
   });
   if (collegata) revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath("/agenda");
+  revalidatePath("/messaggi");
   if (collegata) revalidatePath("/");
 }
 
@@ -930,6 +984,48 @@ export async function markMessaggioInternoLettoAction(formData: FormData) {
     data: { letto: true, lettoAt: new Date() },
   });
   revalidatePath("/agenda");
+  revalidatePath("/messaggi");
+  if (msg.praticaId) revalidatePath(`/pratiche/${msg.praticaId}`);
+}
+
+export async function updateMessaggioInternoAction(formData: FormData) {
+  const user = await requireWritableUser();
+  const id = String(formData.get("messageId") || "");
+  const testo = String(formData.get("testo") || "").trim();
+  if (!testo) fail("Scrivi il messaggio");
+  const msg = await prisma.messaggioInterno.findUnique({ where: { id } });
+  if (!msg || msg.fromUserId !== user.id) fail("Messaggio non trovato");
+  await prisma.messaggioInterno.update({
+    where: { id },
+    data: { testo, letto: false, lettoAt: null },
+  });
+  await writeAudit({
+    userId: user.id,
+    action: "msg_interno_edit",
+    entity: msg.praticaId ? "pratica" : "messaggio",
+    entityId: msg.praticaId,
+    dettaglio: testo.slice(0, 80),
+  });
+  revalidatePath("/agenda");
+  revalidatePath("/messaggi");
+  if (msg.praticaId) revalidatePath(`/pratiche/${msg.praticaId}`);
+}
+
+export async function deleteMessaggioInternoAction(formData: FormData) {
+  const user = await requireWritableUser();
+  const id = String(formData.get("messageId") || "");
+  const msg = await prisma.messaggioInterno.findUnique({ where: { id } });
+  if (!msg || msg.fromUserId !== user.id) fail("Messaggio non trovato");
+  await prisma.messaggioInterno.delete({ where: { id } });
+  await writeAudit({
+    userId: user.id,
+    action: "msg_interno_del",
+    entity: msg.praticaId ? "pratica" : "messaggio",
+    entityId: msg.praticaId,
+    dettaglio: msg.testo.slice(0, 80),
+  });
+  revalidatePath("/agenda");
+  revalidatePath("/messaggi");
   if (msg.praticaId) revalidatePath(`/pratiche/${msg.praticaId}`);
 }
 
@@ -997,7 +1093,7 @@ async function registraIncassoSuPratica(input: {
     where: { id: praticaId },
     include: {
       incassi: true,
-      mandante: { select: { provvigionePerc: true, provvigioniMetodo: true } },
+      mandante: { select: { provvigionePerc: true, provvigioniMetodo: true, perimetri: true } },
     },
   });
   if (!pratica) fail("Pratica non trovata");
@@ -1028,10 +1124,18 @@ async function registraIncassoSuPratica(input: {
       },
     });
     if (pratica.assegnatarioId) {
-      const pct = resolveProvvigionePercentuale(
-        pratica.mandante,
-        input.metodo || "bonifico"
+      const metodo = input.metodo || "bonifico";
+      const perimetro = perimetroPerNome(
+        parsePerimetri(pratica.mandante.perimetri),
+        pratica.numeroMandante
       );
+      const pct = perimetro
+        ? resolveProvvigionePercentualeLato(
+            perimetro.pagata,
+            metodo,
+            pratica.codiceScarico
+          )
+        : resolveProvvigionePercentuale(pratica.mandante, metodo);
       const prov = calcolaProvvigione(split.usato, pct);
       await tx.provvigione.create({
         data: {
@@ -1187,9 +1291,25 @@ export async function createMandanteAction(formData: FormData) {
   const ragioneSociale = String(formData.get("ragioneSociale") || "").trim();
   const email = String(formData.get("email") || "").trim() || null;
   const telefono = String(formData.get("telefono") || "").trim() || null;
-  if (!codice || !ragioneSociale) fail("Codice e ragione sociale obbligatori");
+  const referente = String(formData.get("referente") || "").trim() || null;
+  const referenteTelefono = String(formData.get("referenteTelefono") || "").trim() || null;
+  const referenteEmail = String(formData.get("referenteEmail") || "").trim() || null;
+  const pec = String(formData.get("pec") || "").trim() || null;
+  const perimetriRaw = String(formData.get("perimetri") || "").trim() || null;
+  if (!codice || !ragioneSociale) fail("Acronimo interno e ragione sociale obbligatori");
   const created = await prisma.mandante.create({
-    data: { tenantId: user.tenantId, codice, ragioneSociale, email, telefono },
+    data: {
+      tenantId: user.tenantId,
+      codice,
+      ragioneSociale,
+      email,
+      telefono,
+      referente,
+      referenteTelefono,
+      referenteEmail,
+      pec,
+      ...(canManageMandantePerimetri(user) && perimetriRaw ? { perimetri: perimetriRaw } : {}),
+    },
   });
   await writeAudit({
     userId: user.id,
@@ -1209,38 +1329,57 @@ export async function updateMandanteAction(formData: FormData) {
 
   const existing = await prisma.mandante.findFirst({
     where: { id, tenantId: user.tenantId },
-    select: { id: true },
+    select: { id: true, perimetri: true },
   });
   if (!existing) fail("Mandante non trovata");
 
   const ragioneSociale = String(formData.get("ragioneSociale") || "").trim();
   const email = String(formData.get("email") || "").trim() || null;
   const telefono = String(formData.get("telefono") || "").trim() || null;
+  const referente = String(formData.get("referente") || "").trim() || null;
+  const referenteTelefono = String(formData.get("referenteTelefono") || "").trim() || null;
+  const referenteEmail = String(formData.get("referenteEmail") || "").trim() || null;
+  const pec = String(formData.get("pec") || "").trim() || null;
   const indirizzo = String(formData.get("indirizzo") || "").trim() || null;
   const citta = String(formData.get("citta") || "").trim() || null;
   const cap = String(formData.get("cap") || "").trim() || null;
   const provincia = String(formData.get("provincia") || "").trim() || null;
-  const provvPercRaw = String(formData.get("provvigionePerc") || "").trim();
-  const provvigionePerc = provvPercRaw ? parseFloat(provvPercRaw.replace(",", ".")) : null;
-  const provvigioniMetodo = String(formData.get("provvigioniMetodo") || "").trim() || null;
-  const incentivoTipo = String(formData.get("incentivoTipo") || "").trim() || null;
-  const incValRaw = String(formData.get("incentivoValore") || "").trim();
-  const incentivoValore = incValRaw ? parseFloat(incValRaw.replace(",", ".")) : null;
-  const incSogliaRaw = String(formData.get("incentivoSoglia") || "").trim();
-  const incentivoSoglia = incSogliaRaw ? parseFloat(incSogliaRaw.replace(",", ".")) : null;
-  const incentivoNote = String(formData.get("incentivoNote") || "").trim() || null;
-  const codiciScarico = String(formData.get("codiciScarico") || "").trim() || null;
-  const smsPreimpostati = String(formData.get("smsPreimpostati") || "").trim() || null;
-  const perimetri = String(formData.get("perimetri") || "").trim() || null;
+  const perimetriRaw = formData.has("perimetri")
+    ? String(formData.get("perimetri") ?? "").trim()
+    : null;
+  const managesPerimetri = canManageMandantePerimetri(user);
+  const perimetri =
+    managesPerimetri && perimetriRaw !== null ? perimetriRaw : existing.perimetri;
 
   if (!ragioneSociale) fail("Ragione sociale obbligatoria");
 
   await prisma.mandante.update({
     where: { id },
     data: {
-      ragioneSociale, email, telefono, indirizzo, citta, cap, provincia,
-      provvigionePerc, provvigioniMetodo, incentivoTipo, incentivoValore, incentivoSoglia, incentivoNote,
-      codiciScarico, smsPreimpostati, perimetri,
+      ragioneSociale,
+      email,
+      telefono,
+      referente,
+      referenteTelefono,
+      referenteEmail,
+      pec,
+      indirizzo,
+      citta,
+      cap,
+      provincia,
+      ...(managesPerimetri
+        ? {
+            perimetri,
+            codiciScarico: null,
+            smsPreimpostati: null,
+            provvigionePerc: null,
+            provvigioniMetodo: null,
+            incentivoTipo: null,
+            incentivoValore: null,
+            incentivoSoglia: null,
+            incentivoNote: null,
+          }
+        : {}),
     },
   });
   await writeAudit({
@@ -1254,6 +1393,42 @@ export async function updateMandanteAction(formData: FormData) {
   revalidatePath(`/mandanti/${id}`);
 }
 
+export async function deleteMandanteAction(formData: FormData) {
+  const user = await requireWritablePermission("mandanti:delete");
+  const id = String(formData.get("id") || "");
+  if (!id) fail("ID mandante mancante");
+
+  const existing = await prisma.mandante.findFirst({
+    where: { id, tenantId: user.tenantId },
+    select: {
+      id: true,
+      codice: true,
+      ragioneSociale: true,
+      _count: { select: { pratiche: true } },
+    },
+  });
+  if (!existing) fail("Mandante non trovata");
+
+  if (existing._count.pratiche > 0) {
+    fail(
+      `Impossibile eliminare: sono collegate ${existing._count.pratiche} pratiche`
+    );
+  }
+
+  await prisma.mandante.delete({ where: { id } });
+
+  await writeAudit({
+    userId: user.id,
+    action: "delete",
+    entity: "mandante",
+    entityId: id,
+    dettaglio: `${existing.codice} — ${existing.ragioneSociale}`,
+  });
+
+  revalidatePath("/mandanti");
+  redirect("/mandanti");
+}
+
 export async function createUserAction(formData: FormData) {
   const actor = await requireWritablePermission("operatori:manage");
   const email = String(formData.get("email") || "").trim().toLowerCase();
@@ -1261,9 +1436,11 @@ export async function createUserAction(formData: FormData) {
   const password = String(formData.get("password") || "");
   const role = String(formData.get("role") || "OPERATOR") as Role;
   const supervisorId = String(formData.get("supervisorId") || "") || null;
-  if (!email || !name || password.length < 6) {
-    fail("Email, nome e password (min. 6) obbligatori");
+  if (!email || !name || !password) {
+    fail("Email, nome e password obbligatori");
   }
+  const complexityErr = validatePasswordComplexity(password);
+  if (complexityErr) fail(complexityErr);
   const passwordHash = await bcrypt.hash(password, 10);
   const created = await prisma.user.create({
     data: {

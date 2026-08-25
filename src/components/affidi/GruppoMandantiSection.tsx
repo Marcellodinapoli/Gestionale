@@ -4,12 +4,13 @@ import { useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { updateGruppoMandantiAction } from "@/actions/gruppoOperatori";
 import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
+import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 
 type MandanteOption = {
   id: string;
   codice: string;
   ragioneSociale: string;
-  perimetri: Array<{ id: string; nome: string }>;
+  perimetri: PerimetroListItem[];
 };
 
 export function GruppoMandantiSection({
@@ -137,7 +138,7 @@ export function GruppoMandantiSection({
                             onChange={() => togglePerimetro(a.mandanteId, p.id)}
                             className="sr-only"
                           />
-                          {p.nome}
+                          {p.label}
                         </label>
                       );
                     })}

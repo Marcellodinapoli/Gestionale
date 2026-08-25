@@ -1,10 +1,43 @@
+import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { assertCan, can, isManutenzione, type Permission } from "@/lib/permissions";
+import { isUserPasswordExpired } from "@/lib/passwordPolicy";
+import { assertCan, can, isManutenzione, type Permission, type SessionUser } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 
-export async function requireUser() {
+type RequireUserOptions = {
+  /** Consente l'accesso solo per cambio password obbligatorio o logout. */
+  allowExpiredPassword?: boolean;
+};
+
+async function assertPasswordFresh(
+  userId: string,
+  allowExpiredPassword?: boolean
+) {
+  if (allowExpiredPassword) return;
+  if (await isUserPasswordExpired(userId)) {
+    redirect("/cambia-password");
+  }
+}
+
+export async function requireUser(options?: RequireUserOptions) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  await assertPasswordFresh(user.id, options?.allowExpiredPassword);
+  return user;
+}
+
+/** Autenticazione API: blocca sessioni con password scaduta (403). */
+export async function requireApiUser(): Promise<SessionUser | NextResponse> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
+  }
+  if (await isUserPasswordExpired(user.id)) {
+    return NextResponse.json(
+      { error: "Password scaduta: aggiornala per continuare" },
+      { status: 403 }
+    );
+  }
   return user;
 }
 

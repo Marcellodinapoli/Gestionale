@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { praticaWhere } from "@/lib/domain";
+import { requireApiUser } from "@/lib/guard";
+import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { can, isManutenzione } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { formatMemoAlertLine, memoAlertWindow } from "@/lib/memoAlerts";
@@ -8,9 +8,11 @@ import { operatorSigla } from "@/lib/noteFormat";
 import { isSanzioneAttivaTesto } from "@/lib/sanzioneIncassoMassivo";
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ alerts: [], total: 0 });
+  const user = await requireApiUser();
+  if (user instanceof NextResponse) return user;
   if (isManutenzione(user)) return NextResponse.json({ alerts: [], total: 0 });
+
+  const baseScope = await praticaScopeWhere(user);
 
   const now = new Date();
   const alerts: Array<{
@@ -28,8 +30,7 @@ export async function GET() {
   if (can(user, "agenda:view")) {
     const pratiche = await prisma.pratica.findMany({
       where: {
-        ...praticaWhere(user),
-        memoAt: { not: null },
+        AND: [baseScope, { memoAt: { not: null } }],
       },
       include: { debitore: true, mandante: true },
       orderBy: { memoAt: "asc" },

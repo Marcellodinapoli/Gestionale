@@ -1,8 +1,8 @@
 export type VistaAgenda = "giorno" | "settimana" | "mese";
 
 export function parseVistaAgenda(raw?: string | null): VistaAgenda {
-  if (raw === "settimana" || raw === "mese") return raw;
-  return "giorno";
+  if (raw === "giorno" || raw === "settimana") return raw;
+  return "mese";
 }
 
 export function parseDataAgenda(raw?: string | null): Date {
@@ -98,3 +98,53 @@ export function filtraPerIntervallo<T extends { memoAt: string }>(
     return t >= s && t <= e;
   });
 }
+
+/** Griglia mese (6×7) a partire dal lunedì della settimana che contiene il 1°. */
+export function grigliaMese(anchor: Date) {
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const startOffset = (first.getDay() + 6) % 7;
+  const start = new Date(first);
+  start.setDate(first.getDate() - startOffset);
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+}
+
+/** I 7 giorni della settimana (lun→dom) che contiene anchor. */
+export function giorniSettimana(anchor: Date) {
+  const { start } = intervalloVista("settimana", anchor);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+}
+
+export function stessoGiorno(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+export function chiaveGiorno(d: Date) {
+  return formatDataAgenda(d);
+}
+
+export function raggruppaPerGiorno<T extends { memoAt: string }>(items: T[]) {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = chiaveGiorno(new Date(item.memoAt));
+    const list = map.get(key) ?? [];
+    list.push(item);
+    map.set(key, list);
+  }
+  return map;
+}
+
+export const GIORNI_SETTIMANA_LABEL = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"] as const;

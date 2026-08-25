@@ -3,13 +3,13 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/domain";
-import { requireWritablePermission } from "@/lib/guard";
+import { requireUser, requireWritablePermission } from "@/lib/guard";
+import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 
 export async function selezionaPostazioneAction(formData: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const user = await requireUser({ allowExpiredPassword: true });
+  if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
 
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) return { error: "Seleziona una postazione" };

@@ -5,6 +5,7 @@ import type { PraticaAffido } from "@/components/affidi/AffidiCaricoOperatori";
 import {
   AffidoMassivoForm,
   CheckboxSelezione,
+  buildPraticheStato,
   useSelezionePratiche,
 } from "@/components/affidi/affidoSelezione";
 import { etichettaTipoAffido, isAffidoTemporaneo } from "@/lib/affido";
@@ -35,6 +36,7 @@ export function AffidiPraticheOperatore({
   const lista = [...aperte, ...chiuse];
   const { selected, allRef, allChecked, toggleAll, toggleOne } =
     useSelezionePratiche(lista.map((p) => p.id));
+  const praticheStato = buildPraticheStato(lista);
   const colSpan = showAssegnatario ? 9 : 8;
 
   return (
@@ -46,6 +48,7 @@ export function AffidiPraticheOperatore({
       {lista.length ? (
         <AffidoMassivoForm
           selectedIds={[...selected]}
+          praticheStato={praticheStato}
           operatori={operatori}
           emptyHint="Seleziona le pratiche da riaffidare"
           submitLabel="Riaffida selezionate"

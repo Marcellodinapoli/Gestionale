@@ -2,7 +2,7 @@ export const STATI_TELEFONO = {
   CONFERMATO: "Confermato",
   ALTRA_PERSONA: "Risponde altra persona",
   NON_LAVORA_PIU: "Non lavora più",
-  RECAPITO_ERRATO: "Recapito errato",
+  RECAPITO_ERRATO: "Recapito inesistente",
   NON_RISPONDE: "Non risponde",
   DA_VERIFICARE: "Da verificare",
 } as const;
@@ -28,7 +28,7 @@ export function statoTelefonoClassi(stato?: string | null) {
     case "NON_LAVORA_PIU":
       return "bg-orange-100 text-orange-950 ring-1 ring-orange-300";
     case "RECAPITO_ERRATO":
-      return "bg-rose-100 text-rose-950 ring-1 ring-rose-300";
+      return "bg-red-600 text-white ring-1 ring-red-700";
     case "NON_RISPONDE":
       return "bg-violet-100 text-violet-950 ring-1 ring-violet-300";
     case "DA_VERIFICARE":

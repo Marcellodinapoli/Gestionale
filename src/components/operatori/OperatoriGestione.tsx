@@ -132,7 +132,7 @@ function RigaOperatore({ utente }: { utente: Utente }) {
           <option value="BACK_OFFICE">Back office</option>
           <option value="SUPERVISOR">Supervisor</option>
           <option value="AMMINISTRAZIONE">Amministrazione</option>
-          <option value="ADMIN">Amministratore</option>
+          <option value="ADMIN">Admin</option>
         </select>
       </td>
       <td>{utente.supervisorName || "—"}</td>

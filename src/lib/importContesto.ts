@@ -34,7 +34,7 @@ export async function parseImportContesto(
   if (!mandante) return { error: "Mandante non trovata" };
 
   const elenco = parsePerimetri(mandante.perimetri);
-  if (elenco.length > 0 && !elenco.some((p) => p.nome === perimetro)) {
+  if (elenco.length > 0 && !elenco.some((p) => p.nomeMandante === perimetro)) {
     return { error: "Perimetro non valido per la mandante selezionata" };
   }
 

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
-import { parseDataIso, startOfNextDay } from "@/lib/lavorateOggi";
+import { parseDataIso, startOfDay, startOfNextDay } from "@/lib/lavorateOggi";
 import { prisma } from "@/lib/prisma";
+import { rateScaduteSomeWhere } from "@/lib/rate";
 
 /**
  * Filtri avanzati coda pratiche (gestione + «Altri filtri»).
@@ -42,6 +43,7 @@ export const ALTRI_FILTRI_KEYS = [
   "incassatoA",
   "memoDa",
   "memoA",
+  "rateScadute",
   "aggiuntivo",
 ] as const;
 
@@ -89,6 +91,8 @@ export type AltriFiltri = {
   incassatoA?: string;
   memoDa?: string;
   memoA?: string;
+  /** "1" = con almeno una rata non pagata scaduta; "0" = senza rate scadute */
+  rateScadute?: string;
   /** Solo modal — elenco da popolare */
   aggiuntivo?: string;
 };
@@ -110,13 +114,18 @@ function parseNum(v?: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Intervallo inclusivo su date (giorno intero). */
+/**
+ * Intervallo date inclusivo, anche con una sola estremità:
+ * — solo Da → da quella data in poi
+ * — solo Al → fino a quella data
+ * — entrambe → intervallo chiuso
+ */
 function dateRange(da?: string, a?: string): { gte?: Date; lt?: Date } | undefined {
   const from = parseDataIso(da);
   const to = parseDataIso(a);
   if (!from && !to) return undefined;
   return {
-    ...(from ? { gte: from } : {}),
+    ...(from ? { gte: startOfDay(from) } : {}),
     ...(to ? { lt: startOfNextDay(to) } : {}),
   };
 }
@@ -178,6 +187,7 @@ export function parseAltriFiltri(sp: Record<string, string | null | undefined>):
     incassatoA: trimOrUndef(sp.incassatoA),
     memoDa: trimOrUndef(sp.memoDa),
     memoA: trimOrUndef(sp.memoA),
+    rateScadute: sp.rateScadute === "1" || sp.rateScadute === "0" ? sp.rateScadute : undefined,
     aggiuntivo: trimOrUndef(sp.aggiuntivo),
   };
   if (!ALTRI_FILTRI_KEYS.some((k) => f[k])) return undefined;
@@ -186,6 +196,81 @@ export function parseAltriFiltri(sp: Record<string, string | null | undefined>):
 
 export function hasAltriFiltri(f?: AltriFiltri | null) {
   return Boolean(f && ALTRI_FILTRI_KEYS.some((k) => f[k]));
+}
+
+function fmtDataFiltro(iso?: string) {
+  if (!iso) return "…";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    return new Date(`${iso}T12:00:00`).toLocaleDateString("it-IT");
+  }
+  return iso;
+}
+
+const FILTRI_DESCRIZIONI: Partial<Record<AltriFiltriKey, (f: AltriFiltri) => string | undefined>> = {
+  debitore: (f) => (f.debitore ? `Debitore: ${f.debitore}` : undefined),
+  citta: (f) => (f.citta ? `Città: ${f.citta}` : undefined),
+  affidoDa: (f) =>
+    f.affidoDa || f.affidoA
+      ? `Affido ${fmtDataFiltro(f.affidoDa)}–${fmtDataFiltro(f.affidoA)}`
+      : undefined,
+  promPagDa: (f) =>
+    f.promPagDa || f.promPagA
+      ? `Prom. pag. ${fmtDataFiltro(f.promPagDa)}–${fmtDataFiltro(f.promPagA)}`
+      : undefined,
+  scadenzaDa: (f) =>
+    f.scadenzaDa || f.scadenzaA
+      ? `Scadenza ${fmtDataFiltro(f.scadenzaDa)}–${fmtDataFiltro(f.scadenzaA)}`
+      : undefined,
+  codScarico: (f) => (f.codScarico ? `Cod. ${f.codScarico}` : undefined),
+  lotto: (f) => (f.lotto ? `Lotto ${f.lotto}` : undefined),
+  mandato: (f) => (f.mandato ? `Mandato` : undefined),
+  sitAffido: (f) =>
+    f.sitAffido === "affidata"
+      ? "Affidata"
+      : f.sitAffido === "non_affidata"
+        ? "Non affidata"
+        : f.sitAffido === "temporanea"
+          ? "Affido temp."
+          : undefined,
+  rateScadute: (f) =>
+    f.rateScadute === "1" ? "Rate scadute" : f.rateScadute === "0" ? "No rate scadute" : undefined,
+};
+
+/** Chiavi «Al» già incluse nel riepilogo della rispettiva «Da». */
+const FILTRI_RANGE_A_KEYS = new Set<AltriFiltriKey>([
+  "capA",
+  "affidoA",
+  "scadenzaA",
+  "importoRataA",
+  "residuoA",
+  "totIncassatoA",
+  "importoTotA",
+  "nPraticaA",
+  "promPagA",
+  "incassatoA",
+  "memoA",
+]);
+
+/** Breve riepilogo testuale dei filtri attivi. */
+export function describeAltriFiltri(f?: AltriFiltri | null, max = 4): string {
+  if (!f || !hasAltriFiltri(f)) return "Nessun filtro";
+  const parts: string[] = [];
+  for (const k of ALTRI_FILTRI_KEYS) {
+    if (FILTRI_RANGE_A_KEYS.has(k)) continue;
+    const fn = FILTRI_DESCRIZIONI[k];
+    const label = fn?.(f);
+    if (label) parts.push(label);
+    else if (f[k] && !fn) parts.push(String(f[k]));
+    if (parts.length >= max) break;
+  }
+  const total = ALTRI_FILTRI_KEYS.filter((k) => f[k]).length;
+  if (total > max) return `${parts.join(" · ")}… (+${total - max})`;
+  return parts.join(" · ");
+}
+
+export function sanitizeAltriFiltri(raw: unknown): AltriFiltri {
+  if (!raw || typeof raw !== "object") return {};
+  return parseAltriFiltri(raw as Record<string, string | null | undefined>) ?? {};
 }
 
 export function appendAltriFiltriParams(sp: URLSearchParams, f?: AltriFiltri | null) {
@@ -352,6 +437,12 @@ export function altriFiltriWhere(
   const rata = numRange(f.importoRataDa, f.importoRataA);
   if (rata) and.push({ rate: { some: { importo: rata } } });
 
+  if (f.rateScadute === "1" || f.rateScadute === "0") {
+    const rateScaduteSome = rateScaduteSomeWhere();
+    if (f.rateScadute === "1") and.push(rateScaduteSome);
+    else and.push({ NOT: rateScaduteSome });
+  }
+
   const residuo = numRange(f.residuoDa, f.residuoA);
   if (residuo) and.push({ residuo });
 
@@ -404,6 +495,7 @@ export function altriFiltriWhere(
   const nPratica = stringRange(f.nPraticaDa, f.nPraticaA);
   if (nPratica) and.push({ numero: nPratica });
 
+  // Data promessa di pagamento (promessaAt): stessa logica dal/al delle lavorazioni.
   const prom = dateRange(f.promPagDa, f.promPagA);
   if (prom) and.push({ promessaAt: prom });
 

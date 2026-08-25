@@ -40,9 +40,17 @@ export async function getGruppoLavoro(user: SessionUser): Promise<GruppoLavoro> 
     };
   }
 
+  return getGruppoLavoroForSupervisor(user.tenantId, supervisorId);
+}
+
+/** Gruppo di lavoro di un supervisor (es. home back office con scelta gruppo). */
+export async function getGruppoLavoroForSupervisor(
+  tenantId: string,
+  supervisorId: string
+): Promise<GruppoLavoro> {
   const [supervisor, operators] = await Promise.all([
     prisma.user.findFirst({
-      where: { id: supervisorId, tenantId: user.tenantId },
+      where: { id: supervisorId, tenantId },
       select: {
         id: true,
         name: true,
@@ -59,7 +67,7 @@ export async function getGruppoLavoro(user: SessionUser): Promise<GruppoLavoro> 
         supervisorId,
         active: true,
         role: "OPERATOR",
-        tenantId: user.tenantId,
+        tenantId,
       },
       select: { id: true, name: true, role: true, email: true },
       orderBy: { name: "asc" },
@@ -87,5 +95,6 @@ export async function getGruppoLavoro(user: SessionUser): Promise<GruppoLavoro> 
 
 export function gruppoLavoroPraticaWhere(memberIds: string[]): Prisma.PraticaWhereInput {
   if (!memberIds.length) return { assegnatarioId: { in: [] } };
+  // Sempre tutti i membri del gruppo (operatori + supervisor), mai solo l’utente corrente.
   return { assegnatarioId: { in: memberIds } };
 }

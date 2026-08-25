@@ -1,7 +1,13 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
-import { praticaWhere, euro, dataIt } from "@/lib/domain";
+import { euro, dataIt } from "@/lib/domain";
+import {
+  filtraIdsPraticaScope,
+  praticaScopeWhere,
+  resolveGruppoPerimetroContext,
+} from "@/lib/gruppoPerimetroScope";
 import { esitoContattoLabel } from "@/lib/contatto";
 import {
   buildPraticaCodaHref,
@@ -27,16 +33,16 @@ import {
   ultimaLavorazioneInclude,
 } from "@/lib/praticaOrdine";
 import { PageHeader } from "@/components/ui";
-import {
-  PaginazioneBar,
-  buildPraticheQuery,
-  paginateParams,
-} from "@/components/PaginazioneBar";
+import { buildPraticheQuery } from "@/components/PaginazioneBar";
 import { PraticheFiltriBar } from "@/components/pratiche/PraticheFiltriBar";
 import { PraticheListaConNotaMassiva } from "@/components/pratiche/PraticheListaConNotaMassiva";
 import { can } from "@/lib/permissions";
 import { isAffidoTemporaneo } from "@/lib/affido";
 import { codiceScaricoPratica } from "@/lib/scarico";
+import { countRateScadute } from "@/lib/rate";
+
+/** Stato predefinito all’apertura dell’elenco pratiche. */
+const STATO_DEFAULT = "IN_LAVORAZIONE";
 
 function buildSortHref(
   base: Record<string, string | boolean | number | undefined>,
@@ -55,9 +61,21 @@ export default async function PratichePage({
 }) {
   const user = await requireUser();
   const sp = await searchParams;
+
+  // Default: pratiche in lavorazione (stato assente in URL → applica filtro)
+  if (!("stato" in sp)) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (v != null && v !== "") params.set(k, v);
+    }
+    params.set("stato", STATO_DEFAULT);
+    redirect(`/pratiche?${params.toString()}`);
+  }
+
   const codaNav = parseCodaNav(sp);
-  const { page, pageSize, skip } = paginateParams(sp.page);
   const altri = parseAltriFiltri(sp);
+  const periCtx = await resolveGruppoPerimetroContext(user);
+  const baseScope = await praticaScopeWhere(user);
 
   const canFilterOp = ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE", "SUPERVISOR"].includes(
     user.role
@@ -65,7 +83,7 @@ export default async function PratichePage({
   const needTemporanea =
     altri?.sitAffido === "temporanea" || altri?.affidoProvvisorio === "1";
 
-  const [operatoriList, mandantiList, temporaneaIds, lottiRows, importoTotIds, totIncassatoIds] =
+  const [operatoriListRaw, mandantiListRaw, temporaneaIdsRaw, lottiRows, importoTotIdsRaw, totIncassatoIdsRaw] =
     await Promise.all([
       canFilterOp
         ? prisma.user.findMany({
@@ -73,6 +91,9 @@ export default async function PratichePage({
               tenantId: user.tenantId,
               role: { in: ["OPERATOR", "SUPERVISOR"] },
               active: true,
+              ...(user.role === "SUPERVISOR" && periCtx.memberIds.length
+                ? { id: { in: periCtx.memberIds } }
+                : {}),
             },
             orderBy: { name: "asc" },
             select: { id: true, name: true },
@@ -90,7 +111,7 @@ export default async function PratichePage({
         by: ["numeroMandante"],
         where: {
           AND: [
-            praticaWhere(user),
+            baseScope,
             { numeroMandante: { not: null } },
             { stato: { notIn: [...STATI_PRATICA_CHIUSA] } },
           ],
@@ -99,6 +120,17 @@ export default async function PratichePage({
       idsImportoTotale(user.tenantId, altri?.importoTotDa, altri?.importoTotA),
       idsTotIncassato(user.tenantId, altri?.totIncassatoDa, altri?.totIncassatoA),
     ]);
+
+  const operatoriList = operatoriListRaw;
+  const mandantiList =
+    periCtx.nelGruppo && periCtx.gruppoMandanti.length
+      ? mandantiListRaw.filter((m) =>
+          periCtx.gruppoMandanti.some((a) => a.mandanteId === m.id)
+        )
+      : mandantiListRaw;
+  const temporaneaIds = await filtraIdsPraticaScope(user, temporaneaIdsRaw);
+  const importoTotIds = await filtraIdsPraticaScope(user, importoTotIdsRaw);
+  const totIncassatoIds = await filtraIdsPraticaScope(user, totIncassatoIdsRaw);
 
   const lottiInLavorazione = [
     ...new Set(
@@ -114,16 +146,16 @@ export default async function PratichePage({
           canFilterOp ? altri : { ...altri, operatore: undefined },
           {
             canFilterOperatore: canFilterOp,
-            temporaneaIds,
-            importoTotIds,
-            totIncassatoIds,
+            temporaneaIds: temporaneaIds ?? undefined,
+            importoTotIds: importoTotIds ?? undefined,
+            totIncassatoIds: totIncassatoIds ?? undefined,
           }
         )
       : {};
 
   const where = {
     AND: [
-      praticaWhere(user),
+      baseScope,
       ...(codaNav.filtro ? [codaFiltroWhere(codaNav.filtro)] : []),
       ...(Object.keys(altriWhere).length ? [altriWhere] : []),
     ],
@@ -134,7 +166,10 @@ export default async function PratichePage({
     mandante: true,
     assegnatario: true,
     attivita: ultimaLavorazioneInclude,
-    rate: { orderBy: { numeroRata: "asc" as const }, take: 1 },
+    rate: {
+      orderBy: { numeroRata: "asc" as const },
+      select: { importo: true, pagata: true, scadenza: true },
+    },
     incassi: { select: { importo: true } },
     garanti: {
       orderBy: { ordine: "asc" as const },
@@ -171,18 +206,13 @@ export default async function PratichePage({
     mandante: { codice: string };
     assegnatario: { name: string } | null;
     attivita: Array<{ createdAt: Date }>;
-    rate: Array<{ importo: number }>;
+    rate: Array<{ importo: number; pagata: boolean; scadenza: Date }>;
     incassi: Array<{ importo: number }>;
     garanti: Array<{ nome: string; cognome: string }>;
   }>;
 
   if (isUltimaLavorazioneSort(codaNav.sort)) {
-    const ids = await orderPraticaIdsByUltimaLavorazione(
-      where,
-      codaNav.dir,
-      skip,
-      pageSize
-    );
+    const ids = await orderPraticaIdsByUltimaLavorazione(where, codaNav.dir);
     if (!ids.length) {
       pratiche = [];
     } else {
@@ -198,14 +228,10 @@ export default async function PratichePage({
       where,
       include,
       orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
-      skip,
-      take: pageSize,
     });
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const codaNavPagina = { ...codaNav, listPage: safePage };
+  const codaNavPagina = { ...codaNav, listPage: 1 };
 
   const queryBase: Record<string, string | boolean | number | undefined> = {
     q: sp.q,
@@ -213,6 +239,8 @@ export default async function PratichePage({
     esito: sp.esito,
     lavorate: codaNav.filtro?.lavorate,
     lavorateData: codaNav.filtro?.lavorateData,
+    lavorateDa: codaNav.filtro?.lavorateDa,
+    lavorateA: codaNav.filtro?.lavorateA,
     lavorateOggi: codaNav.filtro?.lavorateOggi,
     lavorateFascia: codaNav.filtro?.lavorateFascia,
     nonToccateDa: codaNav.filtro?.nonToccateDa,
@@ -221,10 +249,7 @@ export default async function PratichePage({
     ...(altri || {}),
   };
 
-  const hrefForPage = (p: number) =>
-    buildPraticheQuery({ ...queryBase, page: p });
-
-  const sortBase = { ...queryBase, page: safePage };
+  const sortBase = { ...queryBase };
 
   const apriPraticheHref = pratiche.length
     ? buildPraticaCodaHref(pratiche[0].id, codaNavPagina)
@@ -247,6 +272,8 @@ export default async function PratichePage({
     const totInc = p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
     const impTot = (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0);
     const g = p.garanti[0];
+    const primaRataAperta = p.rate.find((r) => !r.pagata);
+    const nRateScadute = countRateScadute(p.rate);
     return {
       id: p.id,
       numero: p.numero,
@@ -267,7 +294,8 @@ export default async function PratichePage({
       scadenzaLabel: dataIt(p.scadenza),
       codScarico: codiceScaricoPratica(p.stato, p.codiceScarico),
       affidoProvvisorio: isAffidoTemporaneo(p),
-      importoRataLabel: p.rate[0] ? euro(p.rate[0].importo) : "—",
+      importoRataLabel: primaRataAperta ? euro(primaRataAperta.importo) : "—",
+      rateScaduteLabel: nRateScadute > 0 ? String(nRateScadute) : "—",
       totIncassatoLabel: euro(totInc),
       importoTotaleLabel: euro(impTot),
       garanteLabel: g ? `${g.nome} ${g.cognome}`.trim() : "—",
@@ -276,23 +304,37 @@ export default async function PratichePage({
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col pb-14">
+    <div className="flex h-full min-h-0 flex-col pb-4">
       <PageHeader
         title="Pratiche"
         subtitle={
-          user.role === "OPERATOR"
-            ? `${total} posizioni affidate · pagina ${safePage}/${totalPages}`
-            : user.role === "SUPERVISOR"
-              ? `${total} del gruppo (operatori + da affidare) · pagina ${safePage}/${totalPages}`
-              : `${total} visibili · pagina ${safePage}/${totalPages}`
+          periCtx.nessunPerimetroGruppo
+            ? "Nessun perimetro configurato sul gruppo — imposta mandanti e perimetri in Affidi"
+            : user.role === "OPERATOR"
+              ? `${total} posizioni nei perimetri del gruppo`
+              : user.role === "SUPERVISOR"
+                ? `${total} nei perimetri del gruppo`
+                : `${total} visibili`
         }
       />
+      {periCtx.nessunPerimetroGruppo ? (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Nessun perimetro impostato sul gruppo: filtri e elenco pratiche restano vuoti finché non
+          configuri mandanti e perimetri in{" "}
+          <Link href="/affidi" className="font-semibold underline">
+            Affidi
+          </Link>
+          .
+        </p>
+      ) : null}
       <PraticheFiltriBar
         q={sp.q}
         stato={sp.stato}
         esito={sp.esito}
         lavorate={codaNav.filtro?.lavorate}
         lavorateData={codaNav.filtro?.lavorateData}
+        lavorateDa={codaNav.filtro?.lavorateDa}
+        lavorateA={codaNav.filtro?.lavorateA}
         lavorateOggi={codaNav.filtro?.lavorateOggi}
         lavorateFascia={codaNav.filtro?.lavorateFascia}
         nonToccateDa={codaNav.filtro?.nonToccateDa}
@@ -311,9 +353,6 @@ export default async function PratichePage({
           >
             Apri pratiche
           </Link>
-          <p className="text-xs text-[var(--muted)]">
-            Apre la prima pratica di questa pagina · le frecce seguono l&apos;ordine filtrato
-          </p>
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -321,27 +360,8 @@ export default async function PratichePage({
           pratiche={praticheRows}
           sortColumns={sortColumns}
           canNotaMassiva={canNotaMassiva}
-          altri={altri}
-          operatori={operatoriList}
-          mandanti={mandantiList}
-          lotti={lottiInLavorazione}
-          navHidden={{
-            q: sp.q,
-            stato: sp.stato,
-            esito: sp.esito,
-            lavorateData: codaNav.filtro?.lavorateData,
-            lavorateFascia: codaNav.filtro?.lavorateFascia,
-            sort: codaNav.sort,
-            dir: codaNav.dir,
-          }}
         />
       </div>
-      <PaginazioneBar
-        fixed
-        page={safePage}
-        totalPages={totalPages}
-        hrefForPage={hrefForPage}
-      />
     </div>
   );
 }

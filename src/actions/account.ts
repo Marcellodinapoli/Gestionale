@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/domain";
 import { requireUser } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
+import { validatePasswordComplexity } from "@/lib/passwordRules";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -52,13 +53,20 @@ export async function updateAccountTelefoniaAction(formData: FormData) {
 }
 
 export async function changePasswordAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireUser({ allowExpiredPassword: true });
   const currentPassword = String(formData.get("currentPassword") || "");
   const newPassword = String(formData.get("newPassword") || "");
   const confirmPassword = String(formData.get("confirmPassword") || "");
 
   if (!currentPassword) fail("Inserisci la password attuale");
+  if (!newPassword) fail("Inserisci la nuova password");
+  if (!confirmPassword) fail("Conferma la nuova password");
+  const complexityErr = validatePasswordComplexity(newPassword);
+  if (complexityErr) fail(complexityErr);
   if (newPassword !== confirmPassword) fail("Le password non coincidono");
+  if (currentPassword === newPassword) {
+    fail("La nuova password deve essere diversa da quella attuale");
+  }
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },

@@ -1,10 +1,10 @@
-import { esitoContattoLabel, tipoContattoLabel } from "@/lib/contatto";
+import { CODICE_SCARICO_LABELS, codiceScaricoPratica } from "@/lib/scarico";
 import { dataIt } from "@/lib/domain";
 
-function formatMemoAt(value?: string | null) {
+function formatDataOra(value?: string | Date | null) {
   if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return typeof value === "string" ? value : null;
   return new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",
@@ -15,21 +15,27 @@ function formatMemoAt(value?: string | null) {
 }
 
 export function RiepilogoEsitoPratica({
-  esitoContatto,
-  tipoContatto,
-  memoAt,
+  stato,
+  codiceScarico,
+  codiceScaricoAt,
   promessaAt,
 }: {
-  esitoContatto?: string | null;
-  tipoContatto?: string | null;
-  memoAt?: string | null;
+  stato?: string | null;
+  codiceScarico?: string | null;
+  /** Data/ora impostazione o modifica del codice scarico (non il richiamo agenda). */
+  codiceScaricoAt?: string | Date | null;
   promessaAt?: string | null;
 }) {
+  const codice = codiceScaricoPratica(stato || "", codiceScarico);
   const parts: string[] = [];
-  parts.push(`Esito: ${esitoContattoLabel(esitoContatto)}`);
-  if (tipoContatto) parts.push(`Tipo: ${tipoContattoLabel(tipoContatto)}`);
-  const memo = formatMemoAt(memoAt);
-  if (memo) parts.push(`Memo: ${memo}`);
+  const quando = formatDataOra(codiceScaricoAt);
+  parts.push(
+    codice
+      ? `Cod. scarico: ${codice} — ${CODICE_SCARICO_LABELS[codice]}${
+          quando ? ` · ${quando}` : ""
+        }`
+      : "Cod. scarico: —"
+  );
   if (promessaAt) parts.push(`Promessa: ${dataIt(promessaAt)}`);
 
   return (
