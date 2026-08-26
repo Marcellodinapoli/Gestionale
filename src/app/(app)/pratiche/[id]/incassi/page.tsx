@@ -24,15 +24,18 @@ export default async function IncassiRegistratiPage({
   const { embed } = await searchParams;
   if (!(await canAccessPratica(user, id))) notFound();
 
-  const pratica = await prisma.pratica.findUnique({
-    where: { id },
-    include: {
-      debitore: true,
-      incassi: { include: { user: true }, orderBy: { data: "desc" } },
-    },
-  });
+  const [pratica, work] = await Promise.all([
+    prisma.pratica.findUnique({
+      where: { id },
+      include: {
+        debitore: true,
+        incassi: { include: { user: true }, orderBy: { data: "desc" } },
+      },
+    }),
+    getPraticaWorkContext(user.id, id),
+  ]);
   if (!pratica) notFound();
-  const { canWork } = await getPraticaWorkContext(user.id, id);
+  const { canWork } = work;
   const canEdit = canWork && can(user, "incassi:create");
 
   return (

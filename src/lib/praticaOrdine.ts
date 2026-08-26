@@ -130,15 +130,15 @@ export function buildOrderBy(
     case "garante":
       return { garanti: { _count: dir } };
     case "ultimaLavorazione":
-      return { numero: dir };
+      return { ultimaLavorazioneAt: dir };
     default:
       return { numero: dir };
   }
 }
 
 /**
- * IDs ordinati per ultima lavorazione operativa (asc = più vecchia prima;
- * mai lavorate in cima con asc, in fondo con desc).
+ * Fallback: IDs ordinati caricando tutte le pratiche + ultima attività.
+ * Preferire `orderBy: { ultimaLavorazioneAt }` + skip/take su findMany quando possibile.
  * Esclude note di admin / back office / amministrazione (anche massiva).
  */
 export async function orderPraticaIdsByUltimaLavorazione(
@@ -162,10 +162,16 @@ export async function orderPraticaIdsByUltimaLavorazione(
   });
 
   rows.sort((a, b) => {
-    const ta = a.attivita[0]?.createdAt?.getTime();
-    const tb = b.attivita[0]?.createdAt?.getTime();
-    const aNull = ta == null;
-    const bNull = tb == null;
+    const ta = a.attivita?.[0]?.createdAt?.getTime?.() ??
+      (a.attivita?.[0]?.createdAt
+        ? new Date(a.attivita[0].createdAt as string | Date).getTime()
+        : undefined);
+    const tb = b.attivita?.[0]?.createdAt?.getTime?.() ??
+      (b.attivita?.[0]?.createdAt
+        ? new Date(b.attivita[0].createdAt as string | Date).getTime()
+        : undefined);
+    const aNull = ta == null || Number.isNaN(ta);
+    const bNull = tb == null || Number.isNaN(tb);
     if (aNull && bNull) return a.numero.localeCompare(b.numero, "it");
     if (aNull) return dir === "asc" ? -1 : 1;
     if (bNull) return dir === "asc" ? 1 : -1;

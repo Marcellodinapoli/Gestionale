@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   collection,
   getDocs,
+  query,
+  where,
   type DocumentData,
 } from "firebase/firestore";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
@@ -128,13 +130,25 @@ export function ProgressList() {
       setLoading(true);
       setError(null);
       try {
-        const [progressSnap, coursesSnap] = await Promise.all([
+        const [progressSnap, sollecitoSnap, recuperoSnap] = await Promise.all([
           getDocs(collection(firestore, "userProgress", uid, "courses")),
-          getDocs(collection(firestore, "courses")),
+          getDocs(
+            query(
+              collection(firestore, "courses"),
+              where("category", "==", CATEGORY_SOLLECITO)
+            )
+          ),
+          getDocs(
+            query(
+              collection(firestore, "courses"),
+              where("category", "==", CATEGORY_RECUPERO)
+            )
+          ),
         ]);
 
         const coursesById = new Map<string, DocumentData>();
-        coursesSnap.docs.forEach((d) => coursesById.set(d.id, d.data()));
+        sollecitoSnap.docs.forEach((d) => coursesById.set(d.id, d.data()));
+        recuperoSnap.docs.forEach((d) => coursesById.set(d.id, d.data()));
 
         const progressByCourseId = new Map<string, CourseProgress>();
         progressSnap.docs.forEach((d) => {

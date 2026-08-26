@@ -228,7 +228,7 @@ export function MemoPopupWatcher({ userName }: { userName: string }) {
 
   useEffect(() => {
     poll();
-    const id = window.setInterval(poll, 10_000);
+    const id = window.setInterval(poll, 20_000);
     return () => window.clearInterval(id);
   }, [poll]);
 

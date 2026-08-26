@@ -17,9 +17,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Sezione({ title, children }: { title: string; children: ReactNode }) {
+function Sezione({
+  title,
+  tone = "anagrafica",
+  children,
+}: {
+  title: string;
+  tone?: "anagrafica" | "contabili" | "codici";
+  children: ReactNode;
+}) {
+  const bg =
+    tone === "anagrafica"
+      ? "bg-[#e8f1f7]"
+      : tone === "contabili"
+        ? "bg-[#eaf4ec]"
+        : "bg-[#f5efe6]";
   return (
-    <section className="space-y-2 border-b border-[var(--line)] pb-5 last:border-b-0 last:pb-0">
+    <section className={`space-y-2 rounded-lg border border-[var(--line)]/70 ${bg} p-3`}>
       <h3 className="text-sm font-bold text-[var(--navy)]">{title}</h3>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
     </section>
@@ -89,7 +103,7 @@ export function AltriFiltriFormBody({
 }) {
   return (
     <div className="space-y-5">
-      <Sezione title="Filtri anagrafica">
+      <Sezione title="Filtri anagrafica" tone="anagrafica">
         <Field label="Debitore">
           <input
             value={value.debitore || ""}
@@ -143,7 +157,7 @@ export function AltriFiltriFormBody({
         </Field>
       </Sezione>
 
-      <Sezione title="Filtri contabili">
+      <Sezione title="Filtri contabili" tone="contabili">
         <DaA
           label="Importo rata da / a"
           keyDa="importoRataDa"
@@ -195,7 +209,7 @@ export function AltriFiltriFormBody({
         </Field>
       </Sezione>
 
-      <Sezione title="Filtri codici e date">
+      <Sezione title="Filtri codici e date" tone="codici">
         <Field label="Operatore di affido">
           <select
             value={value.operatore || ""}

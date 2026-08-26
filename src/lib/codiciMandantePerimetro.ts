@@ -82,6 +82,15 @@ function sortPerimetroRows<T extends { mandanteCodice: string; perimetro: string
   });
 }
 
+function mandanteLabel(
+  mandante: { codice?: string; ragioneSociale?: string } | null | undefined
+) {
+  return {
+    codice: mandante?.codice?.trim() || "—",
+    nome: mandante?.ragioneSociale?.trim() || "—",
+  };
+}
+
 /** Conteggio pratiche per codice scarico, suddiviso per mandante e perimetro (lotto).
  * Solo pratiche in fase “in lavorazione” (non chiuse).
  * Con gruppo: solo perimetri del gruppo. */
@@ -98,12 +107,7 @@ export async function codiciPerMandantePerimetro(
 
   const pratiche = await prisma.pratica.findMany({
     where,
-    select: {
-      mandanteId: true,
-      numeroMandante: true,
-      stato: true,
-      codiceScarico: true,
-      assegnatarioId: true,
+    include: {
       mandante: { select: { codice: true, ragioneSociale: true } },
     },
   });
@@ -115,10 +119,11 @@ export async function codiciPerMandantePerimetro(
     const key = `${p.mandanteId}|${perimetro}`;
     let row = byKey.get(key);
     if (!row) {
+      const m = mandanteLabel(p.mandante);
       row = {
         mandanteId: p.mandanteId,
-        mandanteCodice: p.mandante.codice,
-        mandanteNome: p.mandante.ragioneSociale,
+        mandanteCodice: m.codice,
+        mandanteNome: m.nome,
         perimetro,
         affidate: 0,
         conteggi: emptyConteggi(),
@@ -152,9 +157,7 @@ export async function inLavorazionePerPerimetro(
 
   const pratiche = await prisma.pratica.findMany({
     where,
-    select: {
-      mandanteId: true,
-      numeroMandante: true,
+    include: {
       mandante: { select: { codice: true } },
     },
   });
@@ -168,7 +171,7 @@ export async function inLavorazionePerPerimetro(
     else {
       byKey.set(key, {
         mandanteId: p.mandanteId,
-        mandanteCodice: p.mandante.codice,
+        mandanteCodice: mandanteLabel(p.mandante).codice,
         perimetro,
         count: 1,
       });
@@ -195,9 +198,7 @@ export async function daAffidarePerPerimetroGruppo(
       stato: { notIn: [...STATI_PRATICA_CHIUSA] },
       ...scope,
     },
-    select: {
-      mandanteId: true,
-      numeroMandante: true,
+    include: {
       mandante: { select: { codice: true } },
     },
   });
@@ -211,7 +212,7 @@ export async function daAffidarePerPerimetroGruppo(
     else {
       byKey.set(key, {
         mandanteId: p.mandanteId,
-        mandanteCodice: p.mandante.codice,
+        mandanteCodice: mandanteLabel(p.mandante).codice,
         perimetro,
         count: 1,
       });
@@ -220,3 +221,4 @@ export async function daAffidarePerPerimetroGruppo(
 
   return sortPerimetroRows([...byKey.values()]);
 }
+

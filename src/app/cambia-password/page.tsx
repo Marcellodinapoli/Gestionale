@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 import { requiresPostazione } from "@/lib/permissions";
+import { needsSediSetup } from "@/lib/sediSetup";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { CambioPasswordForm } from "@/components/account/CambioPasswordForm";
 import { logoutAction } from "@/actions/core";
@@ -13,11 +14,14 @@ export default async function CambiaPasswordPage() {
   const expired = await isUserPasswordExpired(user.id);
   if (!expired) redirect("/");
 
-  const afterHref = user.formazioneOnly
-    ? homePathForUser(user)
-    : requiresPostazione(user)
-      ? "/seleziona-postazione"
-      : "/";
+  let afterHref = "/";
+  if (user.formazioneOnly) {
+    afterHref = homePathForUser(user);
+  } else if (await needsSediSetup(user)) {
+    afterHref = "/setup-sedi";
+  } else if (requiresPostazione(user)) {
+    afterHref = "/seleziona-postazione";
+  }
 
   return (
     <div className="page-gutter flex min-h-screen items-center justify-center bg-[var(--navy)] py-6">

@@ -22,6 +22,7 @@ export function AnagraficaField({
   wide,
   compact,
   accent,
+  tone,
 }: {
   label: string;
   value: ReactNode;
@@ -29,6 +30,8 @@ export function AnagraficaField({
   wide?: boolean;
   compact?: boolean;
   accent?: boolean;
+  /** Colore valore stile CG32 (Pagato verde / Da pagare rosso). */
+  tone?: "default" | "success" | "danger";
 }) {
   return (
     <div
@@ -54,9 +57,13 @@ export function AnagraficaField({
           accent ? "border-[#1a4f7a]/35 bg-[#f4f9fc]" : "border-[var(--line)] bg-white"
         } ${
           compact ? "min-h-[22px] py-0.5 text-xs leading-snug" : "min-h-[24px] py-0.5 text-sm"
-        } ${highlight ? "font-semibold text-[var(--danger)]" : ""} ${
-          compact ? "truncate" : ""
-        }`}
+        } ${
+          tone === "success"
+            ? "font-semibold text-emerald-700"
+            : tone === "danger" || highlight
+              ? "font-semibold text-[var(--danger)]"
+              : ""
+        } ${compact ? "truncate" : ""}`}
         title={typeof value === "string" ? value : undefined}
       >
         {value}

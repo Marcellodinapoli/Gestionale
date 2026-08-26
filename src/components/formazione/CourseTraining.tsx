@@ -38,6 +38,7 @@ function CourseNavButton({
   return (
     <Link
       href={href}
+      prefetch
       className="group max-w-[45%] text-[#9C27B0] transition hover:text-[#7B1FA2]"
     >
       <div
@@ -84,73 +85,77 @@ export function CourseTraining({
     let cancelled = false;
 
     async function load() {
-      if (!db || !user) return;
+      if (!db) return;
       const firestore = db;
-      const uid = user.uid;
 
+      // 1) Corso: mostra subito video/titolo
       const courseSnap = await getDoc(doc(firestore, "courses", courseId));
-      if (cancelled || !courseSnap.exists()) {
+      if (cancelled) return;
+      if (!courseSnap.exists()) {
         setLoading(false);
         return;
       }
 
       const data = courseSnap.data()!;
-      setTitle(String(data.title ?? "Training"));
-
       const category = String(data.category ?? catalogCategory ?? "");
       const resolvedVideoUrl = data.videoUrl ? String(data.videoUrl) : null;
+      setTitle(String(data.title ?? "Training"));
       setVideoUrl(resolvedVideoUrl);
-
-      if (user && resolvedVideoUrl) {
-        await setDoc(
-            doc(firestore, "userProgress", uid, "courses", courseId),
-            {
-              courseId,
-              title: String(data.title ?? ""),
-              courseLabel: initialCourseLabel,
-              videoViews: increment(1),
-              lastVideoDate: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
-      }
-
-      if (category) {
-        const q = query(
-          collection(firestore, "courses"),
-          where("category", "==", category),
-          orderBy("createdAt", "asc")
-        );
-        const catalogSnap = await getDocs(q);
-        const docs = catalogSnap.docs;
-        const idx = docs.findIndex((d) => d.id === courseId);
-        if (idx >= 0) {
-          const label = getCourseLabel(category, idx);
-          setCourseLabel(initialCourseLabel || label);
-
-          const prevDoc = idx > 0 ? docs[idx - 1] : undefined;
-          const nextDoc = idx < docs.length - 1 ? docs[idx + 1] : undefined;
-          setNeighbors({
-            prev: prevDoc
-              ? {
-                  id: prevDoc.id,
-                  title: String(prevDoc.data().title ?? ""),
-                  label: getCourseLabel(category, idx - 1),
-                }
-              : undefined,
-            next: nextDoc
-              ? {
-                  id: nextDoc.id,
-                  title: String(nextDoc.data().title ?? ""),
-                  label: getCourseLabel(category, idx + 1),
-                }
-              : undefined,
-          });
-        }
-      }
-
       setLoading(false);
+
+      // 2) Progress + catalogo vicini in parallelo (non bloccano il video)
+      const progressWrite =
+        user && resolvedVideoUrl
+          ? setDoc(
+              doc(firestore, "userProgress", user.uid, "courses", courseId),
+              {
+                courseId,
+                title: String(data.title ?? ""),
+                courseLabel: initialCourseLabel,
+                videoViews: increment(1),
+                lastVideoDate: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined)
+          : Promise.resolve();
+
+      const neighborsLoad = category
+        ? (async () => {
+            const q = query(
+              collection(firestore, "courses"),
+              where("category", "==", category),
+              orderBy("createdAt", "asc")
+            );
+            const catalogSnap = await getDocs(q);
+            if (cancelled) return;
+            const docs = catalogSnap.docs;
+            const idx = docs.findIndex((d) => d.id === courseId);
+            if (idx < 0) return;
+            const label = getCourseLabel(category, idx);
+            setCourseLabel(initialCourseLabel || label);
+            const prevDoc = idx > 0 ? docs[idx - 1] : undefined;
+            const nextDoc = idx < docs.length - 1 ? docs[idx + 1] : undefined;
+            setNeighbors({
+              prev: prevDoc
+                ? {
+                    id: prevDoc.id,
+                    title: String(prevDoc.data().title ?? ""),
+                    label: getCourseLabel(category, idx - 1),
+                  }
+                : undefined,
+              next: nextDoc
+                ? {
+                    id: nextDoc.id,
+                    title: String(nextDoc.data().title ?? ""),
+                    label: getCourseLabel(category, idx + 1),
+                  }
+                : undefined,
+            });
+          })()
+        : Promise.resolve();
+
+      await Promise.all([progressWrite, neighborsLoad]);
     }
 
     void load();

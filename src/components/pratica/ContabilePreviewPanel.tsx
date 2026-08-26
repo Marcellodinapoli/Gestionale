@@ -1,15 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { ZoomIn, ZoomOut } from "lucide-react";
 import { EstrattoContoPreview } from "@/components/pratica/EstrattoContoPreview";
 import { IncassiPreview } from "@/components/pratica/IncassiPreview";
+import {
+  FattureInsolutePreview,
+  type FatturaInsoluta,
+} from "@/components/pratica/FattureInsolutePreview";
 
-type Vista = "estratto" | "incassi";
+type Vista = "estratto" | "incassi" | "fatture";
 
 const ZOOM_MIN = 0.75;
 const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.1;
+
 type Props = {
+  praticaId: string;
+  canEditFatture?: boolean;
   debitore: {
     ndg?: string | null;
     codiceFiscale?: string | null;
@@ -25,7 +33,7 @@ type Props = {
   creditore: string;
   societa: string;
   scadenza: Date | null;
-  fatture: Array<{ dataScadenza: Date; importo: number; pagato: number }>;
+  fatture: FatturaInsoluta[];
   incassi: Array<{
     id: string;
     data: Date;
@@ -45,6 +53,8 @@ type Props = {
 };
 
 export function ContabilePreviewPanel({
+  praticaId,
+  canEditFatture,
   debitore,
   numero,
   creditore,
@@ -67,16 +77,31 @@ export function ContabilePreviewPanel({
     }`;
 
   const zoomBtnCls =
-    "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#1a365d]/25 bg-white text-sm font-bold leading-none text-[#1a365d] hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#1a365d]/25 bg-white text-[#1a365d] hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
     <div className="flex min-h-[200px] min-w-0 flex-col lg:col-span-4 lg:h-0 lg:min-h-full">
-      <div className="flex shrink-0 items-center gap-1 bg-[#c5d4e3] px-2 py-1">
-        <button type="button" className={tabCls(vista === "estratto")} onClick={() => setVista("estratto")}>
+      <div className="flex shrink-0 flex-wrap items-center gap-1 bg-[#c5d4e3] px-2 py-1">
+        <button
+          type="button"
+          className={tabCls(vista === "estratto")}
+          onClick={() => setVista("estratto")}
+        >
           Estratto conto
         </button>
-        <button type="button" className={tabCls(vista === "incassi")} onClick={() => setVista("incassi")}>
+        <button
+          type="button"
+          className={tabCls(vista === "incassi")}
+          onClick={() => setVista("incassi")}
+        >
           Incassi registrati
+        </button>
+        <button
+          type="button"
+          className={tabCls(vista === "fatture")}
+          onClick={() => setVista("fatture")}
+        >
+          Fatture insolute
         </button>
         <span className="ml-0.5 inline-flex items-center gap-0.5">
           <button
@@ -85,9 +110,11 @@ export function ContabilePreviewPanel({
             title="Riduci anteprima"
             aria-label="Riduci anteprima"
             disabled={zoom <= ZOOM_MIN + 0.001}
-            onClick={() => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)))}
+            onClick={() =>
+              setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)))
+            }
           >
-            −
+            <ZoomOut className="h-3.5 w-3.5" strokeWidth={2.25} />
           </button>
           <button
             type="button"
@@ -95,9 +122,11 @@ export function ContabilePreviewPanel({
             title="Ingrandisci anteprima"
             aria-label="Ingrandisci anteprima"
             disabled={zoom >= ZOOM_MAX - 0.001}
-            onClick={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))}
+            onClick={() =>
+              setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))
+            }
           >
-            +
+            <ZoomIn className="h-3.5 w-3.5" strokeWidth={2.25} />
           </button>
         </span>
       </div>
@@ -119,8 +148,15 @@ export function ContabilePreviewPanel({
               affidato={affidato}
               definito={definito}
             />
-          ) : (
+          ) : vista === "incassi" ? (
             <IncassiPreview compact incassi={incassiRegistrati} />
+          ) : (
+            <FattureInsolutePreview
+              compact
+              praticaId={praticaId}
+              fatture={fatture}
+              canEdit={canEditFatture}
+            />
           )}
         </div>
       </div>

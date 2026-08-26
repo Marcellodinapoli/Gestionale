@@ -7,10 +7,10 @@ import { isManutenzione } from "@/lib/permissions";
 export default async function LogPage() {
   const user = await requirePermission("audit:view");
   const logs = await prisma.auditLog.findMany({
-    where: isManutenzione(user) ? nessunDatoWhere() : undefined,
-    include: { user: true },
+    where: isManutenzione(user) ? nessunDatoWhere() : { tenantId: user.tenantId },
+    include: { user: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
-    take: 200,
+    take: 100,
   });
 
   return (

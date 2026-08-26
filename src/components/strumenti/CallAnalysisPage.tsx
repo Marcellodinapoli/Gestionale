@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Brain, Calculator, Loader2 } from "lucide-react";
 import { CalcolatricePopup } from "@/components/pratica/CalcolatricePopup";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
@@ -75,6 +75,12 @@ export function CallAnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [calcOpen, setCalcOpen] = useState(false);
+
+  // Precarica il prompt in cache senza bloccare la UI
+  useEffect(() => {
+    if (!db) return;
+    void loadCallAnalysisPrompt(db);
+  }, [db]);
 
   function patch(partial: Partial<CallAnalysisFormState>) {
     setForm((prev) => ({ ...prev, ...partial }));

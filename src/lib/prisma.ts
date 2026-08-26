@@ -3,8 +3,12 @@ import type { PrismaClient } from "@prisma/client";
 import { assertOperationalBackendReady } from "@/lib/dataAccess";
 import { createFirebasePrisma } from "@/lib/firebase/firebasePrisma";
 
+/** Bump per forzare reload dello shim dopo HMR (evita client stale in globalThis). */
+const FIREBASE_PRISMA_VERSION = 5;
+
 const globalForPrisma = globalThis as unknown as {
   firebasePrisma?: PrismaClient;
+  firebasePrismaVersion?: number;
 };
 
 function getFirebaseClient(): PrismaClient {
@@ -12,9 +16,15 @@ function getFirebaseClient(): PrismaClient {
     throw new Error("Firebase ops solo lato server");
   }
   assertOperationalBackendReady();
-  if (globalForPrisma.firebasePrisma) return globalForPrisma.firebasePrisma;
+  if (
+    globalForPrisma.firebasePrisma &&
+    globalForPrisma.firebasePrismaVersion === FIREBASE_PRISMA_VERSION
+  ) {
+    return globalForPrisma.firebasePrisma;
+  }
   const client = createFirebasePrisma();
   globalForPrisma.firebasePrisma = client;
+  globalForPrisma.firebasePrismaVersion = FIREBASE_PRISMA_VERSION;
   return client;
 }
 

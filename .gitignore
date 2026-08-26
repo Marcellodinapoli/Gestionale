@@ -38,6 +38,8 @@ yarn-error.log*
 serviceAccountKey.json
 **/serviceAccountKey.json
 *-firebase-adminsdk-*.json
+/keys/
+/secrets/
 
 # Types-only stub created by prisma generate (never app DB)
 /src/lib/firebase/.types-only.db

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import {
   arrayUnion,
   doc,
+  getDoc,
   increment,
-  onSnapshot,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
@@ -99,44 +99,48 @@ export function AttachmentsTab({
 
   useEffect(() => {
     if (!db) return;
+    let cancelled = false;
 
-    const unsubCourse = onSnapshot(
-      doc(db, "courses", courseId),
-      (snap) => {
-        if (!snap.exists()) {
+    async function load() {
+      if (!db) return;
+      try {
+        const coursePromise = getDoc(doc(db, "courses", courseId));
+        const progressPromise =
+          user
+            ? getDoc(doc(db, "userProgress", user.uid, "courses", courseId))
+            : Promise.resolve(null);
+
+        const [courseSnap, progressSnap] = await Promise.all([
+          coursePromise,
+          progressPromise,
+        ]);
+        if (cancelled) return;
+
+        if (!courseSnap.exists()) {
           setCourseMissing(true);
           setAttachments([]);
-          setLoading(false);
-          return;
+        } else {
+          setCourseMissing(false);
+          setAttachments(parseAttachments(courseSnap.data()?.attachments));
         }
-        setCourseMissing(false);
-        setAttachments(parseAttachments(snap.data()?.attachments));
-        setLoading(false);
-      },
-      () => {
-        setCourseMissing(true);
-        setLoading(false);
+
+        if (progressSnap?.exists()) {
+          const raw = progressSnap.data()?.downloadedFiles;
+          setDownloadedFiles(Array.isArray(raw) ? raw.map(String) : []);
+        } else {
+          setDownloadedFiles([]);
+        }
+      } catch {
+        if (!cancelled) setCourseMissing(true);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    );
-
-    return () => unsubCourse();
-  }, [db, courseId]);
-
-  useEffect(() => {
-    if (!db || !user) {
-      setDownloadedFiles([]);
-      return;
     }
 
-    const unsubProgress = onSnapshot(
-      doc(db, "userProgress", user.uid, "courses", courseId),
-      (snap) => {
-        const raw = snap.data()?.downloadedFiles;
-        setDownloadedFiles(Array.isArray(raw) ? raw.map(String) : []);
-      }
-    );
-
-    return () => unsubProgress();
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [db, user, courseId]);
 
   async function openAttachment(file: AttachmentFile) {
@@ -145,6 +149,10 @@ export function AttachmentsTab({
     }
 
     if (!db || !user || !file.name) return;
+
+    setDownloadedFiles((prev) =>
+      prev.includes(file.name) ? prev : [...prev, file.name]
+    );
 
     await setDoc(
       doc(db, "userProgress", user.uid, "courses", courseId),

@@ -27,7 +27,7 @@ export async function sbloccaPrivacyAction(
     where: { id: user.id },
     select: { passwordHash: true, active: true },
   });
-  if (!dbUser || !dbUser.active) {
+  if (!dbUser || dbUser.active === false) {
     return { ok: false, error: "Utente non valido" };
   }
 

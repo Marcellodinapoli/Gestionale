@@ -43,7 +43,7 @@ export default async function MandanteDettaglioPage({
         codiciScarico: mandante.codiciScarico,
         smsPreimpostati: mandante.smsPreimpostati,
         perimetri: mandante.perimetri,
-        pratiche: mandante._count.pratiche,
+        pratiche: mandante._count?.pratiche ?? 0,
       }}
     />
   );

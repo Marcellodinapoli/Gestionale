@@ -19,16 +19,19 @@ export default async function FattureInsolutePage({
   const { embed } = await searchParams;
   if (!(await canAccessPratica(user, id))) notFound();
 
-  const pratica = await prisma.pratica.findUnique({
-    where: { id },
-    include: {
-      debitore: true,
-      fatture: { orderBy: { dataFattura: "asc" } },
-    },
-  });
+  const [pratica, work] = await Promise.all([
+    prisma.pratica.findUnique({
+      where: { id },
+      include: {
+        debitore: true,
+        fatture: { orderBy: { dataFattura: "asc" } },
+      },
+    }),
+    getPraticaWorkContext(user.id, id),
+  ]);
   if (!pratica) notFound();
 
-  const { canWork } = await getPraticaWorkContext(user.id, id);
+  const { canWork } = work;
   const canEdit = canWork && can(user, "incassi:create");
   const totImp = pratica.fatture.reduce((s, f) => s + f.importo, 0);
   const totPag = pratica.fatture.reduce((s, f) => s + f.pagato, 0);

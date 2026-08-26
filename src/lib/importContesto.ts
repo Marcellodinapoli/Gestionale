@@ -10,6 +10,28 @@ export type ImportContesto = {
   affidoIl: Date;
 };
 
+/** Separatore CSV: ; (IT) o , (Excel/export). Preferisce quello che espone «nome». */
+export function detectCsvDelimiter(headerLine: string): ";" | "," {
+  const norm = headerLine.trim().toLowerCase().replace(/^\uFEFF/, "");
+  const colsSemi = norm.split(";").map((h) => h.trim());
+  const colsComma = norm.split(",").map((h) => h.trim());
+  if (colsSemi.includes("nome")) return ";";
+  if (colsComma.includes("nome")) return ",";
+  if (colsSemi.includes("numero") || colsSemi.includes("pratica")) return ";";
+  if (colsComma.includes("numero") || colsComma.includes("pratica")) return ",";
+  const nSemi = (norm.match(/;/g) || []).length;
+  const nComma = (norm.match(/,/g) || []).length;
+  return nSemi >= nComma ? ";" : ",";
+}
+
+export function parseCsvHeader(headerLine: string) {
+  const delim = detectCsvDelimiter(headerLine);
+  const header = headerLine
+    .split(delim)
+    .map((h) => h.trim().toLowerCase().replace(/^\uFEFF/, ""));
+  return { delim, header };
+}
+
 /** Legge e valida mandante / perimetro / lotto / affido dal form di import. */
 export async function parseImportContesto(
   formData: FormData,

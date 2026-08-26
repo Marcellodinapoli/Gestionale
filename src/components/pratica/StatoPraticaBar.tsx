@@ -8,16 +8,22 @@ import { updatePraticaStatoAction } from "@/actions/core";
 
 const STATI = Object.entries(STATO_LABELS) as [string, string][];
 
+function chiaveStato(stato: string, filtroStato?: string | null) {
+  return filtroStato && filtroStato in STATO_LABELS ? filtroStato : stato;
+}
+
 export function StatoPraticaBar({
   praticaId,
   stato,
+  filtroStato,
   promessaAt,
   canEdit,
   compact,
-  header,
 }: {
   praticaId: string;
   stato: string;
+  /** Stato del filtro elenco (coda): se presente, viene mostrato al posto dello stato pratica. */
+  filtroStato?: string | null;
   promessaAt?: string | null;
   canEdit: boolean;
   compact?: boolean;
@@ -49,64 +55,10 @@ export function StatoPraticaBar({
   }
 
   if (compact) {
-    if (!canEdit) {
-      return (
-        <span className="shrink-0">
-          <StatoBadge stato={stato} />
-        </span>
-      );
-    }
-
     return (
-      <div className={`flex shrink-0 items-center gap-1 text-xs ${header ? "" : ""}`}>
-        <form action={onSubmit} className="flex items-center gap-1">
-          <input type="hidden" name="praticaId" value={praticaId} />
-          <select
-            name="stato"
-            value={statoValue}
-            onChange={(e) => setStatoValue(e.target.value)}
-            title="Codice scarico"
-            className={`h-6 w-auto max-w-[9rem] rounded border px-1.5 text-[11px] ${
-              header
-                ? "border-white/25 bg-white/95 text-[#132033]"
-                : "border-[var(--line)] bg-white text-[#132033]"
-            }`}
-          >
-            {STATI.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          {statoValue === "PROMESSA" ? (
-            <input
-              type="date"
-              name="promessaAt"
-              required
-              value={promessa}
-              onChange={(e) => setPromessa(e.target.value)}
-              title="Data promessa"
-              className={`h-6 w-auto rounded border px-1.5 text-[11px] ${
-                header
-                  ? "border-white/25 bg-white/95 text-[#132033]"
-                  : "border-[var(--line)] bg-white text-[#132033]"
-              }`}
-            />
-          ) : null}
-          <button
-            type="submit"
-            disabled={saving}
-            className={`h-6 shrink-0 rounded px-2 text-[11px] font-medium disabled:opacity-60 ${
-              header
-                ? "border border-white/25 bg-white/15 text-white hover:bg-white/25"
-                : "border border-[#132033] bg-[#132033] text-white"
-            }`}
-          >
-            {saving ? "…" : "OK"}
-          </button>
-        </form>
-        {error ? <span className="text-[var(--danger)]">{error}</span> : null}
-      </div>
+      <span className="shrink-0">
+        <StatoBadge stato={chiaveStato(stato, filtroStato)} />
+      </span>
     );
   }
 

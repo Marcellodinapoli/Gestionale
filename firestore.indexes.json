@@ -1,0 +1,125 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "pratiche",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "stato", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pratiche",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assegnatarioId", "order": "ASCENDING" },
+        { "fieldPath": "stato", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pratiche",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mandanteId", "order": "ASCENDING" },
+        { "fieldPath": "stato", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pratiche",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "stato", "order": "ASCENDING" },
+        { "fieldPath": "ultimaLavorazioneAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pratiche",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "stato", "order": "ASCENDING" },
+        { "fieldPath": "ultimaLavorazioneAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attivita",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "praticaId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "incassi",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "praticaId", "order": "ASCENDING" },
+        { "fieldPath": "data", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "incassi",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "praticaId", "order": "ASCENDING" },
+        { "fieldPath": "data", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pianiRata",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "praticaId", "order": "ASCENDING" },
+        { "fieldPath": "numeroRata", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messaggiInterni",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUserId", "order": "ASCENDING" },
+        { "fieldPath": "letto", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "role", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "pratiche",
+      "fieldPath": "memoAt",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
+      "collectionGroup": "pratiche",
+      "fieldPath": "ultimaLavorazioneAt",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
+      "collectionGroup": "incassi",
+      "fieldPath": "praticaId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
+      "collectionGroup": "incassi",
+      "fieldPath": "data",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
+      ]
+    }
+  ]
+}

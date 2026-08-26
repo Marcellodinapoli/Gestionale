@@ -3,8 +3,8 @@ import { requireUser } from "@/lib/guard";
 import { canManageSedi } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { Card, PageHeader } from "@/components/ui";
-import { creaSedeAction } from "@/actions/sedi";
 import { SediTable } from "@/components/sedi/SediTable";
+import { NuovaSedeButton } from "@/components/sedi/NuovaSedeButton";
 
 export default async function SediPage() {
   const user = await requireUser();
@@ -21,39 +21,25 @@ export default async function SediPage() {
   const lista = sedi.map((s) => ({
     id: s.id,
     nome: s.nome,
+    indirizzo: s.indirizzo,
+    citta: s.citta,
+    cap: s.cap,
+    provincia: s.provincia,
+    telefono: s.telefono,
+    email: s.email,
+    note: s.note,
     active: s.active,
-    nPostazioni: s._count.postazioni,
-    nUtenti: s._count.users,
+    nPostazioni: s._count?.postazioni ?? 0,
+    nUtenti: s._count?.users ?? 0,
   }));
-
-  const inputCls =
-    "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Sedi"
         subtitle="Gestisci le sedi dell’azienda. Postazioni e operatori si collegano a una sede."
+        action={<NuovaSedeButton />}
       />
-
-      <Card title="Nuova sede">
-        <form action={creaSedeAction} className="flex flex-wrap items-end gap-3 text-sm">
-          <label className="min-w-[200px] flex-1">
-            <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-              Nome sede *
-            </span>
-            <input
-              name="nome"
-              required
-              className={inputCls}
-              placeholder="es. Roma, Milano, Napoli"
-            />
-          </label>
-          <button className="h-9 rounded-lg bg-[var(--navy)] px-4 text-sm font-medium text-white hover:opacity-90">
-            Crea sede
-          </button>
-        </form>
-      </Card>
 
       <Card>
         <SediTable sedi={lista} />

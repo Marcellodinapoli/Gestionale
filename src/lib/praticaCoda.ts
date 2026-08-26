@@ -43,7 +43,7 @@ export type CodaFiltro = {
   lavorateA?: string;
   /** Alias legacy: equivale al giorno corrente */
   lavorateOggi?: boolean;
-  /** Mattina 09–13 / pomeriggio 13:05–18 (solo se intervallo di un solo giorno) */
+  /** Mattina 09:00–13:30 / pomeriggio 13:31–19:00 (solo se intervallo di un solo giorno) */
   lavorateFascia?: LavorateFascia;
   /** Pratiche aperte senza aggiornamenti da almeno N giorni */
   nonToccateDa?: NonToccateDa;

@@ -25,6 +25,7 @@ export const OPS_MODEL_COLLECTION: Record<string, string> = {
   RegistrazioneChiamata: "registrazioni",
   AuditLog: "auditLogs",
   PasswordHistory: "passwordHistory",
+  ImportBatch: "importBatch",
 };
 
 export const PRISMA_DELEGATE_TO_MODEL: Record<string, string> = {
@@ -52,6 +53,7 @@ export const PRISMA_DELEGATE_TO_MODEL: Record<string, string> = {
   registrazioneChiamata: "RegistrazioneChiamata",
   auditLog: "AuditLog",
   passwordHistory: "PasswordHistory",
+  importBatch: "ImportBatch",
 };
 
 /** Relazioni usate in include/where nested */
@@ -65,6 +67,15 @@ export const MODEL_RELATIONS: Record<
     sede: { model: "Sede", local: "sedeId", foreign: "id" },
     supervisor: { model: "User", local: "supervisorId", foreign: "id" },
     operators: { model: "User", local: "id", foreign: "supervisorId", many: true },
+    passwordHistory: {
+      model: "PasswordHistory",
+      local: "id",
+      foreign: "userId",
+      many: true,
+    },
+  },
+  PasswordHistory: {
+    user: { model: "User", local: "userId", foreign: "id" },
   },
   Pratica: {
     tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
@@ -78,6 +89,10 @@ export const MODEL_RELATIONS: Record<
     garanti: { model: "Garante", local: "id", foreign: "praticaId", many: true },
     rate: { model: "PianoRata", local: "id", foreign: "praticaId", many: true },
     documenti: { model: "Documento", local: "id", foreign: "praticaId", many: true },
+    importBatch: { model: "ImportBatch", local: "importBatchId", foreign: "id" },
+  },
+  ImportBatch: {
+    pratiche: { model: "Pratica", local: "id", foreign: "importBatchId", many: true },
   },
   Debitore: {
     recapiti: { model: "DebitoreRecapito", local: "id", foreign: "debitoreId", many: true },
@@ -125,8 +140,13 @@ export const MODEL_RELATIONS: Record<
   AuditLog: {
     user: { model: "User", local: "userId", foreign: "id" },
   },
-  Mandante: {},
-  Sede: {},
+  Mandante: {
+    pratiche: { model: "Pratica", local: "id", foreign: "mandanteId", many: true },
+  },
+  Sede: {
+    postazioni: { model: "Postazione", local: "id", foreign: "sedeId", many: true },
+    users: { model: "User", local: "id", foreign: "sedeId", many: true },
+  },
   Tenant: {},
 };
 

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { nessunDatoWhere, praticaWhere } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
@@ -27,10 +28,11 @@ const emptyCtx: GruppoPerimetroContext = {
   memberIds: [],
 };
 
-/** Contesto perimetri del gruppo di lavoro dell'utente (operatori e supervisor). */
-export async function resolveGruppoPerimetroContext(
-  user: SessionUser
-): Promise<GruppoPerimetroContext> {
+/** Contesto perimetri del gruppo (cache per richiesta — una sola risoluzione). */
+export const resolveGruppoPerimetroContext = cache(
+  async function resolveGruppoPerimetroContext(
+    user: SessionUser
+  ): Promise<GruppoPerimetroContext> {
   if (isManutenzione(user)) return emptyCtx;
   if (user.role !== "OPERATOR" && user.role !== "SUPERVISOR") return emptyCtx;
 
@@ -69,7 +71,8 @@ export async function resolveGruppoPerimetroContext(
     periScope,
     memberIds: gruppo.memberIds,
   };
-}
+  }
+);
 
 /** Contesto perimetri da un gruppo già risolto (es. back office con scelta supervisor). */
 export async function buildGruppoPerimetroContextFromGruppo(

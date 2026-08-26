@@ -67,15 +67,32 @@ export function watchSimulationDetails(
   onChange: (details: Record<string, RoleplaySimulationDetail>) => void
 ) {
   return onSnapshot(doc(db, "roleplay_progress", uid), (snap) => {
-    const raw =
-      (snap.data()?.simulations as Record<string, unknown> | undefined) ?? {};
-    const out: Record<string, RoleplaySimulationDetail> = {};
-    for (const [id, value] of Object.entries(raw)) {
-      const detail = parseSimulationDetail(value);
-      if (detail) out[id] = detail;
-    }
-    onChange(out);
+    onChange(parseSimulationsMap(snap.data()?.simulations));
   });
+}
+
+/** Una lettura: sufficiente per la lista roleplay all'apertura. */
+export async function loadSimulationDetailsOnce(
+  db: Firestore,
+  uid: string
+): Promise<Record<string, RoleplaySimulationDetail>> {
+  const snap = await getDoc(doc(db, "roleplay_progress", uid));
+  return parseSimulationsMap(snap.data()?.simulations);
+}
+
+function parseSimulationsMap(
+  raw: unknown
+): Record<string, RoleplaySimulationDetail> {
+  const map =
+    raw && typeof raw === "object"
+      ? (raw as Record<string, unknown>)
+      : {};
+  const out: Record<string, RoleplaySimulationDetail> = {};
+  for (const [id, value] of Object.entries(map)) {
+    const detail = parseSimulationDetail(value);
+    if (detail) out[id] = detail;
+  }
+  return out;
 }
 
 export function formatDateTime(value: Date) {

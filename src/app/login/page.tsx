@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 import { requiresPostazione } from "@/lib/permissions";
+import { needsSediSetup } from "@/lib/sediSetup";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { LoginForm } from "@/components/LoginForm";
 
@@ -10,6 +11,7 @@ export default async function LoginPage() {
   if (user) {
     if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
     if (user.formazioneOnly) redirect(homePathForUser(user));
+    if (await needsSediSetup(user)) redirect("/setup-sedi");
     if (requiresPostazione(user) && !user.postazioneId) redirect("/seleziona-postazione");
     redirect("/");
   }
@@ -21,16 +23,6 @@ export default async function LoginPage() {
           Credixa
         </p>
         <h1 className="mt-2 text-2xl font-semibold">Accedi</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Demo: codice azienda <strong>demo</strong> — password <strong>Demo123!</strong>
-          <br />
-          <span className="mt-1 block">
-            <strong>admin</strong> = amministratore azienda ·{" "}
-            <strong>amministrazione</strong> = ufficio amministrazione (non è l&apos;admin
-            azienda) · supervisor / backoffice / operatore / manutenzione @gestionale.local
-          </span>
-          Seconda azienda: codice <strong>alfa</strong>.
-        </p>
         <div className="mt-6">
           <LoginForm />
         </div>

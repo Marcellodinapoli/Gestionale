@@ -19,6 +19,14 @@ export function giorniAllaScadenzaPassword(passwordChangedAt: Date | null | unde
 }
 
 export async function isUserPasswordExpired(userId: string) {
+  // Preferisci sessione già in cache (stessa richiesta di getCurrentUser).
+  try {
+    const { getCurrentUser, isCurrentUserPasswordExpired } = await import("@/lib/auth");
+    const current = await getCurrentUser();
+    if (current?.id === userId) return isCurrentUserPasswordExpired();
+  } catch {
+    /* ignore */
+  }
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { passwordChangedAt: true },
@@ -40,7 +48,8 @@ export async function assertPasswordNotReused(userId: string, newPassword: strin
     throw new Error("Non puoi riusare una password già utilizzata");
   }
 
-  for (const row of user.passwordHistory) {
+  const history = Array.isArray(user.passwordHistory) ? user.passwordHistory : [];
+  for (const row of history) {
     if (await bcrypt.compare(newPassword, row.passwordHash)) {
       throw new Error("Non puoi riusare una password già utilizzata");
     }

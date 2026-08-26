@@ -21,7 +21,6 @@ import {
 } from "@/lib/praticaCollegata";
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCoda";
 import { codiceScaricoPratica } from "@/lib/scarico";
-import { countRateScadute } from "@/lib/rate";
 import type { RecordingMode } from "@/lib/recordingMode";
 
 type AnagraficaPersona = {
@@ -87,6 +86,10 @@ type PraticaData = {
     pagata: boolean;
   }>;
   fatture?: Array<{
+    id: string;
+    numero: string;
+    causale: string | null;
+    dataFattura: Date;
     dataScadenza: Date;
     importo: number;
     pagato: number;
@@ -113,6 +116,7 @@ function HeaderRigaDati({
   scadenza,
   praticaId,
   stato,
+  filtroStato,
   promessaAt,
   canEditStato,
 }: {
@@ -121,6 +125,7 @@ function HeaderRigaDati({
   scadenza: Date | null;
   praticaId: string;
   stato: string;
+  filtroStato?: string | null;
   promessaAt?: string | null;
   canEditStato: boolean;
 }) {
@@ -142,6 +147,7 @@ function HeaderRigaDati({
         <StatoPraticaBar
           praticaId={praticaId}
           stato={stato}
+          filtroStato={filtroStato}
           promessaAt={promessaAt}
           canEdit={canEditStato}
           compact
@@ -196,7 +202,12 @@ export function PraticaSchedaOperatore({
   const totale = pratica.capitale + pratica.interessi + pratica.spese;
   const rateAperte = pratica.rate.filter((r) => !r.pagata);
   const impRata = rateAperte[0]?.importo ?? (rateAperte.length ? null : pratica.residuo);
-  const nRateScadute = countRateScadute(pratica.rate);
+  const pagato = (pratica.incassi || []).reduce((s, i) => s + (i.importo || 0), 0);
+  /** Spese di recupero sul debito (campo dedicato non ancora in anagrafica pratica). */
+  const speseRecupero = 0;
+  /** Scala con i pagamenti inseriti (affidato − pagato). */
+  const differenza = Math.max(0, Math.round((totale - pagato) * 100) / 100);
+  const daPagare = pratica.residuo;
 
   const attivitaLines = [...pratica.attivita]
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -253,6 +264,7 @@ export function PraticaSchedaOperatore({
             scadenza={pratica.scadenza}
             praticaId={pratica.id}
             stato={pratica.stato}
+            filtroStato={nav.codaNav?.filtro?.stato}
             promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
             canEditStato={canEditStato}
           />
@@ -323,6 +335,8 @@ export function PraticaSchedaOperatore({
           />
 
           <ContabilePreviewPanel
+            praticaId={pratica.id}
+            canEditFatture={canRegistraIncasso}
             debitore={pratica.debitore}
             numero={pratica.numero}
             creditore={pratica.mandante.ragioneSociale}
@@ -340,18 +354,39 @@ export function PraticaSchedaOperatore({
       </div>
 
       <div className="shrink-0 border-t border-[var(--line)] bg-white">
-        <div className="grid grid-cols-2 gap-0 sm:grid-cols-4 lg:grid-cols-7">
-          <AnagraficaField label="Res." value={euro(pratica.residuo)} highlight compact accent />
-          <AnagraficaField label="Cap." value={euro(pratica.capitale)} compact accent />
-          <AnagraficaField label="Int." value={euro(pratica.interessi)} compact accent />
-          <AnagraficaField label="Spese" value={euro(pratica.spese)} compact accent />
-          <AnagraficaField label="Tot." value={euro(totale)} compact accent />
-          <AnagraficaField label="Rata" value={impRata != null ? euro(impRata) : "—"} compact accent />
+        <div className="grid grid-cols-3 gap-0 sm:grid-cols-5 lg:grid-cols-9">
           <AnagraficaField
-            label="Rate scad."
-            value={nRateScadute > 0 ? nRateScadute : "—"}
+            label="Deb. residuo"
+            value={euro(pratica.residuo)}
+            highlight
             compact
             accent
+            tone="danger"
+          />
+          <AnagraficaField
+            label="Imp. rata"
+            value={impRata != null ? euro(impRata) : "—"}
+            compact
+            accent
+          />
+          <AnagraficaField label="Spese" value={euro(pratica.spese)} compact accent />
+          <AnagraficaField label="Spese rec." value={euro(speseRecupero)} compact accent />
+          <AnagraficaField label="Capitale" value={euro(pratica.capitale)} compact accent />
+          <AnagraficaField label="Mora" value={euro(pratica.interessi)} compact accent />
+          <AnagraficaField
+            label="Pagato"
+            value={euro(pagato)}
+            compact
+            accent
+            tone="success"
+          />
+          <AnagraficaField label="Differenza" value={euro(differenza)} compact accent />
+          <AnagraficaField
+            label="Da pagare"
+            value={euro(daPagare)}
+            compact
+            accent
+            tone="danger"
           />
         </div>
       </div>

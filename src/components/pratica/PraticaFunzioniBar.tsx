@@ -14,7 +14,6 @@ import {
   MessageSquare,
   Receipt,
   Search,
-  Smartphone,
   UserRound,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
@@ -48,7 +47,6 @@ type PopupKey =
   | "agenda"
   | "nota"
   | "messaggi"
-  | "sms"
   | "piano"
   | "stralcio"
   | "calcolatrice";
@@ -157,40 +155,52 @@ export function PraticaFunzioniBar({
   const [flashF9, setFlashF9] = useState(false);
 
   useEffect(() => {
+    router.prefetch(`/pratiche/${praticaId}/fatture`);
+    router.prefetch(`/pratiche/${praticaId}/estratto`);
+    router.prefetch(`/pratiche/${praticaId}/incassi`);
+    router.prefetch(`/pratiche/${praticaId}/stampa`);
+  }, [praticaId, router]);
+
+  useEffect(() => {
     let cancelled = false;
     setFlashF9(false);
     setCorrente(null);
     setAltre([]);
     setAltreChiuse([]);
-    fetch(`/api/pratiche-stesso-debitore?id=${encodeURIComponent(praticaId)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (
-          data: {
-            corrente: Voce;
-            altre: Voce[];
-            altreChiuse: Voce[];
-          } | null
-        ) => {
-        if (cancelled || !data) return;
-        setCorrente(data.corrente);
-        setAltre(data.altre);
-        setAltreChiuse(data.altreChiuse);
-        if (data.altre.length > 0) {
-          requestAnimationFrame(() => {
-            if (!cancelled) setFlashF9(true);
-          });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCorrente(null);
-          setAltre([]);
-          setAltreChiuse([]);
-        }
-      });
+    // Differisce leggermente: non compete con il first paint della scheda.
+    const timer = window.setTimeout(() => {
+      fetch(`/api/pratiche-stesso-debitore?id=${encodeURIComponent(praticaId)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then(
+          (
+            data: {
+              corrente: Voce;
+              altre: Voce[];
+              altreChiuse: Voce[];
+            } | null
+          ) => {
+            if (cancelled || !data) return;
+            setCorrente(data.corrente);
+            setAltre(data.altre);
+            setAltreChiuse(data.altreChiuse);
+            if (data.altre.length > 0) {
+              requestAnimationFrame(() => {
+                if (!cancelled) setFlashF9(true);
+              });
+            }
+          }
+        )
+        .catch(() => {
+          if (!cancelled) {
+            setCorrente(null);
+            setAltre([]);
+            setAltreChiuse([]);
+          }
+        });
+    }, 50);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [praticaId]);
 
@@ -235,7 +245,6 @@ export function PraticaFunzioniBar({
           ? {}
           : {
               F2: "agenda",
-              F4: "sms",
               F12: "messaggi",
             }),
       };
@@ -329,16 +338,6 @@ export function PraticaFunzioniBar({
             disabled={azioniBloccate}
           >
             <FunzioneLabel f="F12" icon={<MessageSquare className={ICON} />} />
-          </button>
-        </Hint>
-        <Hint label="SMS">
-          <button
-            type="button"
-            className={BTN}
-            onClick={() => setPopup("sms")}
-            disabled={azioniBloccate}
-          >
-            <FunzioneLabel f="F4" icon={<Smartphone className={ICON} />} />
           </button>
         </Hint>
         <Hint label="Nota registro / esito">
@@ -512,16 +511,6 @@ export function PraticaFunzioniBar({
         wide
       >
         <InviaMessaggioCollega praticaId={praticaId} inModal />
-      </Modal>
-
-      <Modal
-        open={popup === "sms"}
-        title="F4 · SMS"
-        onClose={() => setPopup(null)}
-      >
-        <div className="p-4 text-sm text-[var(--muted)]">
-          Invio SMS al debitore — funzione in preparazione.
-        </div>
       </Modal>
 
       <Modal

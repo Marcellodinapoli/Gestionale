@@ -25,15 +25,17 @@ import {
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import {
   buildOrderBy,
-  isUltimaLavorazioneSort,
-  orderPraticaIdsByUltimaLavorazione,
   SORT_COLUMNS,
   type SortDir,
   type SortField,
-  ultimaLavorazioneInclude,
 } from "@/lib/praticaOrdine";
 import { PageHeader } from "@/components/ui";
-import { buildPraticheQuery } from "@/components/PaginazioneBar";
+import {
+  buildPraticheQuery,
+  paginateParams,
+  PaginazioneBar,
+  PRATICHE_PAGE_SIZE,
+} from "@/components/PaginazioneBar";
 import { PraticheFiltriBar } from "@/components/pratiche/PraticheFiltriBar";
 import { PraticheListaConNotaMassiva } from "@/components/pratiche/PraticheListaConNotaMassiva";
 import { can } from "@/lib/permissions";
@@ -74,6 +76,7 @@ export default async function PratichePage({
 
   const codaNav = parseCodaNav(sp);
   const altri = parseAltriFiltri(sp);
+  const { page, pageSize } = paginateParams(sp.page);
   const periCtx = await resolveGruppoPerimetroContext(user);
   const baseScope = await praticaScopeWhere(user);
 
@@ -82,6 +85,8 @@ export default async function PratichePage({
   );
   const needTemporanea =
     altri?.sitAffido === "temporanea" || altri?.affidoProvvisorio === "1";
+  const needImportoTot = Boolean(altri?.importoTotDa || altri?.importoTotA);
+  const needTotInc = Boolean(altri?.totIncassatoDa || altri?.totIncassatoA);
 
   const [operatoriListRaw, mandantiListRaw, temporaneaIdsRaw, lottiRows, importoTotIdsRaw, totIncassatoIdsRaw] =
     await Promise.all([
@@ -117,8 +122,12 @@ export default async function PratichePage({
           ],
         },
       }),
-      idsImportoTotale(user.tenantId, altri?.importoTotDa, altri?.importoTotA),
-      idsTotIncassato(user.tenantId, altri?.totIncassatoDa, altri?.totIncassatoA),
+      needImportoTot
+        ? idsImportoTotale(user.tenantId, altri?.importoTotDa, altri?.importoTotA)
+        : Promise.resolve(null as string[] | null),
+      needTotInc
+        ? idsTotIncassato(user.tenantId, altri?.totIncassatoDa, altri?.totIncassatoA)
+        : Promise.resolve(null as string[] | null),
     ]);
 
   const operatoriList = operatoriListRaw;
@@ -128,9 +137,17 @@ export default async function PratichePage({
           periCtx.gruppoMandanti.some((a) => a.mandanteId === m.id)
         )
       : mandantiListRaw;
-  const temporaneaIds = await filtraIdsPraticaScope(user, temporaneaIdsRaw);
-  const importoTotIds = await filtraIdsPraticaScope(user, importoTotIdsRaw);
-  const totIncassatoIds = await filtraIdsPraticaScope(user, totIncassatoIdsRaw);
+  const temporaneaIds = needTemporanea
+    ? await filtraIdsPraticaScope(user, temporaneaIdsRaw)
+    : undefined;
+  const importoTotIds =
+    importoTotIdsRaw != null
+      ? await filtraIdsPraticaScope(user, importoTotIdsRaw)
+      : undefined;
+  const totIncassatoIds =
+    totIncassatoIdsRaw != null
+      ? await filtraIdsPraticaScope(user, totIncassatoIdsRaw)
+      : undefined;
 
   const lottiInLavorazione = [
     ...new Set(
@@ -162,10 +179,19 @@ export default async function PratichePage({
   };
 
   const include = {
-    debitore: true,
-    mandante: true,
-    assegnatario: true,
-    attivita: ultimaLavorazioneInclude,
+    debitore: {
+      select: {
+        nome: true,
+        cognome: true,
+        telefono: true,
+        cap: true,
+        citta: true,
+        provincia: true,
+        codiceFiscale: true,
+      },
+    },
+    mandante: { select: { codice: true } },
+    assegnatario: { select: { name: true } },
     rate: {
       orderBy: { numeroRata: "asc" as const },
       select: { importo: true, pagata: true, scadenza: true },
@@ -179,59 +205,19 @@ export default async function PratichePage({
   };
 
   const total = await prisma.pratica.count({ where });
-  let pratiche: Array<{
-    id: string;
-    numero: string;
-    stato: string;
-    residuo: number;
-    capitale: number;
-    interessi: number;
-    spese: number;
-    esitoContatto: string | null;
-    numeroMandante: string | null;
-    codiceScarico: string | null;
-    dataAffido: Date | null;
-    scadenza: Date | null;
-    assegnatarioId: string | null;
-    operatoreTitolareId: string | null;
-    debitore: {
-      nome: string;
-      cognome: string;
-      telefono: string | null;
-      cap: string | null;
-      citta: string | null;
-      provincia: string | null;
-      codiceFiscale: string | null;
-    };
-    mandante: { codice: string };
-    assegnatario: { name: string } | null;
-    attivita: Array<{ createdAt: Date }>;
-    rate: Array<{ importo: number; pagata: boolean; scadenza: Date }>;
-    incassi: Array<{ importo: number }>;
-    garanti: Array<{ nome: string; cognome: string }>;
-  }>;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const safeSkip = (safePage - 1) * pageSize;
 
-  if (isUltimaLavorazioneSort(codaNav.sort)) {
-    const ids = await orderPraticaIdsByUltimaLavorazione(where, codaNav.dir);
-    if (!ids.length) {
-      pratiche = [];
-    } else {
-      const rows = await prisma.pratica.findMany({
-        where: { id: { in: ids } },
-        include,
-      });
-      const byId = new Map(rows.map((p) => [p.id, p]));
-      pratiche = ids.map((id) => byId.get(id)!).filter(Boolean);
-    }
-  } else {
-    pratiche = await prisma.pratica.findMany({
-      where,
-      include,
-      orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
-    });
-  }
+  const pratiche = await prisma.pratica.findMany({
+    where,
+    include,
+    orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
+    skip: safeSkip,
+    take: pageSize,
+  });
 
-  const codaNavPagina = { ...codaNav, listPage: 1 };
+  const codaNavPagina = { ...codaNav, listPage: safePage };
 
   const queryBase: Record<string, string | boolean | number | undefined> = {
     q: sp.q,
@@ -280,7 +266,7 @@ export default async function PratichePage({
       stato: p.stato,
       residuoLabel: euro(p.residuo),
       esitoLabel: esitoContattoLabel(p.esitoContatto),
-      ultimaLavorazioneLabel: dataIt(p.attivita[0]?.createdAt ?? null),
+      ultimaLavorazioneLabel: dataIt(p.ultimaLavorazioneAt ?? null),
       debitoreNome: `${p.debitore.nome} ${p.debitore.cognome}`,
       debitoreTelefono: p.debitore.telefono,
       debitoreCap: p.debitore.cap,
@@ -349,6 +335,7 @@ export default async function PratichePage({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Link
             href={apriPraticheHref}
+            prefetch
             className="inline-flex h-10 items-center rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white shadow-sm hover:opacity-90"
           >
             Apri pratiche
@@ -361,6 +348,19 @@ export default async function PratichePage({
           sortColumns={sortColumns}
           canNotaMassiva={canNotaMassiva}
         />
+        {total > 0 ? (
+          <PaginazioneBar
+            page={safePage}
+            totalPages={totalPages}
+            hrefForPage={(p) => buildPraticheQuery({ ...queryBase, page: p })}
+            right={
+              <span className="text-xs text-[var(--muted)]">
+                {Math.min(safeSkip + 1, total)}–
+                {Math.min(safeSkip + PRATICHE_PAGE_SIZE, total)} di {total}
+              </span>
+            }
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { isUserPasswordExpired } from "@/lib/passwordPolicy";
+import { getCurrentUser, isCurrentUserPasswordExpired } from "@/lib/auth";
 import { assertCan, can, isManutenzione, type Permission, type SessionUser } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 
@@ -9,12 +8,9 @@ type RequireUserOptions = {
   allowExpiredPassword?: boolean;
 };
 
-async function assertPasswordFresh(
-  userId: string,
-  allowExpiredPassword?: boolean
-) {
+async function assertPasswordFresh(allowExpiredPassword?: boolean) {
   if (allowExpiredPassword) return;
-  if (await isUserPasswordExpired(userId)) {
+  if (await isCurrentUserPasswordExpired()) {
     redirect("/cambia-password");
   }
 }
@@ -22,7 +18,7 @@ async function assertPasswordFresh(
 export async function requireUser(options?: RequireUserOptions) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  await assertPasswordFresh(user.id, options?.allowExpiredPassword);
+  await assertPasswordFresh(options?.allowExpiredPassword);
   return user;
 }
 
@@ -32,7 +28,7 @@ export async function requireApiUser(): Promise<SessionUser | NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
   }
-  if (await isUserPasswordExpired(user.id)) {
+  if (await isCurrentUserPasswordExpired()) {
     return NextResponse.json(
       { error: "Password scaduta: aggiornala per continuare" },
       { status: 403 }

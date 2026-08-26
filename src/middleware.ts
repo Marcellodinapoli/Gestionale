@@ -29,6 +29,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|login|cambia-password|seleziona-postazione|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api|login|cambia-password|seleziona-postazione|setup-sedi|_next/static|_next/image|favicon.ico).*)",
   ],
 };

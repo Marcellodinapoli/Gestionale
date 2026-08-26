@@ -20,7 +20,7 @@ export function intervalloGiornata(data: Date) {
   return { gte: startOfDay(data), lt: startOfNextDay(data) };
 }
 
-/** Fascia oraria lavorazione: mattina 09:00–13:00, pomeriggio 13:05–18:00. */
+/** Fascia oraria lavorazione: mattina 09:00–13:30, pomeriggio 13:31–19:00. */
 export type LavorateFascia = "mattina" | "pomeriggio";
 
 export function parseLavorateFascia(value?: string | null): LavorateFascia | undefined {
@@ -34,13 +34,13 @@ export function intervalloFasciaOraria(data: Date, fascia: LavorateFascia) {
     const gte = new Date(day);
     gte.setHours(9, 0, 0, 0);
     const lt = new Date(day);
-    lt.setHours(13, 0, 1, 0);
+    lt.setHours(13, 30, 1, 0);
     return { gte, lt };
   }
   const gte = new Date(day);
-  gte.setHours(13, 5, 0, 0);
+  gte.setHours(13, 31, 0, 0);
   const lt = new Date(day);
-  lt.setHours(18, 0, 1, 0);
+  lt.setHours(19, 0, 1, 0);
   return { gte, lt };
 }
 

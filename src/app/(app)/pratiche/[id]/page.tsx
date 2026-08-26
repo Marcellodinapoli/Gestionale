@@ -19,7 +19,7 @@ import {
   parseCodaNav,
   type CodaNav,
 } from "@/lib/praticaCoda";
-import { buildOrderBy, isUltimaLavorazioneSort, orderPraticaIdsByUltimaLavorazione } from "@/lib/praticaOrdine";
+import { buildOrderBy } from "@/lib/praticaOrdine";
 import { getRecordingMode } from "@/lib/recordingConfig";
 import { getPraticaWorkContext } from "@/lib/praticaLock";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
@@ -111,13 +111,6 @@ export default async function PraticaDetailPage({
             ...praticaWhere(user),
             ...(codaNav.filtro ? codaFiltroWhere(codaNav.filtro) : {}),
           };
-          if (isUltimaLavorazioneSort(codaNav.sort)) {
-            const ids = await orderPraticaIdsByUltimaLavorazione(
-              whereCoda,
-              codaNav.dir
-            );
-            return ids.map((id) => ({ id }));
-          }
           return prisma.pratica.findMany({
             where: whereCoda,
             select: { id: true },

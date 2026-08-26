@@ -1,14 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
+import { importCsvAction, importIncassiCsvAction } from "@/actions/core";
 
 export type MandanteImportOption = {
   id: string;
   codice: string;
   ragioneSociale: string;
   perimetri: PerimetroListItem[];
+};
+
+export type LottoEsistenteOption = {
+  id: string;
+  mandanteId: string;
+  perimetro: string;
+  lotto: string;
+  affidoIl: string;
+  nPratiche: number;
 };
 
 function todayInputValue() {
@@ -18,21 +29,55 @@ function todayInputValue() {
 }
 
 export function ImportForm({
-  action,
+  kind,
   buttonLabel = "Importa",
   mandanti,
+  lottiEsistenti = [],
+  prefill = null,
+  onClose,
 }: {
-  action: (formData: FormData) => Promise<{ error?: string; ok?: string } | void>;
+  kind: "pratiche" | "incassi";
   buttonLabel?: string;
   mandanti: MandanteImportOption[];
+  /** Solo pratiche: lotti già importati (per integrazione). */
+  lottiEsistenti?: LottoEsistenteOption[];
+  prefill?: {
+    mandanteId: string;
+    perimetro: string;
+    lotto: string;
+    affidoIl: string;
+  } | null;
+  onClose?: () => void;
 }) {
+  const router = useRouter();
+  const action = kind === "pratiche" ? importCsvAction : importIncassiCsvAction;
   const [message, setMessage] = useState<string | null>(null);
-  const [mandanteId, setMandanteId] = useState("");
-  const [perimetro, setPerimetro] = useState("");
-  const [lotto, setLotto] = useState("");
-  const [affidoIl, setAffidoIl] = useState(todayInputValue);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [mandanteId, setMandanteId] = useState(prefill?.mandanteId ?? "");
+  const [perimetro, setPerimetro] = useState(prefill?.perimetro ?? "");
+  const [lotto, setLotto] = useState(prefill?.lotto ?? "");
+  const [affidoIl, setAffidoIl] = useState(
+    prefill?.affidoIl ?? todayInputValue()
+  );
+  const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const formTopRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (!prefill) return;
+    setMandanteId(prefill.mandanteId);
+    setPerimetro(prefill.perimetro);
+    setLotto(prefill.lotto);
+    setAffidoIl(prefill.affidoIl);
+    setMessage(null);
+    formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [
+    prefill?.mandanteId,
+    prefill?.perimetro,
+    prefill?.lotto,
+    prefill?.affidoIl,
+  ]);
 
   const mandante = useMemo(
     () => mandanti.find((m) => m.id === mandanteId) ?? null,
@@ -40,29 +85,107 @@ export function ImportForm({
   );
   const perimetri = mandante?.perimetri ?? [];
 
-  async function onSubmit(formData: FormData) {
+  const lottoMatch = useMemo(() => {
+    if (kind !== "pratiche" || !mandanteId || !perimetro || !lotto) return null;
+    return (
+      lottiEsistenti.find(
+        (b) =>
+          b.mandanteId === mandanteId &&
+          b.perimetro === perimetro &&
+          b.lotto === lotto
+      ) ?? null
+    );
+  }, [kind, mandanteId, perimetro, lotto, lottiEsistenti]);
+
+  useEffect(() => {
+    if (!pending) return;
+    setProgress(4);
+    const id = window.setInterval(() => {
+      setProgress((p) => {
+        if (p >= 90) return p;
+        const step = p < 40 ? 6 : p < 70 ? 3 : 1.2;
+        return Math.min(90, Math.round((p + step) * 10) / 10);
+      });
+    }, 280);
+    return () => window.clearInterval(id);
+  }, [pending]);
+
+  function clearFile() {
+    setFile(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setMessage(null);
+
+    if (!file) {
+      setMessage("Seleziona un file CSV da importare");
+      fileRef.current?.focus();
+      return;
+    }
+
+    const fd = new FormData(e.currentTarget);
+    fd.set("file", file);
+
     setPending(true);
+    setProgress(2);
     try {
-      const result = await action(formData);
+      const result = await action(fd);
+      setProgress(100);
       if (result?.error) setMessage(result.error);
-      if (result?.ok) setMessage(result.ok);
+      if (result?.ok) {
+        setMessage(result.ok);
+        clearFile();
+        router.refresh();
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Errore durante l'import");
     } finally {
       setPending(false);
+      setProgress(0);
     }
+  }
+
+  function onAnnulla() {
+    if (pending) return;
+    setMessage(null);
+    setMandanteId("");
+    setPerimetro("");
+    setLotto("");
+    setAffidoIl(todayInputValue());
+    clearFile();
+    setProgress(0);
+    if (kind === "pratiche" && prefill) {
+      router.replace("/import", { scroll: false });
+    }
+    onClose?.();
   }
 
   const fieldCls =
     "h-9 w-full rounded-lg border border-[var(--line)] bg-white px-2 text-sm";
 
+  const submitLabel = pending
+    ? "Import in corso…"
+    : lottoMatch
+      ? `Integra lotto (${lottoMatch.nPratiche} già presenti)`
+      : buttonLabel;
+
   return (
-    <form action={onSubmit} className="space-y-3 text-sm">
+    <form
+      ref={formTopRef}
+      id={kind === "pratiche" ? "import-pratiche" : undefined}
+      onSubmit={onSubmit}
+      className="space-y-3 text-sm"
+    >
       <label className="block space-y-1">
         <span className="text-xs font-semibold text-[var(--muted)]">Mandante</span>
         <select
           name="mandanteId"
           required
           value={mandanteId}
+          disabled={pending}
           onChange={(e) => {
             setMandanteId(e.target.value);
             setPerimetro("");
@@ -85,11 +208,9 @@ export function ImportForm({
             name="perimetro"
             required
             value={perimetro}
-            disabled={!mandanteId}
+            disabled={!mandanteId || pending}
             onChange={(e) => {
-              const nomeMandante = e.target.value;
-              setPerimetro(nomeMandante);
-              if (!lotto.trim()) setLotto(nomeMandante);
+              setPerimetro(e.target.value);
             }}
             className={fieldCls}
           >
@@ -105,11 +226,9 @@ export function ImportForm({
             name="perimetro"
             required
             value={perimetro}
-            disabled={!mandanteId}
+            disabled={!mandanteId || pending}
             onChange={(e) => {
-              const nome = e.target.value;
-              setPerimetro(nome);
-              if (!lotto.trim()) setLotto(nome);
+              setPerimetro(e.target.value);
             }}
             placeholder={
               mandanteId
@@ -126,9 +245,12 @@ export function ImportForm({
         <input
           name="lotto"
           required
+          inputMode="numeric"
+          pattern="[0-9]+"
           value={lotto}
-          onChange={(e) => setLotto(e.target.value)}
-          placeholder="Codice lotto"
+          disabled={pending}
+          onChange={(e) => setLotto(e.target.value.replace(/[^\d]/g, ""))}
+          placeholder="es. 112608"
           className={fieldCls}
         />
       </label>
@@ -140,49 +262,112 @@ export function ImportForm({
           name="affidoIl"
           required
           value={affidoIl}
+          disabled={pending}
           onChange={(e) => setAffidoIl(e.target.value)}
           className={fieldCls}
         />
       </label>
 
+      {lottoMatch ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Lotto già presente ({lottoMatch.nPratiche} pratiche). Il CSV verrà
+          caricato come <strong>integrazione</strong> sullo stesso import.
+        </p>
+      ) : null}
+
       <div className="space-y-1">
         <span className="text-xs font-semibold text-[var(--muted)]">File CSV</span>
-        <label
-          className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-3 py-5 text-center transition hover:border-[var(--navy)] hover:bg-[#f0f4f8] ${
-            fileName
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,text/csv"
+          disabled={pending}
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null;
+            setFile(f);
+            setMessage(null);
+          }}
+        />
+        <div
+          className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-3 py-5 text-center ${
+            file
               ? "border-[var(--navy)] bg-[#f0f4f8]"
               : "border-[var(--line)] bg-white"
           }`}
         >
-          <span className="rounded-md bg-[var(--navy)] px-3 py-1.5 text-xs font-semibold text-white">
-            Scegli file…
-          </span>
-          <span className="text-xs text-[var(--muted)]">
-            {fileName
-              ? fileName
-              : "Clicca qui per selezionare il file CSV da importare"}
-          </span>
-          <input
-            type="file"
-            name="file"
-            accept=".csv,text/csv"
-            required
-            className="sr-only"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              setFileName(f?.name ?? null);
-            }}
-          />
-        </label>
+          {file ? (
+            <>
+              <p className="text-sm font-medium text-[var(--navy)]">{file.name}</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => fileRef.current?.click()}
+                  className="rounded-md border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--navy)] hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cambia file…
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={clearFile}
+                  className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                >
+                  Rimuovi file
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => fileRef.current?.click()}
+              className="flex flex-col items-center gap-1 disabled:opacity-60"
+            >
+              <span className="rounded-md bg-[var(--navy)] px-3 py-1.5 text-xs font-semibold text-white">
+                Scegli file…
+              </span>
+              <span className="text-xs text-[var(--muted)]">
+                Clicca qui per selezionare il file CSV da importare
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="h-10 rounded-lg bg-[var(--navy)] px-4 text-white disabled:opacity-60"
-      >
-        {pending ? "Import in corso…" : buttonLabel}
-      </button>
+      {pending || progress > 0 ? (
+        <div className="space-y-1.5" aria-live="polite">
+          <div className="flex items-center justify-between text-xs font-medium text-[var(--navy)]">
+            <span>{pending ? "Caricamento in corso…" : "Completato"}</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#dce4ec]">
+            <div
+              className="h-full rounded-full bg-[var(--navy)] transition-[width] duration-200 ease-out"
+              style={{ width: `${Math.min(100, progress)}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="h-10 rounded-lg bg-[var(--navy)] px-4 text-white disabled:opacity-60"
+        >
+          {submitLabel}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onAnnulla}
+          className="h-10 rounded-lg border border-[var(--line)] bg-white px-4 font-medium text-[var(--navy)] hover:bg-slate-50 disabled:opacity-60"
+        >
+          Annulla
+        </button>
+      </div>
       {message ? <p className="text-sm">{message}</p> : null}
     </form>
   );

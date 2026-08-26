@@ -48,7 +48,7 @@ export default async function MandantiPage() {
                   </Link>
                   <div className="text-xs text-[var(--muted)]">{m.email}</div>
                 </td>
-                <td>{m._count.pratiche}</td>
+                <td>{m._count?.pratiche ?? 0}</td>
               </tr>
             ))}
           </tbody>

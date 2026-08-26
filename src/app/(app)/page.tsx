@@ -46,6 +46,7 @@ import {
 } from "@/lib/codiciMandantePerimetro";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
+import { prismaCount } from "@/lib/prismaCount";
 
 type RiepilogoMandante = {
   id: string;
@@ -61,48 +62,58 @@ async function riepilogoMandanti(
   tenantId: string,
   sedeId?: string | null
 ): Promise<RiepilogoMandante[]> {
-  const praticheWhere: Prisma.PraticaWhereInput | undefined = sedeId
-    ? {
-        OR: [
-          { assegnatario: { sedeId } },
-          { operatoreTitolare: { sedeId } },
-        ],
-      }
-    : undefined;
+  const praticheWhere: Prisma.PraticaWhereInput = {
+    tenantId,
+    ...(sedeId
+      ? {
+          OR: [
+            { assegnatario: { sedeId } },
+            { operatoreTitolare: { sedeId } },
+          ],
+        }
+      : {}),
+  };
 
-  const mandanti = await prisma.mandante.findMany({
-    where: { tenantId },
-    include: {
-      pratiche: {
-        where: praticheWhere,
-        select: {
-          capitale: true,
-          interessi: true,
-          spese: true,
-          incassi: { select: { importo: true } },
-        },
+  const [mandanti, pratiche] = await Promise.all([
+    prisma.mandante.findMany({
+      where: { tenantId },
+      select: { id: true, codice: true, ragioneSociale: true },
+      orderBy: { codice: "asc" },
+    }),
+    prisma.pratica.findMany({
+      where: praticheWhere,
+      select: {
+        mandanteId: true,
+        capitale: true,
+        interessi: true,
+        spese: true,
+        incassi: { select: { importo: true } },
       },
-    },
-    orderBy: { codice: "asc" },
-  });
+    }),
+  ]);
+
+  const byMandante = new Map<
+    string,
+    { n: number; affidato: number; incassato: number }
+  >();
+  for (const p of pratiche) {
+    const cur = byMandante.get(p.mandanteId) || { n: 0, affidato: 0, incassato: 0 };
+    cur.n += 1;
+    cur.affidato += (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0);
+    cur.incassato += p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
+    byMandante.set(p.mandanteId, cur);
+  }
 
   return mandanti.map((m) => {
-    const affidato = m.pratiche.reduce(
-      (s, p) => s + (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0),
-      0
-    );
-    const incassato = m.pratiche.reduce(
-      (s, p) => s + p.incassi.reduce((si, i) => si + i.importo, 0),
-      0
-    );
+    const agg = byMandante.get(m.id) || { n: 0, affidato: 0, incassato: 0 };
     return {
       id: m.id,
       codice: m.codice,
       ragioneSociale: m.ragioneSociale,
-      pratiche: m.pratiche.length,
-      affidato,
-      incassato,
-      percentuale: affidato > 0 ? (incassato / affidato) * 100 : 0,
+      pratiche: agg.n,
+      affidato: agg.affidato,
+      incassato: agg.incassato,
+      percentuale: agg.affidato > 0 ? (agg.incassato / agg.affidato) * 100 : 0,
     };
   });
 }
@@ -539,13 +550,14 @@ export default async function HomePage({
       .map((r) => ({
         metodo: r.metodo,
         label: metodoIncassoLabel(r.metodo),
-        pezzi: r._count,
+        pezzi: prismaCount(r._count),
         importo: r._sum.importo || 0,
         perc: totImportoMetodi > 0 ? ((r._sum.importo || 0) / totImportoMetodi) * 100 : 0,
         meseImporto:
           incassiPerMetodoMese.find((m) => m.metodo === r.metodo)?._sum.importo || 0,
-        mesePezzi:
-          incassiPerMetodoMese.find((m) => m.metodo === r.metodo)?._count || 0,
+        mesePezzi: prismaCount(
+          incassiPerMetodoMese.find((m) => m.metodo === r.metodo)?._count
+        ),
       }))
       .sort((a, b) => b.importo - a.importo);
 
@@ -570,7 +582,7 @@ export default async function HomePage({
     });
     const produttivita = operatoriAttivi.map((o) => ({
       name: o.name,
-      attivita: attivitaPerOperatore.find((a) => a.userId === o.id)?._count || 0,
+      attivita: prismaCount(attivitaPerOperatore.find((a) => a.userId === o.id)?._count),
     }));
 
     // Distribuzione carico per gruppo
@@ -634,7 +646,7 @@ export default async function HomePage({
       },
       _count: true,
     });
-    const totEsiti = esitiContatto.reduce((s, e) => s + e._count, 0);
+    const totEsiti = esitiContatto.reduce((s, e) => s + prismaCount(e._count), 0);
 
     // Pratiche in scadenza (prossimi 7 giorni)
     const tra7gg = new Date(oggi);
@@ -668,11 +680,34 @@ export default async function HomePage({
 
     // Incassi per mandante ultimi 6 mesi
     const mesiIndietro = 6;
-    const mandantiAttivi = await prisma.mandante.findMany({
-      where: { tenantId: user.tenantId },
-      orderBy: { codice: "asc" },
-      select: { id: true, codice: true },
-    });
+    const daIncassi = new Date(oggi.getFullYear(), oggi.getMonth() - (mesiIndietro - 1), 1);
+    const aIncassi = new Date(oggi.getFullYear(), oggi.getMonth() + 1, 0, 23, 59, 59, 999);
+    const [mandantiAttivi, incassiRows] = await Promise.all([
+      prisma.mandante.findMany({
+        where: { tenantId: user.tenantId },
+        orderBy: { codice: "asc" },
+        select: { id: true, codice: true },
+      }),
+      prisma.incasso.findMany({
+        where: {
+          data: { gte: daIncassi, lte: aIncassi },
+          pratica: {
+            tenantId: user.tenantId,
+            ...(sedePraticaWhere || {}),
+          },
+        },
+        include: {
+          pratica: { select: { mandanteId: true } },
+        },
+      }),
+    ]);
+    const sumsByMonthMandante = new Map<string, number>();
+    for (const row of incassiRows) {
+      const d = row.data instanceof Date ? row.data : new Date(row.data);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${d.getMonth()}|${row.pratica.mandanteId}`;
+      sumsByMonthMandante.set(key, (sumsByMonthMandante.get(key) || 0) + (row.importo || 0));
+    }
     const incassiPerMandanteMese: Array<{
       mese: string;
       mandanti: Array<{ codice: string; importo: number }>;
@@ -680,21 +715,10 @@ export default async function HomePage({
     }> = [];
     for (let i = mesiIndietro - 1; i >= 0; i--) {
       const da = new Date(oggi.getFullYear(), oggi.getMonth() - i, 1);
-      const a = new Date(oggi.getFullYear(), oggi.getMonth() - i + 1, 0, 23, 59, 59, 999);
       const mandantiMese: Array<{ codice: string; importo: number }> = [];
       let totaleMese = 0;
       for (const m of mandantiAttivi) {
-        const agg = await prisma.incasso.aggregate({
-          _sum: { importo: true },
-          where: {
-            data: { gte: da, lte: a },
-            pratica: {
-              mandanteId: m.id,
-              ...(sedePraticaWhere || {}),
-            },
-          },
-        });
-        const imp = agg._sum.importo || 0;
+        const imp = sumsByMonthMandante.get(`${da.getFullYear()}-${da.getMonth()}|${m.id}`) || 0;
         mandantiMese.push({ codice: m.codice, importo: imp });
         totaleMese += imp;
       }
@@ -979,7 +1003,8 @@ export default async function HomePage({
             ) : (
               <div className="space-y-1.5">
                 {esitiContatto
-                  .sort((a, b) => b._count - a._count)
+                  .map((e) => ({ ...e, n: prismaCount(e._count) }))
+                  .sort((a, b) => b.n - a.n)
                   .map((e, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <span className="w-36 truncate text-xs font-medium">
@@ -988,11 +1013,14 @@ export default async function HomePage({
                       <div className="flex-1 rounded-full bg-slate-100" style={{ height: 14 }}>
                         <div
                           className="h-full rounded-full bg-[#1a365d]"
-                          style={{ width: `${(e._count / totEsiti) * 100}%`, minWidth: 8 }}
+                          style={{
+                            width: `${totEsiti ? (e.n / totEsiti) * 100 : 0}%`,
+                            minWidth: 8,
+                          }}
                         />
                       </div>
                       <span className="w-12 text-right text-[10px] text-[var(--muted)]">
-                        {e._count} ({((e._count / totEsiti) * 100).toFixed(0)}%)
+                        {e.n} ({totEsiti ? ((e.n / totEsiti) * 100).toFixed(0) : 0}%)
                       </span>
                     </div>
                   ))}

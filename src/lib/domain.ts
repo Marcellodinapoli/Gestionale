@@ -72,6 +72,22 @@ export function normalizeCf(value?: string | null) {
   return (value || "").replace(/[\s]/g, "").toUpperCase();
 }
 
+/** Varianti CF per query mirata (evita scan dell’intera collection). */
+function cfQueryVariants(values: Array<string | null | undefined>) {
+  const out = new Set<string>();
+  for (const raw of values) {
+    if (!raw) continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    out.add(trimmed);
+    out.add(trimmed.toUpperCase());
+    out.add(trimmed.toLowerCase());
+    const n = normalizeCf(trimmed);
+    if (n) out.add(n);
+  }
+  return [...out].slice(0, 30);
+}
+
 export async function debitoreIdsStessoCf(
   codiceFiscale: string | null | undefined,
   fallbackId: string,
@@ -79,9 +95,10 @@ export async function debitoreIdsStessoCf(
 ) {
   const cf = normalizeCf(codiceFiscale);
   if (!cf) return [fallbackId];
+  const variants = cfQueryVariants([codiceFiscale, cf]);
   const rows = await prisma.debitore.findMany({
     where: {
-      codiceFiscale: { not: null },
+      codiceFiscale: { in: variants },
       ...(tenantId ? { tenantId } : {}),
     },
     select: { id: true, codiceFiscale: true },
@@ -110,26 +127,30 @@ export async function praticaIdsCollegatePerCf(
   });
   if (!pratica) return [];
 
+  const rawCfs = [
+    pratica.debitore.codiceFiscale,
+    ...pratica.garanti.map((g) => g.codiceFiscale),
+  ];
   const cfs = new Set<string>();
-  const cfDebitore = normalizeCf(pratica.debitore.codiceFiscale);
-  if (cfDebitore) cfs.add(cfDebitore);
-  for (const g of pratica.garanti) {
-    const cf = normalizeCf(g.codiceFiscale);
+  for (const raw of rawCfs) {
+    const cf = normalizeCf(raw);
     if (cf) cfs.add(cf);
   }
 
   if (!cfs.size) return [pratica.id];
 
+  const variants = cfQueryVariants(rawCfs);
+
   const [debitori, garanti] = await Promise.all([
     prisma.debitore.findMany({
-      where: { tenantId: pratica.tenantId, codiceFiscale: { not: null } },
+      where: {
+        tenantId: pratica.tenantId,
+        codiceFiscale: { in: variants },
+      },
       select: { id: true, codiceFiscale: true },
     }),
     prisma.garante.findMany({
-      where: {
-        codiceFiscale: { not: null },
-        pratica: { tenantId: pratica.tenantId },
-      },
+      where: { codiceFiscale: { in: variants } },
       select: { praticaId: true, codiceFiscale: true },
     }),
   ]);

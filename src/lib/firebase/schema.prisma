@@ -26,6 +26,7 @@ model Tenant {
   pratiche  Pratica[]
   configs   ConfigurazioneSistema[]
   auditLogs AuditLog[]
+  importBatch ImportBatch[]
 }
 
 model Sede {
@@ -33,6 +34,13 @@ model Sede {
   tenantId   String
   tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   nome       String
+  indirizzo  String?
+  citta      String?
+  cap        String?
+  provincia  String?
+  telefono   String?
+  email      String?
+  note       String?
   active     Boolean      @default(true)
   createdAt  DateTime     @default(now())
   postazioni Postazione[]
@@ -214,7 +222,10 @@ model Pratica {
   memoAt          DateTime?
   promessaAt      DateTime?
   promessaImporto Float?
+  ultimaLavorazioneAt DateTime?
   note            String?
+  importBatchId   String?
+  importBatch     ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   attivita        Attivita[]
@@ -231,6 +242,28 @@ model Pratica {
 
   @@unique([tenantId, numero])
   @@index([tenantId])
+  @@index([importBatchId])
+}
+
+model ImportBatch {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tipo           String    @default("PRATICHE")
+  mandanteId     String
+  mandanteCodice String
+  perimetro      String
+  lotto          String
+  affidoIl       DateTime
+  fileName       String?
+  nPratiche      Int       @default(0)
+  createdById    String?
+  createdByName  String?
+  createdAt      DateTime  @default(now())
+  pratiche       Pratica[]
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
 }
 
 model PraticaLock {

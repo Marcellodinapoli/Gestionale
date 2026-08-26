@@ -7,7 +7,7 @@ export const DEFAULT_NORMATIVE_PROMPT =
   "Regole:\n" +
   "- Usa linguaggio chiaro e professionale, adatto a operatori del credito.\n" +
   "- Cita norme, articoli o principi solo quando sei ragionevolmente sicuro; " +
-  "se non sei sicuro, dillo esplicitamente.\n" +
+    "se non sei sicuro, dillo esplicitamente.\n" +
   "- Non inventare testi di legge, sentenze o circolari.\n" +
   "- Non dare consulenza legale personalizzata: ricorda che le risposte " +
   "sono informative.\n" +
@@ -53,22 +53,38 @@ export const DEFAULT_CALL_ANALYSIS_PROMPT =
   "• ...\n\n" +
   "Rispondi in italiano, sintetico e operativo.";
 
+const PROMPT_CACHE_TTL_MS = 10 * 60 * 1000;
+const promptCache = new Map<string, { value: string; expiresAt: number }>();
+
 function resolvePrompt(raw: unknown, fallback: string) {
   const text = String(raw ?? "").trim();
   return text || fallback;
 }
 
+async function loadCachedPrompt(
+  db: Firestore,
+  docId: string,
+  field: string,
+  fallback: string
+) {
+  const key = `${docId}:${field}`;
+  const hit = promptCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+
+  const snap = await getDoc(doc(db, "settings", docId));
+  const value = resolvePrompt(snap.data()?.[field], fallback);
+  promptCache.set(key, { value, expiresAt: Date.now() + PROMPT_CACHE_TTL_MS });
+  return value;
+}
+
 export async function loadNormativePrompt(db: Firestore) {
-  const snap = await getDoc(doc(db, "settings", "normative_search"));
-  return resolvePrompt(snap.data()?.prompt, DEFAULT_NORMATIVE_PROMPT);
+  return loadCachedPrompt(db, "normative_search", "prompt", DEFAULT_NORMATIVE_PROMPT);
 }
 
 export async function loadAiAssistantPrompt(db: Firestore) {
-  const snap = await getDoc(doc(db, "settings", "ai_assistant"));
-  return resolvePrompt(snap.data()?.prompt, DEFAULT_AI_ASSISTANT_PROMPT);
+  return loadCachedPrompt(db, "ai_assistant", "prompt", DEFAULT_AI_ASSISTANT_PROMPT);
 }
 
 export async function loadCallAnalysisPrompt(db: Firestore) {
-  const snap = await getDoc(doc(db, "settings", "call_analysis"));
-  return resolvePrompt(snap.data()?.prompt, DEFAULT_CALL_ANALYSIS_PROMPT);
+  return loadCachedPrompt(db, "call_analysis", "prompt", DEFAULT_CALL_ANALYSIS_PROMPT);
 }

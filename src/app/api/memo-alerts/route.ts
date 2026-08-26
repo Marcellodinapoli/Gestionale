@@ -3,7 +3,12 @@ import { requireApiUser } from "@/lib/guard";
 import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { can, isManutenzione } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { formatMemoAlertLine, memoAlertWindow } from "@/lib/memoAlerts";
+import {
+  formatMemoAlertLine,
+  memoAlertWindow,
+  MEMO_ALERT_GRACE_MINUTES,
+  MEMO_ALERT_MINUTES_BEFORE,
+} from "@/lib/memoAlerts";
 import { operatorSigla } from "@/lib/noteFormat";
 import { isSanzioneAttivaTesto } from "@/lib/sanzioneIncassoMassivo";
 
@@ -15,6 +20,10 @@ export async function GET() {
   const baseScope = await praticaScopeWhere(user);
 
   const now = new Date();
+  // memoAt in [now - grace, now + before] ⇔ now in memoAlertWindow(memoAt)
+  const memoAtGte = new Date(now.getTime() - MEMO_ALERT_GRACE_MINUTES * 60_000);
+  const memoAtLte = new Date(now.getTime() + MEMO_ALERT_MINUTES_BEFORE * 60_000);
+
   const alerts: Array<{
     kind: "agenda" | "collega" | "sanzione";
     id?: string;
@@ -30,10 +39,20 @@ export async function GET() {
   if (can(user, "agenda:view")) {
     const pratiche = await prisma.pratica.findMany({
       where: {
-        AND: [baseScope, { memoAt: { not: null } }],
+        AND: [
+          baseScope,
+          { memoAt: { gte: memoAtGte, lte: memoAtLte } },
+        ],
       },
-      include: { debitore: true, mandante: true },
+      select: {
+        id: true,
+        numero: true,
+        memoAt: true,
+        debitore: { select: { nome: true, cognome: true, telefono: true } },
+        mandante: { select: { codice: true } },
+      },
       orderBy: { memoAt: "asc" },
+      take: 50,
     });
     for (const p of pratiche) {
       if (!p.memoAt || !memoAlertWindow(p.memoAt, now).active) continue;
@@ -59,8 +78,13 @@ export async function GET() {
     }
 
     const impegni = await prisma.impegnoAgenda.findMany({
-      where: { userId: user.id, completato: false },
+      where: {
+        userId: user.id,
+        completato: false,
+        memoAt: { gte: memoAtGte, lte: memoAtLte },
+      },
       orderBy: { memoAt: "asc" },
+      take: 50,
     });
     for (const i of impegni) {
       if (!memoAlertWindow(i.memoAt, now).active) continue;
@@ -83,10 +107,16 @@ export async function GET() {
   const intern = await prisma.messaggioInterno.findMany({
     where: { toUserId: user.id, letto: false },
     include: {
-      fromUser: true,
-      pratica: { include: { debitore: true } },
+      fromUser: { select: { name: true } },
+      pratica: {
+        select: {
+          numero: true,
+          debitore: { select: { nome: true, cognome: true } },
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
+    take: 30,
   });
   for (const m of intern) {
     const p = m.pratica;

@@ -23,6 +23,12 @@ export function AiAssistantPage() {
     el.scrollTop = el.scrollHeight;
   }, [turns, loading]);
 
+  // Precarica il prompt in cache senza bloccare la UI
+  useEffect(() => {
+    if (!db) return;
+    void loadAiAssistantPrompt(db);
+  }, [db]);
+
   async function submit() {
     const text = question.trim();
     if (!text || loading || !functions || !db) return;

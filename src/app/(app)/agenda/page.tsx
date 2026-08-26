@@ -28,15 +28,18 @@ export default async function AgendaPage({
       where: {
         AND: [baseScope, { memoAt: { not: null } }],
       },
-      include: { debitore: true, assegnatario: true },
+      include: {
+        debitore: { select: { nome: true, cognome: true } },
+        assegnatario: { select: { name: true } },
+      },
       orderBy: { memoAt: "asc" },
-      take: 500,
+      take: 200,
     }),
     prisma.impegnoAgenda.findMany({
       where: { userId: user.id, completato: false },
       include: { user: { select: { name: true } } },
       orderBy: { memoAt: "asc" },
-      take: 500,
+      take: 200,
     }),
   ]);
 
@@ -46,7 +49,9 @@ export default async function AgendaPage({
       id: p.id,
       memoAt: p.memoAt!.toISOString(),
       numero: p.numero,
-      debitore: `${p.debitore.nome} ${p.debitore.cognome}`,
+      debitore: p.debitore
+        ? `${p.debitore.nome} ${p.debitore.cognome}`
+        : "—",
       tipoContatto: p.tipoContatto,
       esitoContatto: p.esitoContatto,
       assegnatario: p.assegnatario?.name || null,
@@ -57,7 +62,7 @@ export default async function AgendaPage({
       memoAt: i.memoAt.toISOString(),
       titolo: i.titolo,
       nota: i.nota,
-      autore: i.user.name,
+      autore: i.user?.name || "—",
     })),
   ].sort((a, b) => new Date(a.memoAt).getTime() - new Date(b.memoAt).getTime());
 

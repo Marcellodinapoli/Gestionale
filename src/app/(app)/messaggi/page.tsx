@@ -19,23 +19,35 @@ export default async function MessaggiPage({
         pratica: praticaScope,
       },
       include: {
-        pratica: { include: { debitore: true } },
-        user: true,
+        pratica: {
+          select: {
+            id: true,
+            numero: true,
+            debitore: { select: { nome: true, cognome: true } },
+          },
+        },
+        user: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: 200,
+      take: 100,
     }),
     prisma.messaggioInterno.findMany({
       where: {
         OR: [{ toUserId: user.id }, { fromUserId: user.id }],
       },
       include: {
-        fromUser: true,
-        toUser: true,
-        pratica: { include: { debitore: true } },
+        fromUser: { select: { id: true, name: true } },
+        toUser: { select: { id: true, name: true } },
+        pratica: {
+          select: {
+            id: true,
+            numero: true,
+            debitore: { select: { nome: true, cognome: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
-      take: 200,
+      take: 100,
     }),
   ]);
 

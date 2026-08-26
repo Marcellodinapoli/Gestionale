@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, Suspense } from "react";
 import Link from "next/link";
 import { SlidersHorizontal, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
+import { DebouncedSearchInput } from "@/components/DebouncedSearchInput";
 import { STATO_LABELS } from "@/lib/permissions";
 import { ESITO_CONTATTO_LABELS } from "@/lib/contatto";
 import { formatDataIso, startOfToday } from "@/lib/lavorateOggiUi";
@@ -29,9 +30,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function SezioneFiltri({ title, children }: { title: string; children: ReactNode }) {
+function SezioneFiltri({
+  title,
+  tone = "codici",
+  children,
+}: {
+  title: string;
+  tone?: "anagrafica" | "contabili" | "codici";
+  children: ReactNode;
+}) {
+  const bg =
+    tone === "anagrafica"
+      ? "bg-[#e8f1f7]"
+      : tone === "contabili"
+        ? "bg-[#eaf4ec]"
+        : "bg-[#f5efe6]";
   return (
-    <section className="space-y-2 border-b border-[var(--line)] pb-5 last:border-b-0 last:pb-0">
+    <section className={`space-y-2 rounded-lg border border-[var(--line)]/70 ${bg} p-3`}>
       <h3 className="text-sm font-bold text-[var(--navy)]">{title}</h3>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
     </section>
@@ -168,7 +183,12 @@ export function PraticheFiltriBar({
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
           Filtro veloce
         </h2>
-      <form method="get" action="/pratiche" className="flex flex-wrap gap-2">
+      <form
+        id="pratiche-filtro-veloce"
+        method="get"
+        action="/pratiche"
+        className="flex flex-wrap gap-2"
+      >
         {hiddenNav}
         {/* Conserva filtri avanzati quando si usa solo la barra rapida */}
         {hasAltriFiltri(altri)
@@ -217,15 +237,31 @@ export function PraticheFiltriBar({
             )
           : null}
 
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Cerca in anagrafica ed estratto conto"
-          className="h-10 min-w-0 w-full flex-1 rounded-lg border border-[var(--line)] px-3 text-sm sm:min-w-56"
-        />
+        <Suspense
+          fallback={
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="Cerca in anagrafica ed estratto conto"
+              className="h-10 min-w-0 w-full flex-1 rounded-lg border border-[var(--line)] px-3 text-sm sm:min-w-56"
+            />
+          }
+        >
+          <DebouncedSearchInput
+            name="q"
+            defaultValue={q}
+            formId="pratiche-filtro-veloce"
+            placeholder="Cerca in anagrafica ed estratto conto"
+            className="h-10 min-w-0 w-full flex-1 rounded-lg border border-[var(--line)] px-3 text-sm sm:min-w-56"
+          />
+        </Suspense>
         <select
           name="stato"
-          defaultValue={stato || ""}
+          key={`stato-${stato || "all"}`}
+          value={stato ?? ""}
+          onChange={(e) => {
+            e.currentTarget.form?.requestSubmit();
+          }}
           className="h-10 min-w-0 w-full rounded-lg border border-[var(--line)] px-3 text-sm sm:w-auto"
         >
           <option value="">Tutti gli stati</option>
@@ -270,8 +306,8 @@ export function PraticheFiltriBar({
           title="Fascia oraria lavorazione"
         >
           <option value="">Tutta la giornata</option>
-          <option value="mattina">Mattina (09:00–13:00)</option>
-          <option value="pomeriggio">Pomeriggio (13:05–18:00)</option>
+          <option value="mattina">Mattina (09:00–13:30)</option>
+          <option value="pomeriggio">Pomeriggio (13:31–19:00)</option>
         </select>
         <button
           type="submit"
@@ -312,16 +348,16 @@ export function PraticheFiltriBar({
               ? ` dal ${new Date(dataLavorateDa + "T12:00:00").toLocaleDateString("it-IT")} in poi`
               : ` fino al ${new Date(dataLavorateA! + "T12:00:00").toLocaleDateString("it-IT")}`}
           {lavorateFascia === "mattina"
-            ? " (mattina 09:00–13:00)"
+            ? " (mattina 09:00–13:30)"
             : lavorateFascia === "pomeriggio"
-              ? " (pomeriggio 13:05–18:00)"
+              ? " (pomeriggio 13:31–19:00)"
               : ""}
           .
         </p>
       ) : lavorateFascia ? (
         <p className="mb-2 text-xs text-[var(--muted)]">
           Filtro attivo: lavorazioni di oggi in fascia{" "}
-          {lavorateFascia === "mattina" ? "mattina (09:00–13:00)" : "pomeriggio (13:05–18:00)"}.
+          {lavorateFascia === "mattina" ? "mattina (09:00–13:30)" : "pomeriggio (13:31–19:00)"}.
         </p>
       ) : null}
       {nonToccateDa ? (
@@ -364,7 +400,7 @@ export function PraticheFiltriBar({
           ) : null}
 
           <div className="space-y-5">
-            <SezioneFiltri title="Filtri anagrafica">
+            <SezioneFiltri title="Filtri anagrafica" tone="anagrafica">
               <Field label="Debitore">
                 <input
                   name="debitore"
@@ -433,7 +469,7 @@ export function PraticheFiltriBar({
               </Field>
             </SezioneFiltri>
 
-            <SezioneFiltri title="Filtri contabili">
+            <SezioneFiltri title="Filtri contabili" tone="contabili">
               <DaA
                 label="Importo rata da / a"
                 nameDa="importoRataDa"
@@ -495,7 +531,7 @@ export function PraticheFiltriBar({
               </Field>
             </SezioneFiltri>
 
-            <SezioneFiltri title="Filtri codici">
+            <SezioneFiltri title="Filtri codici" tone="codici">
               <Field label="Operatore di affido">
                 <select name="operatore" defaultValue={a.operatore || ""} className={modalField}>
                   <option value="">Tutti</option>

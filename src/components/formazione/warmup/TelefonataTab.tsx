@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
 import { colorFromValue, PHASE_UI_SUBTITLES } from "@/lib/formazione/warmupDefaults";
 import { CallTrainingModal } from "@/components/formazione/warmup/CallTrainingModal";
@@ -43,8 +43,9 @@ export function TelefonataTab() {
 
   useEffect(() => {
     if (!db || !user) return;
-    const ref = doc(db, "listening_progress", user.uid);
-    return onSnapshot(ref, (snap) => {
+    let cancelled = false;
+    void getDoc(doc(db, "listening_progress", user.uid)).then((snap) => {
+      if (cancelled) return;
       const telefonata = snap.data()?.telefonata;
       if (telefonata && typeof telefonata === "object") {
         const map: ProgressMap = {};
@@ -54,6 +55,9 @@ export function TelefonataTab() {
         setCompleted(map);
       }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [db, user]);
 
   const presentazioneDone =

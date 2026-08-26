@@ -26,35 +26,60 @@ import { normalizeTenantSlug } from "@/lib/tenant";
 import { notificaSanzioneIncassoMassivo } from "@/lib/sanzioneIncassoMassivo";
 import {
   giornoAffidoRange,
+  parseCsvHeader,
   parseImportContesto,
 } from "@/lib/importContesto";
 import { isCodiceScarico, statoDaCodiceScarico } from "@/lib/scarico";
+import { RUOLI_LAVORAZIONE } from "@/lib/praticaOrdine";
 
 function fail(message: string): never {
   throw new Error(message);
 }
 
-export async function loginAction(formData: FormData) {
-  const email = String(formData.get("email") || "")
+function isRuoloLavorazione(role: string) {
+  return (RUOLI_LAVORAZIONE as readonly string[]).includes(role);
+}
+
+export async function loginAction(input: {
+  email?: string;
+  password?: string;
+  tenantSlug?: string;
+}) {
+  const email = String(input?.email || "")
     .trim()
     .toLowerCase();
-  const password = String(formData.get("password") || "");
-  const slug = normalizeTenantSlug(String(formData.get("tenantSlug") || ""));
+  const password = String(input?.password || "");
+  const slug = normalizeTenantSlug(String(input?.tenantSlug || ""));
   if (!slug) return { error: "Inserisci il codice azienda" };
+  if (!email) return { error: "Inserisci l'email" };
+  if (!password) return { error: "Inserisci la password" };
 
   const tenant = await prisma.tenant.findUnique({ where: { slug } });
-  if (!tenant || !tenant.active) {
+  if (!tenant || tenant.active === false) {
     return { error: "Azienda non trovata o non attiva" };
   }
 
   const user = await prisma.user.findUnique({
     where: { tenantId_email: { tenantId: tenant.id, email } },
   });
-  if (!user || !user.active) {
+  if (!user) {
+    console.error("[login] utente assente", { slug, email, tenantId: tenant.id });
     return { error: "Credenziali non valide" };
   }
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return { error: "Credenziali non valide" };
+  if (user.active === false) {
+    console.error("[login] utente disattivo", { email });
+    return { error: "Credenziali non valide" };
+  }
+  const hash = String(user.passwordHash || "");
+  const ok = hash ? await bcrypt.compare(password, hash) : false;
+  if (!ok) {
+    console.error("[login] password non valida", {
+      email,
+      hashLen: hash.length,
+      passwordLen: password.length,
+    });
+    return { error: "Credenziali non valide" };
+  }
   await Promise.all([
     createSession({
       id: user.id,
@@ -87,6 +112,15 @@ export async function loginAction(formData: FormData) {
   });
   if (user.formazioneOnly) {
     redirect("/formazione/progressi");
+  }
+  const { needsSediSetup } = await import("@/lib/sediSetup");
+  if (
+    await needsSediSetup({
+      role: user.role as Role,
+      tenantId: user.tenantId,
+    })
+  ) {
+    redirect("/setup-sedi");
   }
   redirect(needsPostazione ? "/seleziona-postazione" : "/");
 }
@@ -469,9 +503,13 @@ export async function addAttivitaAction(formData: FormData) {
     },
   });
 
+  const now = new Date();
   await prisma.pratica.update({
     where: { id: praticaId },
-    data: { updatedAt: new Date() },
+    data: {
+      updatedAt: now,
+      ...(isRuoloLavorazione(user.role) ? { ultimaLavorazioneAt: now } : {}),
+    },
   });
 
   await writeAudit({
@@ -794,6 +832,12 @@ export async function salvaMemoAgendaAction(formData: FormData) {
         })} — ${nota}`,
       },
     });
+    if (isRuoloLavorazione(user.role)) {
+      await prisma.pratica.update({
+        where: { id: praticaId },
+        data: { ultimaLavorazioneAt: new Date() },
+      });
+    }
   }
 
   await writeAudit({
@@ -962,9 +1006,13 @@ export async function sendMessaggioInternoAction(formData: FormData) {
         }),
       },
     });
+    const now = new Date();
     await prisma.pratica.update({
       where: { id: praticaId },
-      data: { updatedAt: new Date() },
+      data: {
+        updatedAt: now,
+        ...(isRuoloLavorazione(user.role) ? { ultimaLavorazioneAt: now } : {}),
+      },
     });
   }
 
@@ -1246,17 +1294,18 @@ export async function createPianoAction(formData: FormData) {
   const quota = Math.round((pratica.residuo / nRate) * 100) / 100;
   await prisma.pianoRata.deleteMany({ where: { praticaId } });
   const startDate = new Date(start);
-  for (let i = 0; i < nRate; i++) {
+  const rateData = Array.from({ length: nRate }, (_, i) => {
     const scadenza = new Date(startDate);
     scadenza.setMonth(scadenza.getMonth() + i);
     const importo =
       i === nRate - 1
         ? Math.round((pratica.residuo - quota * (nRate - 1)) * 100) / 100
         : quota;
-    await prisma.pianoRata.create({
-      data: { praticaId, numeroRata: i + 1, importo, scadenza },
-    });
-  }
+    return { praticaId, numeroRata: i + 1, importo, scadenza };
+  });
+  await Promise.all(
+    rateData.map((data) => prisma.pianoRata.create({ data }))
+  );
   await prisma.pratica.update({
     where: { id: praticaId },
     data: { stato: "PIANO" },
@@ -1416,9 +1465,9 @@ export async function deleteMandanteAction(formData: FormData) {
   });
   if (!existing) fail("Mandante non trovata");
 
-  if (existing._count.pratiche > 0) {
+  if ((existing._count?.pratiche ?? 0) > 0) {
     fail(
-      `Impossibile eliminare: sono collegate ${existing._count.pratiche} pratiche`
+      `Impossibile eliminare: sono collegate ${existing._count?.pratiche ?? 0} pratiche`
     );
   }
 
@@ -1480,21 +1529,69 @@ export async function importCsvAction(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Seleziona un file CSV" };
   }
-  const text = await file.text();
+  const text = (await file.text()).replace(/^\uFEFF/, "");
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return { error: "CSV vuoto" };
-  const header = lines[0].split(";").map((h) => h.trim().toLowerCase());
+  const { delim, header } = parseCsvHeader(lines[0]);
   const idx = (name: string) => header.indexOf(name);
+  if (idx("nome") < 0) {
+    return {
+      error:
+        "Colonna «nome» mancante nell'intestazione CSV (separatore ; o ,). Colonne utili: nome;cognome;cf;telefono;citta;lotto;capitale;interessi;spese",
+    };
+  }
   const { mandanteId, perimetro, lotto, affidoIl, mandanteCodice } = contesto.ok;
+  const fileName = file instanceof File ? file.name : null;
+
+  const existing = await prisma.importBatch.findFirst({
+    where: {
+      tenantId: user.tenantId,
+      tipo: "PRATICHE",
+      mandanteId,
+      perimetro,
+      lotto,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const isIntegrazione = Boolean(existing);
+  const batch =
+    existing ??
+    (await prisma.importBatch.create({
+      data: {
+        tenantId: user.tenantId,
+        tipo: "PRATICHE",
+        mandanteId,
+        mandanteCodice,
+        perimetro,
+        lotto,
+        affidoIl,
+        fileName,
+        nPratiche: 0,
+        createdById: user.id,
+        createdByName: user.name,
+      },
+    }));
 
   let created = 0;
+  let skipped = 0;
   for (const line of lines.slice(1)) {
-    const cols = line.split(";");
-    const nome = cols[idx("nome")]?.trim();
-    if (!nome) continue;
-    const capitale = Number(cols[idx("capitale")] || 0);
-    const interessi = Number(cols[idx("interessi")] || 0);
-    const spese = Number(cols[idx("spese")] || 0);
+    const cols = line.split(delim);    const nome = cols[idx("nome")]?.trim();
+    if (!nome) {
+      skipped += 1;
+      continue;
+    }
+    const capitale = Number(
+      String(cols[idx("capitale")] || "0").replace(",", ".")
+    );
+    const interessi = Number(
+      String(cols[idx("interessi")] || "0").replace(",", ".")
+    );
+    const spese = Number(String(cols[idx("spese")] || "0").replace(",", "."));
+    const lottoRiga =
+      cols[idx("lotto")]?.trim() ||
+      cols[idx("numero_mandante")]?.trim() ||
+      lotto;
     const debitore = await prisma.debitore.create({
       data: {
         tenantId: user.tenantId,
@@ -1503,6 +1600,9 @@ export async function importCsvAction(formData: FormData) {
         codiceFiscale: cols[idx("cf")]?.trim() || null,
         telefono: cols[idx("telefono")]?.trim() || null,
         citta: cols[idx("citta")]?.trim() || null,
+        indirizzo: cols[idx("indirizzo")]?.trim() || null,
+        cap: cols[idx("cap")]?.trim() || null,
+        provincia: cols[idx("provincia")]?.trim() || null,
       },
     });
     await prisma.pratica.create({
@@ -1511,28 +1611,59 @@ export async function importCsvAction(formData: FormData) {
         numero: await nextNumero(user.tenantId),
         mandanteId,
         debitoreId: debitore.id,
-        numeroMandante: lotto,
+        numeroMandante: lottoRiga,
         dataAffido: affidoIl,
         capitale,
         interessi,
         spese,
         residuo: capitale + interessi + spese,
         stato: "NUOVA",
+        importBatchId: batch.id,
       },
     });
     created += 1;
   }
-  await writeAudit({
-    userId: user.id,
-    tenantId: user.tenantId,
-    action: "import",
-    entity: "pratica",
-    dettaglio: `${created} pratiche · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`,
-  });
+
+  if (created === 0) {
+    if (!isIntegrazione) {
+      await prisma.importBatch.delete({ where: { id: batch.id } }).catch(() => undefined);
+    }
+  } else {
+    const totale = await prisma.pratica.count({
+      where: { tenantId: user.tenantId, importBatchId: batch.id },
+    });
+    await prisma.importBatch.update({
+      where: { id: batch.id },
+      data: {
+        nPratiche: totale,
+        ...(fileName ? { fileName } : {}),
+      },
+    });
+  }
+
+  if (created > 0) {
+    await writeAudit({
+      userId: user.id,
+      tenantId: user.tenantId,
+      action: isIntegrazione ? "import_integrazione" : "import",
+      entity: "pratica",
+      entityId: batch.id,
+      dettaglio: isIntegrazione
+        ? `Integrazione +${created} pratiche · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`
+        : `${created} pratiche · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`,
+    });
+  }
   revalidatePath("/pratiche");
   revalidatePath("/import");
+  if (created === 0) {
+    return {
+      error: `Nessuna pratica importata (${skipped} righe saltate). Controlla che il CSV abbia la colonna «nome» e il separatore ; o ,`,
+    };
+  }
   return {
-    ok: `Importate ${created} pratiche (mandante ${mandanteCodice}, perimetro ${perimetro}, lotto ${lotto})`,
+    ok: isIntegrazione
+      ? `Integrazione lotto ${lotto}: aggiunte ${created} pratiche (mandante ${mandanteCodice}, perimetro ${perimetro})`
+      : `Importate ${created} pratiche (mandante ${mandanteCodice}, perimetro ${perimetro}, lotto ${lotto})`,
   };
 }
 
@@ -1545,15 +1676,15 @@ export async function importIncassiCsvAction(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Seleziona un file CSV" };
   }
-  const text = await file.text();
+  const text = (await file.text()).replace(/^\uFEFF/, "");
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return { error: "CSV vuoto" };
-  const header = lines[0].split(";").map((h) => h.trim().toLowerCase());
+  const { delim, header } = parseCsvHeader(lines[0]);
   const idx = (name: string) => header.indexOf(name);
   const colNumero = idx("numero") >= 0 ? idx("numero") : idx("pratica");
   const colImporto = idx("importo");
   if (colNumero < 0 || colImporto < 0) {
-    return { error: "Intestazione richiesta: numero;importo (opzionali: data;metodo;causale;modo)" };
+    return { error: "Intestazione richiesta: numero;importo (opzionali: data;metodo;causale;modo). Separatore ; o ," };
   }
 
   const { mandanteId, perimetro, lotto, affidoIl, mandanteCodice } = contesto.ok;
@@ -1563,8 +1694,7 @@ export async function importIncassiCsvAction(formData: FormData) {
   const errori: string[] = [];
   const praticaIdsOk: string[] = [];
   for (const [i, line] of lines.slice(1).entries()) {
-    const cols = line.split(";");
-    const numero = cols[colNumero]?.trim();
+    const cols = line.split(delim);    const numero = cols[colNumero]?.trim();
     const importo = parseImportoCsv(cols[colImporto]);
     if (!numero || importo <= 0) {
       errori.push(`Riga ${i + 2}: numero o importo non validi`);

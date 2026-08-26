@@ -134,6 +134,17 @@ async function main() {
     },
   });
 
+  await prisma.user.create({
+    data: {
+      tenantId: tenant.id,
+      email: "supervisor.test@gestionale.local",
+      name: "Supervisor Test",
+      passwordHash,
+      role: "SUPERVISOR",
+      sedeId: sedeRoma.id,
+    },
+  });
+
   const backoffice = await prisma.user.create({
     data: {
       tenantId: tenant.id,

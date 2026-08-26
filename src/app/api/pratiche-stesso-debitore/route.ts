@@ -54,14 +54,11 @@ export async function GET(req: Request) {
 
   const cf = normalizeCf(pratica.debitore.codiceFiscale) || null;
 
-  const [idsStessoMandante, idsTuttiMandanti] = await Promise.all([
-    praticaIdsCollegatePerCf(pratica.id, { stessoMandante: true }),
-    praticaIdsCollegatePerCf(pratica.id, { stessoMandante: false }),
-  ]);
-
-  const altreIds = idsStessoMandante.filter((id) => id !== pratica.id);
-  const chiuseIds = idsTuttiMandanti.filter((id) => id !== pratica.id);
-  const fetchIds = [...new Set([...altreIds, ...chiuseIds])];
+  // Una sola risoluzione collegati (tutti i mandanti); F9/F10 filtrano in memoria.
+  const linkedIds = await praticaIdsCollegatePerCf(pratica.id, {
+    stessoMandante: false,
+  });
+  const fetchIds = linkedIds.filter((id) => id !== pratica.id);
 
   const rows = fetchIds.length
     ? await prisma.pratica.findMany({
@@ -71,21 +68,15 @@ export async function GET(req: Request) {
       })
     : [];
 
-  const byId = new Map(rows.map((p) => [p.id, p]));
-
   // F9: stesso mandante, fase in lavorazione (non chiusa)
-  const altre = altreIds
-    .map((id) => byId.get(id))
-    .filter(Boolean)
-    .filter((p) => !isPraticaChiusa(p!.stato))
-    .map((p) => mapVoce(p!, cf));
+  const altre = rows
+    .filter((p) => p.mandanteId === pratica.mandanteId && !isPraticaChiusa(p.stato))
+    .map((p) => mapVoce(p, cf));
 
   // F10: tutti i mandanti, fase chiusa
-  const altreChiuse = chiuseIds
-    .map((id) => byId.get(id))
-    .filter(Boolean)
-    .filter((p) => isPraticaChiusa(p!.stato))
-    .map((p) => mapVoce(p!, cf));
+  const altreChiuse = rows
+    .filter((p) => isPraticaChiusa(p.stato))
+    .map((p) => mapVoce(p, cf));
 
   return NextResponse.json({
     corrente: mapVoce(pratica, cf),

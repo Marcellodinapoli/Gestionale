@@ -2,6 +2,8 @@
  * Backend operativo Credixa su Firestore.
  * API compatibile con i delegate Prisma usati dall'app.
  * Path: credixa/{tenantId}/{collection}/{id}
+ *
+ * Performance: cache per-richiesta, include in batch, getById mirati al tenant.
  */
 import { randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
@@ -11,6 +13,19 @@ import {
   PRISMA_DELEGATE_TO_MODEL,
   collectionForOpsModel,
 } from "@/lib/firebase/opsCollections";
+import {
+  collectionCacheKey,
+  docCacheKey,
+  getFirebaseRequestCache,
+  invalidateModelCache,
+} from "@/lib/firebase/requestCache";
+import {
+  applyPlanToQuery,
+  getDocsByIds,
+  planFirestoreQuery,
+  type Doc as FDoc,
+} from "@/lib/firebase/firestoreQuery";
+import { ttlGet, ttlInvalidateTenantModel, ttlSet } from "@/lib/firebase/ttlCache";
 
 type Doc = Record<string, unknown>;
 
@@ -18,7 +33,7 @@ function cuidLike() {
   return `c${randomBytes(12).toString("hex")}`;
 }
 
-function reviveDates(doc: Doc): Doc {
+function reviveDates(doc: Doc, model?: string): Doc {
   const out: Doc = { ...doc };
   for (const [k, v] of Object.entries(out)) {
     if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
@@ -27,6 +42,17 @@ function reviveDates(doc: Doc): Doc {
     }
   }
   delete out._credixaMirror;
+  if (
+    model &&
+    (model === "Tenant" ||
+      model === "User" ||
+      model === "Sede" ||
+      model === "Postazione" ||
+      model === "Mandante") &&
+    out.active === undefined
+  ) {
+    out.active = true;
+  }
   return out;
 }
 
@@ -92,11 +118,30 @@ function matchScalar(actual: unknown, expected: unknown): boolean {
 }
 
 async function listTenantIds(db: ReturnType<typeof getFirebaseFirestore>): Promise<string[]> {
-  const roots = await db.collection("credixa").listDocuments();
-  return roots.map((r) => r.id);
+  const store = getFirebaseRequestCache();
+  if (!store.tenantIds) {
+    store.tenantIds = db
+      .collection("credixa")
+      .listDocuments()
+      .then((roots) => roots.map((r) => r.id));
+  }
+  return store.tenantIds;
 }
 
-async function loadCollection(model: string, tenantId?: string | null): Promise<Doc[]> {
+function indexCollection(model: string, tenantId: string | null | undefined, rows: Doc[]) {
+  const store = getFirebaseRequestCache();
+  const key = collectionCacheKey(model, tenantId);
+  const byId = new Map<string, Doc>();
+  for (const r of rows) byId.set(String(r.id), r);
+  store.indexes.set(key, byId as Map<string, unknown>);
+  // Propaga anche in docs cache
+  for (const r of rows) {
+    const id = String(r.id);
+    store.docs.set(docCacheKey(model, id), Promise.resolve(r));
+  }
+}
+
+async function loadCollectionUncached(model: string, tenantId?: string | null): Promise<Doc[]> {
   const col = collectionForOpsModel(model);
   if (!col) return [];
   const db = getFirebaseFirestore();
@@ -105,54 +150,114 @@ async function loadCollection(model: string, tenantId?: string | null): Promise<
     if (tenantId) {
       const snap = await db.doc(`credixa/${tenantId}/_meta/tenant`).get();
       if (!snap.exists) return [];
-      return [reviveDates({ id: tenantId, ...(snap.data() as Doc) })];
+      return [reviveDates({ id: tenantId, ...(snap.data() as Doc) }, model)];
     }
     const ids = await listTenantIds(db);
+    const snaps = await Promise.all(ids.map((id) => db.doc(`credixa/${id}/_meta/tenant`).get()));
     const rows: Doc[] = [];
-    for (const id of ids) {
-      const snap = await db.doc(`credixa/${id}/_meta/tenant`).get();
+    for (let i = 0; i < ids.length; i++) {
+      const snap = snaps[i]!;
       if (!snap.exists) continue;
-      rows.push(reviveDates({ id, ...(snap.data() as Doc) }));
+      rows.push(reviveDates({ id: ids[i], ...(snap.data() as Doc) }, model));
     }
     return rows;
   }
 
   if (tenantId) {
+    const cached = ttlGet<Doc[]>(tenantId, model, "all");
+    if (cached) return cached.map((r) => ({ ...r }));
     const snap = await db.collection(`credixa/${tenantId}/${col}`).get();
-    return snap.docs.map((d) => reviveDates({ id: d.id, tenantId, ...(d.data() as Doc) }));
+    const rows = snap.docs.map((d) =>
+      reviveDates({ id: d.id, tenantId, ...(d.data() as Doc) }, model)
+    );
+    ttlSet(tenantId, model, rows, 12_000, "all");
+    return rows;
   }
 
-  // Evita collectionGroup (richiede indici): scorre i tenant.
   const ids = await listTenantIds(db);
+  const snaps = await Promise.all(ids.map((tid) => db.collection(`credixa/${tid}/${col}`).get()));
   const rows: Doc[] = [];
-  for (const tid of ids) {
-    const snap = await db.collection(`credixa/${tid}/${col}`).get();
-    for (const d of snap.docs) {
-      rows.push(reviveDates({ id: d.id, tenantId: tid, ...(d.data() as Doc) }));
+  for (let i = 0; i < ids.length; i++) {
+    const tid = ids[i]!;
+    for (const d of snaps[i]!.docs) {
+      rows.push(reviveDates({ id: d.id, tenantId: tid, ...(d.data() as Doc) }, model));
     }
   }
   return rows;
 }
 
-async function getById(model: string, id: string): Promise<Doc | null> {
-  const col = collectionForOpsModel(model);
-  if (!col || !id) return null;
-  const db = getFirebaseFirestore();
-
-  if (model === "Tenant") {
-    const snap = await db.doc(`credixa/${id}/_meta/tenant`).get();
-    if (!snap.exists) return null;
-    return reviveDates({ id, ...(snap.data() as Doc) });
+async function loadCollection(model: string, tenantId?: string | null): Promise<Doc[]> {
+  const store = getFirebaseRequestCache();
+  const key = collectionCacheKey(model, tenantId);
+  let pending = store.collections.get(key) as Promise<Doc[]> | undefined;
+  if (!pending) {
+    pending = loadCollectionUncached(model, tenantId).then((rows) => {
+      indexCollection(model, tenantId, rows);
+      return rows;
+    });
+    store.collections.set(key, pending);
   }
+  return pending;
+}
 
-  const ids = await listTenantIds(db);
-  for (const tid of ids) {
-    const snap = await db.doc(`credixa/${tid}/${col}/${id}`).get();
-    if (snap.exists) {
-      return reviveDates({ id, tenantId: tid, ...(snap.data() as Doc) });
+async function getById(model: string, id: string, tenantHint?: string | null): Promise<Doc | null> {
+  if (!id) return null;
+  const col = collectionForOpsModel(model);
+  if (!col) return null;
+
+  const store = getFirebaseRequestCache();
+  const dKey = docCacheKey(model, id);
+  const cached = store.docs.get(dKey) as Promise<Doc | null> | undefined;
+  if (cached) return cached;
+
+  // Indice collection già caricata
+  if (tenantHint) {
+    const idx = store.indexes.get(collectionCacheKey(model, tenantHint)) as Map<string, Doc> | undefined;
+    if (idx?.has(id)) {
+      const row = idx.get(id)!;
+      store.docs.set(dKey, Promise.resolve(row));
+      return row;
     }
   }
-  return null;
+  const starIdx = store.indexes.get(collectionCacheKey(model, null)) as Map<string, Doc> | undefined;
+  if (starIdx?.has(id)) {
+    const row = starIdx.get(id)!;
+    store.docs.set(dKey, Promise.resolve(row));
+    return row;
+  }
+
+  const promise = (async (): Promise<Doc | null> => {
+    const db = getFirebaseFirestore();
+
+    if (model === "Tenant") {
+      const snap = await db.doc(`credixa/${id}/_meta/tenant`).get();
+      if (!snap.exists) return null;
+      return reviveDates({ id, ...(snap.data() as Doc) }, model);
+    }
+
+    if (tenantHint) {
+      const snap = await db.doc(`credixa/${tenantHint}/${col}/${id}`).get();
+      if (snap.exists) {
+        return reviveDates({ id, tenantId: tenantHint, ...(snap.data() as Doc) }, model);
+      }
+    }
+
+    // Preferisci caricare la collection del tenant se già in cache via scan
+    const ids = await listTenantIds(db);
+    const snaps = await Promise.all(
+      ids.map((tid) => db.doc(`credixa/${tid}/${col}/${id}`).get())
+    );
+    for (let i = 0; i < ids.length; i++) {
+      const snap = snaps[i]!;
+      if (snap.exists) {
+        return reviveDates({ id, tenantId: ids[i], ...(snap.data() as Doc) }, model);
+      }
+    }
+    return null;
+  })();
+
+  store.docs.set(dKey, promise);
+  return promise;
 }
 
 async function resolveTenantId(row: Doc): Promise<string> {
@@ -184,12 +289,17 @@ async function saveDoc(model: string, row: Doc) {
     await db.doc(`credixa/${id}/_meta/tenant`).set(serializeForWrite({ ...row, id }), {
       merge: true,
     });
+    invalidateModelCache(model, id);
     return;
   }
 
   const tid = await resolveTenantId(row);
+  if (!row.updatedAt) row.updatedAt = new Date();
   const payload = serializeForWrite({ ...row, id, tenantId: tid });
   await db.doc(`credixa/${tid}/${col}/${id}`).set(payload, { merge: true });
+  invalidateModelCache(model, tid);
+  ttlInvalidateTenantModel(tid, model);
+  getFirebaseRequestCache().docs.delete(docCacheKey(model, id));
 }
 
 async function deleteDoc(model: string, row: Doc) {
@@ -199,6 +309,7 @@ async function deleteDoc(model: string, row: Doc) {
   const id = String(row.id || "");
   if (model === "Tenant") {
     await db.doc(`credixa/${id}/_meta/tenant`).delete();
+    invalidateModelCache(model, id);
     return;
   }
   let tid = String(row.tenantId || "");
@@ -207,6 +318,9 @@ async function deleteDoc(model: string, row: Doc) {
     tid = String(existing?.tenantId || "");
   }
   if (tid && id) await db.doc(`credixa/${tid}/${col}/${id}`).delete();
+  invalidateModelCache(model, tid || null);
+  if (tid) ttlInvalidateTenantModel(tid, model);
+  getFirebaseRequestCache().docs.delete(docCacheKey(model, id));
 }
 
 async function matchWhere(model: string, row: Doc, where: Doc | undefined): Promise<boolean> {
@@ -236,9 +350,44 @@ async function matchWhere(model: string, row: Doc, where: Doc | undefined): Prom
   }
 
   const relations = MODEL_RELATIONS[model] || {};
+  const tenantHint = typeof row.tenantId === "string" ? row.tenantId : undefined;
 
   for (const [key, expected] of Object.entries(where)) {
     if (key === "AND" || key === "OR" || key === "NOT") continue;
+
+    if (key === "tenantId_email" && expected && typeof expected === "object") {
+      const te = expected as Doc;
+      if (String(row.tenantId) !== String(te.tenantId)) return false;
+      if (String(row.email || "").toLowerCase() !== String(te.email || "").toLowerCase()) {
+        return false;
+      }
+      continue;
+    }
+    if (key === "tenantId_nome" && expected && typeof expected === "object") {
+      const tn = expected as Doc;
+      if (String(row.tenantId) !== String(tn.tenantId)) return false;
+      if (String(row.nome) !== String(tn.nome)) return false;
+      continue;
+    }
+    if (key === "tenantId_codice" && expected && typeof expected === "object") {
+      const tc = expected as Doc;
+      if (String(row.tenantId) !== String(tc.tenantId)) return false;
+      if (String(row.codice) !== String(tc.codice)) return false;
+      continue;
+    }
+    if (key === "tenantId_numero" && expected && typeof expected === "object") {
+      const tn = expected as Doc;
+      if (String(row.tenantId) !== String(tn.tenantId)) return false;
+      if (String(row.numero) !== String(tn.numero)) return false;
+      continue;
+    }
+    if (key === "tenantId_chiave" && expected && typeof expected === "object") {
+      const tk = expected as Doc;
+      if (String(row.tenantId) !== String(tk.tenantId)) return false;
+      if (String(row.chiave) !== String(tk.chiave)) return false;
+      continue;
+    }
+
     const rel = relations[key];
     if (rel && !rel.many) {
       const localVal = row[rel.local];
@@ -247,7 +396,9 @@ async function matchWhere(model: string, row: Doc, where: Doc | undefined): Prom
         if (typeof expected === "object" && expected && (expected as Doc).equals === null) continue;
         return false;
       }
-      const related = await getById(rel.model, String(localVal));
+      // Precarica collection correlata (cache) invece di N getById ciechi
+      if (tenantHint) await loadCollection(rel.model, tenantHint);
+      const related = await getById(rel.model, String(localVal), tenantHint);
       if (!related) return false;
       if (typeof expected === "object" && expected !== null && !Array.isArray(expected)) {
         if (!(await matchWhere(rel.model, related, expected as Doc))) return false;
@@ -263,10 +414,37 @@ function applySelect(row: Doc, select: Doc | undefined): Doc {
   if (!select) return row;
   const out: Doc = {};
   for (const [k, v] of Object.entries(select)) {
-    if (v) out[k] = row[k];
+    if (!v) continue;
+    if (typeof v === "object") {
+      // Relazione nested: usa valore risolto, altrimenti null (mai undefined)
+      out[k] = k in row ? row[k] : null;
+      continue;
+    }
+    out[k] = row[k];
   }
   out.id = row.id;
   return out;
+}
+
+function relationArgsFromSelectOrInclude(
+  model: string,
+  select?: Doc,
+  include?: Doc
+): Doc | undefined {
+  const relations = MODEL_RELATIONS[model] || {};
+  const out: Doc = {};
+  for (const src of [include, select]) {
+    if (!src) continue;
+    for (const [k, v] of Object.entries(src)) {
+      if (!v) continue;
+      if (k === "_count") {
+        out._count = v;
+        continue;
+      }
+      if (relations[k]) out[k] = v === true ? true : v;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function sortRows(rows: Doc[], orderBy: Doc | Doc[] | undefined): Doc[] {
@@ -282,76 +460,301 @@ function sortRows(rows: Doc[], orderBy: Doc | Doc[] | undefined): Doc[] {
       if (av == null && bv == null) continue;
       if (av == null) return dir === "asc" ? -1 : 1;
       if (bv == null) return dir === "asc" ? 1 : -1;
-      if ((av as never) < (bv as never)) return dir === "desc" ? 1 : -1;
-      if ((av as never) > (bv as never)) return dir === "desc" ? -1 : 1;
+      const toCmp = (x: unknown) => {
+        if (x instanceof Date) return x.getTime();
+        if (typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x)) {
+          const t = new Date(x).getTime();
+          if (!Number.isNaN(t)) return t;
+        }
+        return x;
+      };
+      const aCmp = toCmp(av);
+      const bCmp = toCmp(bv);
+      if ((aCmp as never) < (bCmp as never)) return dir === "desc" ? 1 : -1;
+      if ((aCmp as never) > (bCmp as never)) return dir === "desc" ? -1 : 1;
     }
     return 0;
   });
 }
 
+async function resolveOneInclude(
+  model: string,
+  row: Doc,
+  key: string,
+  conf: unknown,
+  relatedPool?: Map<string, Doc[]> | Map<string, Doc>
+): Promise<unknown> {
+  const relations = MODEL_RELATIONS[model] || {};
+  const rel = relations[key];
+  if (!rel) return undefined;
+
+  const nestedInclude =
+    typeof conf === "object" && conf && "include" in (conf as Doc)
+      ? ((conf as Doc).include as Doc)
+      : undefined;
+  const nestedSelect =
+    typeof conf === "object" && conf && "select" in (conf as Doc)
+      ? ((conf as Doc).select as Doc)
+      : undefined;
+
+  if (rel.many) {
+    const confObj = typeof conf === "object" && conf ? (conf as Doc) : {};
+    const nestedWhere = "where" in confObj ? (confObj.where as Doc | undefined) : undefined;
+    const nestedOrderBy =
+      "orderBy" in confObj ? (confObj.orderBy as Doc | Doc[] | undefined) : undefined;
+    const nestedTake = typeof confObj.take === "number" ? confObj.take : undefined;
+
+    let related: Doc[];
+    if (relatedPool instanceof Map && relatedPool.size >= 0) {
+      const byFk = relatedPool as Map<string, Doc[]>;
+      related = [...(byFk.get(String(row[rel.local])) || [])];
+    } else {
+      const all = await loadCollection(rel.model, row.tenantId as string | undefined);
+      related = all.filter((r) => String(r[rel.foreign]) === String(row[rel.local]));
+    }
+
+    if (nestedWhere) {
+      const filtered: Doc[] = [];
+      for (const r of related) {
+        if (await matchWhere(rel.model, r, nestedWhere)) filtered.push(r);
+      }
+      related = filtered;
+    }
+    related = sortRows(related, nestedOrderBy);
+    if (nestedTake != null) related = related.slice(0, nestedTake);
+    related = await Promise.all(
+      related.map(async (r) => {
+        let x = r;
+        if (nestedInclude) x = await resolveIncludes(rel.model, x, nestedInclude);
+        if (nestedSelect) x = applySelect(x, nestedSelect);
+        return x;
+      })
+    );
+    return related;
+  }
+
+  const localVal = row[rel.local];
+  if (localVal == null) return null;
+  let related: Doc | null = null;
+  if (relatedPool instanceof Map) {
+    const byId = relatedPool as Map<string, Doc>;
+    related = byId.get(String(localVal)) || null;
+  }
+  if (!related) {
+    related = await getById(rel.model, String(localVal), row.tenantId as string | undefined);
+  }
+  if (related) {
+    if (nestedSelect) related = applySelect(related, nestedSelect);
+    if (nestedInclude) related = await resolveIncludes(rel.model, related, nestedInclude);
+  }
+  return related;
+}
+
 async function resolveIncludes(model: string, row: Doc, include: Doc | undefined): Promise<Doc> {
   if (!include) return row;
-  const relations = MODEL_RELATIONS[model] || {};
   const out: Doc = { ...row };
-
-  for (const [key, conf] of Object.entries(include)) {
-    if (!conf || key === "_count") continue;
-    const rel = relations[key];
-    if (!rel) continue;
-    const nestedInclude =
-      typeof conf === "object" && conf && "include" in (conf as Doc)
-        ? ((conf as Doc).include as Doc)
-        : undefined;
-    const nestedSelect =
-      typeof conf === "object" && conf && "select" in (conf as Doc)
-        ? ((conf as Doc).select as Doc)
-        : undefined;
-
-    if (rel.many) {
-      const all = await loadCollection(rel.model, row.tenantId as string | undefined);
-      let related = all.filter((r) => String(r[rel.foreign]) === String(row[rel.local]));
-      related = await Promise.all(
-        related.map(async (r) => {
-          let x = nestedSelect ? applySelect(r, nestedSelect) : r;
-          if (nestedInclude) x = await resolveIncludes(rel.model, x, nestedInclude);
-          return x;
-        })
-      );
-      out[key] = related;
-    } else {
-      const localVal = row[rel.local];
-      if (localVal == null) {
-        out[key] = null;
-        continue;
-      }
-      let related = await getById(rel.model, String(localVal));
-      if (related) {
-        if (nestedSelect) related = applySelect(related, nestedSelect);
-        if (nestedInclude) related = await resolveIncludes(rel.model, related, nestedInclude);
-      }
-      out[key] = related;
-    }
-  }
+  const keys = Object.keys(include).filter((k) => include[k] && k !== "_count");
+  await Promise.all(
+    keys.map(async (key) => {
+      out[key] = await resolveOneInclude(model, row, key, include[key]);
+    })
+  );
 
   if (include._count) {
     const countConf = include._count as Doc;
     const select = (countConf.select || countConf) as Doc;
+    const relations = MODEL_RELATIONS[model] || {};
     const counts: Doc = {};
-    for (const [key, on] of Object.entries(select)) {
-      if (!on) continue;
-      const rel = relations[key];
-      if (!rel?.many) {
-        counts[key] = 0;
-        continue;
-      }
-      const all = await loadCollection(rel.model, row.tenantId as string | undefined);
-      counts[key] = all.filter((r) => String(r[rel.foreign]) === String(row[rel.local])).length;
-    }
+    await Promise.all(
+      Object.entries(select).map(async ([key, on]) => {
+        if (!on) return;
+        const rel = relations[key];
+        if (!rel?.many) {
+          counts[key] = 0;
+          return;
+        }
+        const all = await loadCollection(rel.model, row.tenantId as string | undefined);
+        counts[key] = all.filter((r) => String(r[rel.foreign]) === String(row[rel.local])).length;
+      })
+    );
     out._count = counts;
   }
 
   return out;
 }
+
+/** Risolve include per N righe: solo docs degli ID necessari (getAll), non collection intere. */
+async function resolveIncludesBatch(
+  model: string,
+  rows: Doc[],
+  include: Doc | undefined
+): Promise<Doc[]> {
+  if (!include || !rows.length) {
+    if (!include) return rows;
+    return Promise.all(rows.map((r) => resolveIncludes(model, r, include)));
+  }
+
+  const relations = MODEL_RELATIONS[model] || {};
+  const tenantHint = rows.find((r) => typeof r.tenantId === "string")?.tenantId as
+    | string
+    | undefined;
+  const db = getFirebaseFirestore();
+
+  type RelPlan = {
+    key: string;
+    conf: unknown;
+    rel: { model: string; local: string; foreign: string; many?: boolean };
+  };
+  const plans: RelPlan[] = [];
+  for (const [key, conf] of Object.entries(include)) {
+    if (!conf || key === "_count") continue;
+    const rel = relations[key];
+    if (rel) plans.push({ key, conf, rel });
+  }
+
+  // Pool many solo per `_count` (senza attaccare le liste al risultato)
+  const countOnlyPlans: RelPlan[] = [];
+  if (include._count) {
+    const countConf = include._count as Doc;
+    const select = (countConf.select || countConf) as Doc;
+    for (const [key, on] of Object.entries(select)) {
+      if (!on || plans.some((p) => p.key === key)) continue;
+      const rel = relations[key];
+      if (rel?.many) countOnlyPlans.push({ key, conf: true, rel });
+    }
+  }
+
+  const manyPools = new Map<string, Map<string, Doc[]>>();
+  const onePools = new Map<string, Map<string, Doc>>();
+
+  await Promise.all(
+    [...plans, ...countOnlyPlans].map(async ({ key, rel }) => {
+      const colName = collectionForOpsModel(rel.model);
+      if (!colName || !tenantHint) {
+        // Fallback legacy
+        if (rel.many) {
+          const all = await loadCollection(rel.model, tenantHint);
+          const byFk = new Map<string, Doc[]>();
+          for (const r of all) {
+            const fk = String(r[rel.foreign] ?? "");
+            if (!byFk.has(fk)) byFk.set(fk, []);
+            byFk.get(fk)!.push(r);
+          }
+          manyPools.set(key, byFk);
+        } else {
+          const ids = [...new Set(rows.map((r) => r[rel.local]).filter(Boolean).map(String))];
+          const byId = await getDocsByIds(db, tenantHint || "", colName || "x", ids, (d) =>
+            reviveDates(d, rel.model)
+          );
+          onePools.set(key, byId);
+        }
+        return;
+      }
+
+      if (rel.many) {
+        const parentIds = [...new Set(rows.map((r) => String(r[rel.local] ?? "")).filter(Boolean))];
+        const byFk = new Map<string, Doc[]>();
+        // Query where foreign in parentIds (chunk 30)
+        for (let i = 0; i < parentIds.length; i += 30) {
+          const chunk = parentIds.slice(i, i + 30);
+          if (!chunk.length) continue;
+          const confObj = typeof plans.find((p) => p.key === key)?.conf === "object"
+            ? (plans.find((p) => p.key === key)!.conf as Doc)
+            : {};
+          const nestedTake = typeof confObj.take === "number" ? confObj.take : undefined;
+          let q: FirebaseFirestore.Query = db
+            .collection(`credixa/${tenantHint}/${colName}`)
+            .where(rel.foreign, "in", chunk);
+          // Per take:1 orderBy createdAt desc — solo se richiesto
+          if (
+            nestedTake === 1 &&
+            confObj.orderBy &&
+            typeof confObj.orderBy === "object" &&
+            !Array.isArray(confObj.orderBy)
+          ) {
+            const [f, d] = Object.entries(confObj.orderBy as Doc)[0] || [];
+            if (f && (d === "asc" || d === "desc")) {
+              try {
+                q = q.orderBy(f, d);
+              } catch {
+                /* index missing — senza order */
+              }
+            }
+          }
+          try {
+            const snap = await q.get();
+            for (const doc of snap.docs) {
+              const row = reviveDates(
+                { id: doc.id, tenantId: tenantHint, ...(doc.data() as Doc) },
+                rel.model
+              );
+              const fk = String(row[rel.foreign] ?? "");
+              if (!byFk.has(fk)) byFk.set(fk, []);
+              byFk.get(fk)!.push(row);
+            }
+          } catch {
+            // Indice mancante: fallback get per parent (ancora meglio del full scan globale)
+            for (const pid of chunk) {
+              const snap = await db
+                .collection(`credixa/${tenantHint}/${colName}`)
+                .where(rel.foreign, "==", pid)
+                .limit(nestedTake ?? 50)
+                .get();
+              for (const doc of snap.docs) {
+                const row = reviveDates(
+                  { id: doc.id, tenantId: tenantHint, ...(doc.data() as Doc) },
+                  rel.model
+                );
+                const fk = String(row[rel.foreign] ?? "");
+                if (!byFk.has(fk)) byFk.set(fk, []);
+                byFk.get(fk)!.push(row);
+              }
+            }
+          }
+        }
+        manyPools.set(key, byFk);
+      } else {
+        const ids = [...new Set(rows.map((r) => r[rel.local]).filter((v) => v != null).map(String))];
+        const byId = await getDocsByIds(db, tenantHint, colName, ids, (d) =>
+          reviveDates(d, rel.model)
+        );
+        onePools.set(key, byId);
+      }
+    })
+  );
+
+  return Promise.all(
+    rows.map(async (row) => {
+      const out: Doc = { ...row };
+      await Promise.all(
+        plans.map(async ({ key, conf, rel }) => {
+          const pool = rel.many ? manyPools.get(key) : onePools.get(key);
+          out[key] = await resolveOneInclude(model, row, key, conf, pool);
+        })
+      );
+
+      if (include._count) {
+        const countConf = include._count as Doc;
+        const select = (countConf.select || countConf) as Doc;
+        const counts: Doc = {};
+        for (const [ckey, on] of Object.entries(select)) {
+          if (!on) continue;
+          const rel = relations[ckey];
+          if (!rel?.many) {
+            counts[ckey] = 0;
+            continue;
+          }
+          const pool = manyPools.get(ckey);
+          counts[ckey] = pool ? (pool.get(String(row[rel.local])) || []).length : 0;
+        }
+        out._count = counts;
+      }
+      return out;
+    })
+  );
+}
+
+
 
 function extractTenantHint(where: Doc | undefined): string | undefined {
   if (!where) return undefined;
@@ -365,7 +768,36 @@ function extractTenantHint(where: Doc | undefined): string | undefined {
       if (t) return t;
     }
   }
+  // Nested relation filters (es. pratica: { tenantId })
+  for (const [k, v] of Object.entries(where)) {
+    if (k === "AND" || k === "OR" || k === "NOT") continue;
+    if (v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date)) {
+      const t = extractTenantHint(v as Doc);
+      if (t) return t;
+    }
+  }
   return undefined;
+}
+
+/** Pre-carica relazioni usate nel where (es. User per filtro supervisor). */
+async function prefetchWhereRelations(model: string, where: Doc | undefined, tenantHint?: string) {
+  if (!where) return;
+  const relations = MODEL_RELATIONS[model] || {};
+  const models = new Set<string>();
+  const walk = (w: Doc) => {
+    if (Array.isArray(w.AND)) (w.AND as Doc[]).forEach(walk);
+    if (Array.isArray(w.OR)) (w.OR as Doc[]).forEach(walk);
+    if (w.NOT) {
+      if (Array.isArray(w.NOT)) (w.NOT as Doc[]).forEach(walk);
+      else walk(w.NOT as Doc);
+    }
+    for (const key of Object.keys(w)) {
+      const rel = relations[key];
+      if (rel && !rel.many) models.add(rel.model);
+    }
+  };
+  walk(where);
+  await Promise.all([...models].map((m) => loadCollection(m, tenantHint)));
 }
 
 function createDelegate(model: string) {
@@ -373,7 +805,8 @@ function createDelegate(model: string) {
     async findUnique(args: { where: Doc; include?: Doc; select?: Doc }) {
       const where = args.where || {};
       let row: Doc | null = null;
-      if (typeof where.id === "string") row = await getById(model, where.id);
+      const tenantHint = extractTenantHint(where);
+      if (typeof where.id === "string") row = await getById(model, where.id, tenantHint);
       else if (where.tenantId_email) {
         const te = where.tenantId_email as Doc;
         const all = await loadCollection(model, String(te.tenantId));
@@ -407,13 +840,14 @@ function createDelegate(model: string) {
               String(r.tenantId) === String(tn.tenantId) && String(r.numero) === String(tn.numero)
           ) || null;
       } else if (where.praticaId && model === "PraticaLock") {
-        const all = await loadCollection(model);
+        const all = await loadCollection(model, tenantHint);
         row = all.find((r) => String(r.praticaId) === String(where.praticaId)) || null;
       } else if (where.incassoId && model === "Provvigione") {
-        const all = await loadCollection(model);
+        const all = await loadCollection(model, tenantHint);
         row = all.find((r) => String(r.incassoId) === String(where.incassoId)) || null;
       } else {
-        const all = await loadCollection(model, extractTenantHint(where));
+        await prefetchWhereRelations(model, where, tenantHint);
+        const all = await loadCollection(model, tenantHint);
         for (const r of all) {
           if (await matchWhere(model, r, where)) {
             row = r;
@@ -424,7 +858,8 @@ function createDelegate(model: string) {
       if (!row) return null;
       if (!(await matchWhere(model, row, where))) return null;
       let out = row;
-      if (args.include) out = await resolveIncludes(model, out, args.include);
+      const relArgs = relationArgsFromSelectOrInclude(model, args.select, args.include);
+      if (relArgs) out = await resolveIncludes(model, out, relArgs);
       if (args.select) out = applySelect(out, args.select);
       return out;
     },
@@ -447,12 +882,90 @@ function createDelegate(model: string) {
         distinct?: string[];
       } = {}
     ) {
-      let rows = await loadCollection(model, extractTenantHint(args.where));
-      const filtered: Doc[] = [];
-      for (const r of rows) {
-        if (await matchWhere(model, r, args.where)) filtered.push(r);
+      const tenantHint = extractTenantHint(args.where);
+      const relations = MODEL_RELATIONS[model] || {};
+      const col = collectionForOpsModel(model);
+
+      // id in [...] → getAll mirato (no full scan)
+      const idIn = args.where?.id;
+      if (
+        tenantHint &&
+        col &&
+        idIn &&
+        typeof idIn === "object" &&
+        Array.isArray((idIn as Doc).in)
+      ) {
+        const ids = ((idIn as Doc).in as unknown[]).map(String);
+        const db = getFirebaseFirestore();
+        const byId = await getDocsByIds(db, tenantHint, col, ids, (d) => reviveDates(d, model));
+        let rows = ids.map((id) => byId.get(id)!).filter(Boolean);
+        for (const r of [...rows]) {
+          if (!(await matchWhere(model, r, args.where))) {
+            rows = rows.filter((x) => x.id !== r.id);
+          }
+        }
+        rows = sortRows(rows, args.orderBy);
+        if (args.skip) rows = rows.slice(args.skip);
+        if (args.take != null) rows = rows.slice(0, args.take);
+        const relArgs = relationArgsFromSelectOrInclude(model, args.select, args.include);
+        if (relArgs) rows = await resolveIncludesBatch(model, rows, relArgs);
+        if (args.select) {
+          rows = rows.map((r) => {
+            const selected = applySelect(r, args.select);
+            for (const [k, v] of Object.entries(args.select!)) {
+              if (!v || typeof v !== "object") continue;
+              selected[k] = r[k] ?? null;
+            }
+            return selected;
+          });
+        }
+        return rows;
       }
-      rows = sortRows(filtered, args.orderBy);
+
+      await prefetchWhereRelations(model, args.where, tenantHint);
+
+      const plan = planFirestoreQuery({
+        where: args.where as FDoc | undefined,
+        orderBy: args.orderBy as FDoc | FDoc[] | undefined,
+        take: args.take,
+        skip: args.skip,
+        relations,
+      });
+
+      let rows: Doc[] = [];
+      let usedFirestoreQuery = false;
+
+      if (tenantHint && col && model !== "Tenant" && (plan.pushed || plan.limit != null)) {
+        const db = getFirebaseFirestore();
+        try {
+          const base = db.collection(`credixa/${tenantHint}/${col}`);
+          const q = applyPlanToQuery(base, plan);
+          const snap = await q.get();
+          rows = snap.docs.map((d) =>
+            reviveDates({ id: d.id, tenantId: tenantHint, ...(d.data() as Doc) }, model)
+          );
+          usedFirestoreQuery = true;
+        } catch {
+          usedFirestoreQuery = false;
+        }
+      }
+
+      if (!usedFirestoreQuery) {
+        rows = await loadCollection(model, tenantHint);
+      }
+
+      // Applica residual / where completo solo se serve
+      if (!usedFirestoreQuery || plan.residualWhere) {
+        const filtered: Doc[] = [];
+        for (const r of rows) {
+          if (await matchWhere(model, r, args.where)) filtered.push(r);
+        }
+        rows = filtered;
+      }
+
+      if (!usedFirestoreQuery || !plan.orderBy) {
+        rows = sortRows(rows, args.orderBy);
+      }
       if (args.distinct?.length) {
         const seen = new Set<string>();
         rows = rows.filter((r) => {
@@ -462,25 +975,51 @@ function createDelegate(model: string) {
           return true;
         });
       }
-      if (args.skip) rows = rows.slice(args.skip);
-      if (args.take != null) rows = rows.slice(0, args.take);
 
-      const out: Doc[] = [];
-      for (const r of rows) {
-        let x = r;
-        if (args.include) x = await resolveIncludes(model, x, args.include);
-        if (args.select) x = applySelect(x, args.select);
-        out.push(x);
+      if (usedFirestoreQuery && plan.sliceSkip) {
+        rows = rows.slice(plan.sliceSkip);
+      } else if (!usedFirestoreQuery || plan.residualWhere) {
+        // Limit Firestore non applicabile con residual: slice in memoria
+        if (args.skip) rows = rows.slice(args.skip);
+        if (args.take != null) rows = rows.slice(0, args.take);
+      } else if (args.take != null && plan.limit == null) {
+        if (args.skip) rows = rows.slice(args.skip);
+        rows = rows.slice(0, args.take);
       }
-      return out;
+
+      const relArgs = relationArgsFromSelectOrInclude(model, args.select, args.include);
+      if (relArgs) {
+        rows = await resolveIncludesBatch(model, rows, relArgs);
+      }
+      if (args.select) {
+        rows = rows.map((r) => {
+          const selected = applySelect(r, args.select);
+          for (const [k, v] of Object.entries(args.select!)) {
+            if (!v || typeof v !== "object") continue;
+            selected[k] = r[k] ?? null;
+          }
+          return selected;
+        });
+      }
+      return rows;
     },
 
     async create(args: { data: Doc; include?: Doc }) {
       const data = { ...args.data };
       if (!data.id) data.id = cuidLike();
       if (!data.createdAt) data.createdAt = new Date();
+      if (
+        (model === "Tenant" ||
+          model === "User" ||
+          model === "Sede" ||
+          model === "Postazione" ||
+          model === "Mandante") &&
+        data.active === undefined
+      ) {
+        data.active = true;
+      }
       await saveDoc(model, data);
-      let row = (await getById(model, String(data.id))) || data;
+      let row = (await getById(model, String(data.id), data.tenantId as string | undefined)) || data;
       if (args.include) row = await resolveIncludes(model, row, args.include);
       return row;
     },
@@ -501,7 +1040,9 @@ function createDelegate(model: string) {
       for (const rel of Object.keys(MODEL_RELATIONS[model] || {})) delete merged[rel];
       delete merged._count;
       await saveDoc(model, merged);
-      let row = (await getById(model, String(existing.id))) || merged;
+      let row =
+        (await getById(model, String(existing.id), existing.tenantId as string | undefined)) ||
+        merged;
       if (args.include) row = await resolveIncludes(model, row, args.include);
       return row;
     },
@@ -532,8 +1073,34 @@ function createDelegate(model: string) {
     },
 
     async count(args: { where?: Doc } = {}) {
-      const rows = await api.findMany({ where: args.where });
-      return rows.length;
+      const tenantHint = extractTenantHint(args.where);
+      const relations = MODEL_RELATIONS[model] || {};
+      const col = collectionForOpsModel(model);
+      const plan = planFirestoreQuery({
+        where: args.where as FDoc | undefined,
+        relations,
+      });
+
+      // Count aggregation Firestore quando where è interamente pushable
+      if (tenantHint && col && model !== "Tenant" && !plan.residualWhere) {
+        const db = getFirebaseFirestore();
+        try {
+          const base = db.collection(`credixa/${tenantHint}/${col}`);
+          const q = applyPlanToQuery(base, { ...plan, limit: undefined, orderBy: undefined });
+          const agg = await q.count().get();
+          return agg.data().count;
+        } catch {
+          /* fallback */
+        }
+      }
+
+      await prefetchWhereRelations(model, args.where, tenantHint);
+      const rows = await loadCollection(model, tenantHint);
+      let n = 0;
+      for (const r of rows) {
+        if (await matchWhere(model, r, args.where)) n++;
+      }
+      return n;
     },
 
     async createMany(args: { data: Doc[] }) {
@@ -542,9 +1109,16 @@ function createDelegate(model: string) {
     },
 
     async aggregate(args: { where?: Doc; _sum?: Doc; _avg?: Doc; _count?: boolean | Doc }) {
-      const rows = await api.findMany({ where: args.where });
+      const tenantHint = extractTenantHint(args.where);
+      await prefetchWhereRelations(model, args.where, tenantHint);
+      const all = await loadCollection(model, tenantHint);
+      const rows: Doc[] = [];
+      for (const r of all) {
+        if (await matchWhere(model, r, args.where)) rows.push(r);
+      }
       const result: Doc = {};
-      if (args._count) result._count = { _all: rows.length };
+      // Sempre numero: l'UI renderizza `_count` direttamente
+      if (args._count) result._count = rows.length;
       if (args._sum) {
         const sum: Doc = {};
         for (const k of Object.keys(args._sum)) {
@@ -571,7 +1145,13 @@ function createDelegate(model: string) {
       _sum?: Doc;
       orderBy?: Doc | Doc[];
     }) {
-      const rows = await api.findMany({ where: args.where });
+      const tenantHint = extractTenantHint(args.where);
+      await prefetchWhereRelations(model, args.where, tenantHint);
+      const all = await loadCollection(model, tenantHint);
+      const rows: Doc[] = [];
+      for (const r of all) {
+        if (await matchWhere(model, r, args.where)) rows.push(r);
+      }
       const map = new Map<string, Doc[]>();
       for (const r of rows) {
         const key = args.by.map((f) => String(r[f])).join("|");
@@ -582,7 +1162,7 @@ function createDelegate(model: string) {
       for (const [, group] of map) {
         const row: Doc = {};
         for (const f of args.by) row[f] = group[0]![f];
-        if (args._count) row._count = { _all: group.length };
+        if (args._count) row._count = group.length;
         if (args._sum) {
           const sum: Doc = {};
           for (const k of Object.keys(args._sum)) {

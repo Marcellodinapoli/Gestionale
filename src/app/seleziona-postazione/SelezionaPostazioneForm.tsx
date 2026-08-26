@@ -60,12 +60,12 @@ export function SelezionaPostazioneForm({
                 setError(null);
               }}
               aria-disabled={occupata}
-              className={`w-full rounded-xl border p-3 text-left transition-all ${
+              className={`w-full rounded-xl border p-3 text-left transition-colors ${
                 occupata
-                  ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-70"
+                  ? "cursor-not-allowed border-[var(--line)] bg-[#f1f5f9] opacity-70"
                   : isSelected
-                    ? "border-[var(--accent)] bg-blue-50 ring-2 ring-[var(--accent)]"
-                    : "border-[var(--line)] bg-white hover:border-slate-300 hover:bg-slate-50"
+                    ? "border-[var(--accent)]/50 bg-[var(--accent)]/[0.06] shadow-[inset_3px_0_0_0_var(--accent)]"
+                    : "border-[var(--line)] bg-white hover:border-[#c5d0db] hover:bg-[#f8fafc]"
               }`}
             >
               <div className="flex items-center gap-3">

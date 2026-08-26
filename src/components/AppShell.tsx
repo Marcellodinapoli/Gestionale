@@ -215,6 +215,9 @@ function NavItem({
   const title = showBack
     ? backLabel || `Torna a ${sectionLabelFromHref(backHref!)}`
     : link.label;
+  const label = showBack
+    ? backLabel || sectionLabelFromHref(backHref!)
+    : link.label;
   const showLabel = forceLabel || compact;
 
   return (
@@ -233,9 +236,9 @@ function NavItem({
         <Icon className="h-4 w-4 shrink-0" />
       )}
       {showLabel ? (
-        <span className="whitespace-nowrap">{link.label}</span>
+        <span className="whitespace-nowrap">{label}</span>
       ) : (
-        <span className="hidden whitespace-nowrap lg:inline">{link.label}</span>
+        <span className="hidden whitespace-nowrap lg:inline">{label}</span>
       )}
     </Link>
   );
@@ -600,19 +603,24 @@ export function AppShell({
     setEmbedded(window.self !== window.top);
   }, []);
 
-  // Memorizza l’ultima sezione fuori da Pratiche; in Pratiche mostra ← verso quella.
+  // ← in nav Pratiche solo nelle sottopagine (/pratiche/[id]/…), non sulla lista.
   useEffect(() => {
     const qs = window.location.search.replace(/^\?/, "");
     const full = qs ? `${pathname}?${qs}` : pathname;
+    const isPraticheLista = pathname === "/pratiche";
+    const isPraticheSottopagina =
+      pathname.startsWith("/pratiche/") && pathname !== "/pratiche";
 
-    if (isPratichePath(pathname)) {
+    if (isPraticheSottopagina) {
       try {
         const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
         const savedPath = saved?.split("?")[0] || "";
-        setPraticheBackHref(saved && !isPratichePath(savedPath) ? saved : null);
+        setPraticheBackHref(saved && !isPratichePath(savedPath) ? saved : "/pratiche");
       } catch {
-        setPraticheBackHref(null);
+        setPraticheBackHref("/pratiche");
       }
+    } else if (isPraticheLista) {
+      setPraticheBackHref(null);
     } else {
       setPraticheBackHref(null);
       try {

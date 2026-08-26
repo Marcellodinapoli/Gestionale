@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   collection,
-  onSnapshot,
+  getDocs,
   orderBy,
   query,
   where,
@@ -19,7 +19,8 @@ import {
 import { SollecitoRecuperoTabs } from "@/components/formazione/warmup/WarmupUi";
 import type { CourseDoc } from "@/lib/formazione/types";
 
-function parseCourse(id: string, data: DocumentData): CourseDoc {
+/** Parse snello per la lista: niente quiz (pesante e non mostrato in card). */
+function parseCourseListItem(id: string, data: DocumentData): CourseDoc {
   const rawTags = data.tags;
   const rawContents = data.contents;
   const rawAttachments = data.attachments;
@@ -32,8 +33,8 @@ function parseCourse(id: string, data: DocumentData): CourseDoc {
     tags: Array.isArray(rawTags) ? rawTags.map(String) : [],
     contents: Array.isArray(rawContents) ? rawContents.map(String) : [],
     attachments: Array.isArray(rawAttachments) ? rawAttachments : [],
-    videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
-    quiz: data.quiz as CourseDoc["quiz"],
+    videoUrl: undefined,
+    quiz: undefined,
     createdAt: data.createdAt ?? null,
   };
 }
@@ -152,6 +153,7 @@ function CourseCard({
         <div className="mt-2 flex justify-end">
           <Link
             href={`/formazione/corsi/${course.id}?label=${encodeURIComponent(code)}&category=${encodeURIComponent(catalogCategory)}`}
+            prefetch
             className="rounded-full border-2 border-[#E91E63] px-[22px] py-2.5 text-sm font-semibold text-[#E91E63] transition hover:bg-[#E91E63]/5"
           >
             Accedi
@@ -170,27 +172,60 @@ function CoursesBody({ category }: { category: string }) {
 
   useEffect(() => {
     if (!db) return;
+    let cancelled = false;
 
-    const q = query(
-      collection(db, "courses"),
-      where("category", "==", category),
-      orderBy("createdAt", "asc")
-    );
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setCourses(snap.docs.map((d) => parseCourse(d.id, d.data())));
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        setError(err.message);
-        setLoading(false);
+    async function load() {
+      if (!db) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const q = query(
+          collection(db, "courses"),
+          where("category", "==", category),
+          orderBy("createdAt", "asc")
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+        setCourses(snap.docs.map((d) => parseCourseListItem(d.id, d.data())));
+      } catch {
+        try {
+          const q = query(
+            collection(db, "courses"),
+            where("category", "==", category)
+          );
+          const snap = await getDocs(q);
+          if (cancelled) return;
+          const rows = snap.docs.map((d) => parseCourseListItem(d.id, d.data()));
+          rows.sort((a, b) => {
+            const ma =
+              a.createdAt &&
+              typeof a.createdAt === "object" &&
+              "toMillis" in a.createdAt
+                ? (a.createdAt as { toMillis: () => number }).toMillis()
+                : 0;
+            const mb =
+              b.createdAt &&
+              typeof b.createdAt === "object" &&
+              "toMillis" in b.createdAt
+                ? (b.createdAt as { toMillis: () => number }).toMillis()
+                : 0;
+            return ma - mb;
+          });
+          setCourses(rows);
+        } catch (e) {
+          if (!cancelled) {
+            setError(e instanceof Error ? e.message : "Errore caricamento");
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    );
+    }
 
-    return () => unsub();
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [db, category]);
 
   if (loading) {

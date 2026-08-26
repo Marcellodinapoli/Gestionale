@@ -1,6 +1,9 @@
 import {
   collection,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   where,
   type Firestore,
@@ -30,20 +33,54 @@ function parseEntry(id: string, data: Record<string, unknown>): NormativeSearchL
   };
 }
 
+function sortEntries(entries: NormativeSearchLogEntry[]) {
+  entries.sort(
+    (a, b) =>
+      (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+  );
+  return entries;
+}
+
+/** Una lettura (senza listener): usata all'apertura della cronologia. */
+export async function loadMyNormativeSearchLogsOnce(
+  db: Firestore,
+  uid: string,
+  max = 40
+): Promise<NormativeSearchLogEntry[]> {
+  try {
+    const q = query(
+      collection(db, "normative_search_logs"),
+      where("userId", "==", uid),
+      orderBy("createdAt", "desc"),
+      limit(max)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => parseEntry(d.id, d.data()));
+  } catch {
+    // Fallback se manca l'indice composto
+    const q = query(
+      collection(db, "normative_search_logs"),
+      where("userId", "==", uid)
+    );
+    const snap = await getDocs(q);
+    return sortEntries(snap.docs.map((d) => parseEntry(d.id, d.data()))).slice(
+      0,
+      max
+    );
+  }
+}
+
 export function watchMyNormativeSearchLogs(
   db: Firestore,
   uid: string,
   onChange: (entries: NormativeSearchLogEntry[]) => void,
-  limit = 100
+  max = 40
 ) {
   const q = query(collection(db, "normative_search_logs"), where("userId", "==", uid));
   return onSnapshot(q, (snap) => {
-    const entries = snap.docs.map((d) => parseEntry(d.id, d.data()));
-    entries.sort(
-      (a, b) =>
-        (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+    onChange(
+      sortEntries(snap.docs.map((d) => parseEntry(d.id, d.data()))).slice(0, max)
     );
-    onChange(entries.slice(0, limit));
   });
 }
 

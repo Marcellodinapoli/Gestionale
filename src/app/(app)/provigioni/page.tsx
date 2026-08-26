@@ -25,6 +25,7 @@ import {
   sedeScopeForRendimento,
   userIdsInSede,
 } from "@/lib/sedeScope";
+import { prismaCount } from "@/lib/prismaCount";
 
 function inizioMese(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
@@ -360,7 +361,7 @@ export default async function ProvigioniPage({
               id: op.id,
               name: op.name,
               importo: tot?._sum.importo ?? 0,
-              count: tot?._count ?? 0,
+              count: prismaCount(tot?._count),
               maturate: mat?._sum.importo ?? 0,
               liquidate: liq?._sum.importo ?? 0,
               isSelf: op.id === user.id,
@@ -512,7 +513,9 @@ export default async function ProvigioniPage({
       >
         <Card title={user.role === "SUPERVISOR" ? "Totale team" : "Totale mese"}>
           <p className="text-2xl font-semibold">{euro(totali._sum.importo || 0)}</p>
-          <p className="mt-1 text-xs text-[var(--muted)]">{totali._count} movimenti</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            {prismaCount(totali._count)} movimenti
+          </p>
         </Card>
         {user.role === "SUPERVISOR" ? (
           <>
@@ -520,13 +523,17 @@ export default async function ProvigioniPage({
               <p className="text-2xl font-semibold text-[var(--navy)]">
                 {euro(totMie._sum.importo || 0)}
               </p>
-              <p className="mt-1 text-xs text-[var(--muted)]">{totMie._count} movimenti</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                {prismaCount(totMie._count)} movimenti
+              </p>
             </Card>
             <Card title="Operatori del gruppo">
               <p className="text-2xl font-semibold text-[var(--navy)]">
                 {euro(totOperatori._sum.importo || 0)}
               </p>
-              <p className="mt-1 text-xs text-[var(--muted)]">{totOperatori._count} movimenti</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                {prismaCount(totOperatori._count)} movimenti
+              </p>
             </Card>
           </>
         ) : null}

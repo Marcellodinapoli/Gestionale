@@ -152,35 +152,30 @@ export default async function AffidiPage({
   const idsOperatoriFiltro = isSupervisor ? memberIds : operatori.map((o) => o.id);
   const baseScope = await praticaScopeWhere(user);
 
-  const [daAssegnare, praticheAffidabili, affidate] = await Promise.all([
-    prisma.pratica.findMany({
-      where: { AND: [baseScope, { assegnatarioId: null }] },
-      include: { debitore: true, mandante: true },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.pratica.findMany({
-      where: { AND: [baseScope] },
-      include: {
-        debitore: true,
-        mandante: true,
-        assegnatario: { select: { id: true, name: true } },
-        operatoreTitolare: { select: { id: true, name: true } },
-      },
-      orderBy: { numero: "asc" },
-    }),
-    prisma.pratica.findMany({
-      where: {
-        AND: [baseScope, { assegnatarioId: { not: null } }],
-      },
-      include: {
-        debitore: { select: { nome: true, cognome: true } },
-        mandante: { select: { codice: true } },
-        assegnatario: { select: { id: true, name: true } },
-        operatoreTitolare: { select: { id: true, name: true } },
-      },
-      orderBy: { numero: "asc" },
-    }),
-  ]);
+  const praticheScope = await prisma.pratica.findMany({
+    where: { AND: [baseScope] },
+    select: {
+      id: true,
+      numero: true,
+      stato: true,
+      residuo: true,
+      scadenza: true,
+      codiceScarico: true,
+      mandanteId: true,
+      numeroMandante: true,
+      assegnatarioId: true,
+      operatoreTitolareId: true,
+      debitoreId: true,
+      debitore: { select: { nome: true, cognome: true } },
+      mandante: { select: { codice: true } },
+      assegnatario: { select: { id: true, name: true } },
+      operatoreTitolare: { select: { id: true, name: true } },
+    },
+    orderBy: { numero: "asc" },
+  });
+  const praticheAffidabili = praticheScope;
+  const daAssegnare = praticheScope.filter((p) => p.assegnatarioId == null);
+  const affidate = praticheScope.filter((p) => p.assegnatarioId != null);
 
   const carico = buildCaricoOperatori(membriCarico, affidate);
   const selezionatoId =

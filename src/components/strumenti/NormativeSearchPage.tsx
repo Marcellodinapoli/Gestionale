@@ -7,7 +7,7 @@ import { callFormazioneFunction } from "@/lib/formazione/callable";
 import { loadNormativePrompt } from "@/lib/strumenti/settingsPrompts";
 import {
   formatLogDate,
-  watchMyNormativeSearchLogs,
+  loadMyNormativeSearchLogsOnce,
   type NormativeSearchLogEntry,
 } from "@/lib/strumenti/normativeSearchLog";
 
@@ -21,13 +21,23 @@ function NormativeSearchHistory({
   const { db, user } = useFormazione();
   const [entries, setEntries] = useState<NormativeSearchLogEntry[]>([]);
   const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
-    if (!db || !user) return;
-    return watchMyNormativeSearchLogs(db, user.uid, setEntries);
-  }, [db, user]);
-
-  if (!entries.length) return null;
+    if (!open || loaded || !db || !user) return;
+    let cancelled = false;
+    setLoadingHistory(true);
+    void loadMyNormativeSearchLogsOnce(db, user.uid).then((rows) => {
+      if (cancelled) return;
+      setEntries(rows);
+      setLoaded(true);
+      setLoadingHistory(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, loaded, db, user]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-white">
@@ -38,7 +48,8 @@ function NormativeSearchHistory({
       >
         <div>
           <p className="text-sm font-semibold text-[var(--navy)]">
-            Le tue ricerche precedenti ({entries.length})
+            Le tue ricerche precedenti
+            {loaded ? ` (${entries.length})` : ""}
           </p>
           <p className="mt-1 text-xs leading-snug text-[var(--muted)]">
             Rivedi le risposte già ottenute ed evita domande duplicate.
@@ -50,13 +61,19 @@ function NormativeSearchHistory({
       </button>
       {open ? (
         <div className="max-h-64 overflow-y-auto border-t border-[var(--line)] px-4 py-2">
-          {entries.map((entry) => (
-            <HistoryItem
-              key={entry.id}
-              entry={entry}
-              onSelectQuestion={onSelectQuestion}
-            />
-          ))}
+          {loadingHistory ? (
+            <p className="py-3 text-sm text-[var(--muted)]">Caricamento cronologia…</p>
+          ) : !entries.length ? (
+            <p className="py-3 text-sm text-[var(--muted)]">Nessuna ricerca precedente.</p>
+          ) : (
+            entries.map((entry) => (
+              <HistoryItem
+                key={entry.id}
+                entry={entry}
+                onSelectQuestion={onSelectQuestion}
+              />
+            ))
+          )}
         </div>
       ) : null}
     </div>
@@ -119,6 +136,12 @@ export function NormativeSearchPage() {
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Precarica il prompt in cache senza bloccare la UI
+  useEffect(() => {
+    if (!db) return;
+    void loadNormativePrompt(db);
+  }, [db]);
 
   useEffect(() => {
     const el = scrollRef.current;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
 import { categoryColor } from "@/lib/formazione/warmupDefaults";
 import {
@@ -22,34 +22,49 @@ export function ContestazioniTab({ isRecupero = false }: { isRecupero?: boolean 
 
   useEffect(() => {
     if (!db) return;
-    const ref = doc(db, "settings", "warmup_contestazioni_training");
-    return onSnapshot(ref, (snap) => {
-      const rawItems = snap.data()?.items;
-      const map =
-        rawItems && typeof rawItems === "object"
-          ? (rawItems as Record<string, Record<string, unknown>>)
-          : undefined;
+    let cancelled = false;
 
-      const resolved = resolveContestazioneItems(map);
-      setItems(orderedContestazioni(resolved, context));
-      setLoading(false);
-    });
-  }, [db, context]);
+    async function load() {
+      if (!db) return;
+      try {
+        const settingsPromise = getDoc(
+          doc(db, "settings", "warmup_contestazioni_training")
+        );
+        const progressPromise = user
+          ? getDoc(doc(db, "listening_progress", user.uid))
+          : Promise.resolve(null);
 
-  useEffect(() => {
-    if (!db || !user) return;
-    const ref = doc(db, "listening_progress", user.uid);
-    return onSnapshot(ref, (snap) => {
-      const raw = snap.data()?.contestazioni;
-      if (raw && typeof raw === "object") {
-        const map: Record<string, boolean> = {};
-        for (const [k, v] of Object.entries(raw)) {
-          map[k] = v === true;
+        const [settingsSnap, progressSnap] = await Promise.all([
+          settingsPromise,
+          progressPromise,
+        ]);
+        if (cancelled) return;
+
+        const rawItems = settingsSnap.data()?.items;
+        const map =
+          rawItems && typeof rawItems === "object"
+            ? (rawItems as Record<string, Record<string, unknown>>)
+            : undefined;
+        setItems(orderedContestazioni(resolveContestazioneItems(map), context));
+
+        const raw = progressSnap?.data()?.contestazioni;
+        if (raw && typeof raw === "object") {
+          const done: Record<string, boolean> = {};
+          for (const [k, v] of Object.entries(raw)) {
+            done[k] = v === true;
+          }
+          setCompleted(done);
         }
-        setCompleted(map);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    });
-  }, [db, user]);
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, user, context]);
 
   if (loading) {
     return (

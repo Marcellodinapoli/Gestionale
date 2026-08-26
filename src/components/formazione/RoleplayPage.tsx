@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   collection,
-  onSnapshot,
+  getDocs,
   orderBy,
   query,
+  where,
   type DocumentData,
 } from "firebase/firestore";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
@@ -26,9 +27,9 @@ import {
   hasConversation,
   hasSuggestion,
   isLongEnoughForSuggestion,
+  loadSimulationDetailsOnce,
   saveLastSimulation,
   saveSimulationSuggestion,
-  watchSimulationDetails,
   type RoleplayHistoryMessage,
   type RoleplaySimulationDetail,
 } from "@/lib/formazione/roleplayProgress";
@@ -173,26 +174,59 @@ function SimulationsList({ category }: { category: string }) {
 
   useEffect(() => {
     if (!db) return;
-    const q = query(collection(db, "roleplay"), orderBy("date", "asc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const all = snap.docs.map((d) => parseSimulation(d.id, d.data()));
-        setItems(all.filter((s) => s.category === category));
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        setError(err.message);
-        setLoading(false);
+    let cancelled = false;
+
+    async function loadCatalog() {
+      if (!db) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const q = query(
+          collection(db, "roleplay"),
+          where("category", "==", category),
+          orderBy("date", "asc")
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+        setItems(snap.docs.map((d) => parseSimulation(d.id, d.data())));
+      } catch (err) {
+        // Fallback senza orderBy se manca indice composto
+        try {
+          const q = query(
+            collection(db, "roleplay"),
+            where("category", "==", category)
+          );
+          const snap = await getDocs(q);
+          if (cancelled) return;
+          const all = snap.docs.map((d) => parseSimulation(d.id, d.data()));
+          all.sort((a, b) => (a.dateMs ?? 0) - (b.dateMs ?? 0));
+          setItems(all);
+        } catch (e2) {
+          if (!cancelled) {
+            setError(e2 instanceof Error ? e2.message : "Errore caricamento");
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    );
-    return () => unsub();
+    }
+
+    void loadCatalog();
+    return () => {
+      cancelled = true;
+    };
   }, [db, category]);
 
   useEffect(() => {
     if (!db || !user) return;
-    return watchSimulationDetails(db, user.uid, setDetails);
+    let cancelled = false;
+    // Dettagli progresso dopo il catalogo (non bloccano la lista)
+    void loadSimulationDetailsOnce(db, user.uid).then((details) => {
+      if (!cancelled) setDetails(details);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [db, user]);
 
   const startSimulation = useCallback(
@@ -242,6 +276,9 @@ function SimulationsList({ category }: { category: string }) {
       durationMs,
     });
 
+    const next = await loadSimulationDetailsOnce(db, user.uid);
+    setDetails(next);
+
     setActiveSim(null);
     setStartedAt(null);
   }, [activeSim, db, startedAt, user, voice]);
@@ -275,6 +312,8 @@ function SimulationsList({ category }: { category: string }) {
       const suggestion = String(data.suggestion ?? "").trim();
       if (suggestion) {
         await saveSimulationSuggestion(db, user.uid, resultsSim.id, suggestion);
+        const next = await loadSimulationDetailsOnce(db, user.uid);
+        setDetails(next);
       }
     } finally {
       setGenerating(false);

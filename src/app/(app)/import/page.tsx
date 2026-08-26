@@ -1,13 +1,20 @@
 import { requirePermission } from "@/lib/guard";
 import { PageHeader, Card } from "@/components/ui";
-import { ImportForm } from "@/components/ImportForm";
-import { importCsvAction, importIncassiCsvAction } from "@/actions/core";
+import { ImportPanels } from "@/components/ImportPanels";
+import { ImportBatchList } from "@/components/ImportBatchList";
 import { prisma } from "@/lib/prisma";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
 import { isManutenzione } from "@/lib/permissions";
+import { listImportBatchPratiche } from "@/actions/importBatch";
 
-export default async function ImportPage() {
+export default async function ImportPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requirePermission("import:run");
+  const sp = (await searchParams) ?? {};
+  const integraId = typeof sp.integra === "string" ? sp.integra : "";
 
   const mandantiRaw = isManutenzione(user)
     ? []
@@ -29,48 +36,45 @@ export default async function ImportPage() {
     perimetri: parsePerimetriList(m.perimetri),
   }));
 
+  const importBatches = isManutenzione(user)
+    ? []
+    : await listImportBatchPratiche(user.tenantId);
+
+  const lottiEsistenti = importBatches.map((b) => ({
+    id: b.id,
+    mandanteId: b.mandanteId,
+    perimetro: b.perimetro,
+    lotto: b.lotto,
+    affidoIl: b.affidoIl,
+    nPratiche: b.nPratiche,
+  }));
+
+  const integraBatch = integraId
+    ? importBatches.find((b) => b.id === integraId)
+    : null;
+  const prefill = integraBatch
+    ? {
+        mandanteId: integraBatch.mandanteId,
+        perimetro: integraBatch.perimetro,
+        lotto: integraBatch.lotto,
+        affidoIl: integraBatch.affidoIl,
+      }
+    : null;
+
   return (
-    <div className="grid max-w-4xl gap-4 lg:grid-cols-2">
-      <div className="lg:col-span-2">
-        <PageHeader
-          title="Import CSV"
-          subtitle="Carichi massivi di pratiche e incassi (back office)"
-        />
-      </div>
-      <Card title="Pratiche">
-        <p className="mb-3 text-sm text-[var(--muted)]">
-          Seleziona mandante, perimetro, lotto e data affido, poi carica il CSV.
-          Separatore punto e virgola. Colonne: nome;cognome;cf;telefono;citta;capitale;interessi;spese
-        </p>
-        <a
-          className="mb-4 inline-block text-sm text-[var(--accent)] underline"
-          href="/esempio-pratiche.csv"
-        >
-          Scarica esempio
-        </a>
-        <ImportForm
-          action={importCsvAction}
-          buttonLabel="Importa pratiche"
-          mandanti={mandanti}
-        />
-      </Card>
-      <Card title="Incassi massivi">
-        <p className="mb-3 text-sm text-[var(--muted)]">
-          Stessi campi (mandante, perimetro, lotto, affido): gli incassi si
-          applicano solo alle pratiche di quel lotto affidato in quella data.
-          Colonne CSV: numero;importo (opzionali: data;metodo;causale;modo).
-        </p>
-        <a
-          className="mb-4 inline-block text-sm text-[var(--accent)] underline"
-          href="/esempio-incassi.csv"
-        >
-          Scarica esempio
-        </a>
-        <ImportForm
-          action={importIncassiCsvAction}
-          buttonLabel="Importa incassi"
-          mandanti={mandanti}
-        />
+    <div className="grid max-w-5xl gap-4">
+      <PageHeader
+        title="Import CSV"
+        subtitle="Carichi massivi di pratiche e incassi (back office)"
+      />
+      <ImportPanels
+        mandanti={mandanti}
+        lottiEsistenti={lottiEsistenti}
+        prefill={prefill}
+        integraId={integraId}
+      />
+      <Card title="Import effettuati">
+        <ImportBatchList items={importBatches} />
       </Card>
     </div>
   );
