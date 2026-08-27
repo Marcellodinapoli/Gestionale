@@ -200,6 +200,10 @@ model Pratica {
   tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   numero          String
   numeroMandante  String?
+  /** Numero contratto da CSV. */
+  contratto       String?
+  /** Numero di commessa da CSV. */
+  commessa        String?
   mandanteId      String
   mandante        Mandante    @relation(fields: [mandanteId], references: [id])
   debitoreId      String
@@ -212,7 +216,15 @@ model Pratica {
   capitale        Float       @default(0)
   interessi       Float       @default(0)
   spese           Float       @default(0)
+  /** Spese di recupero da CSV. */
+  speseRecupero   Float       @default(0)
   residuo         Float       @default(0)
+  /** Importo rata da CSV. */
+  importoRata     Float?
+  /** Numero rate arretrate da CSV. */
+  rateArretrate   Int?
+  /** Netto da pagare da CSV. */
+  nettoDaPagare   Float?
   codiceScarico   String?
   codiceScaricoAt DateTime?
   dataAffido      DateTime?
@@ -255,6 +267,8 @@ model ImportBatch {
   perimetro      String
   lotto          String
   affidoIl       DateTime
+  /** Scadenza del mandato / affido a livello lotto. */
+  scadenzaMandato DateTime?
   fileName       String?
   nPratiche      Int       @default(0)
   createdById    String?

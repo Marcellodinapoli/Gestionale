@@ -46,6 +46,7 @@ export default async function ImportPage({
     perimetro: b.perimetro,
     lotto: b.lotto,
     affidoIl: b.affidoIl,
+    scadenzaMandato: b.scadenzaMandato,
     nPratiche: b.nPratiche,
   }));
 
@@ -58,6 +59,7 @@ export default async function ImportPage({
         perimetro: integraBatch.perimetro,
         lotto: integraBatch.lotto,
         affidoIl: integraBatch.affidoIl,
+        scadenzaMandato: integraBatch.scadenzaMandato,
       }
     : null;
 

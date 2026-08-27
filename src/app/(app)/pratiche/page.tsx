@@ -237,8 +237,10 @@ export default async function PratichePage({
 
   const sortBase = { ...queryBase };
 
+  const pageIds = pratiche.map((p) => p.id);
+
   const apriPraticheHref = pratiche.length
-    ? buildPraticaCodaHref(pratiche[0].id, codaNavPagina)
+    ? buildPraticaCodaHref(pratiche[0].id, codaNavPagina, pageIds)
     : null;
 
   const canNotaMassiva = can(user, "pratiche:nota-massiva");
@@ -285,7 +287,7 @@ export default async function PratichePage({
       totIncassatoLabel: euro(totInc),
       importoTotaleLabel: euro(impTot),
       garanteLabel: g ? `${g.nome} ${g.cognome}`.trim() : "—",
-      href: buildPraticaCodaHref(p.id, codaNavPagina),
+      href: buildPraticaCodaHref(p.id, codaNavPagina, pageIds),
     };
   });
 

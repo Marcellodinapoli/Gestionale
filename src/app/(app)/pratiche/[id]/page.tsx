@@ -2,24 +2,22 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
+import { canAccessPratica } from "@/lib/domain";
 import {
-  canAccessPratica,
-  praticaWhere,
-  praticheStessoDebitoreIds,
-} from "@/lib/domain";
+  collegataIdsFromPayload,
+  loadPraticheStessoDebitorePayload,
+} from "@/lib/praticheStessoDebitore";
 import {
   buildPraticaCollegataHref,
   parseFiltroCollegata,
   parsePraticaOrigine,
 } from "@/lib/praticaCollegata";
 import {
-  buildPraticaCodaHref,
-  codaFiltroWhere,
-  hasCodaNavParams,
   parseCodaNav,
+  parseCodaPageIds,
+  hasCodaNavParams,
   type CodaNav,
 } from "@/lib/praticaCoda";
-import { buildOrderBy } from "@/lib/praticaOrdine";
 import { getRecordingMode } from "@/lib/recordingConfig";
 import { getPraticaWorkContext } from "@/lib/praticaLock";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
@@ -35,6 +33,7 @@ export default async function PraticaDetailPage({
     collegata?: string;
     elenco?: string;
     da?: string;
+    ids?: string;
     q?: string;
     stato?: string;
     esito?: string;
@@ -48,50 +47,36 @@ export default async function PraticaDetailPage({
   }>;
 }) {
   const user = await requireUser();
-  const recordingMode = await getRecordingMode();
   const { id } = await params;
   const sp = await searchParams;
   const {
     collegata: collegataRaw,
     elenco: elencoRaw,
     da: daRaw,
+    ids: idsRaw,
   } = sp;
   const filtroCollegata = parseFiltroCollegata(collegataRaw);
   const usaCodaNav = !filtroCollegata && hasCodaNavParams(sp);
-  const codaNav: CodaNav | undefined = filtroCollegata ? undefined : parseCodaNav(sp);
+  const codaNav: CodaNav | undefined = filtroCollegata
+    ? undefined
+    : parseCodaNav(sp);
   const showElenco = elencoRaw === "1" && Boolean(filtroCollegata);
   const origineId = filtroCollegata ? parsePraticaOrigine(daRaw) : undefined;
-  if (!(await canAccessPratica(user, id))) notFound();
+  const pageIdsFromUrl = filtroCollegata ? null : parseCodaPageIds(idsRaw);
 
-  const pratica = await prisma.pratica.findUnique({
-    where: { id },
-    include: {
-      debitore: {
-        include: {
-          recapiti: { orderBy: [{ tipo: "asc" }, { ordine: "asc" }] },
-        },
-      },
-      mandante: true,
-      assegnatario: true,
-      operatoreTitolare: true,
-      attivita: { include: { user: true }, orderBy: { createdAt: "desc" } },
-      incassi: { include: { user: true }, orderBy: { data: "desc" } },
-      documenti: { orderBy: { createdAt: "desc" } },
-      fatture: { orderBy: { dataScadenza: "asc" } },
-      rate: { orderBy: { numeroRata: "asc" } },
-      garanti: {
-        orderBy: { ordine: "asc" },
-        include: { recapiti: { orderBy: [{ tipo: "asc" }, { ordine: "asc" }] } },
-      },
-    },
-  });
-  if (!pratica) notFound();
-
-  const { canWork, lockedByName } = await getPraticaWorkContext(user.id, id);
+  const [recordingMode, accessOk, collegataPayload] = await Promise.all([
+    getRecordingMode(user.tenantId),
+    canAccessPratica(user, id),
+    filtroCollegata
+      ? loadPraticheStessoDebitorePayload(user.tenantId, id)
+      : Promise.resolve(null),
+  ]);
+  if (!accessOk) notFound();
 
   let collegataIds: string[] | null = null;
   if (filtroCollegata) {
-    collegataIds = await praticheStessoDebitoreIds(id, filtroCollegata);
+    if (!collegataPayload) notFound();
+    collegataIds = collegataIdsFromPayload(collegataPayload, filtroCollegata);
     if (!collegataIds.length) notFound();
     if (!collegataIds.includes(id)) {
       redirect(
@@ -103,28 +88,45 @@ export default async function PraticaDetailPage({
     }
   }
 
-  const coda = filtroCollegata
-    ? null
-    : usaCodaNav && codaNav
-      ? await (async () => {
-          const whereCoda = {
-            ...praticaWhere(user),
-            ...(codaNav.filtro ? codaFiltroWhere(codaNav.filtro) : {}),
-          };
-          return prisma.pratica.findMany({
-            where: whereCoda,
-            select: { id: true },
-            orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
-          });
-        })()
-      : await prisma.pratica.findMany({
-          where: {
-            ...praticaWhere(user),
-            ...(codaNav?.filtro ? codaFiltroWhere(codaNav.filtro) : {}),
+  // Include leggero: anagrafica + rate. Note/incassi dettaglio via /extra.
+  // Solo somma importi per il campo «Pagato» in scheda.
+  const [pratica, workCtx, originePratica, incassiSum] = await Promise.all([
+    prisma.pratica.findUnique({
+      where: { id },
+      include: {
+        debitore: {
+          include: {
+            recapiti: { orderBy: [{ tipo: "asc" }, { ordine: "asc" }] },
           },
-          select: { id: true },
-          orderBy: { updatedAt: "desc" },
-        });
+        },
+        mandante: { select: { codice: true, ragioneSociale: true } },
+        assegnatario: { select: { name: true } },
+        rate: { orderBy: { numeroRata: "asc" } },
+        garanti: {
+          orderBy: { ordine: "asc" },
+          include: {
+            recapiti: { orderBy: [{ tipo: "asc" }, { ordine: "asc" }] },
+          },
+        },
+      },
+    }),
+    getPraticaWorkContext(user.id, id),
+    origineId
+      ? prisma.pratica.findUnique({
+          where: { id: origineId },
+          select: { numero: true },
+        })
+      : Promise.resolve(null),
+    prisma.incasso.aggregate({
+      where: { praticaId: id },
+      _sum: { importo: true },
+    }),
+  ]);
+  if (!pratica) notFound();
+
+  const pagato = Math.max(0, incassiSum._sum.importo || 0);
+
+  const { canWork, lockedByName } = workCtx;
 
   let nav: {
     page: number;
@@ -142,29 +144,25 @@ export default async function PraticaDetailPage({
       ids: collegataIds,
       filtroCollegata,
     };
-  } else {
-    const codaIds = (coda || []).map((p) => p.id);
-    const codaIndex = codaIds.indexOf(pratica.id);
-    const ids =
-      codaIndex >= 0
-        ? codaIds
-        : codaIds.length
-          ? [pratica.id, ...codaIds]
-          : [pratica.id];
+  } else if (pageIdsFromUrl?.length) {
+    const ids = pageIdsFromUrl.includes(id)
+      ? pageIdsFromUrl
+      : [id, ...pageIdsFromUrl.filter((x) => x !== id)];
+    const idx = ids.indexOf(id);
     nav = {
-      page: codaIndex >= 0 ? codaIndex + 1 : 1,
+      page: idx >= 0 ? idx + 1 : 1,
       totalPages: Math.max(1, ids.length),
       ids,
       codaNav: usaCodaNav ? codaNav : undefined,
     };
+  } else {
+    nav = {
+      page: 1,
+      totalPages: 1,
+      ids: [id],
+      codaNav: usaCodaNav ? codaNav : undefined,
+    };
   }
-
-  const originePratica = origineId
-    ? await prisma.pratica.findUnique({
-        where: { id: origineId },
-        select: { numero: true },
-      })
-    : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-lg:overflow-visible lg:h-full">
@@ -175,7 +173,7 @@ export default async function PraticaDetailPage({
       >
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <PraticaSchedaOperatore
-            pratica={pratica}
+            pratica={{ ...pratica, pagato }}
             canEditNotes={canWork}
             canEditStato={canWork && can(user, "pratiche:update:stato")}
             canRegistraIncasso={canWork && can(user, "incassi:create")}

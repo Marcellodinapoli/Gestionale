@@ -304,7 +304,7 @@ export function LavorazioneSuggeritaBar({
   canModifica?: boolean;
   modificaHref?: string;
   annullaModificaHref?: string;
-  eliminaRedirectGiorno?: string;
+  eliminaRedirectGiorno?: string | null;
   gruppoId?: string;
   supervisorId: string;
   dataPiano: string;
@@ -507,23 +507,24 @@ export function LavorazioneSuggeritaBar({
   }
 
   function eliminaBozza() {
-    if (!eliminaRedirectGiorno) return;
     const ok = window.confirm(
       `Eliminare il piano non pubblicato del ${dataLabel}?\nLe modifiche non salvate andranno perse.`
     );
     if (!ok) return;
-    markDirty();
-    setVoci([]);
-    setConteggiOverride(null);
-    if (eliminaRedirectGiorno === dataPiano) {
-      return;
-    }
     dirtyRef.current = false;
     setDirty(false);
+    setVoci([]);
+    setConteggiOverride(null);
+
+    // Chiude la card: niente nuovo=1 / modifica=1. Se c'è un altro piano salvato, vai lì.
     const sp = new URLSearchParams();
-    sp.set("giorno", eliminaRedirectGiorno);
+    const altroSalvato =
+      eliminaRedirectGiorno && eliminaRedirectGiorno !== dataPiano
+        ? eliminaRedirectGiorno
+        : null;
+    sp.set("giorno", altroSalvato || dataPiano);
     if (gruppoId) sp.set("gruppo", gruppoId);
-    router.push(`/lavorazione?${sp.toString()}`);
+    router.replace(`/lavorazione?${sp.toString()}`);
   }
 
   const dataLabel = dataPiano
@@ -606,7 +607,7 @@ export function LavorazioneSuggeritaBar({
               <Save className="h-3.5 w-3.5" />
               {pending ? "Salvataggio…" : "Salva"}
             </button>
-            {!pianoSalvato && eliminaRedirectGiorno ? (
+            {!pianoSalvato ? (
               <button
                 type="button"
                 onClick={eliminaBozza}

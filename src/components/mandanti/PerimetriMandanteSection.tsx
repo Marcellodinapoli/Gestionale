@@ -43,7 +43,9 @@ type LatoForm = {
 
 type PerimetroForm = {
   id: string;
+  /** Acronimo interno (schede cliente). */
   nomeInterno: string;
+  descrizione: string;
   nomeMandante: string;
   ricevuta: LatoForm;
   pagata: LatoForm;
@@ -142,12 +144,55 @@ function formToLato(form: LatoForm): LatoEconomico {
   };
 }
 
+function normKey(s: string) {
+  return s.trim().toLowerCase();
+}
+
+/** Acronimo e descrizione devono essere valorizzati, diversi tra loro e unici tra i perimetri. */
+function erroreCampiPerimetro(
+  acronimo: string,
+  descrizione: string,
+  items: PerimetroForm[],
+  excludeId?: string
+): string | null {
+  const a = acronimo.trim();
+  const d = descrizione.trim();
+  if (!a || !d) return "Compila acronimo e descrizione";
+  if (normKey(a) === normKey(d)) {
+    return "Acronimo e descrizione devono essere diversi";
+  }
+  const others = items.filter((p) => p.id !== excludeId);
+  if (
+    others.some(
+      (p) =>
+        normKey(p.nomeInterno) === normKey(a) ||
+        normKey(p.descrizione) === normKey(a) ||
+        normKey(p.nomeMandante) === normKey(a)
+    )
+  ) {
+    return "Acronimo già usato su un altro perimetro";
+  }
+  if (
+    others.some(
+      (p) =>
+        normKey(p.nomeInterno) === normKey(d) ||
+        normKey(p.descrizione) === normKey(d) ||
+        normKey(p.nomeMandante) === normKey(d)
+    )
+  ) {
+    return "Descrizione già usata su un altro perimetro";
+  }
+  return null;
+}
+
 function perimetroToForm(p: MandantePerimetro): PerimetroForm {
   const sig = p.codiciScarico.length > 0 ? codiciSig(p.codiciScarico) : "";
+  const descrizione = (p.descrizione || p.nomeMandante || "").trim();
   return {
     id: p.id,
     nomeInterno: p.nomeInterno,
-    nomeMandante: p.nomeMandante,
+    descrizione,
+    nomeMandante: p.nomeMandante || descrizione,
     ricevuta: latoToForm(p.ricevuta),
     pagata: latoToForm(p.pagata),
     codiciScarico: [...p.codiciScarico],
@@ -160,11 +205,14 @@ export function formPerimetriToData(items: PerimetroForm[]): MandantePerimetro[]
   return items
     .map((p) => {
       const nomeInterno = p.nomeInterno.trim();
-      const nomeMandante = p.nomeMandante.trim();
-      if (!nomeInterno || !nomeMandante) return null;
+      const descrizione = p.descrizione.trim();
+      const nomeMandante = (p.nomeMandante.trim() || descrizione).trim();
+      if (!nomeInterno || !descrizione) return null;
+      if (normKey(nomeInterno) === normKey(descrizione)) return null;
       return {
         id: p.id,
         nomeInterno,
+        descrizione,
         nomeMandante,
         ricevuta: formToLato(p.ricevuta),
         pagata: formToLato(p.pagata),
@@ -869,8 +917,9 @@ export function PerimetriMandanteSection({
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const [activePerimetroId, setActivePerimetroId] = useState<string | null>(null);
-  const [nuovoInterno, setNuovoInterno] = useState("");
-  const [nuovoMandante, setNuovoMandante] = useState("");
+  const [nuovoAcronimo, setNuovoAcronimo] = useState("");
+  const [nuovaDescrizione, setNuovaDescrizione] = useState("");
+  const [nuovoErrore, setNuovoErrore] = useState<string | null>(null);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -905,23 +954,19 @@ export function PerimetriMandanteSection({
 
   function addPerimetro() {
     if (!canCreatePerimetro) return;
-    const nomeInterno = nuovoInterno.trim();
-    const nomeMandante = nuovoMandante.trim();
-    if (!nomeInterno || !nomeMandante) return;
-    if (
-      items.some(
-        (p) =>
-          p.nomeInterno.trim().toLowerCase() === nomeInterno.toLowerCase() ||
-          p.nomeMandante.trim().toLowerCase() === nomeMandante.toLowerCase()
-      )
-    ) {
+    const acronimo = nuovoAcronimo.trim().toUpperCase();
+    const descrizione = nuovaDescrizione.trim();
+    const err = erroreCampiPerimetro(acronimo, descrizione, items);
+    if (err) {
+      setNuovoErrore(err);
       return;
     }
-    const newItem = perimetroToForm(emptyPerimetro(nomeInterno, nomeMandante));
+    const newItem = perimetroToForm(emptyPerimetro(acronimo, descrizione));
     commit((prev) => [...prev, newItem]);
     setActivePerimetroId(newItem.id);
-    setNuovoInterno("");
-    setNuovoMandante("");
+    setNuovoAcronimo("");
+    setNuovaDescrizione("");
+    setNuovoErrore(null);
   }
 
   function togglePerimetro(id: string) {
@@ -934,8 +979,20 @@ export function PerimetriMandanteSection({
   }
 
   function updatePerimetro(id: string, patch: Partial<PerimetroForm>) {
-    commit((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    commit((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const next = { ...p, ...patch };
+        return next;
+      })
+    );
   }
+
+  const erroreNuovo =
+    nuovoErrore ||
+    (nuovoAcronimo.trim() && nuovaDescrizione.trim()
+      ? erroreCampiPerimetro(nuovoAcronimo, nuovaDescrizione, items)
+      : null);
 
   const perimetriPendingCodiciSave = items.filter(
     (p) => p.codiciScarico.length > 0 && !perimetroProvvigioniUnlocked(p)
@@ -944,8 +1001,9 @@ export function PerimetriMandanteSection({
   return (
     <div className="space-y-3 p-3">
       <p className="text-[10px] text-[var(--muted)]">
-        Ogni perimetro collega il codice/descrizione interno dell&apos;agenzia a quello della
-        mandante. Definisci prima i codici scarico, poi configura provvigioni e messaggi SMS.
+        Ogni perimetro ha un <strong>acronimo interno</strong> (visibile nelle schede cliente) e
+        una <strong>descrizione</strong>: devono essere diversi tra loro e non ripetersi sugli
+        altri perimetri. Definisci prima i codici scarico, poi configura provvigioni e messaggi SMS.
       </p>
       {!canCreatePerimetro ? (
         <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
@@ -976,8 +1034,14 @@ export function PerimetriMandanteSection({
                   />
                   <span className="text-sm font-semibold text-[var(--navy)]">
                     {p.nomeInterno.trim() || "—"}
-                    <span className="mx-1.5 font-normal text-[var(--muted)]">·</span>
-                    {p.nomeMandante.trim() || "—"}
+                    {p.descrizione.trim() ? (
+                      <>
+                        <span className="mx-1.5 font-normal text-[var(--muted)]">·</span>
+                        <span className="font-normal text-[var(--muted)]">
+                          {p.descrizione.trim()}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                 </button>
                 <button
@@ -992,29 +1056,52 @@ export function PerimetriMandanteSection({
               {expanded ? (
                 <div className="border-b border-[var(--line)] bg-[#eef2f6] px-2 pb-2">
                   <div className="flex flex-wrap items-end gap-2">
-                    <label className="min-w-[140px] flex-1 text-xs">
+                    <label className="min-w-[120px] flex-1 text-xs">
                       <span className="mb-0.5 block text-[10px] font-semibold uppercase text-[var(--muted)]">
-                        Codice/descrizione agenzia
+                        Acronimo perimetro
                       </span>
                       <input
                         value={p.nomeInterno}
-                        onChange={(e) => updatePerimetro(p.id, { nomeInterno: e.target.value })}
+                        onChange={(e) =>
+                          updatePerimetro(p.id, {
+                            nomeInterno: e.target.value.toUpperCase(),
+                          })
+                        }
                         className="h-8 w-full rounded border border-[var(--line)] bg-white px-2 text-sm font-semibold text-[var(--navy)]"
-                        placeholder="es. BNL Energia 2024"
+                        placeholder="es. DIS"
                       />
                     </label>
-                    <label className="min-w-[140px] flex-1 text-xs">
+                    <label className="min-w-[180px] flex-[2] text-xs">
                       <span className="mb-0.5 block text-[10px] font-semibold uppercase text-[var(--muted)]">
-                        Codice/descrizione mandante
+                        Descrizione perimetro
                       </span>
                       <input
-                        value={p.nomeMandante}
-                        onChange={(e) => updatePerimetro(p.id, { nomeMandante: e.target.value })}
+                        value={p.descrizione}
+                        onChange={(e) => {
+                          const descrizione = e.target.value;
+                          updatePerimetro(p.id, {
+                            descrizione,
+                            nomeMandante: descrizione,
+                          });
+                        }}
                         className="h-8 w-full rounded border border-[var(--line)] bg-white px-2 text-sm font-semibold text-[var(--navy)]"
-                        placeholder="es. 112608"
+                        placeholder="es. Disattivazione"
                       />
                     </label>
                   </div>
+                  {(() => {
+                    const errEdit = erroreCampiPerimetro(
+                      p.nomeInterno,
+                      p.descrizione,
+                      items,
+                      p.id
+                    );
+                    return errEdit ? (
+                      <p className="mt-1.5 text-[11px] font-medium text-rose-700">
+                        {errEdit}
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
               ) : null}
               {expanded ? (
@@ -1119,27 +1206,33 @@ export function PerimetriMandanteSection({
       ) : null}
 
       <div className="rounded border border-dashed border-[var(--accent)] bg-white p-2">
-        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_auto] sm:items-end">
           <label className="text-xs">
             <span className="mb-0.5 block text-[10px] font-semibold uppercase text-[var(--muted)]">
-              Codice/descrizione agenzia
+              Acronimo perimetro
             </span>
             <input
-              value={nuovoInterno}
-              onChange={(e) => setNuovoInterno(e.target.value)}
-              placeholder="es. BNL Energia 2024"
+              value={nuovoAcronimo}
+              onChange={(e) => {
+                setNuovoAcronimo(e.target.value.toUpperCase());
+                setNuovoErrore(null);
+              }}
+              placeholder="es. DIS"
               disabled={!canCreatePerimetro}
               className="h-8 w-full rounded border border-[var(--line)] px-2 text-xs disabled:bg-[#eef2f6] disabled:text-[var(--muted)]"
             />
           </label>
           <label className="text-xs">
             <span className="mb-0.5 block text-[10px] font-semibold uppercase text-[var(--muted)]">
-              Codice/descrizione mandante
+              Descrizione perimetro
             </span>
             <input
-              value={nuovoMandante}
-              onChange={(e) => setNuovoMandante(e.target.value)}
-              placeholder="es. 112608"
+              value={nuovaDescrizione}
+              onChange={(e) => {
+                setNuovaDescrizione(e.target.value);
+                setNuovoErrore(null);
+              }}
+              placeholder="es. Disattivazione"
               disabled={!canCreatePerimetro}
               className="h-8 w-full rounded border border-[var(--line)] px-2 text-xs disabled:bg-[#eef2f6] disabled:text-[var(--muted)]"
             />
@@ -1148,13 +1241,19 @@ export function PerimetriMandanteSection({
             type="button"
             onClick={addPerimetro}
             disabled={
-              !canCreatePerimetro || !nuovoInterno.trim() || !nuovoMandante.trim()
+              !canCreatePerimetro ||
+              !nuovoAcronimo.trim() ||
+              !nuovaDescrizione.trim() ||
+              Boolean(erroreNuovo)
             }
             className="flex h-8 items-center justify-center gap-1 rounded bg-[var(--navy)] px-3 text-xs text-white disabled:opacity-50"
           >
             <Plus className="h-3 w-3" /> Aggiungi perimetro
           </button>
         </div>
+        {erroreNuovo ? (
+          <p className="mt-1.5 text-[11px] font-medium text-rose-700">{erroreNuovo}</p>
+        ) : null}
       </div>
     </div>
   );

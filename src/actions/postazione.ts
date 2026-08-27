@@ -95,7 +95,6 @@ export async function creaPostazioneAction(formData: FormData) {
   });
 
   revalidatePath("/postazioni");
-  redirect("/postazioni");
 }
 
 export async function aggiornaPostazioneAction(formData: FormData) {

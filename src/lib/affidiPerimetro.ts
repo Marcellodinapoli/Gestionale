@@ -6,6 +6,8 @@ export type PerimetroGruppoRef = {
   mandanteNome: string;
   /** Codice mandante (numeroMandante pratiche). */
   perimetro: string;
+  /** Acronimo interno del perimetro. */
+  acronimo: string;
   /** Etichetta interno · mandante. */
   perimetroLabel: string;
 };
@@ -31,6 +33,7 @@ function refPerimetro(
     mandanteCodice: m.codice,
     mandanteNome: m.ragioneSociale,
     perimetro: p.nomeMandante.trim(),
+    acronimo: p.nomeInterno.trim(),
     perimetroLabel: p.label,
   };
 }
@@ -67,6 +70,7 @@ export function elencoPerimetriGruppoConfig(
           mandanteCodice: m.codice,
           mandanteNome: m.ragioneSociale,
           perimetro: "—",
+          acronimo: "",
           perimetroLabel: "—",
         });
       }
@@ -101,6 +105,7 @@ export function elencoPerimetriTuttiMandanti(
         mandanteCodice: m.codice,
         mandanteNome: m.ragioneSociale,
         perimetro: "—",
+        acronimo: "",
         perimetroLabel: "—",
       });
     }

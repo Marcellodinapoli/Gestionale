@@ -480,8 +480,49 @@ function chiavePerimetroCodice(mandanteId: string, perimetro: string, codice: Co
   return `${mandanteId}|${perimetro}|${codice}`;
 }
 
-function labelPerimetro(r: Pick<RigaCodiciMandantePerimetro, "mandanteCodice" | "perimetro">) {
-  return r.perimetro === "—" ? r.mandanteCodice : `${r.mandanteCodice} · ${r.perimetro}`;
+function resolveAcronimoPerimetro(
+  perimetroKey: string,
+  elenco: Array<{
+    nomeInterno: string;
+    nomeMandante: string;
+    descrizione?: string;
+  }>
+): string | null {
+  const key = perimetroKey.trim();
+  if (!key || key === "—") return null;
+  const hit =
+    elenco.find((p) => p.nomeInterno.trim() === key) ??
+    elenco.find((p) => p.nomeMandante.trim() === key) ??
+    elenco.find((p) => (p.descrizione || "").trim() === key) ??
+    null;
+  return hit?.nomeInterno?.trim() || null;
+}
+
+function labelConAcronimo(
+  mandanteCodice: string,
+  perimetro: string,
+  acronimo?: string | null
+) {
+  const peri = acronimo?.trim() || perimetro;
+  return peri === "—" ? mandanteCodice : `${mandanteCodice} · ${peri}`;
+}
+
+function labelPerimetro(
+  r: Pick<RigaCodiciMandantePerimetro, "mandanteId" | "mandanteCodice" | "perimetro">,
+  elenco?: Array<{
+    nomeInterno: string;
+    nomeMandante: string;
+    descrizione?: string;
+  }>,
+  /** Chiave `${mandanteId}|${lotto}` → perimetro ImportBatch. */
+  lottoPerimetroByKey?: Map<string, string>
+) {
+  const viaLotto = lottoPerimetroByKey?.get(
+    `${r.mandanteId}|${r.perimetro.trim()}`
+  );
+  const chiave = viaLotto || r.perimetro;
+  const acronimo = elenco ? resolveAcronimoPerimetro(chiave, elenco) : null;
+  return labelConAcronimo(r.mandanteCodice, r.perimetro, acronimo);
 }
 
 function codiceSlotToVoce(codice: CodiceConteggioKey): CodiceScarico | "" {
@@ -532,7 +573,13 @@ export async function conteggiAffidatePerCodicePerimetro(
 
 export function buildPerimetriRigaLavorazione(
   righe: RigaCodiciMandantePerimetro[],
-  affidatePerCodice: Map<string, number>
+  affidatePerCodice: Map<string, number>,
+  perimetriByMandante?: Map<
+    string,
+    Array<{ nomeInterno: string; nomeMandante: string; descrizione?: string }>
+  >,
+  /** Chiave `${mandanteId}|${lotto}` → descrizione/perimetro ImportBatch. */
+  lottoPerimetroByKey?: Map<string, string>
 ): PerimetroRigaLavorazione[] {
   const byKey = new Map<string, PerimetroRigaLavorazione>();
 
@@ -550,7 +597,11 @@ export function buildPerimetriRigaLavorazione(
         mandanteId: r.mandanteId,
         mandanteCodice: r.mandanteCodice,
         perimetro: r.perimetro,
-        label: labelPerimetro(r),
+        label: labelPerimetro(
+          r,
+          perimetriByMandante?.get(r.mandanteId),
+          lottoPerimetroByKey
+        ),
         codici: [],
       };
       byKey.set(key, row);
@@ -588,24 +639,45 @@ export function buildPerimetriRigaLavorazione(
  */
 export function mergePerimetriRigaConConfig(
   existing: PerimetroRigaLavorazione[],
-  config: Array<{ mandanteId: string; mandanteCodice: string; perimetro: string }>
+  config: Array<{
+    mandanteId: string;
+    mandanteCodice: string;
+    perimetro: string;
+    /** Acronimo interno (nomeInterno). */
+    acronimo?: string;
+  }>,
+  perimetriByMandante?: Map<
+    string,
+    Array<{ nomeInterno: string; nomeMandante: string; descrizione?: string }>
+  >
 ): PerimetroRigaLavorazione[] {
   if (!config.length) return existing;
   const byKey = new Map(existing.map((e) => [e.key, e]));
 
   for (const c of config) {
     const perimetro = c.perimetro.trim() || "—";
+    const elenco = perimetriByMandante?.get(c.mandanteId);
+    const acronimo =
+      c.acronimo?.trim() ||
+      (elenco ? resolveAcronimoPerimetro(perimetro, elenco) : null);
     for (const situazione of ["affido", "lavorazione"] as const) {
       const prefix = situazione === "affido" ? "aff" : "lav";
       const key = `${prefix}|${c.mandanteId}|${perimetro}`;
-      if (byKey.has(key)) continue;
+      const prev = byKey.get(key);
+      if (prev) {
+        byKey.set(key, {
+          ...prev,
+          label: labelConAcronimo(c.mandanteCodice, perimetro, acronimo),
+        });
+        continue;
+      }
       byKey.set(key, {
         key,
         situazione,
         mandanteId: c.mandanteId,
         mandanteCodice: c.mandanteCodice,
         perimetro,
-        label: labelPerimetro({ mandanteCodice: c.mandanteCodice, perimetro }),
+        label: labelConAcronimo(c.mandanteCodice, perimetro, acronimo),
         codici: [],
       });
     }

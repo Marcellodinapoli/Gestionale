@@ -100,6 +100,8 @@ export function buildPraticaCercaWhere(
 
   return {
     OR: [
+      { commessa: { contains: term } },
+      { contratto: { contains: term } },
       { numero: { contains: term } },
       { fatture: { some: { numero: { contains: term } } } },
     ],

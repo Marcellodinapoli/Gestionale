@@ -5,6 +5,7 @@ export type ImportBatchListItem = {
   perimetro: string;
   lotto: string;
   affidoIl: string;
+  scadenzaMandato: string | null;
   fileName: string | null;
   nPratiche: number;
   createdAt: string;

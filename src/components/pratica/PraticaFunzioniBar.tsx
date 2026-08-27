@@ -29,6 +29,10 @@ import {
   isPraticaChiusa,
   type FiltroCollegata,
 } from "@/lib/praticaCollegata";
+import {
+  fetchPraticheStessoDebitore,
+  peekPraticheStessoDebitore,
+} from "@/lib/praticheStessoDebitoreClient";
 import { useEscBack } from "@/lib/useEscBack";
 import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
@@ -54,17 +58,17 @@ type PopupKey =
 const BTN_BASE =
   "inline-flex h-7 w-14 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap px-0.5 text-center text-[10px] font-semibold leading-none";
 
-const BTN = `${BTN_BASE} rounded border border-[#808080] bg-gradient-to-b from-[#f0f0f0] to-[#d4d4d4] text-[#132033] hover:from-[#fafafa] disabled:cursor-not-allowed disabled:opacity-45`;
+const BTN = `${BTN_BASE} cursor-pointer rounded border border-[#808080] bg-gradient-to-b from-[#f0f0f0] to-[#d4d4d4] text-[#132033] hover:from-[#fafafa] disabled:cursor-not-allowed disabled:opacity-45`;
 
-const BTN_INT_LAV = `${BTN_BASE} rounded border border-[#2d6a4f] bg-gradient-to-b from-[#b7e4c7] to-[#74c69d] text-[#1b4332] hover:from-[#d8f3dc]`;
+const BTN_INT_LAV = `${BTN_BASE} cursor-pointer rounded border border-[#2d6a4f] bg-gradient-to-b from-[#b7e4c7] to-[#74c69d] text-[#1b4332] hover:from-[#d8f3dc]`;
 
-const BTN_INT_CHIUSE = `${BTN_BASE} rounded border border-[#c2410c] bg-gradient-to-b from-[#fed7aa] to-[#fb923c] text-[#7c2d12] hover:from-[#ffedd5]`;
+const BTN_INT_CHIUSE = `${BTN_BASE} cursor-pointer rounded border border-[#c2410c] bg-gradient-to-b from-[#fed7aa] to-[#fb923c] text-[#7c2d12] hover:from-[#ffedd5]`;
 
-const BTN_ESC = `${BTN_BASE} rounded border border-[var(--line)] bg-white text-[var(--muted)] hover:bg-[#eef4f8]`;
+const BTN_ESC = `${BTN_BASE} cursor-pointer rounded border border-[var(--line)] bg-white text-[var(--muted)] hover:bg-[#eef4f8]`;
 
 /** Tasti strumenti (non Fn): testo, stile flat blu, più larghi */
 const BTN_TOOL =
-  "inline-flex h-7 shrink-0 items-center justify-center whitespace-nowrap rounded border border-[#1a4f7a] bg-[#e8f1f8] px-2.5 text-[10px] font-bold tracking-wide text-[#123a5c] hover:bg-[#d4e6f4] disabled:cursor-not-allowed disabled:opacity-45";
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded border border-[#1a4f7a] bg-[#e8f1f8] px-2.5 text-[10px] font-bold tracking-wide text-[#123a5c] hover:bg-[#d4e6f4] disabled:cursor-not-allowed disabled:opacity-45";
 
 const ICON = "h-3.5 w-3.5 shrink-0";
 
@@ -164,39 +168,38 @@ export function PraticaFunzioniBar({
   useEffect(() => {
     let cancelled = false;
     setFlashF9(false);
+
+    const cached = peekPraticheStessoDebitore(praticaId);
+    if (cached) {
+      setCorrente(cached.corrente);
+      setAltre(cached.altre);
+      setAltreChiuse(cached.altreChiuse);
+      if (cached.altre.length > 0) {
+        requestAnimationFrame(() => {
+          if (!cancelled) setFlashF9(true);
+        });
+      }
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setCorrente(null);
     setAltre([]);
     setAltreChiuse([]);
     // Differisce leggermente: non compete con il first paint della scheda.
     const timer = window.setTimeout(() => {
-      fetch(`/api/pratiche-stesso-debitore?id=${encodeURIComponent(praticaId)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then(
-          (
-            data: {
-              corrente: Voce;
-              altre: Voce[];
-              altreChiuse: Voce[];
-            } | null
-          ) => {
-            if (cancelled || !data) return;
-            setCorrente(data.corrente);
-            setAltre(data.altre);
-            setAltreChiuse(data.altreChiuse);
-            if (data.altre.length > 0) {
-              requestAnimationFrame(() => {
-                if (!cancelled) setFlashF9(true);
-              });
-            }
-          }
-        )
-        .catch(() => {
-          if (!cancelled) {
-            setCorrente(null);
-            setAltre([]);
-            setAltreChiuse([]);
-          }
-        });
+      fetchPraticheStessoDebitore(praticaId).then((data) => {
+        if (cancelled || !data) return;
+        setCorrente(data.corrente);
+        setAltre(data.altre);
+        setAltreChiuse(data.altreChiuse);
+        if (data.altre.length > 0) {
+          requestAnimationFrame(() => {
+            if (!cancelled) setFlashF9(true);
+          });
+        }
+      });
     }, 50);
     return () => {
       cancelled = true;
@@ -381,7 +384,7 @@ export function PraticaFunzioniBar({
               type="button"
               className={
                 flashF9
-                  ? `${BTN_BASE} f9-collegate-flash`
+                  ? `${BTN_BASE} f9-collegate-flash cursor-pointer`
                   : haCollegateInLavorazione
                     ? BTN_INT_LAV
                     : BTN

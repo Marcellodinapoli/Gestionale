@@ -80,7 +80,7 @@ export function ContabilePreviewPanel({
     "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#1a365d]/25 bg-white text-[#1a365d] hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
-    <div className="flex min-h-[200px] min-w-0 flex-col lg:col-span-4 lg:h-0 lg:min-h-full">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1 bg-[#c5d4e3] px-2 py-1">
         <button
           type="button"

@@ -14,6 +14,7 @@ type Prefill = {
   perimetro: string;
   lotto: string;
   affidoIl: string;
+  scadenzaMandato?: string | null;
 } | null;
 
 export function ImportPanels({
@@ -38,6 +39,7 @@ export function ImportPanels({
     prefill?.perimetro,
     prefill?.lotto,
     prefill?.affidoIl,
+    prefill?.scadenzaMandato,
   ]);
 
   return (

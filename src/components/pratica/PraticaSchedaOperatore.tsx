@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { dateInputValue, datetimeLocalValue, euro, dataIt } from "@/lib/domainFormat";
-import { formatNotaLine } from "@/lib/noteFormat";
-import { RegistroNote } from "@/components/pratica/RegistroNote";
 import { PraticaFunzioniBar } from "@/components/pratica/PraticaFunzioniBar";
 import { AnagraficaRecapiti } from "@/components/pratica/AnagraficaRecapiti";
 import { GarantiPanel } from "@/components/pratica/GarantiPanel";
@@ -13,13 +11,16 @@ import {
 import { StatoPraticaBar } from "@/components/pratica/StatoPraticaBar";
 import { RiepilogoEsitoPratica } from "@/components/pratica/RiepilogoEsitoPratica";
 import { PaginazioneBar } from "@/components/PaginazioneBar";
-import { ContabilePreviewPanel } from "@/components/pratica/ContabilePreviewPanel";
+import {
+  ContabilePreviewLazy,
+  RegistroNoteLazy,
+} from "@/components/pratica/PraticaExtraLazy";
 import { IncassoForm } from "@/components/pratica/IncassoForm";
 import {
   buildPraticaCollegataHref,
   etichettaFiltroCollegata,
 } from "@/lib/praticaCollegata";
-import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCoda";
+import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCodaNav";
 import { codiceScaricoPratica } from "@/lib/scarico";
 import type { RecordingMode } from "@/lib/recordingMode";
 
@@ -42,11 +43,19 @@ type PraticaData = {
   id: string;
   numero: string;
   numeroMandante: string | null;
+  contratto?: string | null;
+  commessa?: string | null;
   stato: string;
   capitale: number;
   interessi: number;
   spese: number;
+  speseRecupero?: number | null;
   residuo: number;
+  importoRata?: number | null;
+  rateArretrate?: number | null;
+  nettoDaPagare?: number | null;
+  /** Totale incassi registrati (back office / operatori). */
+  pagato?: number;
   dataAffido: Date | null;
   scadenza: Date | null;
   note: string | null;
@@ -67,51 +76,17 @@ type PraticaData = {
     ragioneSociale: string;
   };
   assegnatario: { name: string } | null;
-  attivita: Array<{
-    id: string;
-    tipo: string;
-    esito: string | null;
-    nota: string | null;
-    scheduledAt: Date | null;
-    createdAt: Date;
-    fissata?: boolean;
-    importante?: boolean;
-    bloccata?: boolean;
-    user: { name: string };
-  }>;
   rate: Array<{
     numeroRata: number;
     importo: number;
     scadenza: Date;
     pagata: boolean;
   }>;
-  fatture?: Array<{
-    id: string;
-    numero: string;
-    causale: string | null;
-    dataFattura: Date;
-    dataScadenza: Date;
-    importo: number;
-    pagato: number;
-  }>;
-  incassi?: Array<{
-    id: string;
-    data: Date;
-    dataScadenza: Date | null;
-    capitale: number;
-    interessi: number;
-    spese: number;
-    speseRec: number;
-    importo: number;
-    modo: string | null;
-    causale: string | null;
-    metodo: string;
-    user?: { name: string } | null;
-  }>;
 };
 
 function HeaderRigaDati({
   numeroMandante,
+  contratto,
   dataAffido,
   scadenza,
   praticaId,
@@ -121,6 +96,7 @@ function HeaderRigaDati({
   canEditStato,
 }: {
   numeroMandante: string | null;
+  contratto?: string | null;
   dataAffido: Date | null;
   scadenza: Date | null;
   praticaId: string;
@@ -138,12 +114,6 @@ function HeaderRigaDati({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5">
-        {numeroMandante ? (
-          <>
-            <span className="text-xs font-bold">Contratto</span>
-            <span className={boxCls}>{numeroMandante}</span>
-          </>
-        ) : null}
         <StatoPraticaBar
           praticaId={praticaId}
           stato={stato}
@@ -158,6 +128,18 @@ function HeaderRigaDati({
           <span className="text-xs font-bold">Aff/Scad</span>
           {affido ? <span className={boxCls}>{affido}</span> : null}
           {scad ? <span className={boxCls}>{scad}</span> : null}
+        </span>
+      ) : null}
+      {numeroMandante ? (
+        <span className="inline-flex items-center gap-1">
+          <span className="text-xs font-bold">Lotto</span>
+          <span className={boxCls}>{numeroMandante}</span>
+        </span>
+      ) : null}
+      {contratto ? (
+        <span className="inline-flex items-center gap-1">
+          <span className="text-xs font-bold">Contratto</span>
+          <span className={boxCls}>{contratto}</span>
         </span>
       ) : null}
     </div>
@@ -199,34 +181,22 @@ export function PraticaSchedaOperatore({
   origineId?: string;
   origineNumero?: string;
 }) {
-  const totale = pratica.capitale + pratica.interessi + pratica.spese;
   const rateAperte = pratica.rate.filter((r) => !r.pagata);
-  const impRata = rateAperte[0]?.importo ?? (rateAperte.length ? null : pratica.residuo);
-  const pagato = (pratica.incassi || []).reduce((s, i) => s + (i.importo || 0), 0);
-  /** Spese di recupero sul debito (campo dedicato non ancora in anagrafica pratica). */
-  const speseRecupero = 0;
-  /** Scala con i pagamenti inseriti (affidato − pagato). */
-  const differenza = Math.max(0, Math.round((totale - pagato) * 100) / 100);
-  const daPagare = pratica.residuo;
-
-  const attivitaLines = [...pratica.attivita]
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    .map((a) => ({
-      id: a.id,
-      line: formatNotaLine({
-        userName: a.user.name,
-        createdAt: a.createdAt,
-        tipo: a.tipo,
-        esito: a.esito,
-        nota: a.nota,
-      }),
-      tipo: a.tipo,
-      esito: a.esito,
-      nota: a.nota,
-      fissata: Boolean(a.fissata),
-      importante: Boolean(a.importante),
-      bloccata: Boolean(a.bloccata),
-    }));
+  const totale =
+    pratica.capitale +
+    pratica.interessi +
+    pratica.spese +
+    (pratica.speseRecupero ?? 0);
+  const importoRata =
+    pratica.importoRata != null
+      ? pratica.importoRata
+      : rateAperte[0]?.importo ?? null;
+  const speseRecupero = pratica.speseRecupero ?? 0;
+  const rateArretrate = pratica.rateArretrate;
+  const pagato = Math.max(0, pratica.pagato ?? 0);
+  const nettoBase =
+    pratica.nettoDaPagare != null ? pratica.nettoDaPagare : pratica.residuo;
+  const nettoDaPagare = Math.max(0, nettoBase - pagato);
 
   const debitoreLabel = `${pratica.debitore.cognome} ${pratica.debitore.nome}`.trim();
   const affido = pratica.assegnatario?.name?.trim();
@@ -255,11 +225,19 @@ export function PraticaSchedaOperatore({
           ) : null}
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate font-bold">{debitoreLabel}</span>
-            <span className="shrink-0 text-[var(--muted)]">·</span>
-            <span className="shrink-0 font-mono text-xs text-[var(--muted)]">{pratica.numero}</span>
+            {pratica.commessa ? (
+              <>
+                <span className="shrink-0 text-[var(--muted)]">·</span>
+                <span className="shrink-0 text-xs font-bold">Commessa</span>
+                <span className="shrink-0 rounded border border-[var(--line)] bg-white px-1.5 py-px font-mono text-xs leading-tight text-[var(--navy)]">
+                  {pratica.commessa}
+                </span>
+              </>
+            ) : null}
           </div>
           <HeaderRigaDati
             numeroMandante={pratica.numeroMandante}
+            contratto={pratica.contratto}
             dataAffido={pratica.dataAffido}
             scadenza={pratica.scadenza}
             praticaId={pratica.id}
@@ -273,7 +251,7 @@ export function PraticaSchedaOperatore({
           ) : null}
           {nav.filtroCollegata ? (
             <span className="truncate text-xs text-[var(--muted)]">
-              Intestate:{" "}
+              Stato:{" "}
               <span className="font-semibold text-[var(--navy)]">
                 {etichettaFiltroCollegata(nav.filtroCollegata)}
               </span>
@@ -334,7 +312,7 @@ export function PraticaSchedaOperatore({
             prefissoChiamata={prefissoChiamata}
           />
 
-          <ContabilePreviewPanel
+          <ContabilePreviewLazy
             praticaId={pratica.id}
             canEditFatture={canRegistraIncasso}
             debitore={pratica.debitore}
@@ -342,11 +320,6 @@ export function PraticaSchedaOperatore({
             creditore={pratica.mandante.ragioneSociale}
             societa={pratica.mandante.codice}
             scadenza={pratica.scadenza}
-            fatture={pratica.fatture || []}
-            incassi={[...(pratica.incassi || [])].sort(
-              (a, b) => a.data.getTime() - b.data.getTime()
-            )}
-            incassiRegistrati={pratica.incassi || []}
             affidato={totale}
             definito={pratica.residuo}
           />
@@ -354,23 +327,34 @@ export function PraticaSchedaOperatore({
       </div>
 
       <div className="shrink-0 border-t border-[var(--line)] bg-white">
-        <div className="grid grid-cols-3 gap-0 sm:grid-cols-5 lg:grid-cols-9">
+        <div className="grid grid-cols-2 gap-0 sm:grid-cols-3 lg:grid-cols-9">
           <AnagraficaField
-            label="Deb. residuo"
-            value={euro(pratica.residuo)}
-            highlight
+            label="Debito residuo"
+            value={
+              <span className="font-bold text-[#132033]">{euro(pratica.residuo)}</span>
+            }
             compact
             accent
-            tone="danger"
           />
           <AnagraficaField
-            label="Imp. rata"
-            value={impRata != null ? euro(impRata) : "—"}
+            label="Importo rata"
+            value={importoRata != null ? euro(importoRata) : "—"}
+            compact
+            accent
+          />
+          <AnagraficaField
+            label="Rate insolute"
+            value={rateArretrate != null ? String(rateArretrate) : "—"}
             compact
             accent
           />
           <AnagraficaField label="Spese" value={euro(pratica.spese)} compact accent />
-          <AnagraficaField label="Spese rec." value={euro(speseRecupero)} compact accent />
+          <AnagraficaField
+            label="Spese di recupero"
+            value={euro(speseRecupero)}
+            compact
+            accent
+          />
           <AnagraficaField label="Capitale" value={euro(pratica.capitale)} compact accent />
           <AnagraficaField label="Mora" value={euro(pratica.interessi)} compact accent />
           <AnagraficaField
@@ -380,10 +364,9 @@ export function PraticaSchedaOperatore({
             accent
             tone="success"
           />
-          <AnagraficaField label="Differenza" value={euro(differenza)} compact accent />
           <AnagraficaField
-            label="Da pagare"
-            value={euro(daPagare)}
+            label="Netto da pagare"
+            value={euro(nettoDaPagare)}
             compact
             accent
             tone="danger"
@@ -432,16 +415,15 @@ export function PraticaSchedaOperatore({
                 da: origineId,
               });
             }
-            return buildPraticaCodaHref(targetId, nav.codaNav);
+            return buildPraticaCodaHref(targetId, nav.codaNav, nav.ids);
           })()}
         />
       </div>
 
       {/* Registro note — riempie fino all'incasso / paginazione */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-1.5 pb-0 max-lg:min-h-[240px] lg:min-h-0">
-        <RegistroNote
+        <RegistroNoteLazy
           praticaId={pratica.id}
-          attivita={attivitaLines}
           canEdit={canEditNotes}
           canSblocca={["ADMIN", "SUPERVISOR", "BACK_OFFICE", "AMMINISTRAZIONE"].includes(
             currentUserRole || ""
@@ -471,7 +453,7 @@ export function PraticaSchedaOperatore({
                 da: origineId,
               });
             }
-            return buildPraticaCodaHref(targetId, nav.codaNav);
+            return buildPraticaCodaHref(targetId, nav.codaNav, nav.ids);
           }}
           labels={{
             first: nav.filtroCollegata

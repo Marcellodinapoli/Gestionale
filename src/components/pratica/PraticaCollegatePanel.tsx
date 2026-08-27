@@ -10,6 +10,10 @@ import {
   type FiltroCollegata,
   praticaMatchFiltro,
 } from "@/lib/praticaCollegata";
+import {
+  fetchPraticheStessoDebitore,
+  peekPraticheStessoDebitore,
+} from "@/lib/praticheStessoDebitoreClient";
 import { dataIt, euro } from "@/lib/domainFormat";
 import { STATO_LABELS } from "@/lib/permissions";
 
@@ -18,9 +22,13 @@ type Voce = {
   numero: string;
   nome: string;
   stato: string;
+  codiceScarico?: string | null;
   mandante: string;
   mandanteNome: string;
+  perimetro?: string | null;
   residuo: number;
+  importoDaIncassare?: number;
+  rateInsolute?: number | null;
   scadenza: string | null;
 };
 
@@ -41,17 +49,21 @@ export function PraticaCollegatePanel({
 
   useEffect(() => {
     let cancelled = false;
+
+    const cached = peekPraticheStessoDebitore(praticaId);
+    if (cached) {
+      setCorrente(cached.corrente);
+      setAltre(cached.altre);
+      setAltreChiuse(cached.altreChiuse);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setLoading(true);
-    fetch(`/api/pratiche-stesso-debitore?id=${encodeURIComponent(praticaId)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then(
-        (
-          data: {
-            corrente: Voce;
-            altre: Voce[];
-            altreChiuse: Voce[];
-          } | null
-        ) => {
+    fetchPraticheStessoDebitore(praticaId)
+      .then((data) => {
         if (cancelled || !data) return;
         setCorrente(data.corrente);
         setAltre(data.altre);
@@ -81,11 +93,21 @@ export function PraticaCollegatePanel({
       .sort((a, b) => a.numero.localeCompare(b.numero));
   }, [corrente, altre, altreChiuse, filtro]);
 
-  function seleziona(p: Voce) {
+  function prefetchVoce(p: Voce) {
     if (p.id === praticaId) return;
-    router.push(
+    router.prefetch(
       buildPraticaCollegataHref(p.id, filtro, { elenco: true, da: origineId })
     );
+  }
+
+  function seleziona(p: Voce) {
+    if (p.id === praticaId) return;
+    const href = buildPraticaCollegataHref(p.id, filtro, {
+      elenco: true,
+      da: origineId,
+    });
+    router.prefetch(href);
+    router.push(href);
   }
 
   function chiudi() {
@@ -121,23 +143,35 @@ export function PraticaCollegatePanel({
             <thead className="sticky top-0 bg-[#eef2f6] text-left text-[10px] uppercase text-[var(--muted)]">
               <tr>
                 <th className="px-2 py-1.5">Pratica</th>
-                <th className="px-2 py-1.5">Mand.</th>
-                <th className="px-2 py-1.5 text-right">Residuo</th>
+                <th className="px-2 py-1.5">Mand. / Perim.</th>
+                <th className="px-2 py-1.5 text-right">Da incassare</th>
               </tr>
             </thead>
             <tbody>
               {lista.map((p) => {
                 const attuale = p.id === praticaId;
+                const sottoStato = p.codiceScarico?.trim()
+                  ? p.codiceScarico.trim()
+                  : STATO_LABELS[p.stato] || p.stato;
+                const importo =
+                  p.importoDaIncassare != null ? p.importoDaIncassare : p.residuo;
+                const perimetro = p.perimetro?.trim() || null;
+                const rateInsolute =
+                  p.rateInsolute != null && Number.isFinite(p.rateInsolute)
+                    ? p.rateInsolute
+                    : null;
                 return (
                   <tr
                     key={p.id}
                     onClick={() => seleziona(p)}
+                    onMouseEnter={() => prefetchVoce(p)}
+                    onFocus={() => prefetchVoce(p)}
                     className={`cursor-pointer border-t border-[var(--line)] ${
                       attuale
                         ? "bg-[#fff3cd]"
                         : "hover:bg-[#eef4f8]"
                     }`}
-                    title={`${p.nome} · ${STATO_LABELS[p.stato] || p.stato}`}
+                    title={`${p.nome} · ${sottoStato}${perimetro ? ` · ${perimetro}` : ""}`}
                   >
                     <td className="px-2 py-1.5">
                       <div className="flex items-center gap-1">
@@ -147,14 +181,27 @@ export function PraticaCollegatePanel({
                         <div className="min-w-0">
                           <div className="truncate font-semibold">{p.numero}</div>
                           <div className="truncate text-[10px] text-[var(--muted)]">
-                            {STATO_LABELS[p.stato] || p.stato}
+                            {sottoStato}
+                            {rateInsolute != null ? (
+                              <span className="ml-1">
+                                · {rateInsolute} insolute
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 py-1.5">{p.mandante}</td>
+                    <td className="px-2 py-1.5">
+                      <div className="font-semibold">{p.mandante}</div>
+                      <div
+                        className="max-w-[6.5rem] truncate text-[10px] text-[var(--muted)]"
+                        title={perimetro || undefined}
+                      >
+                        {perimetro || "—"}
+                      </div>
+                    </td>
                     <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                      {euro(p.residuo)}
+                      {euro(importo)}
                       {p.scadenza ? (
                         <div className="text-[10px] text-[var(--muted)]">
                           sc. {dataIt(p.scadenza)}

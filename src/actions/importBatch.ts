@@ -47,6 +47,13 @@ export async function listImportBatchPratiche(
         b.affidoIl instanceof Date
           ? b.affidoIl.toISOString().slice(0, 10)
           : String(b.affidoIl).slice(0, 10),
+      scadenzaMandato: (() => {
+        const s = (b as { scadenzaMandato?: Date | string | null }).scadenzaMandato;
+        if (!s) return null;
+        return s instanceof Date
+          ? s.toISOString().slice(0, 10)
+          : String(s).slice(0, 10);
+      })(),
       fileName: b.fileName ?? null,
       nPratiche: b.nPratiche || ids.length,
       createdAt:

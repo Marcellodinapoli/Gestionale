@@ -112,24 +112,37 @@ export async function debitoreIdsStessoCf(
 
 export async function praticaIdsCollegatePerCf(
   praticaId: string,
-  opts?: { stessoMandante?: boolean }
+  opts?: {
+    stessoMandante?: boolean;
+    /** Evita un secondo findUnique se la pratica è già caricata. */
+    seed?: {
+      id: string;
+      tenantId: string;
+      mandanteId: string;
+      debitore: { codiceFiscale: string | null };
+      garanti?: Array<{ codiceFiscale: string | null }>;
+    };
+  }
 ) {
   const stessoMandante = opts?.stessoMandante ?? true;
-  const pratica = await prisma.pratica.findUnique({
-    where: { id: praticaId },
-    select: {
-      id: true,
-      tenantId: true,
-      mandanteId: true,
-      debitore: { select: { codiceFiscale: true } },
-      garanti: { select: { codiceFiscale: true } },
-    },
-  });
+  const pratica =
+    opts?.seed && opts.seed.id === praticaId
+      ? opts.seed
+      : await prisma.pratica.findUnique({
+          where: { id: praticaId },
+          select: {
+            id: true,
+            tenantId: true,
+            mandanteId: true,
+            debitore: { select: { codiceFiscale: true } },
+            garanti: { select: { codiceFiscale: true } },
+          },
+        });
   if (!pratica) return [];
 
   const rawCfs = [
     pratica.debitore.codiceFiscale,
-    ...pratica.garanti.map((g) => g.codiceFiscale),
+    ...(pratica.garanti ?? []).map((g) => g.codiceFiscale),
   ];
   const cfs = new Set<string>();
   for (const raw of rawCfs) {

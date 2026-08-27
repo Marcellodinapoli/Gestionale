@@ -27,11 +27,12 @@ import { LavorazionePageClient } from "@/components/lavorazione/LavorazionePageC
 export default async function LavorazionePage({
   searchParams,
 }: {
-  searchParams: Promise<{ gruppo?: string; giorno?: string; modifica?: string }>;
+  searchParams: Promise<{ gruppo?: string; giorno?: string; modifica?: string; nuovo?: string }>;
 }) {
   const user = await requirePermission("lavorazione:view");
-  const { gruppo: gruppoId, giorno: giornoRaw, modifica } = await searchParams;
+  const { gruppo: gruppoId, giorno: giornoRaw, modifica, nuovo } = await searchParams;
   const inModifica = modifica === "1";
+  const apriNuovo = nuovo === "1";
   const oggi = formatDataIso(new Date());
   const dataPiano = parseDataIso(giornoRaw) ? giornoRaw!.trim() : oggi;
 
@@ -114,7 +115,7 @@ export default async function LavorazionePage({
     ? { gruppoMandanti: gruppo.gruppoMandanti }
     : undefined;
 
-  const [mandantiListRaw, lottiRows, righeCodiciPerimetro, affidatePerCodice] =
+  const [mandantiListRaw, lottiRows, righeCodiciPerimetro, affidatePerCodice, importBatches] =
     await Promise.all([
       prisma.mandante.findMany({
         where: { tenantId: user.tenantId },
@@ -128,6 +129,10 @@ export default async function LavorazionePage({
       }),
       codiciPerMandantePerimetro(user, gruppoPerimetroOpts),
       conteggiAffidatePerCodicePerimetro(scope),
+      prisma.importBatch.findMany({
+        where: { tenantId: user.tenantId },
+        select: { mandanteId: true, lotto: true, perimetro: true },
+      }),
     ]);
 
   const mandantiOptions = mandantiListRaw.map((m) => ({
@@ -136,6 +141,23 @@ export default async function LavorazionePage({
     ragioneSociale: m.ragioneSociale,
     perimetri: parsePerimetriList(m.perimetri),
   }));
+
+  const perimetriByMandante = new Map(
+    mandantiOptions.map((m) => [
+      m.id,
+      m.perimetri.map((p) => ({
+        nomeInterno: p.nomeInterno,
+        nomeMandante: p.nomeMandante,
+        descrizione: p.descrizione,
+      })),
+    ])
+  );
+
+  const lottoPerimetroByKey = new Map(
+    importBatches
+      .filter((b) => b.lotto.trim() && b.perimetro.trim())
+      .map((b) => [`${b.mandanteId}|${b.lotto.trim()}`, b.perimetro.trim()] as const)
+  );
 
   const configPerimetri =
     gruppo.gruppoMandanti.length > 0
@@ -149,6 +171,7 @@ export default async function LavorazionePage({
                   mandanteCodice: m.codice,
                   mandanteNome: m.ragioneSociale,
                   perimetro: p.nomeMandante.trim(),
+                  acronimo: p.nomeInterno.trim(),
                   perimetroLabel: p.label,
                 }))
             : [
@@ -157,18 +180,26 @@ export default async function LavorazionePage({
                   mandanteCodice: m.codice,
                   mandanteNome: m.ragioneSociale,
                   perimetro: "—",
+                  acronimo: "",
                   perimetroLabel: "—",
                 },
               ]
         );
 
   const perimetriRiga = mergePerimetriRigaConConfig(
-    buildPerimetriRigaLavorazione(righeCodiciPerimetro, affidatePerCodice),
+    buildPerimetriRigaLavorazione(
+      righeCodiciPerimetro,
+      affidatePerCodice,
+      perimetriByMandante,
+      lottoPerimetroByKey
+    ),
     configPerimetri.map((c) => ({
       mandanteId: c.mandanteId,
       mandanteCodice: c.mandanteCodice,
       perimetro: c.perimetro,
-    }))
+      acronimo: c.acronimo,
+    })),
+    perimetriByMandante
   );
 
   const mandantiList =
@@ -204,10 +235,12 @@ export default async function LavorazionePage({
     canEdit && (user.role === "SUPERVISOR" ? user.id === supervisorId : true);
   const pianoSalvato = datePiani.includes(dataPiano);
   const canEditFields = canEditPiano && (!pianoSalvato || inModifica);
+  /** Operatori: monitoraggio. Supervisor: solo modifica salvato o bozza aperta con Nuovo piano. */
+  const mostraCardPiano =
+    !canEditPiano || inModifica || (!pianoSalvato && apriNuovo);
   const giornoDopoElimina =
-    datePiani.length > 0
-      ? [...datePiani].sort((a, b) => b.localeCompare(a))[0]!
-      : oggi;
+    datePiani.filter((d) => d !== dataPiano).sort((a, b) => b.localeCompare(a))[0] ??
+    null;
 
   const modificaHref = (() => {
     const sp = new URLSearchParams();
@@ -290,33 +323,37 @@ export default async function LavorazionePage({
         canEdit={canEdit && (user.role === "SUPERVISOR" ? user.id === supervisorId : true)}
       />
 
-      <LavorazioneSuggeritaBar
-        voci={voci}
-        operatoriGruppo={operatoriGruppo}
-        mostraOperatori={mostraOperatori}
-        operatoreCorrenteId={user.role === "OPERATOR" ? user.id : undefined}
-        canEdit={canEditFields}
-        canModifica={canEditPiano && pianoSalvato && !inModifica}
-        modificaHref={modificaHref}
-        annullaModificaHref={annullaModificaHref}
-        eliminaRedirectGiorno={!pianoSalvato ? giornoDopoElimina : undefined}
-        gruppoId={canPickGruppo ? supervisorId : undefined}
-        supervisorId={supervisorId}
-        dataPiano={dataPiano}
-        pianoSalvato={pianoSalvato}
-        supervisorName={
-          user.role === "OPERATOR" ? supervisor?.name ?? gruppo.supervisorName : supervisor?.name
-        }
-        gruppoNome={gruppo.gruppoNome}
-        mandanti={mandantiList}
-        lotti={lotti}
-        perimetriRiga={perimetriRiga}
-      />
+      {mostraCardPiano ? (
+        <div id="piano-lavorazione">
+          <LavorazioneSuggeritaBar
+            voci={voci}
+            operatoriGruppo={operatoriGruppo}
+            mostraOperatori={mostraOperatori}
+            operatoreCorrenteId={user.role === "OPERATOR" ? user.id : undefined}
+            canEdit={canEditFields}
+            canModifica={canEditPiano && pianoSalvato && !inModifica}
+            modificaHref={modificaHref}
+            annullaModificaHref={annullaModificaHref}
+            eliminaRedirectGiorno={!pianoSalvato ? giornoDopoElimina : undefined}
+            gruppoId={canPickGruppo ? supervisorId : undefined}
+            supervisorId={supervisorId}
+            dataPiano={dataPiano}
+            pianoSalvato={pianoSalvato}
+            supervisorName={
+              user.role === "OPERATOR" ? supervisor?.name ?? gruppo.supervisorName : supervisor?.name
+            }
+            gruppoNome={gruppo.gruppoNome}
+            mandanti={mandantiList}
+            lotti={lotti}
+            perimetriRiga={perimetriRiga}
+          />
+        </div>
+      ) : null}
 
       {canEditPiano ? (
         <LavorazionePianiSalvati
           piani={
-            inModifica
+            inModifica || !mostraCardPiano
               ? pianiSalvatiConConteggi
               : pianiSalvatiConConteggi.filter((p) => p.data !== dataPiano)
           }

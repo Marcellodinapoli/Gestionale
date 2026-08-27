@@ -94,16 +94,17 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[var(--line)] text-xs uppercase tracking-wide text-[var(--muted)]">
-              <th className="px-2 py-2 font-semibold">Data</th>
-              <th className="px-2 py-2 font-semibold">Mandante</th>
-              <th className="px-2 py-2 font-semibold">Perimetro</th>
-              <th className="px-2 py-2 font-semibold">Lotto</th>
-              <th className="px-2 py-2 font-semibold">Affido</th>
-              <th className="px-2 py-2 font-semibold text-right">Pratiche</th>
-              <th className="px-2 py-2 font-semibold">File</th>
-              <th className="px-2 py-2 font-semibold">Utente</th>
-              <th className="px-2 py-2 font-semibold text-right">Azioni</th>
+            <tr className="border-b border-[var(--line)] text-xs font-bold uppercase tracking-wide text-[var(--muted)]">
+              <th className="px-2 py-2">Data</th>
+              <th className="px-2 py-2">Mandante</th>
+              <th className="px-2 py-2">Perimetro</th>
+              <th className="px-2 py-2">Lotto</th>
+              <th className="px-2 py-2">Affido</th>
+              <th className="px-2 py-2">Scadenza</th>
+              <th className="px-2 py-2 text-right">Pratiche</th>
+              <th className="px-2 py-2">File</th>
+              <th className="px-2 py-2">Utente</th>
+              <th className="px-2 py-2 text-right">Azioni</th>
             </tr>
           </thead>
           <tbody>
@@ -119,6 +120,9 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
                 <td className="px-2 py-2">{item.perimetro}</td>
                 <td className="px-2 py-2 font-mono">{item.lotto}</td>
                 <td className="px-2 py-2 whitespace-nowrap">{item.affidoIl}</td>
+                <td className="px-2 py-2 whitespace-nowrap">
+                  {item.scadenzaMandato || "—"}
+                </td>
                 <td className="px-2 py-2 text-right tabular-nums">
                   {item.nPratiche}
                 </td>

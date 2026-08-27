@@ -24,28 +24,22 @@ import {
   type SortField,
 } from "@/lib/praticaOrdine";
 import {
-  appendAltriFiltriParams,
   hasAltriFiltri,
   parseAltriFiltri,
   type AltriFiltri,
 } from "@/lib/praticheAltriFiltriUi";
+import type { CodaFiltro as CodaFiltroBase } from "@/lib/praticaCodaNav";
 
-export type CodaFiltro = {
-  q?: string;
-  stato?: string;
-  esito?: string;
-  lavorate?: boolean;
-  /** YYYY-MM-DD — legacy: singolo giorno (equivale a da = a) */
-  lavorateData?: string;
-  /** YYYY-MM-DD — inizio intervallo lavorazioni */
-  lavorateDa?: string;
-  /** YYYY-MM-DD — fine intervallo lavorazioni */
-  lavorateA?: string;
-  /** Alias legacy: equivale al giorno corrente */
-  lavorateOggi?: boolean;
-  /** Mattina 09:00–13:30 / pomeriggio 13:31–19:00 (solo se intervallo di un solo giorno) */
+export {
+  buildPraticaCodaHref,
+  buildPraticheListaHref,
+  codaFiltroSearchParams,
+  codaNavSearchParams,
+  parseCodaPageIds,
+} from "@/lib/praticaCodaNav";
+
+export type CodaFiltro = CodaFiltroBase & {
   lavorateFascia?: LavorateFascia;
-  /** Pratiche aperte senza aggiornamenti da almeno N giorni */
   nonToccateDa?: NonToccateDa;
   altri?: AltriFiltri;
 };
@@ -68,7 +62,6 @@ export function parseCodaFiltro(sp: SpLike): CodaFiltro | undefined {
   const lavorateData = sp.lavorateData?.trim() || undefined;
   let lavorateDa = sp.lavorateDa?.trim() || undefined;
   let lavorateA = sp.lavorateA?.trim() || undefined;
-  // Legacy: un solo giorno via lavorateData
   if (!lavorateDa && !lavorateA && lavorateData) {
     lavorateDa = lavorateData;
     lavorateA = lavorateData;
@@ -143,7 +136,6 @@ export function codaFiltroWhere(filtro: CodaFiltro): Prisma.PraticaWhereInput {
   if (filtro.lavorate) extra.attivita = { some: {} };
 
   const fascia = filtro.lavorateFascia;
-  // Filtra sull'ultima lavorazione (op/sup): solo Da → ultima ≥ Da; solo Al → ultima ≤ Al.
   const da = parseDataIso(filtro.lavorateDa);
   const a = parseDataIso(filtro.lavorateA);
   const andExtra: Prisma.PraticaWhereInput[] = [];
@@ -163,7 +155,6 @@ export function codaFiltroWhere(filtro: CodaFiltro): Prisma.PraticaWhereInput {
         },
       });
     } else {
-      // Ultima ≥ Da ⇔ esiste evento ≥ Da; ultima ≤ Al ⇔ nessun evento dopo Al.
       if (da) {
         extra.attivita = {
           some: {
@@ -255,43 +246,4 @@ export function codaFiltroWhere(filtro: CodaFiltro): Prisma.PraticaWhereInput {
     ];
   }
   return extra;
-}
-
-export function codaNavSearchParams(nav: CodaNav) {
-  const sp = nav.filtro ? codaFiltroSearchParams(nav.filtro) : new URLSearchParams();
-  sp.set("sort", nav.sort);
-  sp.set("dir", nav.dir);
-  if (nav.listPage > 1) sp.set("page", String(nav.listPage));
-  return sp;
-}
-
-/** Elenco pratiche con gli stessi filtri/ordinamento della coda corrente. */
-export function buildPraticheListaHref(nav?: CodaNav) {
-  if (!nav) return "/pratiche";
-  const q = codaNavSearchParams(nav).toString();
-  return q ? `/pratiche?${q}` : "/pratiche";
-}
-
-export function codaFiltroSearchParams(filtro: CodaFiltro) {
-  const sp = new URLSearchParams();
-  if (filtro.q) sp.set("q", filtro.q);
-  if (filtro.stato) sp.set("stato", filtro.stato);
-  if (filtro.esito) sp.set("esito", filtro.esito);
-  if (filtro.lavorate) sp.set("lavorate", "1");
-  if (filtro.lavorateDa) sp.set("lavorateDa", filtro.lavorateDa);
-  if (filtro.lavorateA) sp.set("lavorateA", filtro.lavorateA);
-  if (!filtro.lavorateDa && !filtro.lavorateA) {
-    if (filtro.lavorateData) sp.set("lavorateData", filtro.lavorateData);
-    else if (filtro.lavorateOggi) sp.set("lavorateOggi", "1");
-  }
-  if (filtro.lavorateFascia) sp.set("lavorateFascia", filtro.lavorateFascia);
-  if (filtro.nonToccateDa) sp.set("nonToccateDa", String(filtro.nonToccateDa));
-  appendAltriFiltriParams(sp, filtro.altri);
-  return sp;
-}
-
-export function buildPraticaCodaHref(id: string, nav?: CodaNav) {
-  if (!nav) return `/pratiche/${id}`;
-  const qs = codaNavSearchParams(nav).toString();
-  return `/pratiche/${id}?${qs}`;
 }

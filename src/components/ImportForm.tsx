@@ -19,6 +19,7 @@ export type LottoEsistenteOption = {
   perimetro: string;
   lotto: string;
   affidoIl: string;
+  scadenzaMandato?: string | null;
   nPratiche: number;
 };
 
@@ -46,6 +47,7 @@ export function ImportForm({
     perimetro: string;
     lotto: string;
     affidoIl: string;
+    scadenzaMandato?: string | null;
   } | null;
   onClose?: () => void;
 }) {
@@ -57,6 +59,9 @@ export function ImportForm({
   const [lotto, setLotto] = useState(prefill?.lotto ?? "");
   const [affidoIl, setAffidoIl] = useState(
     prefill?.affidoIl ?? todayInputValue()
+  );
+  const [scadenzaMandato, setScadenzaMandato] = useState(
+    prefill?.scadenzaMandato ?? ""
   );
   const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
@@ -70,6 +75,7 @@ export function ImportForm({
     setPerimetro(prefill.perimetro);
     setLotto(prefill.lotto);
     setAffidoIl(prefill.affidoIl);
+    setScadenzaMandato(prefill.scadenzaMandato ?? "");
     setMessage(null);
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [
@@ -77,6 +83,7 @@ export function ImportForm({
     prefill?.perimetro,
     prefill?.lotto,
     prefill?.affidoIl,
+    prefill?.scadenzaMandato,
   ]);
 
   const mandante = useMemo(
@@ -84,6 +91,16 @@ export function ImportForm({
     [mandanti, mandanteId]
   );
   const perimetri = mandante?.perimetri ?? [];
+  const perimetroSelezionato = useMemo(
+    () =>
+      perimetri.find(
+        (p) =>
+          p.nomeMandante === perimetro ||
+          p.descrizione === perimetro ||
+          p.nomeInterno === perimetro
+      ) ?? null,
+    [perimetri, perimetro]
+  );
 
   const lottoMatch = useMemo(() => {
     if (kind !== "pratiche" || !mandanteId || !perimetro || !lotto) return null;
@@ -155,6 +172,7 @@ export function ImportForm({
     setPerimetro("");
     setLotto("");
     setAffidoIl(todayInputValue());
+    setScadenzaMandato("");
     clearFile();
     setProgress(0);
     if (kind === "pratiche" && prefill) {
@@ -201,44 +219,76 @@ export function ImportForm({
         </select>
       </label>
 
-      <label className="block space-y-1">
-        <span className="text-xs font-semibold text-[var(--muted)]">Perimetro</span>
-        {perimetri.length > 0 ? (
-          <select
-            name="perimetro"
-            required
-            value={perimetro}
-            disabled={!mandanteId || pending}
-            onChange={(e) => {
-              setPerimetro(e.target.value);
-            }}
-            className={fieldCls}
-          >
-            <option value="">Seleziona perimetro…</option>
-            {perimetri.map((p) => (
-              <option key={p.id} value={p.nomeMandante}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            name="perimetro"
-            required
-            value={perimetro}
-            disabled={!mandanteId || pending}
-            onChange={(e) => {
-              setPerimetro(e.target.value);
-            }}
-            placeholder={
-              mandanteId
-                ? "Nome perimetro / commessa"
-                : "Prima seleziona la mandante"
-            }
-            className={fieldCls}
-          />
-        )}
-      </label>
+      <div className="space-y-2">
+        <label className="block space-y-1">
+          <span className="text-xs font-semibold text-[var(--muted)]">Perimetro</span>
+          {perimetri.length > 0 ? (
+            <select
+              name="perimetro"
+              required
+              value={perimetro}
+              disabled={!mandanteId || pending}
+              onChange={(e) => {
+                setPerimetro(e.target.value);
+              }}
+              className={fieldCls}
+            >
+              <option value="">Seleziona perimetro…</option>
+              {perimetri.map((p) => (
+                <option key={p.id} value={p.nomeMandante}>
+                  {p.nomeInterno
+                    ? `${p.nomeInterno} — ${p.descrizione || p.nomeMandante}`
+                    : p.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              name="perimetro"
+              required
+              value={perimetro}
+              disabled={!mandanteId || pending}
+              onChange={(e) => {
+                setPerimetro(e.target.value);
+              }}
+              placeholder={
+                mandanteId
+                  ? "Descrizione perimetro / commessa"
+                  : "Prima seleziona la mandante"
+              }
+              className={fieldCls}
+            />
+          )}
+        </label>
+        {mandanteId && perimetri.length > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-[var(--line)] bg-[#f5f7fa] px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                Acronimo perimetro
+              </p>
+              <p className="mt-0.5 font-mono text-sm font-semibold text-[var(--navy)]">
+                {perimetroSelezionato?.nomeInterno || "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--line)] bg-[#f5f7fa] px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                Descrizione perimetro
+              </p>
+              <p className="mt-0.5 text-sm text-[var(--navy)]">
+                {perimetroSelezionato?.descrizione ||
+                  perimetroSelezionato?.nomeMandante ||
+                  "—"}
+              </p>
+            </div>
+          </div>
+        ) : null}
+        {mandanteId && perimetri.length === 0 ? (
+          <p className="text-[11px] text-amber-800">
+            Nessun perimetro in anagrafica mandante: indica la descrizione qui sopra,
+            oppure configura acronimo e descrizione in Mandanti.
+          </p>
+        ) : null}
+      </div>
 
       <label className="block space-y-1">
         <span className="text-xs font-semibold text-[var(--muted)]">Lotto</span>
@@ -264,6 +314,19 @@ export function ImportForm({
           value={affidoIl}
           disabled={pending}
           onChange={(e) => setAffidoIl(e.target.value)}
+          className={fieldCls}
+        />
+      </label>
+
+      <label className="block space-y-1">
+        <span className="text-xs font-semibold text-[var(--muted)]">Scadenza</span>
+        <input
+          type="date"
+          name="scadenzaMandato"
+          required={kind === "pratiche"}
+          value={scadenzaMandato}
+          disabled={pending}
+          onChange={(e) => setScadenzaMandato(e.target.value)}
           className={fieldCls}
         />
       </label>

@@ -25,6 +25,9 @@ import { validatePasswordComplexity } from "@/lib/passwordRules";
 import { normalizeTenantSlug } from "@/lib/tenant";
 import { notificaSanzioneIncassoMassivo } from "@/lib/sanzioneIncassoMassivo";
 import {
+  csvColIndex,
+  csvInt,
+  csvMoney,
   giornoAffidoRange,
   parseCsvHeader,
   parseImportContesto,
@@ -1537,10 +1540,11 @@ export async function importCsvAction(formData: FormData) {
   if (idx("nome") < 0) {
     return {
       error:
-        "Colonna «nome» mancante nell'intestazione CSV (separatore ; o ,). Colonne utili: nome;cognome;cf;telefono;citta;lotto;capitale;interessi;spese",
+        "Colonna «nome» mancante nell'intestazione CSV (separatore ; o ,). Colonne utili: nome;cognome;cf;telefono;citta;lotto;commessa;contratto;stato;capitale;mora;spese;spese_di_recupero;debito_residuo;importo_rata;rate_arretrate;netto_da_pagare",
     };
   }
-  const { mandanteId, perimetro, lotto, affidoIl, mandanteCodice } = contesto.ok;
+  const { mandanteId, perimetro, lotto, affidoIl, mandanteCodice, scadenzaMandato } =
+    contesto.ok;
   const fileName = file instanceof File ? file.name : null;
 
   const existing = await prisma.importBatch.findFirst({
@@ -1566,6 +1570,7 @@ export async function importCsvAction(formData: FormData) {
         perimetro,
         lotto,
         affidoIl,
+        scadenzaMandato: scadenzaMandato ?? undefined,
         fileName,
         nPratiche: 0,
         createdById: user.id,
@@ -1575,23 +1580,118 @@ export async function importCsvAction(formData: FormData) {
 
   let created = 0;
   let skipped = 0;
+  let maxScadenzaCsv: Date | null = null;
   for (const line of lines.slice(1)) {
-    const cols = line.split(delim);    const nome = cols[idx("nome")]?.trim();
+    const cols = line.split(delim);
+    const nome = cols[idx("nome")]?.trim();
     if (!nome) {
       skipped += 1;
       continue;
     }
-    const capitale = Number(
-      String(cols[idx("capitale")] || "0").replace(",", ".")
+    const capitale =
+      csvMoney(cols, header, "capitale") ?? 0;
+    const interessi =
+      csvMoney(cols, header, "mora", "interessi") ?? 0;
+    const spese = csvMoney(cols, header, "spese") ?? 0;
+    const speseRecupero =
+      csvMoney(
+        cols,
+        header,
+        "spese_di_recupero",
+        "spese di recupero",
+        "spese_recupero",
+        "spese_rec",
+        "spese rec"
+      ) ?? 0;
+    const importoRata = csvMoney(
+      cols,
+      header,
+      "importo_rata",
+      "importo rata",
+      "imp_rata",
+      "imp rata"
     );
-    const interessi = Number(
-      String(cols[idx("interessi")] || "0").replace(",", ".")
+    const rateArretrate = csvInt(
+      cols,
+      header,
+      "rate_arretrate",
+      "rate arretrate",
+      "n_rate_arretrate",
+      "n rate arretrate"
     );
-    const spese = Number(String(cols[idx("spese")] || "0").replace(",", "."));
+    const residuoCsv = csvMoney(
+      cols,
+      header,
+      "debito_residuo",
+      "debito residuo",
+      "residuo"
+    );
+    const nettoDaPagare =
+      csvMoney(
+        cols,
+        header,
+        "netto_da_pagare",
+        "netto da pagare",
+        "da_pagare",
+        "da pagare"
+      ) ?? residuoCsv;
+    const residuo =
+      residuoCsv ??
+      Math.round((capitale + interessi + spese + speseRecupero) * 100) / 100;
     const lottoRiga =
-      cols[idx("lotto")]?.trim() ||
-      cols[idx("numero_mandante")]?.trim() ||
-      lotto;
+      (() => {
+        const i = csvColIndex(header, "lotto", "numero_mandante", "numero mandante");
+        if (i < 0) return "";
+        return cols[i]?.trim() || "";
+      })() || lotto;
+    const contrattoIdx = csvColIndex(
+      header,
+      "contratto",
+      "numero_contratto",
+      "nr_contratto"
+    );
+    const contrattoRiga =
+      contrattoIdx >= 0 ? cols[contrattoIdx]?.trim() || null : null;
+    const commessaIdx = csvColIndex(
+      header,
+      "commessa",
+      "numero_commessa",
+      "nr_commessa",
+      "numero_di_commessa"
+    );
+    const commessaRiga =
+      commessaIdx >= 0 ? cols[commessaIdx]?.trim() || null : null;
+    const scadIdx = csvColIndex(
+      header,
+      "scadenza_affido",
+      "scadenza affido",
+      "scadenza"
+    );
+    const scadRaw = scadIdx >= 0 ? cols[scadIdx]?.trim() || "" : "";
+    const scadenzaPratica = scadRaw ? parseDateOnly(scadRaw) : null;
+    if (
+      scadenzaPratica &&
+      (!maxScadenzaCsv || scadenzaPratica.getTime() > maxScadenzaCsv.getTime())
+    ) {
+      maxScadenzaCsv = scadenzaPratica;
+    }
+    const statoCsvIdx = csvColIndex(
+      header,
+      "stato",
+      "in_lavorazione",
+      "in lavorazione"
+    );
+    const statoCsvRaw =
+      statoCsvIdx >= 0 ? (cols[statoCsvIdx]?.trim() || "").toUpperCase() : "";
+    const statoPratica =
+      statoCsvRaw === "SI" ||
+      statoCsvRaw === "SÌ" ||
+      statoCsvRaw === "1" ||
+      statoCsvRaw === "TRUE" ||
+      statoCsvRaw === "IN_LAVORAZIONE" ||
+      statoCsvRaw === "IN LAVORAZIONE"
+        ? "IN_LAVORAZIONE"
+        : "NUOVA";
     const debitore = await prisma.debitore.create({
       data: {
         tenantId: user.tenantId,
@@ -1612,12 +1712,19 @@ export async function importCsvAction(formData: FormData) {
         mandanteId,
         debitoreId: debitore.id,
         numeroMandante: lottoRiga,
+        contratto: contrattoRiga,
+        commessa: commessaRiga,
         dataAffido: affidoIl,
+        scadenza: scadenzaPratica,
         capitale,
         interessi,
         spese,
-        residuo: capitale + interessi + spese,
-        stato: "NUOVA",
+        speseRecupero,
+        residuo,
+        importoRata: importoRata ?? null,
+        rateArretrate: rateArretrate ?? null,
+        nettoDaPagare: nettoDaPagare ?? residuo,
+        stato: statoPratica,
         importBatchId: batch.id,
       },
     });
@@ -1632,11 +1739,17 @@ export async function importCsvAction(formData: FormData) {
     const totale = await prisma.pratica.count({
       where: { tenantId: user.tenantId, importBatchId: batch.id },
     });
+    const scadenzaToSave =
+      scadenzaMandato ??
+      maxScadenzaCsv ??
+      (batch as { scadenzaMandato?: Date | null }).scadenzaMandato ??
+      null;
     await prisma.importBatch.update({
       where: { id: batch.id },
       data: {
         nPratiche: totale,
         ...(fileName ? { fileName } : {}),
+        ...(scadenzaToSave ? { scadenzaMandato: scadenzaToSave } : {}),
       },
     });
   }

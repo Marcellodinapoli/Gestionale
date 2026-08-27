@@ -57,9 +57,14 @@ export function labelSogliaIncentivo(_tipo: string) {
 
 export type MandantePerimetro = {
   id: string;
-  /** Codice/nome interno usato dall'agenzia. */
+  /** Acronimo interno agenzia (schede cliente / elenchi). */
   nomeInterno: string;
-  /** Codice perimetro della mandante (numeroMandante sulle pratiche). */
+  /** Descrizione perimetro (testo esteso). */
+  descrizione: string;
+  /**
+   * Chiave usata in import / matching pratiche (di solito = descrizione).
+   * Conservata per retrocompatibilità.
+   */
   nomeMandante: string;
   /** Provvigioni e incentivi che la mandante paga all'agenzia. */
   ricevuta: LatoEconomico;
@@ -71,33 +76,39 @@ export type MandantePerimetro = {
 
 export type PerimetroListItem = {
   id: string;
+  /** Acronimo interno. */
   nomeInterno: string;
+  descrizione: string;
   nomeMandante: string;
   label: string;
 };
 
-/** Codice mandante collegato alle pratiche (numeroMandante). */
-export function numeroMandantePerimetro(p: Pick<MandantePerimetro, "nomeMandante">) {
-  return p.nomeMandante.trim();
+/** Chiave perimetro usata in import / filtri (descrizione o legacy nomeMandante). */
+export function numeroMandantePerimetro(
+  p: Pick<MandantePerimetro, "nomeMandante" | "descrizione">
+) {
+  return (p.nomeMandante.trim() || p.descrizione.trim());
 }
 
 export function etichettaPerimetro(
-  p: Pick<MandantePerimetro, "nomeInterno" | "nomeMandante">
+  p: Pick<MandantePerimetro, "nomeInterno" | "nomeMandante" | "descrizione">
 ) {
-  const interno = p.nomeInterno.trim();
-  const mandante = p.nomeMandante.trim();
-  if (interno && mandante) {
-    if (interno === mandante) return mandante;
-    return `${interno} · ${mandante}`;
+  const acronimo = p.nomeInterno.trim();
+  const descrizione = (p.descrizione || p.nomeMandante || "").trim();
+  if (acronimo && descrizione) {
+    if (acronimo === descrizione) return acronimo;
+    return `${acronimo} · ${descrizione}`;
   }
-  return mandante || interno;
+  return acronimo || descrizione;
 }
 
 export function toPerimetroListItem(p: MandantePerimetro): PerimetroListItem {
+  const descrizione = (p.descrizione || p.nomeMandante || "").trim();
   return {
     id: p.id,
     nomeInterno: p.nomeInterno.trim(),
-    nomeMandante: p.nomeMandante.trim(),
+    descrizione,
+    nomeMandante: numeroMandantePerimetro(p),
     label: etichettaPerimetro(p),
   };
 }
@@ -281,11 +292,18 @@ function normalizeScaglioni(raw: unknown, legacyIncentivi?: unknown, legacy?: Re
     .sort((a, b) => a.sogliaPerc - b.sogliaPerc || a.provvigionePerc - b.provvigionePerc);
 }
 
-export function emptyPerimetro(nomeInterno = "", nomeMandante = ""): MandantePerimetro {
+export function emptyPerimetro(
+  nomeInterno = "",
+  descrizione = "",
+  nomeMandante = ""
+): MandantePerimetro {
+  const desc = descrizione.trim();
+  const chiave = (nomeMandante || desc).trim();
   return {
     id: `per-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    nomeInterno,
-    nomeMandante,
+    nomeInterno: nomeInterno.trim(),
+    descrizione: desc,
+    nomeMandante: chiave,
     ricevuta: emptyLatoEconomico(),
     pagata: emptyLatoEconomico(),
     codiciScarico: [],
@@ -297,7 +315,8 @@ function normalizePerimetroNomi(o: Record<string, unknown>) {
   const legacy = String(o.nome || "").trim();
   const nomeInterno = String(o.nomeInterno || legacy || "").trim();
   const nomeMandante = String(o.nomeMandante || legacy || "").trim();
-  return { nomeInterno, nomeMandante };
+  const descrizione = String(o.descrizione || nomeMandante || legacy || "").trim();
+  return { nomeInterno, descrizione, nomeMandante: nomeMandante || descrizione };
 }
 
 function normalizeCodiciScarico(raw: unknown): CodiceScaricoPerimetro[] {
@@ -453,11 +472,12 @@ export function parsePerimetri(raw: string | null | undefined): MandantePerimetr
       .map((item) => {
         if (!item || typeof item !== "object") return null;
         const o = item as Record<string, unknown>;
-        const { nomeInterno, nomeMandante } = normalizePerimetroNomi(o);
+        const { nomeInterno, descrizione, nomeMandante } = normalizePerimetroNomi(o);
         if (!nomeInterno || !nomeMandante) return null;
         return {
           id: String(o.id || `per-${nomeMandante}`),
           nomeInterno,
+          descrizione: descrizione || nomeMandante,
           nomeMandante,
           ricevuta: normalizeLato(o.ricevuta),
           pagata: normalizeLato(o.pagata),
@@ -502,6 +522,7 @@ export function loadPerimetriForEditor(mandante: {
       {
         id: "per-generale",
         nomeInterno: "Generale",
+        descrizione: "Generale",
         nomeMandante: "Generale",
         ricevuta: legacyRicevuta,
         pagata: emptyLatoEconomico(),

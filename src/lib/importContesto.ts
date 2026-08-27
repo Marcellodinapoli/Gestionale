@@ -8,6 +8,7 @@ export type ImportContesto = {
   perimetro: string;
   lotto: string;
   affidoIl: Date;
+  scadenzaMandato: Date | null;
 };
 
 /** Separatore CSV: ; (IT) o , (Excel/export). Preferisce quello che espone «nome». */
@@ -32,6 +33,61 @@ export function parseCsvHeader(headerLine: string) {
   return { delim, header };
 }
 
+/** Normalizza nome colonna CSV (spazi → _, senza punti). */
+export function normalizeCsvColName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^\uFEFF/, "")
+    .replace(/[.\u00a0]/g, " ")
+    .replace(/\s+/g, "_");
+}
+
+/** Indice colonna CSV per uno qualsiasi degli alias. */
+export function csvColIndex(header: string[], ...aliases: string[]) {
+  const map = header.map(normalizeCsvColName);
+  for (const alias of aliases) {
+    const i = map.indexOf(normalizeCsvColName(alias));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+function parseCsvNumberRaw(raw: string | undefined | null): number | null {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  if (!t) return null;
+  // Supporta 8547,67 e 8.547,67
+  let s = t.replace(/\s/g, "");
+  if (s.includes(",") && s.includes(".")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else {
+    s = s.replace(",", ".");
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function csvMoney(
+  cols: string[],
+  header: string[],
+  ...aliases: string[]
+): number | null {
+  const i = csvColIndex(header, ...aliases);
+  if (i < 0) return null;
+  return parseCsvNumberRaw(cols[i]);
+}
+
+export function csvInt(
+  cols: string[],
+  header: string[],
+  ...aliases: string[]
+): number | null {
+  const n = csvMoney(cols, header, ...aliases);
+  if (n == null) return null;
+  return Math.round(n);
+}
+
 /** Legge e valida mandante / perimetro / lotto / affido dal form di import. */
 export async function parseImportContesto(
   formData: FormData,
@@ -41,6 +97,7 @@ export async function parseImportContesto(
   const perimetro = String(formData.get("perimetro") || "").trim();
   const lotto = String(formData.get("lotto") || "").trim();
   const affidoRaw = String(formData.get("affidoIl") || "").trim();
+  const scadenzaMandatoRaw = String(formData.get("scadenzaMandato") || "").trim();
 
   if (!mandanteId) return { error: "Seleziona la mandante" };
   if (!perimetro) return { error: "Seleziona o indica il perimetro" };
@@ -49,6 +106,13 @@ export async function parseImportContesto(
   const affidoIl = parseDateOnly(affidoRaw);
   if (!affidoIl) return { error: "Data affido non valida" };
 
+  const scadenzaMandato = scadenzaMandatoRaw
+    ? parseDateOnly(scadenzaMandatoRaw)
+    : null;
+  if (scadenzaMandatoRaw && !scadenzaMandato) {
+    return { error: "Scadenza mandato non valida" };
+  }
+
   const mandante = await prisma.mandante.findFirst({
     where: { id: mandanteId, tenantId },
     select: { id: true, codice: true, perimetri: true },
@@ -56,7 +120,15 @@ export async function parseImportContesto(
   if (!mandante) return { error: "Mandante non trovata" };
 
   const elenco = parsePerimetri(mandante.perimetri);
-  if (elenco.length > 0 && !elenco.some((p) => p.nomeMandante === perimetro)) {
+  if (
+    elenco.length > 0 &&
+    !elenco.some(
+      (p) =>
+        p.nomeMandante === perimetro ||
+        p.descrizione === perimetro ||
+        p.nomeInterno === perimetro
+    )
+  ) {
     return { error: "Perimetro non valido per la mandante selezionata" };
   }
 
@@ -67,6 +139,7 @@ export async function parseImportContesto(
       perimetro,
       lotto,
       affidoIl,
+      scadenzaMandato,
     },
   };
 }
