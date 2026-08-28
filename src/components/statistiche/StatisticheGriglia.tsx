@@ -3,24 +3,40 @@
 import { Fragment } from "react";
 import type { StatisticheRiga, StatisticheSezione } from "@/lib/statisticheGruppoUi";
 import { fmtPct } from "@/lib/scarico";
-import { fmtImportoTabella } from "@/lib/statisticheGruppoUi";
+import { fmtImportoTabella, colspanTabellaStatistiche } from "@/lib/statisticheGruppoUi";
+
+const SCARICO_TONI = [
+  { head: "#dceaf7", body: "#f3f8fd", total: "#e4eef8" },
+  { head: "#dfeedd", body: "#f4faf3", total: "#e8f2e6" },
+  { head: "#f5ead4", body: "#fdf8f0", total: "#f3e8d4" },
+  { head: "#e8ddf0", body: "#f7f2fb", total: "#ede4f5" },
+  { head: "#d9eeea", body: "#f0faf8", total: "#e0f0ec" },
+  { head: "#f5dddd", body: "#fdf5f5", total: "#f0e0e0" },
+] as const;
+
+function scaricoTone(index: number) {
+  return SCARICO_TONI[index % SCARICO_TONI.length]!;
+}
 
 function Cell({
   children,
   right,
   bold,
   muted,
+  bg,
 }: {
   children: React.ReactNode;
   right?: boolean;
   bold?: boolean;
   muted?: boolean;
+  bg?: string;
 }) {
   return (
     <td
+      style={bg ? { backgroundColor: bg } : undefined}
       className={`border border-[#b8c4d0] px-1.5 py-0.5 font-mono text-[11px] leading-5 whitespace-nowrap ${
         right ? "text-right" : "text-left"
-      } ${bold ? "bg-[#eef2f6] font-bold" : "bg-white"} ${muted ? "text-[var(--muted)]" : "text-[#132033]"}`}
+      } ${bg ? "" : bold ? "bg-[#eef2f6] font-bold" : "bg-white"} ${bold ? "font-bold" : ""} ${muted ? "text-[var(--muted)]" : "text-[#132033]"}`}
     >
       {children}
     </td>
@@ -43,7 +59,8 @@ function Riga({
     <tr className={riga.isTotale ? "outline outline-2 outline-[#132033]" : ""}>
       <Cell bold={riga.isTotale}>{riga.esa}</Cell>
       <Cell>{riga.mandato}</Cell>
-      <Cell>{riga.lottoCg}</Cell>
+      <Cell>{riga.perimetro}</Cell>
+      <Cell>{riga.lotto}</Cell>
       <Cell right>{riga.nrPrt}</Cell>
       <Cell right muted={nascondiImporti}>
         {importoCell(riga.affidato, nascondiImporti)}
@@ -51,15 +68,17 @@ function Riga({
       <Cell right muted={nascondiImporti}>
         {importoCell(riga.incassato, nascondiImporti)}
       </Cell>
-      <Cell right>{riga.nrPzInc}</Cell>
-      <Cell right muted={nascondiImporti}>
-        {nascondiImporti ? "—" : fmtPct(riga.pctPzIncAffidato)}
+      <Cell right bold={riga.isTotale}>
+        {riga.movimentate}
       </Cell>
-      <Cell right muted>
-        {fmtPct(riga.pctPzIncPezzi)}
-      </Cell>
-      {riga.scarichi.map((s) => (
-        <FragmentRow key={s.codice} scarico={s} nascondiImporti={nascondiImporti} />
+      {riga.scarichi.map((s, i) => (
+        <FragmentRow
+          key={s.codice}
+          scarico={s}
+          codiceIdx={i}
+          isTotale={Boolean(riga.isTotale)}
+          nascondiImporti={nascondiImporti}
+        />
       ))}
     </tr>
   );
@@ -67,85 +86,86 @@ function Riga({
 
 function FragmentRow({
   scarico,
+  codiceIdx,
+  isTotale,
   nascondiImporti,
 }: {
   scarico: StatisticheRiga["scarichi"][number];
+  codiceIdx: number;
+  isTotale: boolean;
   nascondiImporti: boolean;
 }) {
+  const bg = isTotale ? scaricoTone(codiceIdx).total : scaricoTone(codiceIdx).body;
   return (
     <>
-      <Cell right muted={nascondiImporti}>
+      <Cell right muted={nascondiImporti} bg={bg}>
         {importoCell(scarico.importo, nascondiImporti)}
       </Cell>
-      <Cell right>{scarico.nr}</Cell>
-      <Cell right muted={nascondiImporti}>
-        {nascondiImporti ? "—" : fmtPct(scarico.pctAffidato)}
+      <Cell right bg={bg}>
+        {fmtPct(scarico.pctPz)}
       </Cell>
-      <Cell right muted>
-        {fmtPct(scarico.pctPezzi)}
+      <Cell right bg={bg} bold={isTotale}>
+        {scarico.nr}
       </Cell>
     </>
   );
 }
 
-function Intestazione() {
-  const th =
-    "border border-[#b8c4d0] bg-white px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight text-[#132033]";
+function Intestazione({ codiciScarico }: { codiciScarico: string[] }) {
+  const thBase =
+    "border border-[#b8c4d0] px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight text-[#132033]";
+  const thFixed = `${thBase} bg-white`;
+  const blocchi = codiciScarico;
   return (
     <thead>
       <tr>
-        <th className={th} rowSpan={2}>
+        <th className={thFixed} rowSpan={2}>
           Esa
         </th>
-        <th className={th} rowSpan={2}>
+        <th className={thFixed} rowSpan={2}>
           Mandato
         </th>
-        <th className={th} rowSpan={2}>
+        <th className={thFixed} rowSpan={2}>
           Perimetro
         </th>
-        <th className={th} rowSpan={2}>
+        <th className={thFixed} rowSpan={2}>
+          Lotto
+        </th>
+        <th className={thFixed} rowSpan={2}>
           Nr Prt
         </th>
-        <th className={th} rowSpan={2}>
+        <th className={thFixed} rowSpan={2}>
           Affidato
         </th>
-        <th className={th} rowSpan={2}>
+        <th className={thFixed} rowSpan={2}>
           Incassato
         </th>
-        <th className={th} rowSpan={2}>
-          Nr Pz Inc
+        <th className={thFixed} rowSpan={2}>
+          Movimentate
         </th>
-        <th className={th} colSpan={2}>
-          % Pz Inc
-        </th>
-        <th className={th} colSpan={4}>
-          N/D
-        </th>
-        <th className={th} colSpan={4}>
-          PTC
-        </th>
-        <th className={th} colSpan={4}>
-          PPC
-        </th>
-        <th className={th} colSpan={4}>
-          MOV
-        </th>
-        <th className={th} colSpan={4}>
-          LPP
-        </th>
-        <th className={th} colSpan={4}>
-          LPT
-        </th>
+        {blocchi.map((code, i) => (
+          <th
+            key={code}
+            className={thBase}
+            style={{ backgroundColor: scaricoTone(i).head }}
+            colSpan={3}
+          >
+            {code}
+          </th>
+        ))}
       </tr>
       <tr>
-        <th className={th}>% Aff.</th>
-        <th className={th}>% Pz</th>
-        {["N/D", "PTC", "PPC", "MOV", "LPP", "LPT"].map((code) => (
+        {blocchi.map((code, i) => (
           <Fragment key={code}>
-            <th className={th}>{code}</th>
-            <th className={th}>Nr.</th>
-            <th className={th}>% Aff.</th>
-            <th className={th}>% Pz</th>
+            <th className={thBase} style={{ backgroundColor: scaricoTone(i).head }}>
+              Incassato
+            </th>
+            <th className={thBase} style={{ backgroundColor: scaricoTone(i).head }}>
+              % Pz
+            </th>
+            <th className={thBase} style={{ backgroundColor: scaricoTone(i).head }}>
+              Pz
+            </th>
           </Fragment>
         ))}
       </tr>
@@ -171,6 +191,10 @@ export function StatisticheGriglia({
   /** Nasconde affidato/incassato e importi correlati (Amministrazione fuori dalla propria sede). */
   nascondiImporti?: boolean;
 }) {
+  const codiciTotaleAgenzia = [
+    ...new Set(sezioni.flatMap((s) => s.codiciScarico)),
+  ].sort();
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-[#b8c4d0] bg-[#f5f7fa] px-3 py-2 text-xs text-[#132033]">
@@ -192,11 +216,11 @@ export function StatisticheGriglia({
             Perimetro {sez.perimetro}
           </div>
           <table className="w-full min-w-[1200px] border-collapse">
-            <Intestazione />
+            <Intestazione codiciScarico={sez.codiciScarico} />
             <tbody>
               {sez.righe.map((riga, i) => (
                 <Riga
-                  key={`${riga.esa}-${riga.mandato}-${riga.lottoCg}-${i}`}
+                  key={`${riga.esa}-${riga.mandato}-${riga.perimetro}-${riga.lotto}-${i}`}
                   riga={riga}
                   nascondiImporti={nascondiImporti}
                 />
@@ -204,7 +228,7 @@ export function StatisticheGriglia({
               {!sez.righe.length ? (
                 <tr>
                   <td
-                    colSpan={30}
+                    colSpan={colspanTabellaStatistiche(sez.codiciScarico)}
                     className="border border-[#b8c4d0] bg-white px-3 py-4 text-center text-xs text-[var(--muted)]"
                   >
                     Nessuna pratica nel periodo · tutti gli operatori del gruppo
@@ -223,7 +247,7 @@ export function StatisticheGriglia({
             Totale agenzia · tutti i perimetri
           </div>
           <table className="w-full min-w-[1200px] border-collapse">
-            <Intestazione />
+            <Intestazione codiciScarico={codiciTotaleAgenzia} />
             <tbody>
               <Riga riga={totale} nascondiImporti={nascondiImporti} />
             </tbody>
@@ -232,8 +256,9 @@ export function StatisticheGriglia({
       ) : null}
 
       <p className="text-[10px] text-[var(--muted)]">
-        % Aff. = percentuale importo su affidato · % Pz = percentuale pezzi su Nr Prt · N/D = senza
-        codice scarico (non ancora lavorate). Ogni perimetro ha il proprio subtotale.
+        Incassato (totale riga) = somma incassi operatore · Incassato per codice = totale euro
+        su quel codice scarico · % Pz = pratiche incassate codice su Nr Prt operatore · Pz =
+        conteggio pratiche incassate con codice.
       </p>
     </div>
   );

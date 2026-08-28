@@ -1,7 +1,11 @@
 /**
  * Tipi e helper lavorazione — sicuri per Client Component (niente Prisma).
  */
-import { CODICI_SCARICO, type CodiceScarico } from "@/lib/scarico";
+import {
+  CODICI_SCARICO,
+  CODICE_SCARICO_NULLI,
+  type CodiceScaricoVoce,
+} from "@/lib/scarico";
 import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 export const STATO_LAVORAZIONE_FISSO = "IN_LAVORAZIONE" as const;
@@ -9,7 +13,7 @@ export const STATO_LAVORAZIONE_FISSO = "IN_LAVORAZIONE" as const;
 export type VoceLavorazioneSuggerita = {
   id: string;
   descrizione: string;
-  codiceScarico: CodiceScarico | "";
+  codiceScarico: CodiceScaricoVoce;
   filtri: AltriFiltri;
   lavorateDa: string;
   lavorateA: string;
@@ -42,13 +46,16 @@ export type PerimetroRigaLavorazione = {
   mandanteCodice: string;
   perimetro: string;
   label: string;
-  codici: Array<{ codice: CodiceScarico | ""; count: number }>;
+  codici: Array<{ codice: CodiceScaricoVoce; count: number }>;
 };
 
+/** Opzioni codice scarico senza «Nulli» (aggiunto solo se presente nel perimetro). */
 export const CODICI_SCARICO_VOCE = [
   { value: "", label: "— Nessuno —" },
   ...CODICI_SCARICO.map((c) => ({ value: c, label: c })),
 ] as const;
+
+const OPZIONE_NULLI = { value: CODICE_SCARICO_NULLI, label: "Nulli" } as const;
 
 function newId() {
   return `lav-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -132,12 +139,21 @@ export function codiciScaricoPerRiga(
   voce: VoceLavorazioneSuggerita,
   perimetri: PerimetroRigaLavorazione[]
 ) {
+  const soloNessuno = [{ value: "" as const, label: "— Nessuno —" }];
   const periKey = matchPerimetroRiga(voce, perimetri);
-  if (!periKey) return CODICI_SCARICO_VOCE;
+  if (!periKey) return soloNessuno;
   const peri = perimetri.find((p) => p.key === periKey);
-  if (!peri?.codici.length) return CODICI_SCARICO_VOCE;
+  if (!peri?.codici.length) return soloNessuno;
+
   const allowed = new Set(peri.codici.map((c) => c.codice));
-  return CODICI_SCARICO_VOCE.filter((o) => o.value === "" || allowed.has(o.value));
+  const opzioni: Array<{ value: CodiceScaricoVoce; label: string }> = [
+    { value: "", label: "— Nessuno —" },
+  ];
+  if (allowed.has(CODICE_SCARICO_NULLI)) opzioni.push(OPZIONE_NULLI);
+  for (const c of CODICI_SCARICO) {
+    if (allowed.has(c)) opzioni.push({ value: c, label: c });
+  }
+  return opzioni;
 }
 
 export function labelPerimetroVoce(

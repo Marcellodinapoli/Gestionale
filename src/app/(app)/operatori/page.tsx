@@ -3,7 +3,7 @@ import { requirePermission } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
 import { OperatoriGestione } from "@/components/operatori/OperatoriGestione";
-import { NuovoOperatoreForm } from "@/components/operatori/NuovoOperatoreForm";
+import { NuovoOperatoreButton } from "@/components/operatori/NuovoOperatoreButton";
 
 export default async function OperatoriPage() {
   const user = await requirePermission("operatori:manage");
@@ -61,15 +61,14 @@ export default async function OperatoriPage() {
       <PageHeader
         title="Gestione operatori"
         subtitle="Acronimi, accesso formazione/completo, reset password e creazione utenti"
+        action={
+          <NuovoOperatoreButton
+            creatorRole={user.role}
+            sedi={sedi}
+            supervisori={supervisori}
+          />
+        }
       />
-
-      <Card title="Nuovo operatore">
-        <NuovoOperatoreForm
-          creatorRole={user.role}
-          sedi={sedi}
-          supervisori={supervisori}
-        />
-      </Card>
 
       <Card>
         <OperatoriGestione

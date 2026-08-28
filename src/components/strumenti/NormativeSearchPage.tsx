@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Loader2, Send, Square } from "lucide-react";
+import { ChevronDown, Loader2, Scale, Send, Square } from "lucide-react";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
 import { callFormazioneFunction } from "@/lib/formazione/callable";
 import { loadNormativePrompt } from "@/lib/strumenti/settingsPrompts";
+import {
+  StrumentiCardHeader,
+  StrumentiChatArea,
+  StrumentiComposeBar,
+  StrumentiPageCard,
+  strumentiSendBtnCls,
+  strumentiTextareaCls,
+} from "@/components/strumenti/StrumentiCardLayout";
 import {
   formatLogDate,
   loadMyNormativeSearchLogsOnce,
@@ -40,27 +48,27 @@ function NormativeSearchHistory({
   }, [open, loaded, db, user]);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-white">
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[#f8fafc]">
+      <div className="border-b border-[var(--line)] bg-[#e8eef4] px-4 py-2.5">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--navy)]">
+          Le tue ricerche precedenti
+          {loaded ? ` · ${entries.length}` : ""}
+        </h3>
+      </div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
+        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-white/70"
       >
-        <div>
-          <p className="text-sm font-semibold text-[var(--navy)]">
-            Le tue ricerche precedenti
-            {loaded ? ` (${entries.length})` : ""}
-          </p>
-          <p className="mt-1 text-xs leading-snug text-[var(--muted)]">
-            Rivedi le risposte già ottenute ed evita domande duplicate.
-          </p>
-        </div>
+        <p className="text-xs leading-snug text-[var(--muted)]">
+          Rivedi le risposte già ottenute ed evita domande duplicate.
+        </p>
         <ChevronDown
-          className={`mt-0.5 h-4 w-4 shrink-0 text-black/45 transition ${open ? "rotate-180" : ""}`}
+          className={`mt-0.5 h-4 w-4 shrink-0 text-[var(--navy)]/45 transition ${open ? "rotate-180" : ""}`}
         />
       </button>
       {open ? (
-        <div className="max-h-64 overflow-y-auto border-t border-[var(--line)] px-4 py-2">
+        <div className="max-h-64 overflow-y-auto border-t border-[var(--line)] bg-white px-4 py-2">
           {loadingHistory ? (
             <p className="py-3 text-sm text-[var(--muted)]">Caricamento cronologia…</p>
           ) : !entries.length ? (
@@ -114,7 +122,7 @@ function HistoryItem({
           <button
             type="button"
             onClick={() => onSelectQuestion(entry.question)}
-            className="mt-2 text-sm font-semibold text-[#1565C0] hover:underline"
+            className="mt-2 text-sm font-semibold text-[var(--accent)] hover:underline"
           >
             Usa di nuovo questa domanda
           </button>
@@ -199,23 +207,23 @@ export function NormativeSearchPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-220px)] flex-col rounded-xl border border-[var(--line)] bg-white shadow-sm">
-      <div className="space-y-2 border-b border-[var(--line)] px-4 py-4 sm:px-6">
-        <p className="text-sm leading-relaxed text-black/70">
+    <StrumentiPageCard>
+      <StrumentiCardHeader title="Ricerca normativa" icon={Scale}>
+        <p className="text-sm leading-relaxed text-black/75">
           Scrivi una domanda sull&apos;attività stragiudiziale, in particolare sul recupero
           crediti. L&apos;assistente risponde in linguaggio semplice.
         </p>
-        <p className="text-[13px] leading-snug text-amber-800">
-          Le risposte hanno scopo informativo e non sostituiscono il parere di un
-          professionista qualificato.
+        <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-[13px] leading-snug text-amber-900">
+          Le risposte hanno scopo informativo e non sostituiscono il parere di un professionista
+          qualificato.
         </p>
         <NormativeSearchHistory onSelectQuestion={setQuestion} />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      </div>
+      </StrumentiCardHeader>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+      <StrumentiChatArea scrollRef={scrollRef}>
         {!turns.length ? (
-          <p className="py-12 text-center text-sm text-black/55">
+          <p className="py-12 text-center text-sm text-[var(--muted)]">
             Scrivi la prima domanda nel campo in basso per iniziare.
           </p>
         ) : (
@@ -225,10 +233,10 @@ export function NormativeSearchPage() {
               return (
                 <div
                   key={`${turn.role}-${index}`}
-                  className={`max-w-[85%] rounded-xl border px-4 py-3 text-sm leading-relaxed ${
+                  className={`max-w-[85%] rounded-xl border px-4 py-3 text-sm leading-relaxed shadow-sm ${
                     isUser
-                      ? "ml-auto border-[#00B0FF]/35 bg-[#00B0FF]/10"
-                      : "mr-auto border-[#E0E0E0] bg-[#F5F5F5]"
+                      ? "ml-auto border-[var(--accent)]/25 bg-[#e6f3f2] text-[var(--navy)]"
+                      : "mr-auto border-[var(--line)] bg-white text-black/85"
                   }`}
                 >
                   {turn.content}
@@ -236,16 +244,16 @@ export function NormativeSearchPage() {
               );
             })}
             {loading ? (
-              <div className="flex items-center gap-2 text-sm text-black/55">
+              <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Analisi in corso…
               </div>
             ) : null}
           </div>
         )}
-      </div>
+      </StrumentiChatArea>
 
-      <div className="border-t border-[var(--line)] px-4 py-4 sm:px-6">
+      <StrumentiComposeBar hint="Invio per inviare · Maiusc+Invio per andare a capo">
         <div className="flex items-end gap-2">
           <textarea
             value={question}
@@ -258,13 +266,13 @@ export function NormativeSearchPage() {
             }}
             rows={2}
             placeholder="Scrivi la tua domanda…"
-            className="min-h-[44px] flex-1 resize-y rounded-lg border border-[var(--line)] px-3 py-2 text-sm focus:border-[#1a4f7a] focus:outline-none focus:ring-2 focus:ring-[#1a4f7a]/15"
+            className={strumentiTextareaCls}
           />
           {loading ? (
             <button
               type="button"
               onClick={stopSearch}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gray-800 text-white"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--navy)] shadow-sm hover:bg-[#fafbfc]"
               aria-label="Interrompi"
             >
               <Square className="h-4 w-4" />
@@ -274,13 +282,13 @@ export function NormativeSearchPage() {
             type="button"
             disabled={loading || !question.trim()}
             onClick={() => void submit()}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#00B0FF] text-white disabled:opacity-50"
+            className={strumentiSendBtnCls}
             aria-label="Invia"
           >
             <Send className="h-4 w-4" />
           </button>
         </div>
-      </div>
-    </div>
+      </StrumentiComposeBar>
+    </StrumentiPageCard>
   );
 }

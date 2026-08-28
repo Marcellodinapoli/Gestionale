@@ -4,10 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Pin, PinOff } from "lucide-react";
 import {
-  addAttivitaAction,
+  salvaNotaServizioPraticaAction,
   toggleFissaAttivitaAction,
   updateAttivitaAction,
-  updateContattoPraticaAction,
 } from "@/actions/core";
 import { CODICI_SCARICO, CODICE_SCARICO_LABELS } from "@/lib/scarico";
 
@@ -236,22 +235,15 @@ export function InserisciNotaServizio({
     setError(null);
     setSaving(true);
     try {
-      const notaTrim = nota.trim();
-      if (notaTrim) {
-        const fdNota = new FormData();
-        fdNota.set("praticaId", praticaId);
-        fdNota.set("nota", notaTrim);
-        await addAttivitaAction(fdNota);
-      }
-
-      const fdContatto = new FormData();
-      fdContatto.set("praticaId", praticaId);
-      fdContatto.set("codScarico", codice);
-      if (codice === "PPC" && promessa) fdContatto.set("promessaAt", promessa);
+      const fd = new FormData();
+      fd.set("praticaId", praticaId);
+      fd.set("nota", nota.trim());
+      fd.set("codScarico", codice);
+      if (codice === "PPC" && promessa) fd.set("promessaAt", promessa);
       if (codice === "PPC" && importoPromessa.trim()) {
-        fdContatto.set("promessaImporto", importoPromessa.trim());
+        fd.set("promessaImporto", importoPromessa.trim());
       }
-      await updateContattoPraticaAction(fdContatto);
+      await salvaNotaServizioPraticaAction(fd);
 
       setNota("");
       router.refresh();

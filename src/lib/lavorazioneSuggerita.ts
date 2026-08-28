@@ -9,10 +9,10 @@ import {
 } from "@/lib/codiciMandantePerimetro";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import {
-  CODICI_SCARICO,
   codiceScaricoPratica,
-  isCodiceScarico,
-  type CodiceScarico,
+  parseCodiceScaricoVoce,
+  whereSenzaCodiceScaricoPratica,
+  type CodiceScaricoVoce,
 } from "@/lib/scarico";
 import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 import {
@@ -121,7 +121,7 @@ function parseVoceItem(item: unknown, dataPiano?: string): VoceLavorazioneSugger
   return {
     id,
     descrizione: String(o.descrizione || "").trim(),
-    codiceScarico: isCodiceScarico(cod) ? cod : "",
+    codiceScarico: parseCodiceScaricoVoce(cod),
     filtri: parseVoceFiltri(o),
     lavorateDa,
     lavorateA,
@@ -256,7 +256,9 @@ export async function saveSupervisorLavorazione(supervisorId: string, json: stri
 
 function voceFiltriEffectivi(voce: VoceLavorazioneSuggerita): AltriFiltri {
   const filtri = { ...voce.filtri };
-  if (voce.codiceScarico && !filtri.codScarico) filtri.codScarico = voce.codiceScarico;
+  if (voce.codiceScarico && voce.codiceScarico !== "ND" && !filtri.codScarico) {
+    filtri.codScarico = voce.codiceScarico;
+  }
   return filtri;
 }
 
@@ -287,7 +289,9 @@ export async function buildVocePraticaWhere(
 ): Promise<Prisma.PraticaWhereInput> {
   const and: Prisma.PraticaWhereInput[] = [{ stato: STATO_LAVORAZIONE_FISSO }];
 
-  if (voce.codiceScarico) {
+  if (voce.codiceScarico === "ND") {
+    and.push(whereSenzaCodiceScaricoPratica());
+  } else if (voce.codiceScarico) {
     and.push({ codiceScarico: voce.codiceScarico });
   }
 
@@ -322,7 +326,8 @@ export async function buildVocePraticaWhere(
 /** @deprecated usa buildVocePraticaWhere */
 export function vocePraticaWhere(voce: VoceLavorazioneSuggerita): Prisma.PraticaWhereInput {
   const and: Prisma.PraticaWhereInput[] = [{ stato: STATO_LAVORAZIONE_FISSO }];
-  if (voce.codiceScarico) and.push({ codiceScarico: voce.codiceScarico });
+  if (voce.codiceScarico === "ND") and.push(whereSenzaCodiceScaricoPratica());
+  else if (voce.codiceScarico) and.push({ codiceScarico: voce.codiceScarico });
   return and.length === 1 ? and[0]! : { AND: and };
 }
 
@@ -525,8 +530,8 @@ function labelPerimetro(
   return labelConAcronimo(r.mandanteCodice, r.perimetro, acronimo);
 }
 
-function codiceSlotToVoce(codice: CodiceConteggioKey): CodiceScarico | "" {
-  return codice === "ND" ? "" : codice;
+function codiceSlotToVoce(codice: CodiceConteggioKey): CodiceScaricoVoce {
+  return codice === "ND" ? "ND" : codice;
 }
 
 function sortPerimetriRiga(rows: PerimetroRigaLavorazione[]): PerimetroRigaLavorazione[] {

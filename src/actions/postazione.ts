@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/domain";
 import { requireUser, requireWritablePermission } from "@/lib/guard";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
+import { canImpostarePostazioneFissa } from "@/lib/permissions";
+import { validaPostazionePerUtente } from "@/lib/postazioneAssign";
 
 export async function selezionaPostazioneAction(formData: FormData) {
   const user = await requireUser({ allowExpiredPassword: true });
@@ -14,27 +16,15 @@ export async function selezionaPostazioneAction(formData: FormData) {
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) return { error: "Seleziona una postazione" };
 
-  const postazione = await prisma.postazione.findFirst({
-    where: { id: postazioneId, tenantId: user.tenantId, active: true },
-    include: {
-      occupanti: {
-        where: { active: true, id: { not: user.id }, tenantId: user.tenantId },
-        select: { id: true, name: true },
-      },
-    },
-  });
-  if (!postazione) {
-    return { error: "Postazione non valida" };
-  }
-  if (postazione.occupanti.length > 0) {
-    return {
-      error: `Postazione già occupata da ${postazione.occupanti[0].name}`,
-    };
-  }
+  const validazione = await validaPostazionePerUtente(postazioneId, user.id, user.tenantId);
+  if ("error" in validazione) return { error: validazione.error };
+
+  const postazioneFissa =
+    canImpostarePostazioneFissa(user.role) && formData.get("postazioneFissa") === "on";
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { postazioneId },
+    data: { postazioneId, postazioneFissa },
   });
 
   await writeAudit({
@@ -43,10 +33,42 @@ export async function selezionaPostazioneAction(formData: FormData) {
     action: "seleziona_postazione",
     entity: "postazione",
     entityId: postazioneId,
-    dettaglio: postazione.nome,
+    dettaglio: `${validazione.postazione.nome}${postazioneFissa ? " · fissa" : ""}`,
   });
 
   redirect("/");
+}
+
+export async function updateAccountPostazioneAction(formData: FormData) {
+  const user = await requireUser();
+
+  const postazioneId = String(formData.get("postazioneId") || "");
+  if (!postazioneId) throw new Error("Seleziona una postazione");
+
+  const validazione = await validaPostazionePerUtente(postazioneId, user.id, user.tenantId);
+  if ("error" in validazione) throw new Error(validazione.error);
+
+  const postazioneFissa = canImpostarePostazioneFissa(user.role)
+    ? formData.get("postazioneFissa") === "on"
+    : false;
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { postazioneId, postazioneFissa },
+  });
+
+  await writeAudit({
+    userId: user.id,
+    tenantId: user.tenantId,
+    action: "account_postazione",
+    entity: "postazione",
+    entityId: postazioneId,
+    dettaglio: `${validazione.postazione.nome}${postazioneFissa ? " · fissa" : ""}`,
+  });
+
+  revalidatePath("/account");
+  revalidatePath("/", "layout");
+  revalidatePath("/pratiche");
 }
 
 export async function creaPostazioneAction(formData: FormData) {
@@ -155,7 +177,7 @@ export async function togglePostazioneAction(formData: FormData) {
   if (postazione.active) {
     await prisma.user.updateMany({
       where: { postazioneId: id, tenantId: user.tenantId },
-      data: { postazioneId: null },
+      data: { postazioneId: null, postazioneFissa: false },
     });
   }
 

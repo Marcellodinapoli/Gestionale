@@ -88,6 +88,18 @@ export function csvInt(
   return Math.round(n);
 }
 
+/** Testo da colonna CSV; `null` se colonna assente o cella vuota. */
+export function csvStr(
+  cols: string[],
+  header: string[],
+  ...aliases: string[]
+): string | null {
+  const i = csvColIndex(header, ...aliases);
+  if (i < 0) return null;
+  const v = cols[i]?.trim();
+  return v || null;
+}
+
 /** Legge e valida mandante / perimetro / lotto / affido dal form di import. */
 export async function parseImportContesto(
   formData: FormData,

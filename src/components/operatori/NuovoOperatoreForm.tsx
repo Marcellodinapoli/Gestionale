@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { ruoliCreabiliDa, ROLE_LABELS, type Role } from "@/lib/permissions";
 import { createOperatoreAction } from "@/actions/operatoriAdmin";
 
@@ -11,19 +11,37 @@ export function NuovoOperatoreForm({
   creatorRole,
   sedi,
   supervisori,
+  onSuccess,
+  onCancel,
 }: {
   creatorRole: Role;
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
+  onSuccess?: () => void;
+  onCancel?: () => void;
 }) {
   const ruoli = ruoliCreabiliDa(creatorRole);
   const [accesso, setAccesso] = useState<"completo" | "formazione">("completo");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const soloFormazione = accesso === "formazione";
 
   const inputCls = "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
 
+  function onSubmit(formData: FormData) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await createOperatoreAction(formData);
+        onSuccess?.();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Errore durante la creazione");
+      }
+    });
+  }
+
   return (
-    <form action={createOperatoreAction} className="flex flex-wrap items-end gap-3 text-sm">
+    <form action={onSubmit} className="flex flex-wrap items-end gap-3 text-sm">
       <label className="min-w-[150px] flex-1">
         <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Nome</span>
         <input name="name" required className={inputCls} />
@@ -97,10 +115,26 @@ export function NuovoOperatoreForm({
       </label>
       <button
         type="submit"
-        className="h-9 rounded-lg bg-[var(--navy)] px-4 text-sm font-medium text-white hover:opacity-90"
+        disabled={pending}
+        className="h-9 rounded-lg bg-[var(--navy)] px-4 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
       >
-        Crea
+        {pending ? "Creazione…" : "Crea"}
       </button>
+      {onCancel ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onCancel}
+          className="h-9 rounded-lg border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--navy)] hover:bg-slate-50 disabled:opacity-60"
+        >
+          Annulla
+        </button>
+      ) : null}
+      {error ? (
+        <p className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          {error}
+        </p>
+      ) : null}
       {soloFormazione ? (
         <p className="w-full text-xs text-[var(--muted)]">
           L&apos;account avrà accesso solo alla Formazione (nessuna postazione, pratiche né Strumenti AI).

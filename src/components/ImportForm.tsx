@@ -29,6 +29,30 @@ function todayInputValue() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+export type ImportPraticheSummary = {
+  isIntegrazione: boolean;
+  lotto: string;
+  mandanteCodice: string;
+  perimetro: string;
+  created: number;
+  updated: number;
+  skipped: number;
+};
+
+function formatImportPraticheFeedback(summary: ImportPraticheSummary) {
+  const righe: string[] = [];
+  if (summary.isIntegrazione) {
+    righe.push(`${summary.created} pratiche nuove aggiunte`);
+    righe.push(`${summary.updated} pratiche esistenti aggiornate`);
+  } else {
+    righe.push(`${summary.created} pratiche importate`);
+  }
+  if (summary.skipped > 0) {
+    righe.push(`${summary.skipped} righe saltate (nome mancante o riga vuota)`);
+  }
+  return righe;
+}
+
 export function ImportForm({
   kind,
   buttonLabel = "Importa",
@@ -54,6 +78,8 @@ export function ImportForm({
   const router = useRouter();
   const action = kind === "pratiche" ? importCsvAction : importIncassiCsvAction;
   const [message, setMessage] = useState<string | null>(null);
+  const [messageKind, setMessageKind] = useState<"ok" | "error" | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportPraticheSummary | null>(null);
   const [mandanteId, setMandanteId] = useState(prefill?.mandanteId ?? "");
   const [perimetro, setPerimetro] = useState(prefill?.perimetro ?? "");
   const [lotto, setLotto] = useState(prefill?.lotto ?? "");
@@ -77,6 +103,8 @@ export function ImportForm({
     setAffidoIl(prefill.affidoIl);
     setScadenzaMandato(prefill.scadenzaMandato ?? "");
     setMessage(null);
+    setMessageKind(null);
+    setImportSummary(null);
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [
     prefill?.mandanteId,
@@ -135,6 +163,8 @@ export function ImportForm({
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage(null);
+    setMessageKind(null);
+    setImportSummary(null);
 
     if (!file) {
       setMessage("Seleziona un file CSV da importare");
@@ -150,14 +180,26 @@ export function ImportForm({
     try {
       const result = await action(fd);
       setProgress(100);
-      if (result?.error) setMessage(result.error);
+      if (result?.error) {
+        setMessageKind("error");
+        setMessage(result.error);
+        setImportSummary(null);
+      }
       if (result?.ok) {
+        setMessageKind("ok");
         setMessage(result.ok);
+        const summary =
+          kind === "pratiche" && result && "importSummary" in result
+            ? (result.importSummary as ImportPraticheSummary | undefined)
+            : undefined;
+        setImportSummary(summary ?? null);
         clearFile();
         router.refresh();
       }
       await new Promise((r) => setTimeout(r, 350));
     } catch (err) {
+      setMessageKind("error");
+      setImportSummary(null);
       setMessage(err instanceof Error ? err.message : "Errore durante l'import");
     } finally {
       setPending(false);
@@ -168,6 +210,8 @@ export function ImportForm({
   function onAnnulla() {
     if (pending) return;
     setMessage(null);
+    setMessageKind(null);
+    setImportSummary(null);
     setMandanteId("");
     setPerimetro("");
     setLotto("");
@@ -187,7 +231,7 @@ export function ImportForm({
   const submitLabel = pending
     ? "Import in corso…"
     : lottoMatch
-      ? `Integra lotto (${lottoMatch.nPratiche} già presenti)`
+      ? `Integra / aggiorna lotto (${lottoMatch.nPratiche} già presenti)`
       : buttonLabel;
 
   return (
@@ -331,10 +375,30 @@ export function ImportForm({
         />
       </label>
 
+      {kind === "pratiche" ? (
+        <div className="rounded-lg border border-[var(--line)] bg-[#f5f7fa] px-3 py-2.5 text-xs leading-relaxed text-[var(--navy)]">
+          <p className="font-semibold">Integrazione su lotto già caricato</p>
+          <p className="mt-1 text-[var(--muted)]">
+            Se mandante, perimetro e lotto coincidono con un import precedente, le righe già
+            presenti vengono <strong className="text-[var(--navy)]">aggiornate</strong> (anagrafica
+            e dati contabili) senza duplicare; le righe nuove vengono aggiunte. Note, codici
+            scarico, affidi e lavorazione restano invariati.
+          </p>
+          <p className="mt-2 text-[var(--muted)]">
+            <strong className="text-[var(--navy)]">Suggerimento:</strong> per riconoscere le
+            pratiche già presenti includi nel CSV almeno uno tra{" "}
+            <span className="font-mono text-[11px]">contratto</span>,{" "}
+            <span className="font-mono text-[11px]">commessa</span> o{" "}
+            <span className="font-mono text-[11px]">cf</span>. Senza questi campi una riga può
+            essere trattata come nuova pratica.
+          </p>
+        </div>
+      ) : null}
+
       {lottoMatch ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Lotto già presente ({lottoMatch.nPratiche} pratiche). Il CSV verrà
-          caricato come <strong>integrazione</strong> sullo stesso import.
+          Questo lotto è già presente ({lottoMatch.nPratiche} pratiche): il prossimo caricamento
+          sarà un&apos;<strong>integrazione</strong>, non un nuovo import.
         </p>
       ) : null}
 
@@ -350,6 +414,8 @@ export function ImportForm({
             const f = e.target.files?.[0] ?? null;
             setFile(f);
             setMessage(null);
+            setMessageKind(null);
+            setImportSummary(null);
           }}
         />
         <div
@@ -431,7 +497,32 @@ export function ImportForm({
           Annulla
         </button>
       </div>
-      {message ? <p className="text-sm">{message}</p> : null}
+      {message ? (
+        <div
+          className={`rounded-lg border px-3 py-2.5 text-sm ${
+            messageKind === "ok"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-rose-200 bg-rose-50 text-rose-800"
+          }`}
+          role="status"
+        >
+          <p className="font-semibold">{message}</p>
+          {importSummary ? (
+            <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs sm:text-sm">
+              {formatImportPraticheFeedback(importSummary).map((riga) => (
+                <li key={riga}>{riga}</li>
+              ))}
+              <li>
+                Mandante {importSummary.mandanteCodice} · perimetro {importSummary.perimetro} ·
+                lotto {importSummary.lotto}
+              </li>
+              {importSummary.isIntegrazione ? (
+                <li>Note e codici scarico sulle pratiche esistenti non sono stati modificati.</li>
+              ) : null}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </form>
   );
 }

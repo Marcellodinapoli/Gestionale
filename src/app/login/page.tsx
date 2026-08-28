@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
-import { requiresPostazione } from "@/lib/permissions";
+import { mustChoosePostazioneAlLogin } from "@/lib/permissions";
 import { needsSediSetup } from "@/lib/sediSetup";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { LoginForm } from "@/components/LoginForm";
@@ -12,7 +12,7 @@ export default async function LoginPage() {
     if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
     if (user.formazioneOnly) redirect(homePathForUser(user));
     if (await needsSediSetup(user)) redirect("/setup-sedi");
-    if (requiresPostazione(user) && !user.postazioneId) redirect("/seleziona-postazione");
+    if (mustChoosePostazioneAlLogin(user)) redirect("/seleziona-postazione");
     redirect("/");
   }
 

@@ -31,7 +31,7 @@ export function StrumentiNav() {
               href={href}
               className={`-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
                 active
-                  ? "border-[#00B0FF] text-[var(--navy)]"
+                  ? "border-[var(--accent)] text-[var(--navy)]"
                   : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
               }`}
             >

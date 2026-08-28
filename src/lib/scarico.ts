@@ -32,6 +32,33 @@ export function isCodiceScarico(value?: string | null): value is CodiceScarico {
   return Boolean(value && CODICI_SCARICO.includes(value as CodiceScarico));
 }
 
+/** Filtro piano lavorazione: pratiche senza codice scarico (colonna «Senza»). */
+export const CODICE_SCARICO_NULLI = "ND" as const;
+
+export type CodiceScaricoVoce = CodiceScarico | typeof CODICE_SCARICO_NULLI | "";
+
+export function isCodiceScaricoNulli(
+  value?: string | null
+): value is typeof CODICE_SCARICO_NULLI {
+  return value === CODICE_SCARICO_NULLI;
+}
+
+export function parseCodiceScaricoVoce(cod: string): CodiceScaricoVoce {
+  if (isCodiceScarico(cod)) return cod;
+  if (isCodiceScaricoNulli(cod)) return CODICE_SCARICO_NULLI;
+  return "";
+}
+
+/** Where Prisma: campo codiceScarico assente o non valido (stato IN_LAVORAZIONE non mappa codici). */
+export function whereSenzaCodiceScaricoPratica() {
+  return {
+    OR: [
+      { codiceScarico: null },
+      { codiceScarico: { notIn: [...CODICI_SCARICO] } },
+    ],
+  };
+}
+
 export function codiceScaricoPratica(stato: string, codiceScarico?: string | null) {
   if (codiceScarico && CODICI_SCARICO.includes(codiceScarico as CodiceScarico)) {
     return codiceScarico as CodiceScarico;

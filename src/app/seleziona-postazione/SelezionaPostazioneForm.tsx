@@ -16,11 +16,14 @@ type PostazioneItem = {
 
 export function SelezionaPostazioneForm({
   postazioni,
+  showPostazioneFissa = false,
 }: {
   postazioni: PostazioneItem[];
+  showPostazioneFissa?: boolean;
 }) {
   const libere = postazioni.filter((p) => !p.occupante);
   const [selected, setSelected] = useState<string | null>(null);
+  const [postazioneFissa, setPostazioneFissa] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +39,9 @@ export function SelezionaPostazioneForm({
     setError(null);
     const fd = new FormData();
     fd.set("postazioneId", selected);
+    if (showPostazioneFissa && postazioneFissa) {
+      fd.set("postazioneFissa", "on");
+    }
     const result = await selezionaPostazioneAction(fd);
     if (result?.error) {
       setError(result.error);
@@ -134,6 +140,25 @@ export function SelezionaPostazioneForm({
 
       {error ? (
         <p className="mt-3 text-xs font-semibold text-red-600">{error}</p>
+      ) : null}
+
+      {showPostazioneFissa ? (
+        <label className="mt-4 flex cursor-pointer items-start gap-2 rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2.5 text-sm">
+          <input
+            type="checkbox"
+            checked={postazioneFissa}
+            onChange={(e) => setPostazioneFissa(e.target.checked)}
+            disabled={loading}
+            className="mt-0.5 h-4 w-4 rounded border-[var(--line)] text-[var(--navy)]"
+          />
+          <span>
+            <span className="font-semibold text-[var(--navy)]">Usa sempre questa postazione</span>
+            <span className="mt-0.5 block text-xs text-[var(--muted)]">
+              Non ti verrà più chiesto di sceglierla al login. Potrai cambiarla dalla sezione
+              Account.
+            </span>
+          </span>
+        </label>
       ) : null}
 
       <button

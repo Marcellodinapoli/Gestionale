@@ -16,6 +16,7 @@ export type SessionUser = {
   tenantSlug?: string | null;
   tenantNome?: string | null;
   postazioneId?: string | null;
+  postazioneFissa?: boolean;
   interno?: string | null;
   prefissoChiamata?: string | null;
   postazioneEmail?: string | null;
@@ -80,13 +81,37 @@ export function isManutenzione(user: { role: string } | null | undefined) {
   return user?.role === "MANUTENZIONE";
 }
 
-/** Ruoli che devono scegliere una postazione al login. */
+/** Tutti tranne admin (e formazione-only) devono avere una postazione. */
 export function requiresPostazione(
   user: { role: Role; formazioneOnly?: boolean } | null | undefined
 ) {
   if (!user) return false;
   if (user.formazioneOnly) return false;
-  return !["ADMIN", "AMMINISTRAZIONE"].includes(user.role);
+  return user.role !== "ADMIN";
+}
+
+/** Solo l'operatore deve avere l'interno configurato prima di chiamare. */
+export function richiedeInternoPerChiamata(role: Role) {
+  return role === "OPERATOR";
+}
+
+/** Back office e amministrazione possono fissare la postazione e saltare la selezione al login. */
+export function canImpostarePostazioneFissa(role: Role) {
+  return role === "BACK_OFFICE" || role === "AMMINISTRAZIONE";
+}
+
+/** True se l'utente deve ancora passare dalla schermata di selezione postazione. */
+export function mustChoosePostazioneAlLogin(
+  user: {
+    role: Role;
+    formazioneOnly?: boolean;
+    postazioneId?: string | null;
+    postazioneFissa?: boolean;
+  } | null | undefined
+) {
+  if (!user || !requiresPostazione(user)) return false;
+  if (user.postazioneFissa && user.postazioneId) return false;
+  return !user.postazioneId;
 }
 
 /** Ruoli assegnabili in creazione account, in base al creatore. */

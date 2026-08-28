@@ -13,7 +13,7 @@ import {
 } from "@/lib/lavorazioneSuggerita";
 import { sanitizeAltriFiltri } from "@/lib/praticheAltriFiltri";
 import { formatDataIso, parseDataIso } from "@/lib/lavorateOggi";
-import { isCodiceScarico } from "@/lib/scarico";
+import { parseCodiceScaricoVoce } from "@/lib/scarico";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -54,7 +54,7 @@ function parseVociPayload(raw: string): VoceLavorazioneSuggerita[] {
     return {
       id: String(o.id || "").trim() || `lav-${Date.now()}-${i}`,
       descrizione: String(o.descrizione || "").trim(),
-      codiceScarico: isCodiceScarico(cod) ? cod : "",
+      codiceScarico: parseCodiceScaricoVoce(cod),
       filtri: sanitizeAltriFiltri(o.filtri ?? migrateLegacyFiltri(o)),
       lavorateDa,
       lavorateA,

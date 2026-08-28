@@ -99,6 +99,14 @@ function VoceRiga({
       ? codiciScaricoPerRiga(voce, perimetriRiga!)
       : [{ value: "" as const, label: "—" }]
     : CODICI_SCARICO_VOCE;
+  const codiceScaricoSelezionato = codiciScaricoVoce.some((o) => o.value === voce.codiceScarico)
+    ? voce.codiceScarico
+    : "";
+
+  useEffect(() => {
+    if (!canEdit || codiceScaricoSelezionato === voce.codiceScarico) return;
+    onChange({ ...voce, codiceScarico: "" });
+  }, [canEdit, codiceScaricoSelezionato, voce.codiceScarico, perimetroSelezionato, voce, onChange]);
 
   function conteggioOp(opId: string) {
     return voce.operatori.find((o) => o.id === opId) ?? {
@@ -172,25 +180,29 @@ function VoceRiga({
       <td className="px-2 py-1.5 align-top">
         {canEdit ? (
           <select
-            value={voce.codiceScarico}
-            onChange={(e) =>
+            value={codiceScaricoSelezionato}
+            onChange={(e) => {
+              const codiceScarico = e.target.value as VoceLavorazioneSuggerita["codiceScarico"];
               onChange({
                 ...voce,
-                codiceScarico: e.target.value as VoceLavorazioneSuggerita["codiceScarico"],
-              })
-            }
+                codiceScarico,
+                ...(codiceScarico === "ND" ? { descrizione: "Pratiche nuove" } : {}),
+              });
+            }}
             className="h-7 min-w-[4.5rem] rounded border border-[var(--line)] px-1 text-xs uppercase"
             disabled={haOpzioniPerimetro && !perimetroSelezionato}
           >
             {codiciScaricoVoce.map((o) => (
               <option key={o.value || "none"} value={o.value}>
-                {o.value || "—"}
+                {o.label}
               </option>
             ))}
           </select>
         ) : (
           <span className="text-xs font-semibold uppercase text-[var(--navy)]">
-            {voce.codiceScarico || "—"}
+            {voce.codiceScarico === "ND"
+              ? "Nulli"
+              : voce.codiceScarico || "—"}
           </span>
         )}
       </td>

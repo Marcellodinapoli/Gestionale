@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
-import { requiresPostazione } from "@/lib/permissions";
+import { mustChoosePostazioneAlLogin } from "@/lib/permissions";
 import { needsSediSetup } from "@/lib/sediSetup";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { CambioPasswordForm } from "@/components/account/CambioPasswordForm";
@@ -19,7 +19,7 @@ export default async function CambiaPasswordPage() {
     afterHref = homePathForUser(user);
   } else if (await needsSediSetup(user)) {
     afterHref = "/setup-sedi";
-  } else if (requiresPostazione(user)) {
+  } else if (mustChoosePostazioneAlLogin(user)) {
     afterHref = "/seleziona-postazione";
   }
 

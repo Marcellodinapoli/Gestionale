@@ -288,7 +288,7 @@ export function AnagraficaRecapiti({
             onDoubleClick={
               isTel && canEdit
                 ? () => {
-                    chiamaNumero(valore);
+                    if (!chiamaNumero(valore)) return;
                     avviaSessioneChiamata(valore);
                     registraAzione("chiamata", valore);
                   }

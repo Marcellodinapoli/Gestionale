@@ -10,10 +10,12 @@ import { isManutenzione, canViewRicaviIncassiAzienda } from "@/lib/permissions";
 import {
   buildStatisticheGruppo,
   completaSezioniPerimetriConfigurate,
+  allineaTotaleStatistiche,
   parseLottiFiltro,
 } from "@/lib/statisticheGruppo";
 import { elencoPerimetriGruppoConfig } from "@/lib/affidiPerimetro";
-import { parsePerimetriList } from "@/lib/mandantePerimetri";
+import { parsePerimetriList, acronimoPerimetroLotto } from "@/lib/mandantePerimetri";
+import type { LottoPerimetroFiltro } from "@/lib/statisticheGruppoUi";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import { PageHeader } from "@/components/ui";
 import { StatisticheGriglia } from "@/components/statistiche/StatisticheGriglia";
@@ -226,24 +228,86 @@ export default async function StatistichePage({
             : {}),
           numeroMandante: { not: null },
         },
-        select: { numeroMandante: true },
-        distinct: ["numeroMandante"],
-        orderBy: { numeroMandante: "asc" },
+        select: { numeroMandante: true, mandanteId: true },
+        distinct: ["mandanteId", "numeroMandante"],
+        orderBy: [{ mandanteId: "asc" }, { numeroMandante: "asc" }],
       });
 
-  const lottiDisponibili = isManutenzione(user) || nessunPerimetroGruppo
+  const importBatches = isManutenzione(user)
     ? []
-    : perimetriConfig.length
-      ? perimetriConfig.map((p) => p.perimetro).filter((p) => p !== "—")
-      : [
-          ...new Set(
-            lottiRows
-              .map((r) => r.numeroMandante?.trim())
-              .filter((x): x is string => Boolean(x))
-          ),
-        ].sort((a, b) => a.localeCompare(b, "it"));
+    : await prisma.importBatch.findMany({
+        where: { tenantId: user.tenantId },
+        select: { mandanteId: true, lotto: true, perimetro: true },
+      });
 
-  const { sezioni: sezioniRaw, totale, praticheCount } = await buildStatisticheGruppo(
+  const lottoPerimetroByKey = new Map(
+    importBatches
+      .filter((b) => b.lotto.trim() && b.perimetro.trim())
+      .map((b) => [`${b.mandanteId}|${b.lotto.trim()}`, b.perimetro.trim()] as const)
+  );
+
+  const mandantePerimetriRaw = new Map(
+    mandantiAll.map((m) => [m.id, m.perimetri] as const)
+  );
+
+  const lottiOpzioniMap = new Map<string, LottoPerimetroFiltro>();
+
+  const addLottoOpzione = (
+    mandanteId: string,
+    lotto: string,
+    acronimoHint?: string | null,
+    force = false
+  ) => {
+    const value = lotto.trim();
+    if (!value) return;
+    const chiaveImport = lottoPerimetroByKey.get(`${mandanteId}|${value}`) ?? null;
+    const label = acronimoPerimetroLotto(
+      mandantePerimetriRaw.get(mandanteId) ?? null,
+      value,
+      chiaveImport,
+      acronimoHint
+    );
+    const prev = lottiOpzioniMap.get(value);
+    if (prev && !force && prev.label !== value) return;
+    lottiOpzioniMap.set(value, {
+      value,
+      label,
+      title: label !== value ? `Lotto mandante ${value}` : undefined,
+    });
+  };
+
+  if (!isManutenzione(user) && !nessunPerimetroGruppo) {
+    for (const row of lottiRows) {
+      const lotto = row.numeroMandante?.trim();
+      if (!lotto) continue;
+      addLottoOpzione(row.mandanteId, lotto);
+    }
+    for (const p of perimetriConfig) {
+      if (p.perimetro === "—") continue;
+      addLottoOpzione(
+        p.mandanteId,
+        p.perimetro,
+        p.acronimo,
+        Boolean(p.acronimo?.trim())
+      );
+    }
+    for (const lotto of lottiSelezionati) {
+      if (lottiOpzioniMap.has(lotto)) continue;
+      for (const m of mandantiAll) {
+        addLottoOpzione(m.id, lotto);
+        const hit = lottiOpzioniMap.get(lotto);
+        if (hit && hit.label !== lotto) break;
+      }
+    }
+  }
+
+  const lottiOpzioni = [...lottiOpzioniMap.values()].sort((a, b) =>
+    a.label.localeCompare(b.label, "it")
+  );
+
+  const mandantiPerimetriOpts = mandantiAll.map((m) => ({ perimetri: m.perimetri }));
+
+  const { sezioni: sezioniRaw, totale: totaleRaw, praticheCount } = await buildStatisticheGruppo(
     gruppo,
     {
       affidoDa,
@@ -252,14 +316,25 @@ export default async function StatistichePage({
       lotti: lottiSelezionati,
     },
     tutteLePratiche && !sedeScopeId
-      ? { tenantId: user.tenantId, tutteLePratiche: true }
+      ? {
+          tenantId: user.tenantId,
+          tutteLePratiche: true,
+          mandantiPerimetri: mandantiPerimetriOpts,
+        }
       : {
+          tenantId: user.tenantId,
           extraWhere: periScope,
           richiedePerimetriGruppo: usaPerimetriGruppo,
+          mandantiPerimetri: mandantiPerimetriOpts,
         }
   );
 
-  const sezioni = completaSezioniPerimetriConfigurate(sezioniRaw, perimetriConfig);
+  const sezioni = completaSezioniPerimetriConfigurate(
+    sezioniRaw,
+    perimetriConfig,
+    mandantiAll.map((m) => ({ id: m.id, perimetri: m.perimetri }))
+  );
+  const totale = allineaTotaleStatistiche(sezioni, totaleRaw);
 
   const operatoriGruppo = gruppo.members.filter((m) => m.role === "OPERATOR");
   const subtitle = canFilterGruppo
@@ -297,7 +372,7 @@ export default async function StatistichePage({
       <Suspense fallback={null}>
         <StatisticheFiltriForm
           mandanti={mandanti}
-          lottiDisponibili={lottiDisponibili}
+          lottiOpzioni={lottiOpzioni}
           affidoDa={affidoDaStr}
           affidoA={affidoAStr}
           mandanteId={sp.mandanteId}

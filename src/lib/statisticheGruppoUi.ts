@@ -1,5 +1,4 @@
 import { importoIt } from "@/lib/domainFormat";
-import type { CodiceScarico } from "@/lib/scarico";
 
 /** Tipi/helper statistiche — senza Prisma/Firebase (safe per Client Components). */
 
@@ -12,29 +11,38 @@ export type StatisticheFiltri = {
 };
 
 export type ScaricoColonna = {
-  codice: CodiceScarico | "N/D";
+  codice: string;
+  /** Incassato totale sulle pratiche con questo codice. */
   importo: number;
+  /** % pratiche incassate codice / Nr Prt operatore. */
+  pctPz: number;
+  /** Pratiche incassate con questo codice (colonna Pz). */
   nr: number;
-  pctAffidato: number;
-  pctPezzi: number;
 };
 
 export type StatisticheRiga = {
   esa: string;
   mandato: string;
-  lottoCg: string;
+  /** Acronimo interno del perimetro. */
+  perimetro: string;
+  /** Lotto (numeroMandante / import). */
+  lotto: string;
   nrPrt: number;
   affidato: number;
   incassato: number;
   nrPzInc: number;
   pctPzIncAffidato: number;
   pctPzIncPezzi: number;
+  /** Pratiche con almeno un incasso. */
+  movimentate: number;
   scarichi: ScaricoColonna[];
   isTotale?: boolean;
 };
 
 export type StatisticheSezione = {
   perimetro: string;
+  /** Codici scarico del perimetro (ordine colonne). */
+  codiciScarico: string[];
   righe: StatisticheRiga[];
   subtotale: StatisticheRiga;
 };
@@ -42,3 +50,25 @@ export type StatisticheSezione = {
 export function fmtImportoTabella(value: number) {
   return importoIt(value);
 }
+
+/** Colonne fisse prima del blocco codici scarico (inclusa Movimentate). */
+export function colonneFisseStatistiche() {
+  return 8;
+}
+
+export function colonneCodiciScarico(codiciScarico: string[]) {
+  return codiciScarico.length * 3;
+}
+
+export function colspanTabellaStatistiche(codiciScarico: string[]) {
+  return colonneFisseStatistiche() + colonneCodiciScarico(codiciScarico);
+}
+
+export type LottoPerimetroFiltro = {
+  /** Lotto / numeroMandante (valore filtro). */
+  value: string;
+  /** Acronimo interno perimetro. */
+  label: string;
+  /** Tooltip opzionale (es. lotto mandante). */
+  title?: string;
+};

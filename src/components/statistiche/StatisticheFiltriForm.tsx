@@ -3,9 +3,11 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import type { LottoPerimetroFiltro } from "@/lib/statisticheGruppoUi";
+
 export function StatisticheFiltriForm({
   mandanti,
-  lottiDisponibili,
+  lottiOpzioni,
   affidoDa,
   affidoA,
   mandanteId,
@@ -15,7 +17,7 @@ export function StatisticheFiltriForm({
   consentiTuttiGruppi = true,
 }: {
   mandanti: Array<{ id: string; codice: string; ragioneSociale: string }>;
-  lottiDisponibili: string[];
+  lottiOpzioni: LottoPerimetroFiltro[];
   affidoDa: string;
   affidoA: string;
   mandanteId?: string;
@@ -38,6 +40,8 @@ export function StatisticheFiltriForm({
       prev.includes(value) ? prev.filter((x) => x !== value) : [...prev, value]
     );
   }
+
+  const lottiValues = lottiOpzioni.map((o) => o.value);
 
   return (
     <form
@@ -126,7 +130,7 @@ export function StatisticheFiltriForm({
             <button
               type="button"
               className="text-[var(--accent)] hover:underline"
-              onClick={() => setLotti([...lottiDisponibili])}
+              onClick={() => setLotti([...lottiValues])}
             >
               Seleziona tutti
             </button>
@@ -140,21 +144,22 @@ export function StatisticheFiltriForm({
           </div>
         </div>
         <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded border border-[var(--line)] bg-[#f8fafc] p-2">
-          {lottiDisponibili.length ? (
-            lottiDisponibili.map((l) => {
-              const on = lotti.includes(l);
+          {lottiOpzioni.length ? (
+            lottiOpzioni.map((opt) => {
+              const on = lotti.includes(opt.value);
               return (
                 <button
-                  key={l}
+                  key={opt.value}
                   type="button"
-                  onClick={() => toggleLotto(l)}
+                  title={opt.title}
+                  onClick={() => toggleLotto(opt.value)}
                   className={`rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${
                     on
                       ? "border-[var(--navy)] bg-[var(--navy)] text-white"
                       : "border-[var(--line)] bg-white text-[var(--navy)] hover:bg-[#eef4f8]"
                   }`}
                 >
-                  {l}
+                  {opt.label}
                 </button>
               );
             })

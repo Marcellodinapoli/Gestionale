@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
-import { requiresPostazione } from "@/lib/permissions";
+import { canImpostarePostazioneFissa, mustChoosePostazioneAlLogin, requiresPostazione } from "@/lib/permissions";
 import { logoutAction } from "@/actions/core";
 import { SelezionaPostazioneForm } from "./SelezionaPostazioneForm";
 
@@ -11,11 +11,7 @@ export default async function SelezionaPostazionePage() {
   if (!user) redirect("/login");
   if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
 
-  if (!requiresPostazione(user)) {
-    redirect("/");
-  }
-
-  if (user.postazioneId) {
+  if (!requiresPostazione(user) || !mustChoosePostazioneAlLogin(user)) {
     redirect("/");
   }
 
@@ -97,7 +93,10 @@ export default async function SelezionaPostazionePage() {
             </form>
           </div>
         ) : (
-          <SelezionaPostazioneForm postazioni={lista} />
+          <SelezionaPostazioneForm
+            postazioni={lista}
+            showPostazioneFissa={canImpostarePostazioneFissa(user.role)}
+          />
         )}
       </div>
     </div>

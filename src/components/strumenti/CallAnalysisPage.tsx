@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Brain, Calculator, Loader2 } from "lucide-react";
+import { Brain, Calculator, Loader2, Sparkles } from "lucide-react";
 import { CalcolatricePopup } from "@/components/pratica/CalcolatricePopup";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
+import {
+  StrumentiCardHeader,
+  StrumentiPanelCard,
+} from "@/components/strumenti/StrumentiCardLayout";
 import { callFormazioneFunction } from "@/lib/formazione/callable";
 import {
   ASSIGNMENT_OPTIONS,
@@ -25,11 +29,15 @@ import {
 import { loadCallAnalysisPrompt } from "@/lib/strumenti/settingsPrompts";
 
 const inputCls =
-  "mt-1 h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm shadow-sm focus:border-[#1a4f7a] focus:outline-none focus:ring-2 focus:ring-[#1a4f7a]/15";
+  "mt-1 h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm shadow-sm focus:border-[var(--navy)] focus:outline-none focus:ring-2 focus:ring-[var(--navy)]/15";
 const labelCls = "text-sm font-medium text-[var(--navy)]";
 
 function SectionTitle({ children }: { children: string }) {
-  return <h3 className="mt-4 mb-3 text-base font-extrabold text-[var(--navy)]">{children}</h3>;
+  return (
+    <div className="mt-5 mb-3 border-b border-[var(--line)] pb-2 first:mt-0">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--navy)]">{children}</h3>
+    </div>
+  );
 }
 
 function Field({
@@ -126,18 +134,18 @@ export function CallAnalysisPage() {
 
   return (
     <>
-      <form
-        onSubmit={(e) => void submit(e)}
-        className="rounded-xl border border-[var(--line)] bg-white p-4 shadow-sm sm:p-6"
-      >
-        <p className="text-sm leading-relaxed text-black/70">
-          Compila solo dati oggettivi in meno di un minuto. L&apos;AI analizza la pratica e
-          suggerisce la strategia telefonica.
-        </p>
-        <p className="mt-2 text-[13px] leading-snug text-amber-800">
-          Le risposte hanno scopo operativo e non sostituiscono il giudizio del consulente.
-        </p>
+      <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-md">
+        <StrumentiCardHeader title="Analisi strategica pre-contatto" icon={Sparkles}>
+          <p className="text-sm leading-relaxed text-black/75">
+            Compila solo dati oggettivi in meno di un minuto. L&apos;AI analizza la pratica e
+            suggerisce la strategia telefonica.
+          </p>
+          <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-[13px] leading-snug text-amber-900">
+            Le risposte hanno scopo operativo e non sostituiscono il giudizio del consulente.
+          </p>
+        </StrumentiCardHeader>
 
+        <form onSubmit={(e) => void submit(e)} className="bg-[#f8fafc] px-4 py-4 sm:px-6 sm:py-5">
         <SectionTitle>Dati pratica</SectionTitle>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tipologia credito" required>
@@ -563,43 +571,48 @@ export function CallAnalysisPage() {
 
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setCalcOpen(true)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--line)] text-[var(--navy)] hover:bg-[#fafbfc]"
-            title="Calcolatrice"
-          >
-            <Calculator className="h-5 w-5" />
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-[#1a4f7a] px-4 text-sm font-semibold text-white disabled:opacity-60 sm:flex-none sm:px-6"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Analisi in corso…
-              </>
-            ) : (
-              <>
-                <Brain className="h-4 w-4" />
-                Analizza con AI
-              </>
-            )}
-          </button>
+        <div className="mt-6 overflow-hidden rounded-xl border-2 border-[var(--navy)]/15 bg-[#eef4f8]">
+          <div className="border-b border-[var(--line)] bg-[#e8eef4] px-4 py-2.5">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--navy)]">
+              Avvia analisi
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 px-4 py-4">
+            <button
+              type="button"
+              onClick={() => setCalcOpen(true)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--navy)] shadow-sm hover:bg-[#fafbfc]"
+              title="Calcolatrice"
+            >
+              <Calculator className="h-5 w-5" />
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--navy-2)] disabled:opacity-60 sm:flex-none sm:px-6"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analisi in corso…
+                </>
+              ) : (
+                <>
+                  <Brain className="h-4 w-4" />
+                  Analizza con AI
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {result ? (
-          <div className="mt-6">
-            <SectionTitle>Analisi AI</SectionTitle>
-            <div className="rounded-xl border border-[var(--line)] bg-[#fafbfc] p-4 text-sm leading-relaxed whitespace-pre-wrap text-black/87">
-              {result}
-            </div>
-          </div>
+          <StrumentiPanelCard title="Analisi AI" className="mt-6">
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-black/87">{result}</div>
+          </StrumentiPanelCard>
         ) : null}
-      </form>
+        </form>
+      </div>
 
       {calcOpen ? (
         <div

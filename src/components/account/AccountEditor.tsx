@@ -3,9 +3,10 @@
 import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Phone } from "lucide-react";
+import { Lock, Monitor, Phone } from "lucide-react";
 import { updateAccountTelefoniaAction } from "@/actions/account";
 import { CambioPasswordForm } from "@/components/account/CambioPasswordForm";
+import { AccountPostazioneForm } from "@/components/account/AccountPostazioneForm";
 import { FormazioneAccountMenu } from "@/components/formazione/FormazioneAccountMenu";
 import { StrumentiAccountMenu } from "@/components/strumenti/StrumentiAccountMenu";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
@@ -78,6 +79,17 @@ export function AccountEditor({
     prefissoChiamata: string;
     postazioneNome: string | null;
     postazioneInterno: string | null;
+    postazioneId?: string | null;
+    postazioneFissa?: boolean;
+    showPostazioneFissa?: boolean;
+    gestiscePostazione?: boolean;
+    postazioni?: Array<{
+      id: string;
+      nome: string;
+      interno: string | null;
+      sede: string | null;
+      occupante: string | null;
+    }>;
     giorniAllaScadenza: number;
   };
   showFormazione?: boolean;
@@ -151,6 +163,25 @@ export function AccountEditor({
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-stretch">
+        {user.gestiscePostazione && user.postazioni ? (
+          <Sezione
+            icon={Monitor}
+            titolo="Postazione"
+            sottotitolo={
+              user.postazioneFissa
+                ? "Postazione fissa — non richiesta al login"
+                : "Postazione di lavoro per la sessione corrente"
+            }
+          >
+            <AccountPostazioneForm
+              postazioneId={user.postazioneId ?? null}
+              postazioneFissa={Boolean(user.postazioneFissa)}
+              showPostazioneFissa={Boolean(user.showPostazioneFissa)}
+              postazioni={user.postazioni}
+            />
+          </Sezione>
+        ) : null}
+
         <Sezione
           icon={Phone}
           titolo="Centralino"

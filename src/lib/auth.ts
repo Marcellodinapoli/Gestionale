@@ -83,6 +83,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       tenantSlug: user.tenant.slug,
       tenantNome: user.tenant.nome,
       postazioneId: user.postazioneId,
+      postazioneFissa: Boolean(user.postazioneFissa),
       interno: user.interno?.trim() || user.postazione?.interno || null,
       prefissoChiamata: user.prefissoChiamata?.trim() || null,
       postazioneEmail: user.postazione?.email ?? null,

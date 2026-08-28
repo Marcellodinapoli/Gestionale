@@ -102,6 +102,69 @@ export function etichettaPerimetro(
   return acronimo || descrizione;
 }
 
+/** Risolve chiave import/perimetro → acronimo interno (nomeInterno). */
+export function acronimoPerimetroChiave(
+  perimetriRaw: string | null | undefined,
+  chiave: string | null | undefined
+): string {
+  const key = chiave?.trim();
+  if (!key) return "—";
+  const elenco = parsePerimetri(perimetriRaw);
+  if (!elenco.length) return key;
+  const hit =
+    elenco.find((p) => p.nomeMandante.trim() === key) ??
+    elenco.find((p) => p.descrizione.trim() === key) ??
+    elenco.find((p) => p.nomeInterno.trim() === key) ??
+    null;
+  return hit?.nomeInterno?.trim() || key;
+}
+
+/** Acronimo interno da lotto pratica (+ chiave import batch se presente). */
+export function acronimoPerimetroLotto(
+  perimetriRaw: string | null | undefined,
+  lotto: string,
+  chiaveImport?: string | null,
+  acronimoHint?: string | null
+): string {
+  const lot = lotto.trim();
+  if (!lot) return "—";
+  if (acronimoHint?.trim()) return acronimoHint.trim();
+
+  const keys = [chiaveImport?.trim(), lot].filter(
+    (k, i, arr): k is string => Boolean(k) && arr.indexOf(k) === i
+  );
+
+  for (const key of keys) {
+    const acr = acronimoPerimetroChiave(perimetriRaw, key);
+    if (acr && acr !== "—" && acr !== lot) return acr;
+  }
+
+  return lot;
+}
+
+/** Codici scarico configurati sul perimetro (per acronimo interno). */
+export function codiciScaricoPerAcronimo(
+  perimetriRaw: string | null | undefined,
+  acronimo: string
+): string[] {
+  const key = acronimo.trim();
+  if (!key || key === "—") return [];
+  const elenco = parsePerimetri(perimetriRaw);
+  const hit =
+    elenco.find((p) => p.nomeInterno.trim() === key) ??
+    elenco.find((p) => p.descrizione.trim() === key) ??
+    elenco.find((p) => p.nomeMandante.trim() === key) ??
+    null;
+  if (!hit?.codiciScarico.length) return [];
+  return [
+    ...new Set(
+      hit.codiciScarico
+        .map((c) => c.codice.trim().toUpperCase())
+        .filter(Boolean)
+    ),
+  ].sort();
+}
+
 export function toPerimetroListItem(p: MandantePerimetro): PerimetroListItem {
   const descrizione = (p.descrizione || p.nomeMandante || "").trim();
   return {

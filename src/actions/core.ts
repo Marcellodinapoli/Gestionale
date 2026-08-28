@@ -5,11 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
-import { assertCan, can, canManageMandantePerimetri, requiresPostazione, type Role } from "@/lib/permissions";
+import { assertCan, can, canManageMandantePerimetri, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
   canAccessPratica,
   parseDateOnly,
   praticaWhere,
+  praticheStessoDebitoreIds,
   ripartiIncasso,
   writeAudit,
 } from "@/lib/domain";
@@ -32,8 +33,16 @@ import {
   parseCsvHeader,
   parseImportContesto,
 } from "@/lib/importContesto";
+import {
+  debitoreUpdateFromCsv,
+  ImportPraticaIndex,
+  parseCsvPraticaRow,
+  praticaUpdateFromCsv,
+  type ExistingPraticaImport,
+} from "@/lib/importCsvPratiche";
 import { isCodiceScarico, statoDaCodiceScarico } from "@/lib/scarico";
 import { RUOLI_LAVORAZIONE } from "@/lib/praticaOrdine";
+import { isPraticaChiusa } from "@/lib/praticaCollegata";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -83,6 +92,33 @@ export async function loginAction(input: {
     });
     return { error: "Credenziali non valide" };
   }
+  const keepPostazione = Boolean(user.postazioneFissa && user.postazioneId);
+  let postazioneIdDopoLogin: string | null = user.postazioneId;
+
+  if (keepPostazione) {
+    const postazione = await prisma.postazione.findFirst({
+      where: { id: user.postazioneId!, tenantId: tenant.id, active: true },
+    });
+    if (!postazione) {
+      postazioneIdDopoLogin = null;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date(), postazioneId: null, postazioneFissa: false },
+      });
+    } else {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+    }
+  } else {
+    postazioneIdDopoLogin = null;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date(), postazioneId: null },
+    });
+  }
+
   await Promise.all([
     createSession({
       id: user.id,
@@ -95,7 +131,6 @@ export async function loginAction(input: {
       tenantNome: tenant.nome,
       formazioneOnly: user.formazioneOnly,
     }),
-    prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), postazioneId: null } }),
     writeAudit({
       userId: user.id,
       tenantId: user.tenantId,
@@ -109,9 +144,11 @@ export async function loginAction(input: {
     redirect("/cambia-password");
   }
 
-  const needsPostazione = requiresPostazione({
+  const needsPostazione = mustChoosePostazioneAlLogin({
     role: user.role as Role,
     formazioneOnly: user.formazioneOnly,
+    postazioneId: postazioneIdDopoLogin,
+    postazioneFissa: keepPostazione && Boolean(postazioneIdDopoLogin),
   });
   if (user.formazioneOnly) {
     redirect("/formazione/progressi");
@@ -524,6 +561,165 @@ export async function addAttivitaAction(formData: FormData) {
   });
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath("/");
+}
+
+const NOTA_COLLEGATA_PRINCIPALE = "note nella pratica principale";
+
+async function applyScaricoPromessaPratica(
+  praticaId: string,
+  input: {
+    codiceScarico: string | null;
+    isPromessa: boolean;
+    promessaAt?: Date;
+    promessaImporto: number | null;
+  },
+  opts?: { ultimaLavorazione?: boolean }
+) {
+  const praticaCorrente = await prisma.pratica.findUnique({
+    where: { id: praticaId },
+    select: { codiceScarico: true },
+  });
+  const codiceScaricoCambiato =
+    (praticaCorrente?.codiceScarico || null) !== (input.codiceScarico || null);
+  const statoDaCodice = input.codiceScarico
+    ? statoDaCodiceScarico(input.codiceScarico)
+    : null;
+  const now = new Date();
+
+  await prisma.pratica.update({
+    where: { id: praticaId },
+    data: {
+      codiceScarico: input.codiceScarico,
+      ...(codiceScaricoCambiato ? { codiceScaricoAt: now } : {}),
+      ...(statoDaCodice ? { stato: statoDaCodice } : {}),
+      ...(input.codiceScarico === "PPC" ? { esitoContatto: "PROMESSA" } : {}),
+      ...(input.promessaAt ? { promessaAt: input.promessaAt } : {}),
+      promessaImporto: input.isPromessa ? input.promessaImporto : null,
+      updatedAt: now,
+      ...(opts?.ultimaLavorazione ? { ultimaLavorazioneAt: now } : {}),
+    },
+  });
+}
+
+/** Salva nota + codice scarico (+ promessa) sulla pratica e propaga sulle collegate in lavorazione. */
+export async function salvaNotaServizioPraticaAction(formData: FormData) {
+  const user = await requireWritableUser();
+  const praticaId = String(formData.get("praticaId") || "");
+  await assertPraticaEditable(user, praticaId);
+
+  const main = await prisma.pratica.findUnique({
+    where: { id: praticaId },
+    select: { tenantId: true, mandanteId: true },
+  });
+  if (!main || main.tenantId !== user.tenantId) fail("Pratica non valida");
+
+  const nota = String(formData.get("nota") || "").trim();
+  const codScaricoRaw = String(formData.get("codScarico") || "").trim();
+  const codiceScarico = codScaricoRaw || null;
+  if (codiceScarico && !isCodiceScarico(codiceScarico)) {
+    fail("Codice scarico non valido");
+  }
+
+  const isPromessa = codiceScarico === "PPC";
+  const promessaAt = isPromessa
+    ? parseDateOnly(String(formData.get("promessaAt") || ""))
+    : undefined;
+  if (isPromessa && !promessaAt) {
+    fail("Inserisci la data della promessa di pagamento");
+  }
+  const promessaImportoRaw = String(formData.get("promessaImporto") || "").trim();
+  let promessaImporto: number | null = null;
+  if (isPromessa && promessaImportoRaw) {
+    promessaImporto = Number(promessaImportoRaw.replace(",", "."));
+    if (Number.isNaN(promessaImporto)) {
+      fail("Importo promessa non valido");
+    }
+  }
+
+  const scaricoInput = {
+    codiceScarico,
+    isPromessa,
+    promessaAt,
+    promessaImporto,
+  };
+  const lavorazione = isRuoloLavorazione(user.role);
+
+  if (nota) {
+    await prisma.attivita.create({
+      data: {
+        praticaId,
+        userId: user.id,
+        tipo: "NOTA",
+        nota,
+      },
+    });
+  }
+
+  await applyScaricoPromessaPratica(praticaId, scaricoInput, {
+    ultimaLavorazione: lavorazione && Boolean(nota),
+  });
+
+  const collegateIds = (
+    await praticheStessoDebitoreIds(praticaId, "aperta")
+  ).filter((id) => id !== praticaId);
+
+  const collegate = collegateIds.length
+    ? await prisma.pratica.findMany({
+        where: {
+          id: { in: collegateIds },
+          tenantId: user.tenantId,
+          mandanteId: main.mandanteId,
+        },
+        select: { id: true, stato: true },
+      })
+    : [];
+
+  let collegateAggiornate = 0;
+  for (const collegata of collegate) {
+    if (isPraticaChiusa(collegata.stato)) continue;
+    try {
+      await assertPraticaNotLockedByOther(user.id, collegata.id);
+    } catch {
+      continue;
+    }
+
+    await prisma.attivita.create({
+      data: {
+        praticaId: collegata.id,
+        userId: user.id,
+        tipo: "NOTA",
+        nota: NOTA_COLLEGATA_PRINCIPALE,
+      },
+    });
+    await applyScaricoPromessaPratica(collegata.id, scaricoInput, {
+      ultimaLavorazione: lavorazione,
+    });
+    collegateAggiornate += 1;
+    revalidatePath(`/pratiche/${collegata.id}`);
+  }
+
+  await writeAudit({
+    userId: user.id,
+    action: "nota_servizio_collegate",
+    entity: "pratica",
+    entityId: praticaId,
+    dettaglio: [
+      codiceScarico || "—",
+      collegateAggiornate
+        ? `propagata su ${collegateAggiornate} collegate`
+        : "nessuna collegata aggiornata",
+      nota ? nota.slice(0, 120) : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  });
+
+  revalidatePath(`/pratiche/${praticaId}`);
+  revalidatePath("/pratiche");
+  revalidatePath("/");
+  revalidatePath("/agenda");
+
+  return { collegateAggiornate };
 }
 
 /** Nota unica su più pratiche (tutti tranne operatori). */
@@ -1579,159 +1775,111 @@ export async function importCsvAction(formData: FormData) {
     }));
 
   let created = 0;
+  let updated = 0;
   let skipped = 0;
   let maxScadenzaCsv: Date | null = null;
+
+  const existingPratiche: ExistingPraticaImport[] = isIntegrazione
+    ? await prisma.pratica.findMany({
+        where: { tenantId: user.tenantId, importBatchId: batch.id },
+        select: {
+          id: true,
+          debitoreId: true,
+          contratto: true,
+          commessa: true,
+          stato: true,
+          codiceScarico: true,
+          note: true,
+          debitore: { select: { codiceFiscale: true } },
+        },
+      })
+    : [];
+
+  const index = new ImportPraticaIndex(existingPratiche);
+
   for (const line of lines.slice(1)) {
     const cols = line.split(delim);
-    const nome = cols[idx("nome")]?.trim();
-    if (!nome) {
+    const row = parseCsvPraticaRow(cols, header, lotto);
+    if (!row) {
       skipped += 1;
       continue;
     }
-    const capitale =
-      csvMoney(cols, header, "capitale") ?? 0;
-    const interessi =
-      csvMoney(cols, header, "mora", "interessi") ?? 0;
-    const spese = csvMoney(cols, header, "spese") ?? 0;
-    const speseRecupero =
-      csvMoney(
-        cols,
-        header,
-        "spese_di_recupero",
-        "spese di recupero",
-        "spese_recupero",
-        "spese_rec",
-        "spese rec"
-      ) ?? 0;
-    const importoRata = csvMoney(
-      cols,
-      header,
-      "importo_rata",
-      "importo rata",
-      "imp_rata",
-      "imp rata"
-    );
-    const rateArretrate = csvInt(
-      cols,
-      header,
-      "rate_arretrate",
-      "rate arretrate",
-      "n_rate_arretrate",
-      "n rate arretrate"
-    );
-    const residuoCsv = csvMoney(
-      cols,
-      header,
-      "debito_residuo",
-      "debito residuo",
-      "residuo"
-    );
-    const nettoDaPagare =
-      csvMoney(
-        cols,
-        header,
-        "netto_da_pagare",
-        "netto da pagare",
-        "da_pagare",
-        "da pagare"
-      ) ?? residuoCsv;
-    const residuo =
-      residuoCsv ??
-      Math.round((capitale + interessi + spese + speseRecupero) * 100) / 100;
-    const lottoRiga =
-      (() => {
-        const i = csvColIndex(header, "lotto", "numero_mandante", "numero mandante");
-        if (i < 0) return "";
-        return cols[i]?.trim() || "";
-      })() || lotto;
-    const contrattoIdx = csvColIndex(
-      header,
-      "contratto",
-      "numero_contratto",
-      "nr_contratto"
-    );
-    const contrattoRiga =
-      contrattoIdx >= 0 ? cols[contrattoIdx]?.trim() || null : null;
-    const commessaIdx = csvColIndex(
-      header,
-      "commessa",
-      "numero_commessa",
-      "nr_commessa",
-      "numero_di_commessa"
-    );
-    const commessaRiga =
-      commessaIdx >= 0 ? cols[commessaIdx]?.trim() || null : null;
-    const scadIdx = csvColIndex(
-      header,
-      "scadenza_affido",
-      "scadenza affido",
-      "scadenza"
-    );
-    const scadRaw = scadIdx >= 0 ? cols[scadIdx]?.trim() || "" : "";
-    const scadenzaPratica = scadRaw ? parseDateOnly(scadRaw) : null;
-    if (
-      scadenzaPratica &&
-      (!maxScadenzaCsv || scadenzaPratica.getTime() > maxScadenzaCsv.getTime())
-    ) {
-      maxScadenzaCsv = scadenzaPratica;
+
+    if (row.scadenza && (!maxScadenzaCsv || row.scadenza.getTime() > maxScadenzaCsv.getTime())) {
+      maxScadenzaCsv = row.scadenza;
     }
-    const statoCsvIdx = csvColIndex(
-      header,
-      "stato",
-      "in_lavorazione",
-      "in lavorazione"
-    );
-    const statoCsvRaw =
-      statoCsvIdx >= 0 ? (cols[statoCsvIdx]?.trim() || "").toUpperCase() : "";
-    const statoPratica =
-      statoCsvRaw === "SI" ||
-      statoCsvRaw === "SÌ" ||
-      statoCsvRaw === "1" ||
-      statoCsvRaw === "TRUE" ||
-      statoCsvRaw === "IN_LAVORAZIONE" ||
-      statoCsvRaw === "IN LAVORAZIONE"
-        ? "IN_LAVORAZIONE"
-        : "NUOVA";
+
+    const match = isIntegrazione ? index.find(row) : null;
+
+    if (match) {
+      await prisma.debitore.update({
+        where: { id: match.debitoreId },
+        data: debitoreUpdateFromCsv(row),
+      });
+      await prisma.pratica.update({
+        where: { id: match.id },
+        data: praticaUpdateFromCsv(row, match),
+      });
+      updated += 1;
+      continue;
+    }
+
     const debitore = await prisma.debitore.create({
       data: {
         tenantId: user.tenantId,
-        nome,
-        cognome: cols[idx("cognome")]?.trim() || "",
-        codiceFiscale: cols[idx("cf")]?.trim() || null,
-        telefono: cols[idx("telefono")]?.trim() || null,
-        citta: cols[idx("citta")]?.trim() || null,
-        indirizzo: cols[idx("indirizzo")]?.trim() || null,
-        cap: cols[idx("cap")]?.trim() || null,
-        provincia: cols[idx("provincia")]?.trim() || null,
+        nome: row.nome,
+        cognome: row.cognome,
+        codiceFiscale: row.cf,
+        telefono: row.telefono,
+        citta: row.citta,
+        indirizzo: row.indirizzo,
+        cap: row.cap,
+        provincia: row.provincia,
       },
     });
-    await prisma.pratica.create({
+    const pratica = await prisma.pratica.create({
       data: {
         tenantId: user.tenantId,
         numero: await nextNumero(user.tenantId),
         mandanteId,
         debitoreId: debitore.id,
-        numeroMandante: lottoRiga,
-        contratto: contrattoRiga,
-        commessa: commessaRiga,
+        numeroMandante: row.lottoRiga,
+        contratto: row.contratto,
+        commessa: row.commessa,
         dataAffido: affidoIl,
-        scadenza: scadenzaPratica,
-        capitale,
-        interessi,
-        spese,
-        speseRecupero,
-        residuo,
-        importoRata: importoRata ?? null,
-        rateArretrate: rateArretrate ?? null,
-        nettoDaPagare: nettoDaPagare ?? residuo,
-        stato: statoPratica,
+        scadenza: row.scadenza,
+        capitale: row.capitale,
+        interessi: row.interessi,
+        spese: row.spese,
+        speseRecupero: row.speseRecupero,
+        residuo: row.residuo,
+        importoRata: row.importoRata,
+        rateArretrate: row.rateArretrate,
+        nettoDaPagare: row.nettoDaPagare,
+        stato: row.statoPratica,
         importBatchId: batch.id,
       },
     });
+    if (isIntegrazione) {
+      index.register(
+        {
+          id: pratica.id,
+          debitoreId: debitore.id,
+          contratto: row.contratto,
+          commessa: row.commessa,
+          stato: row.statoPratica,
+          codiceScarico: null,
+          note: null,
+          debitore: { codiceFiscale: row.cf },
+        },
+        row
+      );
+    }
     created += 1;
   }
 
-  if (created === 0) {
+  const imported = created + updated;
+  if (imported === 0) {
     if (!isIntegrazione) {
       await prisma.importBatch.delete({ where: { id: batch.id } }).catch(() => undefined);
     }
@@ -1754,7 +1902,7 @@ export async function importCsvAction(formData: FormData) {
     });
   }
 
-  if (created > 0) {
+  if (imported > 0) {
     await writeAudit({
       userId: user.id,
       tenantId: user.tenantId,
@@ -1762,21 +1910,30 @@ export async function importCsvAction(formData: FormData) {
       entity: "pratica",
       entityId: batch.id,
       dettaglio: isIntegrazione
-        ? `Integrazione +${created} pratiche · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`
+        ? `Integrazione +${created} nuove · ${updated} aggiornate · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`
         : `${created} pratiche · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`,
     });
   }
   revalidatePath("/pratiche");
   revalidatePath("/import");
-  if (created === 0) {
+  if (imported === 0) {
     return {
       error: `Nessuna pratica importata (${skipped} righe saltate). Controlla che il CSV abbia la colonna «nome» e il separatore ; o ,`,
     };
   }
   return {
     ok: isIntegrazione
-      ? `Integrazione lotto ${lotto}: aggiunte ${created} pratiche (mandante ${mandanteCodice}, perimetro ${perimetro})`
-      : `Importate ${created} pratiche (mandante ${mandanteCodice}, perimetro ${perimetro}, lotto ${lotto})`,
+      ? `Integrazione completata sul lotto ${lotto}.`
+      : `Import completato sul lotto ${lotto}.`,
+    importSummary: {
+      isIntegrazione,
+      lotto,
+      mandanteCodice,
+      perimetro,
+      created,
+      updated,
+      skipped,
+    },
   };
 }
 

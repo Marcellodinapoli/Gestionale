@@ -29,6 +29,16 @@ export function etichettaTipoAffido(pratica: {
   return "—";
 }
 
+/** Ordine colonna Affido: non assegnata → definitivo → temporaneo. */
+export function sortKeyTipoAffido(pratica: {
+  assegnatarioId?: string | null;
+  operatoreTitolareId?: string | null;
+}) {
+  if (isAffidoTemporaneo(pratica)) return 2;
+  if (pratica.assegnatarioId) return 1;
+  return 0;
+}
+
 export type StatoAffidoPratica = {
   assegnatarioId: string | null;
   operatoreTitolareId: string | null;

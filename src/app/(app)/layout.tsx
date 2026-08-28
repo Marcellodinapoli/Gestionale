@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isCurrentUserPasswordExpired } from "@/lib/auth";
-import { requiresPostazione } from "@/lib/permissions";
+import { mustChoosePostazioneAlLogin, richiedeInternoPerChiamata } from "@/lib/permissions";
 import { needsSediSetup } from "@/lib/sediSetup";
 import { getDialClientConfig } from "@/lib/telephony";
 import { AppShell } from "@/components/AppShell";
@@ -22,7 +22,7 @@ export default async function AppLayout({
   if (await needsSediSetup(user)) {
     redirect("/setup-sedi");
   }
-  if (requiresPostazione(user) && !user.postazioneId) {
+  if (mustChoosePostazioneAlLogin(user)) {
     redirect("/seleziona-postazione");
   }
   const dialConfig = await getDialClientConfig(user.tenantId);
@@ -33,6 +33,8 @@ export default async function AppLayout({
       <TelephonyDialProvider
         config={dialConfig}
         prefissoChiamata={user.prefissoChiamata}
+        interno={user.interno}
+        richiedeInterno={richiedeInternoPerChiamata(user.role)}
       >
         {children}
       </TelephonyDialProvider>

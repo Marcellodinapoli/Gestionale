@@ -139,7 +139,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
                     <button
                       type="button"
-                      title="Aggiungi pratiche a questo lotto"
+                      title="Aggiorna o aggiungi pratiche a questo lotto"
                       onClick={() => integra(item)}
                       className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] px-2 py-1 text-xs font-medium text-[var(--navy)] hover:bg-slate-50"
                     >
@@ -166,10 +166,11 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
         </table>
       </div>
       <p className="text-xs text-[var(--muted)]">
-        Con <strong>Integra</strong> aggiungi pratiche a un lotto già caricato
-        (anche se ci sono note, cambi codice o movimenti).{" "}
-        <strong>Elimina</strong> solo se nessuna pratica ha note, cambi codice o
-        incassi.
+        Con <strong>Integra</strong> aggiorni pratiche già presenti (anagrafica e contabile) e
+        aggiungi righe nuove, senza duplicare e senza modificare note o codici scarico. Per il
+        riconoscimento delle righe usa nel CSV almeno <span className="font-mono">contratto</span>,{" "}
+        <span className="font-mono">commessa</span> o <span className="font-mono">cf</span>.{" "}
+        <strong>Elimina</strong> solo se nessuna pratica ha note, cambi codice o incassi.
       </p>
     </div>
   );
