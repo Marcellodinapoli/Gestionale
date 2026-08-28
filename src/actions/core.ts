@@ -32,6 +32,7 @@ import {
   giornoAffidoRange,
   parseCsvHeader,
   parseImportContesto,
+  validateCsvLottoRighe,
 } from "@/lib/importContesto";
 import {
   debitoreUpdateFromCsv,
@@ -1741,6 +1742,10 @@ export async function importCsvAction(formData: FormData) {
   }
   const { mandanteId, perimetro, lotto, affidoIl, mandanteCodice, scadenzaMandato } =
     contesto.ok;
+
+  const lottoCheck = validateCsvLottoRighe(lines, delim, header, lotto);
+  if ("error" in lottoCheck) return { error: lottoCheck.error };
+
   const fileName = file instanceof File ? file.name : null;
 
   const existing = await prisma.importBatch.findFirst({

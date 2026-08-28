@@ -100,6 +100,43 @@ export function csvStr(
   return v || null;
 }
 
+/** Verifica che i valori «lotto» nel CSV coincidano con quello indicato in importazione. */
+export function validateCsvLottoRighe(
+  lines: string[],
+  delim: string,
+  header: string[],
+  lottoForm: string
+): { ok: true } | { error: string } {
+  const lottoIdx = csvColIndex(header, "lotto", "numero_mandante", "numero mandante");
+  if (lottoIdx < 0) return { ok: true };
+
+  const lottoAtteso = lottoForm.trim();
+  const idxNome = header.indexOf("nome");
+  const mismatches: string[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(delim);
+    const nome = cols[idxNome]?.trim();
+    if (!nome) continue;
+
+    const lottoCell = cols[lottoIdx]?.trim() || "";
+    if (!lottoCell) continue;
+
+    if (lottoCell !== lottoAtteso) {
+      mismatches.push(`riga ${i + 1}: «${lottoCell}»`);
+      if (mismatches.length >= 5) break;
+    }
+  }
+
+  if (mismatches.length === 0) return { ok: true };
+
+  const altre =
+    mismatches.length >= 5 ? " Controlla anche le righe successive." : "";
+  return {
+    error: `Il lotto nel CSV non coincide con quello indicato in importazione («${lottoAtteso}»): ${mismatches.join(", ")}.${altre}`,
+  };
+}
+
 /** Legge e valida mandante / perimetro / lotto / affido dal form di import. */
 export async function parseImportContesto(
   formData: FormData,

@@ -385,6 +385,11 @@ export function ImportForm({
             scarico, affidi e lavorazione restano invariati.
           </p>
           <p className="mt-2 text-[var(--muted)]">
+            Se il CSV contiene la colonna <span className="font-mono text-[11px]">lotto</span>,
+            i valori devono coincidere con il lotto indicato sopra (es.{" "}
+            <span className="font-mono text-[11px]">1426001</span>).
+          </p>
+          <p className="mt-2 text-[var(--muted)]">
             <strong className="text-[var(--navy)]">Suggerimento:</strong> per riconoscere le
             pratiche già presenti includi nel CSV almeno uno tra{" "}
             <span className="font-mono text-[11px]">contratto</span>,{" "}
