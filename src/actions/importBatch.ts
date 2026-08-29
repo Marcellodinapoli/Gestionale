@@ -26,6 +26,12 @@ export async function listImportBatchPratiche(
       select: { id: true, note: true, codiceScaricoAt: true },
     });
     const ids = pratiche.map((p) => p.id);
+    const nPratiche = ids.length;
+    if (nPratiche !== b.nPratiche) {
+      await prisma.importBatch
+        .update({ where: { id: b.id }, data: { nPratiche } })
+        .catch(() => undefined);
+    }
     const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
     const nCodice = pratiche.filter((p) =>
       praticaHaCambioCodice(p.codiceScaricoAt)
@@ -55,7 +61,7 @@ export async function listImportBatchPratiche(
           : String(s).slice(0, 10);
       })(),
       fileName: b.fileName ?? null,
-      nPratiche: b.nPratiche || ids.length,
+      nPratiche,
       createdAt:
         b.createdAt instanceof Date
           ? b.createdAt.toISOString()

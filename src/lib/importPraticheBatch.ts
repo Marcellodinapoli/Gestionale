@@ -249,9 +249,11 @@ export async function finalizePraticheImport(input: {
     return { imported: 0 };
   }
 
-  const totale = await prisma.pratica.count({
+  const praticheBatch = await prisma.pratica.findMany({
     where: { tenantId, importBatchId: ctx.batchId },
+    select: { id: true },
   });
+  const totale = praticheBatch.length;
 
   const batch = await prisma.importBatch.findFirst({
     where: { id: ctx.batchId, tenantId },

@@ -1776,9 +1776,12 @@ export async function importCsvAction(formData: FormData) {
       await prisma.importBatch.delete({ where: { id: batch.id } }).catch(() => undefined);
     }
   } else {
-    const totale = await prisma.pratica.count({
-      where: { tenantId: user.tenantId, importBatchId: batch.id },
-    });
+    const totale = (
+      await prisma.pratica.findMany({
+        where: { tenantId: user.tenantId, importBatchId: batch.id },
+        select: { id: true },
+      })
+    ).length;
     const scadenzaToSave =
       scadenzaMandato ??
       maxScadenzaCsv ??
