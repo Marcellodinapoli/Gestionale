@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
 import { assertCan } from "@/lib/permissions";
 import {
-  FieldValue,
+  firebaseFieldValue,
   getFirebaseAuth,
   getFirebaseFirestore,
 } from "@/lib/firebase/admin";
@@ -32,6 +32,7 @@ export async function GET() {
       });
     }
 
+    const FieldValue = firebaseFieldValue();
     const userRef = db.collection("users").doc(firebaseUser.uid);
     const userSnap = await userRef.get();
     if (!userSnap.exists) {

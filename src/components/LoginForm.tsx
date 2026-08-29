@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { loginAction } from "@/actions/core";
+import { loginAction } from "@/actions/login";
 
 export function LoginForm() {
   const [error, setError] = useState<string | null>(null);

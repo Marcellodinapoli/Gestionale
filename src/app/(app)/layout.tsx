@@ -2,8 +2,6 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isCurrentUserPasswordExpired } from "@/lib/auth";
 import { mustChoosePostazioneAlLogin, richiedeInternoPerChiamata } from "@/lib/permissions";
-import { needsSediSetup } from "@/lib/sediSetup";
-import { getDialClientConfig } from "@/lib/telephony";
 import { AppShell } from "@/components/AppShell";
 import { NavPrefetch } from "@/components/NavPrefetch";
 import { SoftRefresh } from "@/components/SoftRefresh";
@@ -19,12 +17,14 @@ export default async function AppLayout({
   if (await isCurrentUserPasswordExpired()) {
     redirect("/cambia-password");
   }
+  const { needsSediSetup } = await import("@/lib/sediSetup");
   if (await needsSediSetup(user)) {
     redirect("/setup-sedi");
   }
   if (mustChoosePostazioneAlLogin(user)) {
     redirect("/seleziona-postazione");
   }
+  const { getDialClientConfig } = await import("@/lib/telephony");
   const dialConfig = await getDialClientConfig(user.tenantId);
   return (
     <AppShell user={user}>

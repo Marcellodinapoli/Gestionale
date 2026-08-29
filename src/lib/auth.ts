@@ -1,7 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { prisma } from "@/lib/prisma";
 import type { Role, SessionUser } from "@/lib/permissions";
 
 const COOKIE = "gestionale_session";
@@ -55,14 +54,17 @@ type SessionUserInternal = SessionUser & {
  * Una sola lettura utente per richiesta (layout + page + password check).
  */
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
-  const jar = await cookies();
-  const token = jar.get(COOKIE)?.value;
-  if (!token) return null;
   try {
+    const jar = await cookies();
+    const token = jar.get(COOKIE)?.value;
+    if (!token) return null;
+
     const { payload } = await jwtVerify(token, secret());
     const id = String(payload.id || "");
     if (!id) return null;
     const tenantId = payload.tenantId ? String(payload.tenantId) : undefined;
+
+    const { prisma } = await import("@/lib/prisma");
     const user = await prisma.user.findFirst({
       where: tenantId ? { id, tenantId } : { id },
       include: {

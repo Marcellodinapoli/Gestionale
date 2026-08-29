@@ -1,8 +1,5 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { firebaseConfig } from "./config";
 
 let initialized = false;
@@ -48,6 +45,10 @@ function loadServiceAccount(): Record<string, unknown> {
 }
 
 function ensureFirebaseAdmin() {
+  // require lazy: evita di caricare firebase-admin su pagine pubbliche (login).
+  const { cert, getApps, initializeApp } =
+    require("firebase-admin/app") as typeof import("firebase-admin/app");
+
   if (initialized || getApps().length > 0) {
     initialized = true;
     return;
@@ -62,12 +63,20 @@ function ensureFirebaseAdmin() {
 
 export function getFirebaseAuth() {
   ensureFirebaseAdmin();
+  const { getAuth } = require("firebase-admin/auth") as typeof import("firebase-admin/auth");
   return getAuth();
 }
 
 export function getFirebaseFirestore() {
   ensureFirebaseAdmin();
+  const { getFirestore } =
+    require("firebase-admin/firestore") as typeof import("firebase-admin/firestore");
   return getFirestore();
 }
 
-export { FieldValue };
+export function firebaseFieldValue() {
+  ensureFirebaseAdmin();
+  const { FieldValue } =
+    require("firebase-admin/firestore") as typeof import("firebase-admin/firestore");
+  return FieldValue;
+}

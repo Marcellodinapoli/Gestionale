@@ -1,14 +1,16 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 import { mustChoosePostazioneAlLogin } from "@/lib/permissions";
-import { needsSediSetup } from "@/lib/sediSetup";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { LoginForm } from "@/components/LoginForm";
 
 export default async function LoginPage() {
   const user = await getCurrentUser();
   if (user) {
+    const [{ isUserPasswordExpired }, { needsSediSetup }] = await Promise.all([
+      import("@/lib/passwordPolicy"),
+      import("@/lib/sediSetup"),
+    ]);
     if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
     if (user.formazioneOnly) redirect(homePathForUser(user));
     if (await needsSediSetup(user)) redirect("/setup-sedi");
