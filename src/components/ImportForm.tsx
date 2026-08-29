@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
-import { importCsvAction, importIncassiCsvAction } from "@/actions/core";
+import { importIncassiCsvAction } from "@/actions/core";
+import { importPraticheCsvChunked } from "@/lib/importPraticheClient";
 
 export type MandanteImportOption = {
   id: string;
@@ -76,7 +77,6 @@ export function ImportForm({
   onClose?: () => void;
 }) {
   const router = useRouter();
-  const action = kind === "pratiche" ? importCsvAction : importIncassiCsvAction;
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"ok" | "error" | null>(null);
   const [importSummary, setImportSummary] = useState<ImportPraticheSummary | null>(null);
@@ -92,6 +92,7 @@ export function ImportForm({
   const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [progressDetail, setProgressDetail] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const formTopRef = useRef<HTMLFormElement>(null);
 
@@ -143,7 +144,7 @@ export function ImportForm({
   }, [kind, mandanteId, perimetro, lotto, lottiEsistenti]);
 
   useEffect(() => {
-    if (!pending) return;
+    if (!pending || kind === "pratiche") return;
     setProgress(4);
     const id = window.setInterval(() => {
       setProgress((p) => {
@@ -153,7 +154,7 @@ export function ImportForm({
       });
     }, 280);
     return () => window.clearInterval(id);
-  }, [pending]);
+  }, [pending, kind]);
 
   function clearFile() {
     setFile(null);
@@ -172,40 +173,66 @@ export function ImportForm({
       return;
     }
 
-    const fd = new FormData(e.currentTarget);
-    fd.set("file", file);
-
     setPending(true);
     setProgress(2);
+    setProgressDetail("");
     try {
-      const result = await action(fd);
-      setProgress(100);
-      if (result?.error) {
-        setMessageKind("error");
-        setMessage(result.error);
-        setImportSummary(null);
-      }
-      if (result?.ok) {
-        setMessageKind("ok");
-        setMessage(result.ok);
-        const summary =
-          kind === "pratiche" && result && "importSummary" in result
-            ? (result.importSummary as ImportPraticheSummary | undefined)
-            : undefined;
-        setImportSummary(summary ?? null);
-        clearFile();
-        router.refresh();
+      if (kind === "pratiche") {
+        const csvText = await file.text();
+        const result = await importPraticheCsvChunked({
+          mandanteId,
+          perimetro,
+          lotto,
+          affidoIl,
+          scadenzaMandato,
+          fileName: file.name,
+          csvText,
+          onProgress: (pct, detail) => {
+            setProgress(pct);
+            setProgressDetail(detail);
+          },
+        });
+        setProgress(100);
+        if ("error" in result) {
+          setMessageKind("error");
+          setMessage(result.error);
+          setImportSummary(null);
+        } else {
+          setMessageKind("ok");
+          setMessage(result.ok);
+          setImportSummary(result.importSummary);
+          clearFile();
+          router.refresh();
+        }
+      } else {
+        const fd = new FormData(e.currentTarget);
+        fd.set("file", file);
+        const result = await importIncassiCsvAction(fd);
+        setProgress(100);
+        if (result?.error) {
+          setMessageKind("error");
+          setMessage(result.error);
+          setImportSummary(null);
+        }
+        if (result?.ok) {
+          setMessageKind("ok");
+          setMessage(result.ok);
+          setImportSummary(null);
+          clearFile();
+          router.refresh();
+        }
       }
       await new Promise((r) => setTimeout(r, 350));
     } catch {
       setMessageKind("error");
       setImportSummary(null);
       setMessage(
-        "Risposta imprevista dal server (timeout o errore Netlify). Riprova o riduci le righe del CSV."
+        "Errore imprevisto durante l'import. Riprova; se il problema persiste contatta l'assistenza."
       );
     } finally {
       setPending(false);
       setProgress(0);
+      setProgressDetail("");
     }
   }
 
@@ -221,6 +248,7 @@ export function ImportForm({
     setScadenzaMandato("");
     clearFile();
     setProgress(0);
+    setProgressDetail("");
     if (kind === "pratiche" && prefill) {
       router.replace("/import", { scroll: false });
     }
@@ -475,7 +503,11 @@ export function ImportForm({
       {pending || progress > 0 ? (
         <div className="space-y-1.5" aria-live="polite">
           <div className="flex items-center justify-between text-xs font-medium text-[var(--navy)]">
-            <span>{pending ? "Caricamento in corso…" : "Completato"}</span>
+            <span>
+              {pending
+                ? progressDetail || "Caricamento in corso…"
+                : progressDetail || "Completato"}
+            </span>
             <span>{Math.round(progress)}%</span>
           </div>
           <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#dce4ec]">
