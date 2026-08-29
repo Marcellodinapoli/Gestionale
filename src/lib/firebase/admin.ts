@@ -4,24 +4,47 @@ import { firebaseConfig } from "./config";
 
 let initialized = false;
 
+function parseInlineServiceAccount(raw: string): Record<string, unknown> {
+  const trimmed = raw.trim().replace(/^\uFEFF/, "");
+  const candidates = [trimmed];
+
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    candidates.push(trimmed.slice(1, -1));
+  }
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    candidates.push(trimmed.slice(1, -1));
+  }
+
+  // Netlify: JSON su una riga codificato in base64 (evita problemi con le newline).
+  if (!trimmed.startsWith("{")) {
+    try {
+      const decoded = Buffer.from(trimmed, "base64").toString("utf8").trim();
+      if (decoded.startsWith("{")) candidates.push(decoded);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const key = parsed.private_key;
+      if (typeof key === "string" && key.includes("\\n")) {
+        parsed.private_key = key.replace(/\\n/g, "\n");
+      }
+      return parsed;
+    } catch {
+      /* prova il candidato successivo */
+    }
+  }
+
+  throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON non è un JSON valido.");
+}
+
 function loadServiceAccount(): Record<string, unknown> {
   const inline = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
   if (inline) {
-    const candidates = [inline];
-    if (inline.startsWith("'") && inline.endsWith("'")) {
-      candidates.push(inline.slice(1, -1));
-    }
-    if (inline.startsWith('"') && inline.endsWith('"')) {
-      candidates.push(inline.slice(1, -1));
-    }
-    for (const candidate of candidates) {
-      try {
-        return JSON.parse(candidate) as Record<string, unknown>;
-      } catch {
-        /* prova il candidato successivo */
-      }
-    }
-    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON non è un JSON valido.");
+    return parseInlineServiceAccount(inline);
   }
 
   const filePath =
