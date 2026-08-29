@@ -12,7 +12,7 @@
 #   NEXT_PUBLIC_FIREBASE_APP_ID=...
 #
 # Nessun DATABASE_URL / Postgres / Neon / SQLite.
-# Seed dati: in locale `npm run db:seed` (Firestore).
+# Seed dati: in locale `npm run db:seed` (solo tenant demo + admin, via Firebase Admin).
 
 [build]
   command = "npm run build"

@@ -7,8 +7,9 @@
     "build": "prisma generate --schema src/lib/firebase/schema.prisma && next build --webpack",
     "start": "next start --port 3001",
     "lint": "eslint",
-    "db:seed": "tsx scripts/seed-firebase.ts",
-    "db:reset": "tsx scripts/seed-firebase.ts",
+    "db:seed": "node scripts/reset-firebase-minimal.mjs",
+    "db:reset": "node scripts/reset-firebase-minimal.mjs",
+    "db:seed:demo": "tsx scripts/seed-firebase.ts",
     "postinstall": "prisma generate --schema src/lib/firebase/schema.prisma",
     "build:netlify": "prisma generate --schema src/lib/firebase/schema.prisma && next build --webpack",
     "firebase:verify": "node scripts/verify-firebase.mjs"
