@@ -99,7 +99,6 @@ export function CourseProgressPanel({
   loading = false,
   error = null,
   detailHref,
-  showTitle = false,
   embedded = false,
 }: {
   preCourses: CourseProgress[];
@@ -107,7 +106,6 @@ export function CourseProgressPanel({
   loading?: boolean;
   error?: string | null;
   detailHref: (course: CourseProgress) => string;
-  showTitle?: boolean;
   embedded?: boolean;
 }) {
   const [tab, setTab] = useState<"sollecito" | "recupero">("sollecito");
@@ -115,12 +113,7 @@ export function CourseProgressPanel({
 
   const content = (
     <>
-      {showTitle ? (
-        <h2 className="text-lg font-bold text-[var(--navy)]">Progresso corsi</h2>
-      ) : null}
-      <div className={showTitle ? "mt-4" : undefined}>
-        <SollecitoRecuperoTabs active={tab} onChange={setTab} />
-      </div>
+      <SollecitoRecuperoTabs active={tab} onChange={setTab} />
       <div className="mt-4">
         {loading ? (
           <p className="py-10 text-center text-sm text-[var(--muted)]">Caricamento…</p>

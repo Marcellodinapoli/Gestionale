@@ -184,7 +184,6 @@ export function ProgressList() {
       postCourses={post}
       loading={loading}
       error={error}
-      showTitle
       detailHref={(course) =>
         `/formazione/corsi/${course.courseId}?label=${encodeURIComponent(course.code)}`
       }

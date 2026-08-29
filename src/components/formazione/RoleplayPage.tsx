@@ -389,12 +389,9 @@ export function RoleplayPage() {
   const category = tab === "sollecito" ? "Sollecito" : "Recupero";
 
   return (
-    <div className="rounded-xl border border-[#E0E0E0] bg-white shadow-none">
-      <div className="px-4 pt-2">
-        <SollecitoRecuperoTabs active={tab} onChange={setTab} />
-      </div>
-      <div className="border-t border-[#E0E0E0]" />
-      <div className="p-3">
+    <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm sm:p-6">
+      <SollecitoRecuperoTabs active={tab} onChange={setTab} />
+      <div className="mt-4">
         <SimulationsList category={category} />
       </div>
     </div>

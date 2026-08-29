@@ -23,20 +23,20 @@ export async function listImportBatchPratiche(
   for (const b of batches) {
     const pratiche = await prisma.pratica.findMany({
       where: { tenantId, importBatchId: b.id },
-      select: { id: true, note: true, codiceScarico: true },
+      select: { id: true, note: true, codiceScaricoAt: true },
     });
     const ids = pratiche.map((p) => p.id);
-    const hasNote = pratiche.some((p) => praticaHaNote(p.note));
-    const hasCambioCodice = pratiche.some((p) =>
-      praticaHaCambioCodice(p.codiceScarico)
-    );
-    let hasMovimenti = false;
+    const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
+    const nCodice = pratiche.filter((p) =>
+      praticaHaCambioCodice(p.codiceScaricoAt)
+    ).length;
+    let nIncassi = 0;
     if (ids.length) {
-      const nIncassi = await prisma.incasso.count({
+      nIncassi = await prisma.incasso.count({
         where: { praticaId: { in: ids } },
       });
-      hasMovimenti = nIncassi > 0;
     }
+    const blocchi = { note: nNote, codice: nCodice, incassi: nIncassi };
     items.push({
       id: b.id,
       mandanteId: b.mandanteId,
@@ -61,29 +61,65 @@ export async function listImportBatchPratiche(
           ? b.createdAt.toISOString()
           : String(b.createdAt),
       createdByName: b.createdByName ?? null,
-      hasMovimenti,
-      hasNote,
-      hasCambioCodice,
+      hasMovimenti: nIncassi > 0,
+      hasNote: nNote > 0,
+      hasCambioCodice: nCodice > 0,
+      blocchi,
     });
   }
   return items;
 }
 
-/** Elimina un import pratiche solo se nessuna pratica ha incassi. */
-export async function eliminaImportBatchAction(formData: FormData) {
-  const user = await requireWritablePermission("import:run");
-  const batchId = String(formData.get("batchId") || "").trim();
-  if (!batchId) return { error: "Import non specificato" };
+const ELIMINA_IMPORT_CHUNK = 5;
 
-  const batch = await prisma.importBatch.findFirst({
-    where: { id: batchId, tenantId: user.tenantId, tipo: "PRATICHE" },
+async function deletePraticaImportCascade(praticaId: string) {
+  await prisma.praticaLock.deleteMany({ where: { praticaId } }).catch(() => undefined);
+  await prisma.attivita.deleteMany({ where: { praticaId } });
+  await prisma.fattura.deleteMany({ where: { praticaId } });
+  await prisma.pianoRata.deleteMany({ where: { praticaId } });
+  await prisma.documento.deleteMany({ where: { praticaId } });
+  await prisma.provvigione.deleteMany({ where: { praticaId } }).catch(() => undefined);
+  await prisma.messaggioAgenda.deleteMany({ where: { praticaId } }).catch(() => undefined);
+  await prisma.messaggioInterno.deleteMany({ where: { praticaId } }).catch(() => undefined);
+  await prisma.registrazioneChiamata.deleteMany({ where: { praticaId } }).catch(() => undefined);
+
+  const garanti = await prisma.garante.findMany({
+    where: { praticaId },
+    select: { id: true },
   });
-  if (!batch) return { error: "Import non trovato" };
+  for (const g of garanti) {
+    await prisma.garanteRecapito.deleteMany({ where: { garanteId: g.id } });
+  }
+  await prisma.garante.deleteMany({ where: { praticaId } });
+  await prisma.pratica.delete({ where: { id: praticaId } });
+}
+
+async function loadImportBatchPratiche(tenantId: string, batchId: string) {
+  const batch = await prisma.importBatch.findFirst({
+    where: { id: batchId, tenantId, tipo: "PRATICHE" },
+  });
+  if (!batch) return { error: "Import non trovato" as const };
 
   const pratiche = await prisma.pratica.findMany({
-    where: { tenantId: user.tenantId, importBatchId: batchId },
-    select: { id: true, debitoreId: true, note: true, codiceScarico: true },
+    where: { tenantId, importBatchId: batchId },
+    select: {
+      id: true,
+      debitoreId: true,
+      note: true,
+      codiceScaricoAt: true,
+    },
   });
+
+  return { batch, pratiche };
+}
+
+function validaEliminaImportPratiche(
+  pratiche: Array<{
+    id: string;
+    note: string | null;
+    codiceScaricoAt: Date | string | null;
+  }>
+) {
   const praticaIds = pratiche.map((p) => p.id);
 
   const nConNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
@@ -94,7 +130,7 @@ export async function eliminaImportBatchAction(formData: FormData) {
   }
 
   const nConCodice = pratiche.filter((p) =>
-    praticaHaCambioCodice(p.codiceScarico)
+    praticaHaCambioCodice(p.codiceScaricoAt)
   ).length;
   if (nConCodice > 0) {
     return {
@@ -102,9 +138,25 @@ export async function eliminaImportBatchAction(formData: FormData) {
     };
   }
 
-  if (praticaIds.length) {
+  return { praticaIds };
+}
+
+/** Prepara l'eliminazione: validazioni e elenco pratiche/debitori. */
+export async function eliminaImportBatchPrepareAction(formData: FormData) {
+  const user = await requireWritablePermission("import:run");
+  const batchId = String(formData.get("batchId") || "").trim();
+  if (!batchId) return { error: "Import non specificato" };
+
+  const loaded = await loadImportBatchPratiche(user.tenantId, batchId);
+  if ("error" in loaded) return loaded;
+  const { batch, pratiche } = loaded;
+
+  const valid = validaEliminaImportPratiche(pratiche);
+  if ("error" in valid) return valid;
+
+  if (valid.praticaIds.length) {
     const nIncassi = await prisma.incasso.count({
-      where: { praticaId: { in: praticaIds } },
+      where: { praticaId: { in: valid.praticaIds } },
     });
     if (nIncassi > 0) {
       return {
@@ -113,30 +165,87 @@ export async function eliminaImportBatchAction(formData: FormData) {
     }
   }
 
-  for (const p of pratiche) {
-    await prisma.praticaLock.deleteMany({ where: { praticaId: p.id } }).catch(() => undefined);
-    await prisma.attivita.deleteMany({ where: { praticaId: p.id } });
-    await prisma.fattura.deleteMany({ where: { praticaId: p.id } });
-    await prisma.pianoRata.deleteMany({ where: { praticaId: p.id } });
-    await prisma.documento.deleteMany({ where: { praticaId: p.id } });
-    await prisma.provvigione.deleteMany({ where: { praticaId: p.id } }).catch(() => undefined);
-    await prisma.messaggioAgenda.deleteMany({ where: { praticaId: p.id } }).catch(() => undefined);
-    await prisma.messaggioInterno.deleteMany({ where: { praticaId: p.id } }).catch(() => undefined);
-    await prisma.registrazioneChiamata.deleteMany({ where: { praticaId: p.id } }).catch(() => undefined);
+  return {
+    batchId: batch.id,
+    lotto: batch.lotto,
+    mandanteCodice: batch.mandanteCodice,
+    praticaIds: valid.praticaIds,
+    debitoreIds: [...new Set(pratiche.map((p) => p.debitoreId))],
+    total: valid.praticaIds.length,
+  };
+}
 
-    const garanti = await prisma.garante.findMany({
-      where: { praticaId: p.id },
-      select: { id: true },
-    });
-    for (const g of garanti) {
-      await prisma.garanteRecapito.deleteMany({ where: { garanteId: g.id } });
-    }
-    await prisma.garante.deleteMany({ where: { praticaId: p.id } });
-    await prisma.pratica.delete({ where: { id: p.id } });
+/** Elimina un gruppo di pratiche dell'import (per avanzamento progressivo). */
+export async function eliminaImportBatchChunkAction(formData: FormData) {
+  const user = await requireWritablePermission("import:run");
+  const batchId = String(formData.get("batchId") || "").trim();
+  const rawIds = String(formData.get("praticaIds") || "").trim();
+  if (!batchId || !rawIds) return { error: "Parametri eliminazione mancanti" };
+
+  let praticaIds: string[];
+  try {
+    praticaIds = JSON.parse(rawIds) as string[];
+  } catch {
+    return { error: "Elenco pratiche non valido" };
+  }
+  if (!Array.isArray(praticaIds) || !praticaIds.length) {
+    return { error: "Nessuna pratica da eliminare" };
   }
 
-  // Debitori orfani (solo di queste pratiche)
-  const debitoreIds = [...new Set(pratiche.map((p) => p.debitoreId))];
+  const batch = await prisma.importBatch.findFirst({
+    where: { id: batchId, tenantId: user.tenantId, tipo: "PRATICHE" },
+    select: { id: true },
+  });
+  if (!batch) return { error: "Import non trovato" };
+
+  const pratiche = await prisma.pratica.findMany({
+    where: {
+      tenantId: user.tenantId,
+      importBatchId: batchId,
+      id: { in: praticaIds },
+    },
+    select: { id: true },
+  });
+  if (pratiche.length !== praticaIds.length) {
+    return { error: "Alcune pratiche non appartengono a questo import" };
+  }
+
+  for (const p of pratiche) {
+    await deletePraticaImportCascade(p.id);
+  }
+
+  return { deleted: pratiche.length };
+}
+
+/** Conclude l'eliminazione: debitori orfani, batch e audit. */
+export async function eliminaImportBatchFinalizeAction(formData: FormData) {
+  const user = await requireWritablePermission("import:run");
+  const batchId = String(formData.get("batchId") || "").trim();
+  const rawDebitoreIds = String(formData.get("debitoreIds") || "").trim();
+  const nPratiche = Number(formData.get("nPratiche") || 0);
+  if (!batchId) return { error: "Import non specificato" };
+
+  const batch = await prisma.importBatch.findFirst({
+    where: { id: batchId, tenantId: user.tenantId, tipo: "PRATICHE" },
+  });
+  if (!batch) return { error: "Import non trovato" };
+
+  const restanti = await prisma.pratica.count({
+    where: { tenantId: user.tenantId, importBatchId: batchId },
+  });
+  if (restanti > 0) {
+    return { error: "Eliminazione incompleta: ci sono ancora pratiche collegate" };
+  }
+
+  let debitoreIds: string[] = [];
+  if (rawDebitoreIds) {
+    try {
+      debitoreIds = JSON.parse(rawDebitoreIds) as string[];
+    } catch {
+      return { error: "Elenco debitori non valido" };
+    }
+  }
+
   for (const debitoreId of debitoreIds) {
     const altre = await prisma.pratica.count({ where: { debitoreId } });
     if (altre > 0) continue;
@@ -152,10 +261,31 @@ export async function eliminaImportBatchAction(formData: FormData) {
     action: "delete_import",
     entity: "importBatch",
     entityId: batchId,
-    dettaglio: `lotto ${batch.lotto} · ${pratiche.length} pratiche · ${batch.mandanteCodice}`,
+    dettaglio: `lotto ${batch.lotto} · ${nPratiche} pratiche · ${batch.mandanteCodice}`,
   });
 
   revalidatePath("/import");
   revalidatePath("/pratiche");
-  return { ok: `Eliminato import: ${pratiche.length} pratiche (lotto ${batch.lotto})` };
+  return { ok: `Eliminato import: ${nPratiche} pratiche (lotto ${batch.lotto})` };
+}
+
+/** Elimina un import pratiche solo se nessuna pratica ha incassi. */
+export async function eliminaImportBatchAction(formData: FormData) {
+  const prepared = await eliminaImportBatchPrepareAction(formData);
+  if ("error" in prepared) return prepared;
+
+  for (let i = 0; i < prepared.praticaIds.length; i += ELIMINA_IMPORT_CHUNK) {
+    const chunk = prepared.praticaIds.slice(i, i + ELIMINA_IMPORT_CHUNK);
+    const fd = new FormData();
+    fd.set("batchId", prepared.batchId);
+    fd.set("praticaIds", JSON.stringify(chunk));
+    const res = await eliminaImportBatchChunkAction(fd);
+    if ("error" in res) return res;
+  }
+
+  const fd = new FormData();
+  fd.set("batchId", prepared.batchId);
+  fd.set("debitoreIds", JSON.stringify(prepared.debitoreIds));
+  fd.set("nPratiche", String(prepared.total));
+  return eliminaImportBatchFinalizeAction(fd);
 }

@@ -43,7 +43,6 @@ export function CollaboratorProgressView({ firebaseUid }: { firebaseUid: string 
       postCourses={progress?.postCourses ?? []}
       loading={loading}
       error={error}
-      showTitle
       embedded
       detailHref={(course: CourseProgress) =>
         `/formazione/collaboratori/${firebaseUid}/corsi/${encodeURIComponent(course.courseId)}`

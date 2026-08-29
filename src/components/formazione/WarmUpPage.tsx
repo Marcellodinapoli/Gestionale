@@ -11,20 +11,22 @@ export function WarmUpPage() {
   const [tab, setTab] = useState<WarmUpTab>("telefonata");
 
   return (
-    <div className="space-y-6">
+    <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm sm:p-6">
       <FormazioneUnderlineTabs
         active={tab}
         onChange={setTab}
+        equalWidth
         tabs={[
           { id: "telefonata", label: "Telefonata" },
           { id: "sollecito", label: "Contestazioni nel sollecito" },
           { id: "recupero", label: "Contestazioni nel recupero" },
         ]}
       />
-
-      {tab === "telefonata" ? <TelefonataTab /> : null}
-      {tab === "sollecito" ? <ContestazioniTab /> : null}
-      {tab === "recupero" ? <ContestazioniTab isRecupero /> : null}
+      <div className="mt-4">
+        {tab === "telefonata" ? <TelefonataTab /> : null}
+        {tab === "sollecito" ? <ContestazioniTab /> : null}
+        {tab === "recupero" ? <ContestazioniTab isRecupero /> : null}
+      </div>
     </div>
   );
 }
