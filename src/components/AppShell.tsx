@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -472,6 +472,7 @@ function ResponsiveMainNav({
     const widths = Array.from(measureEl.children).map(
       (el) => (el as HTMLElement).offsetWidth
     );
+    if (widths.some((w) => w <= 0)) return;
     const available = navEl.clientWidth;
     const totalMain =
       widths.reduce((sum, w) => sum + w, 0) + Math.max(0, widths.length - 1) * NAV_GAP;
@@ -497,6 +498,8 @@ function ResponsiveMainNav({
 
   useEffect(() => {
     recalculate();
+    const id = requestAnimationFrame(() => recalculate());
+    return () => cancelAnimationFrame(id);
   }, [recalculate, pathname, lgLabels]);
 
   useEffect(() => {
@@ -580,6 +583,26 @@ function ResponsiveMainNav({
   );
 }
 
+function AffidiBackSync({
+  onChange,
+}: {
+  onChange: (href: string | null, label?: string) => void;
+}) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (pathname !== "/affidi") {
+      onChange(null, undefined);
+      return;
+    }
+    const back = resolveAffidiBackNav(searchParams.toString());
+    onChange(back?.href ?? null, back?.label);
+  }, [pathname, searchParams, onChange]);
+
+  return null;
+}
+
 export function AppShell({
   user,
   children,
@@ -588,16 +611,15 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [embedded, setEmbedded] = useState(false);
   const [praticheBackHref, setPraticheBackHref] = useState<string | null>(null);
+  const [affidiBackHref, setAffidiBackHref] = useState<string | null>(null);
+  const [affidiBackLabel, setAffidiBackLabel] = useState<string | undefined>();
 
-  const affidiBack =
-    pathname === "/affidi"
-      ? resolveAffidiBackNav(searchParams.toString())
-      : null;
-  const affidiBackHref = affidiBack?.href ?? null;
-  const affidiBackLabel = affidiBack?.label;
+  const onAffidiBackChange = useCallback((href: string | null, label?: string) => {
+    setAffidiBackHref(href);
+    setAffidiBackLabel(label);
+  }, []);
 
   useEffect(() => {
     setEmbedded(window.self !== window.top);
@@ -629,7 +651,7 @@ export function AppShell({
         /* ignore */
       }
     }
-  }, [pathname, searchParams]);
+  }, [pathname]);
 
   if (embedded) {
     return (
@@ -647,6 +669,9 @@ export function AppShell({
   return (
     <PraticaHeaderSlotProvider>
     <PrivacyLockProvider userName={user.name}>
+    <Suspense fallback={null}>
+      <AffidiBackSync onChange={onAffidiBackChange} />
+    </Suspense>
     <div className="flex h-dvh flex-col bg-[var(--bg)]">
       <header className="relative z-40 shrink-0 bg-[var(--navy)] text-white shadow-md print:hidden">
         <div className="flex flex-col gap-1.5 px-[1cm] py-1.5 xl:flex-row xl:items-center xl:gap-x-3">

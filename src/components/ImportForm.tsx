@@ -213,6 +213,7 @@ export function ImportForm({
           setMessage(result.ok);
           setImportSummary(result.importSummary);
           clearFile();
+          router.replace("/import", { scroll: false });
           router.refresh();
         }
       } else {

@@ -28,7 +28,7 @@ export async function listImportBatchPratiche(
         lotto: b.lotto,
         affidoIl: b.affidoIl,
       }),
-      select: { id: true, note: true, codiceScaricoAt: true, importBatchId: true },
+      select: { id: true, note: true, codiceScaricoAt: true },
     });
     const ids = pratiche.map((p) => p.id);
     const nPratiche = ids.length;
@@ -36,13 +36,6 @@ export async function listImportBatchPratiche(
       await prisma.importBatch
         .update({ where: { id: b.id }, data: { nPratiche } })
         .catch(() => undefined);
-    }
-    for (const p of pratiche) {
-      if (p.importBatchId !== b.id) {
-        await prisma.pratica
-          .update({ where: { id: p.id }, data: { importBatchId: b.id } })
-          .catch(() => undefined);
-      }
     }
     const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
     const nCodice = pratiche.filter((p) =>
