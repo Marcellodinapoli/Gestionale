@@ -41,7 +41,13 @@ export function etichettaGruppoMandanti(
     id: string;
     codice: string;
     ragioneSociale: string;
-    perimetri: Array<{ id: string; nomeInterno: string; nomeMandante: string; label: string }>;
+    perimetri: Array<{
+      id: string;
+      nomeInterno: string;
+      nomeMandante: string;
+      descrizione: string;
+      label: string;
+    }>;
   }>
 ): string[] {
   return assegnazioni

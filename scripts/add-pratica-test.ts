@@ -141,7 +141,7 @@ async function main() {
         praticaId: pratica.id,
         userId: assegnatarioId,
         tipo: "NOTA",
-        dettaglio: "Pratica test inserita su Firestore (cliente Alessandro Test Cliente).",
+        nota: "Pratica test inserita su Firestore (cliente Alessandro Test Cliente).",
       },
     });
   }

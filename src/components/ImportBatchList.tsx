@@ -67,7 +67,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
       prepareFd.set("batchId", item.id);
       const prepared = await eliminaImportBatchPrepareAction(prepareFd);
       if ("error" in prepared) {
-        setMessage(prepared.error);
+        setMessage(prepared.error ?? "Eliminazione non riuscita");
         return;
       }
 
@@ -88,7 +88,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
         chunkFd.set("praticaIds", JSON.stringify(chunk));
         const chunkRes = await eliminaImportBatchChunkAction(chunkFd);
         if ("error" in chunkRes) {
-          setMessage(chunkRes.error);
+          setMessage(chunkRes.error ?? "Eliminazione non riuscita");
           return;
         }
 
@@ -110,7 +110,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
       finalizeFd.set("nPratiche", String(total));
       const finalized = await eliminaImportBatchFinalizeAction(finalizeFd);
       if ("error" in finalized) {
-        setMessage(finalized.error);
+        setMessage(finalized.error ?? "Eliminazione non riuscita");
         return;
       }
 

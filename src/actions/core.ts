@@ -640,7 +640,7 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   const scaricoInput = {
     codiceScarico,
     isPromessa,
-    promessaAt,
+    promessaAt: promessaAt ?? undefined,
     promessaImporto,
   };
   const lavorazione = isRuoloLavorazione(user.role);

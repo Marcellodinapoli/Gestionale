@@ -44,6 +44,7 @@ const PERIMETRI_BNL = serializePerimetri([
   {
     id: "per-112608",
     nomeInterno: "112608",
+    descrizione: "112608",
     nomeMandante: "112608",
     ricevuta: emptyLatoEconomico(),
     pagata: latoProvvigioneDemo(),
@@ -53,6 +54,7 @@ const PERIMETRI_BNL = serializePerimetri([
   {
     id: "per-1426001",
     nomeInterno: "1426001",
+    descrizione: "1426001",
     nomeMandante: "1426001",
     ricevuta: emptyLatoEconomico(),
     pagata: latoProvvigioneDemo(),
@@ -62,6 +64,7 @@ const PERIMETRI_BNL = serializePerimetri([
   {
     id: "per-1426055",
     nomeInterno: "1426055",
+    descrizione: "1426055",
     nomeMandante: "1426055",
     ricevuta: emptyLatoEconomico(),
     pagata: latoProvvigioneDemo(),

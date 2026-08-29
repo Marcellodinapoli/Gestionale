@@ -72,6 +72,17 @@ export async function listImportBatchPratiche(
 
 const ELIMINA_IMPORT_CHUNK = 5;
 
+export type EliminaImportBatchPrepareResult =
+  | { error: string }
+  | {
+      batchId: string;
+      lotto: string;
+      mandanteCodice: string;
+      praticaIds: string[];
+      debitoreIds: string[];
+      total: number;
+    };
+
 async function deletePraticaImportCascade(praticaId: string) {
   await prisma.praticaLock.deleteMany({ where: { praticaId } }).catch(() => undefined);
   await prisma.attivita.deleteMany({ where: { praticaId } });
@@ -142,17 +153,23 @@ function validaEliminaImportPratiche(
 }
 
 /** Prepara l'eliminazione: validazioni e elenco pratiche/debitori. */
-export async function eliminaImportBatchPrepareAction(formData: FormData) {
+export async function eliminaImportBatchPrepareAction(
+  formData: FormData
+): Promise<EliminaImportBatchPrepareResult> {
   const user = await requireWritablePermission("import:run");
   const batchId = String(formData.get("batchId") || "").trim();
   if (!batchId) return { error: "Import non specificato" };
 
   const loaded = await loadImportBatchPratiche(user.tenantId, batchId);
-  if ("error" in loaded) return loaded;
+  if ("error" in loaded) {
+    return { error: loaded.error ?? "Import non trovato" };
+  }
   const { batch, pratiche } = loaded;
 
   const valid = validaEliminaImportPratiche(pratiche);
-  if ("error" in valid) return valid;
+  if ("error" in valid) {
+    return { error: valid.error ?? "Eliminazione non consentita" };
+  }
 
   if (valid.praticaIds.length) {
     const nIncassi = await prisma.incasso.count({
