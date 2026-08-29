@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRegistrazioniDemo } from "./seedRegistrazioni";
 import { emptyLatoEconomico, serializePerimetri } from "../src/lib/mandantePerimetri";
-import { serializeGruppoMandanti } from "../src/lib/gruppoMandanti";
+import { serializeGruppoMandanti } from "../src/lib/gruppoMandantiUi";
 import { createFirebasePrisma } from "../src/lib/firebase/firebasePrisma";
 
 /** Carica .env prima di Firebase Admin (tsx non lo fa da solo). */

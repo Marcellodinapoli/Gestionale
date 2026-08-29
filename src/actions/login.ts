@@ -14,16 +14,17 @@ export async function loginAction(input: {
   password?: string;
   tenantSlug?: string;
 }) {
-  const email = String(input?.email || "")
-    .trim()
-    .toLowerCase();
-  const password = String(input?.password || "");
-  const slug = normalizeTenantSlug(String(input?.tenantSlug || ""));
-  if (!slug) return { error: "Inserisci il codice azienda" };
-  if (!email) return { error: "Inserisci l'email" };
-  if (!password) return { error: "Inserisci la password" };
+  try {
+    const email = String(input?.email || "")
+      .trim()
+      .toLowerCase();
+    const password = String(input?.password || "");
+    const slug = normalizeTenantSlug(String(input?.tenantSlug || ""));
+    if (!slug) return { error: "Inserisci il codice azienda" };
+    if (!email) return { error: "Inserisci l'email" };
+    if (!password) return { error: "Inserisci la password" };
 
-  const tenant = await prisma.tenant.findUnique({ where: { slug } });
+    const tenant = await prisma.tenant.findUnique({ where: { slug } });
   if (!tenant || tenant.active === false) {
     return { error: "Azienda non trovata o non attiva" };
   }
@@ -120,4 +121,16 @@ export async function loginAction(input: {
     redirect("/setup-sedi");
   }
   redirect(needsPostazione ? "/seleziona-postazione" : "/");
+  } catch (e) {
+    console.error("[login] errore server", e);
+    const message =
+      e instanceof Error ? e.message : "Errore di connessione al server";
+    if (message.includes("FIREBASE_SERVICE_ACCOUNT_JSON")) {
+      return { error: "Configurazione Firebase non valida su Netlify" };
+    }
+    if (message.includes("Credenziali Firebase Admin mancanti")) {
+      return { error: "Firebase non configurato sul server" };
+    }
+    return { error: message };
+  }
 }
