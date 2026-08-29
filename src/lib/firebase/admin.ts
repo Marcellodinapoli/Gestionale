@@ -10,11 +10,21 @@ let initialized = false;
 function loadServiceAccount(): Record<string, unknown> {
   const inline = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
   if (inline) {
-    try {
-      return JSON.parse(inline) as Record<string, unknown>;
-    } catch {
-      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON non è un JSON valido.");
+    const candidates = [inline];
+    if (inline.startsWith("'") && inline.endsWith("'")) {
+      candidates.push(inline.slice(1, -1));
     }
+    if (inline.startsWith('"') && inline.endsWith('"')) {
+      candidates.push(inline.slice(1, -1));
+    }
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate) as Record<string, unknown>;
+      } catch {
+        /* prova il candidato successivo */
+      }
+    }
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON non è un JSON valido.");
   }
 
   const filePath =
