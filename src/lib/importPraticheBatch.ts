@@ -8,6 +8,11 @@ import {
   type ExistingPraticaImport,
 } from "@/lib/importCsvPratiche";
 import { IMPORT_PRATICHE_CHUNK_SIZE } from "@/lib/importCsvUtils";
+import {
+  importBatchPraticaSelectForIndex,
+  importBatchPraticheWhere,
+  toExistingPraticaImport,
+} from "@/lib/importBatchPratiche";
 
 export type PraticheImportContext = {
   batchId: string;
@@ -122,19 +127,10 @@ export async function processPraticheImportChunk(input: {
       index = cached;
     } else {
       const loaded = await prisma.pratica.findMany({
-        where: { tenantId, importBatchId: ctx.batchId },
-        select: {
-          id: true,
-          debitoreId: true,
-          contratto: true,
-          commessa: true,
-          stato: true,
-          codiceScarico: true,
-          note: true,
-          debitore: { select: { codiceFiscale: true } },
-        },
+        where: importBatchPraticheWhere(tenantId, ctx),
+        select: importBatchPraticaSelectForIndex,
       });
-      index = new ImportPraticaIndex(loaded);
+      index = new ImportPraticaIndex(loaded.map(toExistingPraticaImport));
       integrazioneIndexCache.set(ctx.batchId, index);
     }
   } else {
@@ -162,7 +158,10 @@ export async function processPraticheImportChunk(input: {
       });
       await prisma.pratica.update({
         where: { id: match.id },
-        data: praticaUpdateFromCsv(row, match),
+        data: {
+          ...praticaUpdateFromCsv(row, match),
+          importBatchId: ctx.batchId,
+        },
       });
       updated += 1;
       continue;
@@ -250,9 +249,16 @@ export async function finalizePraticheImport(input: {
   }
 
   const praticheBatch = await prisma.pratica.findMany({
-    where: { tenantId, importBatchId: ctx.batchId },
-    select: { id: true },
+    where: importBatchPraticheWhere(tenantId, ctx),
+    select: { id: true, importBatchId: true },
   });
+  for (const p of praticheBatch) {
+    if (p.importBatchId !== ctx.batchId) {
+      await prisma.pratica
+        .update({ where: { id: p.id }, data: { importBatchId: ctx.batchId } })
+        .catch(() => undefined);
+    }
+  }
   const totale = praticheBatch.length;
 
   const batch = await prisma.importBatch.findFirst({

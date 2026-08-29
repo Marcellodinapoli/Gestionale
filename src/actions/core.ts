@@ -41,6 +41,11 @@ import {
   praticaUpdateFromCsv,
   type ExistingPraticaImport,
 } from "@/lib/importCsvPratiche";
+import {
+  importBatchPraticaSelectForIndex,
+  importBatchPraticheWhere,
+  toExistingPraticaImport,
+} from "@/lib/importBatchPratiche";
 import { isCodiceScarico, statoDaCodiceScarico } from "@/lib/scarico";
 import { RUOLI_LAVORAZIONE } from "@/lib/praticaOrdine";
 import { isPraticaChiusa } from "@/lib/praticaCollegata";
@@ -1672,19 +1677,16 @@ export async function importCsvAction(formData: FormData) {
   let maxScadenzaCsv: Date | null = null;
 
   const existingPratiche: ExistingPraticaImport[] = isIntegrazione
-    ? await prisma.pratica.findMany({
-        where: { tenantId: user.tenantId, importBatchId: batch.id },
-        select: {
-          id: true,
-          debitoreId: true,
-          contratto: true,
-          commessa: true,
-          stato: true,
-          codiceScarico: true,
-          note: true,
-          debitore: { select: { codiceFiscale: true } },
-        },
-      })
+    ? (
+        await prisma.pratica.findMany({
+          where: importBatchPraticheWhere(user.tenantId, {
+            mandanteId,
+            lotto,
+            affidoIl,
+          }),
+          select: importBatchPraticaSelectForIndex,
+        })
+      ).map(toExistingPraticaImport)
     : [];
 
   const index = new ImportPraticaIndex(existingPratiche);
@@ -1710,7 +1712,10 @@ export async function importCsvAction(formData: FormData) {
       });
       await prisma.pratica.update({
         where: { id: match.id },
-        data: praticaUpdateFromCsv(row, match),
+        data: {
+          ...praticaUpdateFromCsv(row, match),
+          importBatchId: batch.id,
+        },
       });
       updated += 1;
       continue;
@@ -1776,12 +1781,22 @@ export async function importCsvAction(formData: FormData) {
       await prisma.importBatch.delete({ where: { id: batch.id } }).catch(() => undefined);
     }
   } else {
-    const totale = (
-      await prisma.pratica.findMany({
-        where: { tenantId: user.tenantId, importBatchId: batch.id },
-        select: { id: true },
-      })
-    ).length;
+    const praticheBatch = await prisma.pratica.findMany({
+      where: importBatchPraticheWhere(user.tenantId, {
+        mandanteId,
+        lotto,
+        affidoIl,
+      }),
+      select: { id: true, importBatchId: true },
+    });
+    for (const p of praticheBatch) {
+      if (p.importBatchId !== batch.id) {
+        await prisma.pratica
+          .update({ where: { id: p.id }, data: { importBatchId: batch.id } })
+          .catch(() => undefined);
+      }
+    }
+    const totale = praticheBatch.length;
     const scadenzaToSave =
       scadenzaMandato ??
       maxScadenzaCsv ??

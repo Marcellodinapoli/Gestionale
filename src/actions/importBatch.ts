@@ -9,6 +9,7 @@ import {
   praticaHaNote,
   type ImportBatchListItem,
 } from "@/lib/importBatch";
+import { importBatchPraticheWhere } from "@/lib/importBatchPratiche";
 
 export async function listImportBatchPratiche(
   tenantId: string
@@ -22,8 +23,12 @@ export async function listImportBatchPratiche(
   const items: ImportBatchListItem[] = [];
   for (const b of batches) {
     const pratiche = await prisma.pratica.findMany({
-      where: { tenantId, importBatchId: b.id },
-      select: { id: true, note: true, codiceScaricoAt: true },
+      where: importBatchPraticheWhere(tenantId, {
+        mandanteId: b.mandanteId,
+        lotto: b.lotto,
+        affidoIl: b.affidoIl,
+      }),
+      select: { id: true, note: true, codiceScaricoAt: true, importBatchId: true },
     });
     const ids = pratiche.map((p) => p.id);
     const nPratiche = ids.length;
@@ -31,6 +36,13 @@ export async function listImportBatchPratiche(
       await prisma.importBatch
         .update({ where: { id: b.id }, data: { nPratiche } })
         .catch(() => undefined);
+    }
+    for (const p of pratiche) {
+      if (p.importBatchId !== b.id) {
+        await prisma.pratica
+          .update({ where: { id: p.id }, data: { importBatchId: b.id } })
+          .catch(() => undefined);
+      }
     }
     const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
     const nCodice = pratiche.filter((p) =>
@@ -118,7 +130,11 @@ async function loadImportBatchPratiche(tenantId: string, batchId: string) {
   if (!batch) return { error: "Import non trovato" as const };
 
   const pratiche = await prisma.pratica.findMany({
-    where: { tenantId, importBatchId: batchId },
+    where: importBatchPraticheWhere(tenantId, {
+      mandanteId: batch.mandanteId,
+      lotto: batch.lotto,
+      affidoIl: batch.affidoIl,
+    }),
     select: {
       id: true,
       debitoreId: true,
@@ -217,15 +233,18 @@ export async function eliminaImportBatchChunkAction(formData: FormData) {
 
   const batch = await prisma.importBatch.findFirst({
     where: { id: batchId, tenantId: user.tenantId, tipo: "PRATICHE" },
-    select: { id: true },
+    select: { id: true, mandanteId: true, lotto: true, affidoIl: true },
   });
   if (!batch) return { error: "Import non trovato" };
 
   const pratiche = await prisma.pratica.findMany({
     where: {
-      tenantId: user.tenantId,
-      importBatchId: batchId,
       id: { in: praticaIds },
+      ...importBatchPraticheWhere(user.tenantId, {
+        mandanteId: batch.mandanteId,
+        lotto: batch.lotto,
+        affidoIl: batch.affidoIl,
+      }),
     },
     select: { id: true },
   });
@@ -254,7 +273,11 @@ export async function eliminaImportBatchFinalizeAction(formData: FormData) {
   if (!batch) return { error: "Import non trovato" };
 
   const restanti = await prisma.pratica.count({
-    where: { tenantId: user.tenantId, importBatchId: batchId },
+    where: importBatchPraticheWhere(user.tenantId, {
+      mandanteId: batch.mandanteId,
+      lotto: batch.lotto,
+      affidoIl: batch.affidoIl,
+    }),
   });
   if (restanti > 0) {
     return { error: "Eliminazione incompleta: ci sono ancora pratiche collegate" };
