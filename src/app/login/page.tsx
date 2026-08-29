@@ -25,6 +25,10 @@ export default async function LoginPage() {
           Credixa
         </p>
         <h1 className="mt-2 text-2xl font-semibold">Accedi</h1>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Demo: codice <strong>demo</strong> · admin@gestionale.local · password{" "}
+          <strong>Demo123!</strong>
+        </p>
         <div className="mt-6">
           <LoginForm />
         </div>

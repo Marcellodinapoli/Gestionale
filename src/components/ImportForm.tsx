@@ -197,10 +197,12 @@ export function ImportForm({
         router.refresh();
       }
       await new Promise((r) => setTimeout(r, 350));
-    } catch (err) {
+    } catch {
       setMessageKind("error");
       setImportSummary(null);
-      setMessage(err instanceof Error ? err.message : "Errore durante l'import");
+      setMessage(
+        "Risposta imprevista dal server (timeout o errore Netlify). Riprova o riduci le righe del CSV."
+      );
     } finally {
       setPending(false);
       setProgress(0);

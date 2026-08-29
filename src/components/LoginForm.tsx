@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { loginAction } from "@/actions/login";
 
 export function LoginForm() {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -19,9 +21,16 @@ export function LoginForm() {
     startTransition(async () => {
       try {
         const result = await loginAction(payload);
-        if (result?.error) setError(result.error);
+        if ("error" in result && result.error) {
+          setError(result.error);
+          return;
+        }
+        if ("ok" in result && result.ok) {
+          router.push(result.href);
+          router.refresh();
+        }
       } catch {
-        // redirect() di Next lancia: login riuscito
+        setError("Risposta imprevista dal server. Riprova tra qualche secondo.");
       }
     });
   }
@@ -49,8 +58,8 @@ export function LoginForm() {
           autoComplete="username"
           required
           className="mt-1 h-11 w-full rounded-lg border border-[var(--line)] px-3"
-          placeholder="es. supervisor.test@gestionale.local"
-          defaultValue="supervisor.test@gestionale.local"
+          placeholder="es. admin@gestionale.local"
+          defaultValue="admin@gestionale.local"
         />
       </label>
       <label className="block text-sm">

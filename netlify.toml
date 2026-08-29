@@ -22,5 +22,9 @@
   NODE_VERSION = "22"
   OPERATIONAL_BACKEND = "firebase"
 
+# Import CSV / login Firebase: bundler esplicito per firebase-admin
+[functions]
+  node_bundler = "esbuild"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
