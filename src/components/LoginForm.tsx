@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { loginAction } from "@/actions/login";
 
 export function LoginForm() {
   const router = useRouter();
@@ -20,17 +19,29 @@ export function LoginForm() {
     };
     startTransition(async () => {
       try {
-        const result = await loginAction(payload);
-        if ("error" in result && result.error) {
-          setError(result.error);
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(payload),
+        });
+        let data: { error?: string; ok?: boolean; href?: string } = {};
+        try {
+          data = await res.json();
+        } catch {
+          setError("Risposta non valida dal server. Controlla la configurazione Netlify.");
           return;
         }
-        if ("ok" in result && result.ok) {
-          router.push(result.href);
+        if (!res.ok || data.error) {
+          setError(data.error || "Credenziali non valide");
+          return;
+        }
+        if (data.ok && data.href) {
+          router.push(data.href);
           router.refresh();
         }
       } catch {
-        setError("Risposta imprevista dal server. Riprova tra qualche secondo.");
+        setError("Impossibile contattare il server. Riprova tra qualche secondo.");
       }
     });
   }
