@@ -245,7 +245,7 @@ export async function finalizePraticheImport(input: {
       await prisma.importBatch.delete({ where: { id: ctx.batchId } }).catch(() => undefined);
     }
     clearIntegrazioneIndexCache(ctx.batchId);
-    return { imported: 0 };
+    return { imported: 0, totale: 0 };
   }
 
   const praticheBatch = await prisma.pratica.findMany({
@@ -294,7 +294,7 @@ export async function finalizePraticheImport(input: {
       : `${totals.created} pratiche · ${ctx.mandanteCodice} · perimetro ${ctx.perimetro} · lotto ${ctx.lotto}`,
   });
 
-  return { imported: totale };
+  return { imported: totale, totale };
 }
 
 export { IMPORT_PRATICHE_CHUNK_SIZE } from "@/lib/importCsvUtils";

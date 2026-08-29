@@ -111,7 +111,7 @@ export async function importPraticheCsvChunked(input: {
     const pct = Math.round(5 + (doneRows / totalRows) * 90);
     input.onProgress?.(
       pct,
-      `Righe ${doneRows}/${totalRows} (+${created} nuove, ${updated} aggiornate)`
+      `Righe ${doneRows}/${totalRows} (+${created} nuove, ${updated} righe aggiornate)`
     );
 
     const chunkRes = await fetch("/api/import/pratiche", {

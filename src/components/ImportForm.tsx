@@ -38,15 +38,26 @@ export type ImportPraticheSummary = {
   created: number;
   updated: number;
   skipped: number;
+  totale?: number;
 };
 
 function formatImportPraticheFeedback(summary: ImportPraticheSummary) {
   const righe: string[] = [];
   if (summary.isIntegrazione) {
-    righe.push(`${summary.created} pratiche nuove aggiunte`);
-    righe.push(`${summary.updated} pratiche esistenti aggiornate`);
+    if (summary.created > 0) {
+      righe.push(`${summary.created} pratiche nuove aggiunte`);
+    }
+    if (summary.updated > 0) {
+      righe.push(`${summary.updated} righe CSV aggiornate su pratiche esistenti`);
+    }
+    if (summary.totale != null) {
+      righe.push(`${summary.totale} pratiche totali nel lotto`);
+    }
   } else {
     righe.push(`${summary.created} pratiche importate`);
+    if (summary.totale != null) {
+      righe.push(`${summary.totale} pratiche totali nel lotto`);
+    }
   }
   if (summary.skipped > 0) {
     righe.push(`${summary.skipped} righe saltate (nome mancante o riga vuota)`);

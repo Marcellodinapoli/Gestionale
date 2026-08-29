@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       : null;
 
     const ctx = ctxFromClient(rawCtx);
-    const { imported } = await finalizePraticheImport({
+    const { imported, totale } = await finalizePraticheImport({
       tenantId: user.tenantId,
       userId: user.id,
       ctx,
@@ -167,6 +167,7 @@ export async function POST(request: Request) {
         created: totals.created,
         updated: totals.updated,
         skipped: totals.skipped,
+        totale,
       },
     });
   }

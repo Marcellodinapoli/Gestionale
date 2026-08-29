@@ -220,17 +220,16 @@ export class ImportPraticaIndex {
   }
 
   find(row: CsvPraticaRow): ExistingPraticaImport | null {
-    if (row.contratto) {
-      const hit = this.byContratto.get(normKey(row.contratto));
-      if (hit) return hit;
+    // Non fare fallback su commessa/CF se il CSV indica un contratto/commessa
+    // non presente nel lotto: altrimenti righe distinte finiscono sulla stessa pratica.
+    if (row.contratto?.trim()) {
+      return this.byContratto.get(normKey(row.contratto)) ?? null;
     }
-    if (row.commessa) {
-      const hit = this.byCommessa.get(normKey(row.commessa));
-      if (hit) return hit;
+    if (row.commessa?.trim()) {
+      return this.byCommessa.get(normKey(row.commessa)) ?? null;
     }
-    if (row.cf) {
-      const hit = this.byCf.get(normKey(row.cf));
-      if (hit) return hit;
+    if (row.cf?.trim()) {
+      return this.byCf.get(normKey(row.cf)) ?? null;
     }
     return null;
   }
