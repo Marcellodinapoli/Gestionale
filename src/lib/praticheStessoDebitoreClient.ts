@@ -46,6 +46,13 @@ function storeCluster(data: PraticheStessoDebitoreClientPayload) {
   }
 }
 
+/** Popola la cache client (es. da payload SSR) senza chiamata API. */
+export function seedPraticheStessoDebitore(
+  data: PraticheStessoDebitoreClientPayload
+) {
+  storeCluster(data);
+}
+
 /** Lettura immediata dalla cache (senza rete). */
 export function peekPraticheStessoDebitore(
   praticaId: string

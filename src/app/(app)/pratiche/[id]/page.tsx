@@ -186,6 +186,7 @@ export default async function PraticaDetailPage({
             elencoAperto={showElenco}
             origineId={origineId}
             origineNumero={originePratica?.numero}
+            collegatePayload={collegataPayload}
           />
         </div>
         {showElenco && filtroCollegata ? (
@@ -193,6 +194,7 @@ export default async function PraticaDetailPage({
             praticaId={pratica.id}
             filtro={filtroCollegata}
             origineId={origineId}
+            initialData={collegataPayload}
           />
         ) : null}
       </div>

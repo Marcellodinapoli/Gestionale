@@ -1,5 +1,28 @@
 /** Utilità CSV condivise (client e server, senza dipendenze server-only). */
 
+import { parseDateOnly } from "@/lib/domainFormat";
+
+/** Data da cella CSV: ISO (2026-10-01) o formato italiano (01/10/2026). */
+export function parseCsvDate(raw: string | null | undefined): Date | null {
+  const v = String(raw || "").trim();
+  if (!v) return null;
+
+  const iso = parseDateOnly(v);
+  if (iso) return iso;
+
+  const it = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(v);
+  if (it) {
+    const day = Number(it[1]);
+    const month = Number(it[2]);
+    const year = Number(it[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return new Date(year, month - 1, day, 12, 0, 0, 0);
+    }
+  }
+
+  return null;
+}
+
 /** Separatore CSV: ; (IT) o , (Excel/export). Preferisce quello che espone «nome». */
 export function detectCsvDelimiter(headerLine: string): ";" | "," {
   const norm = headerLine.trim().toLowerCase().replace(/^\uFEFF/, "");

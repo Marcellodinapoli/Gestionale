@@ -13,6 +13,8 @@ import {
 import {
   fetchPraticheStessoDebitore,
   peekPraticheStessoDebitore,
+  seedPraticheStessoDebitore,
+  type PraticheStessoDebitoreClientPayload,
 } from "@/lib/praticheStessoDebitoreClient";
 import { dataIt, euro } from "@/lib/domainFormat";
 import { STATO_LABELS } from "@/lib/permissions";
@@ -36,18 +38,34 @@ export function PraticaCollegatePanel({
   praticaId,
   filtro,
   origineId,
+  initialData = null,
 }: {
   praticaId: string;
   filtro: FiltroCollegata;
   origineId?: string;
+  /** Payload già risolto lato server (niente ricerca CF client). */
+  initialData?: PraticheStessoDebitoreClientPayload | null;
 }) {
   const router = useRouter();
-  const [corrente, setCorrente] = useState<Voce | null>(null);
-  const [altre, setAltre] = useState<Voce[]>([]);
-  const [altreChiuse, setAltreChiuse] = useState<Voce[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [corrente, setCorrente] = useState<Voce | null>(
+    initialData?.corrente ?? null
+  );
+  const [altre, setAltre] = useState<Voce[]>(initialData?.altre ?? []);
+  const [altreChiuse, setAltreChiuse] = useState<Voce[]>(
+    initialData?.altreChiuse ?? []
+  );
+  const [loading, setLoading] = useState(!initialData);
 
   useEffect(() => {
+    if (initialData) {
+      seedPraticheStessoDebitore(initialData);
+      setCorrente(initialData.corrente);
+      setAltre(initialData.altre);
+      setAltreChiuse(initialData.altreChiuse);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     const cached = peekPraticheStessoDebitore(praticaId);
@@ -75,7 +93,7 @@ export function PraticaCollegatePanel({
     return () => {
       cancelled = true;
     };
-  }, [praticaId]);
+  }, [praticaId, initialData]);
 
   useEscBack(buildPraticaCollegataHref(praticaId, filtro, { da: origineId }));
 
@@ -93,6 +111,15 @@ export function PraticaCollegatePanel({
       .sort((a, b) => a.numero.localeCompare(b.numero));
   }, [corrente, altre, altreChiuse, filtro]);
 
+  useEffect(() => {
+    for (const p of lista) {
+      if (p.id === praticaId) continue;
+      router.prefetch(
+        buildPraticaCollegataHref(p.id, filtro, { elenco: true, da: origineId })
+      );
+    }
+  }, [lista, praticaId, filtro, origineId, router]);
+
   function prefetchVoce(p: Voce) {
     if (p.id === praticaId) return;
     router.prefetch(
@@ -102,12 +129,12 @@ export function PraticaCollegatePanel({
 
   function seleziona(p: Voce) {
     if (p.id === praticaId) return;
-    const href = buildPraticaCollegataHref(p.id, filtro, {
-      elenco: true,
-      da: origineId,
-    });
-    router.prefetch(href);
-    router.push(href);
+    router.push(
+      buildPraticaCollegataHref(p.id, filtro, {
+        elenco: true,
+        da: origineId,
+      })
+    );
   }
 
   function chiudi() {

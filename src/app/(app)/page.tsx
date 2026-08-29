@@ -1063,7 +1063,7 @@ export default async function HomePage({
       : `${gruppo.gruppoNome || "Gruppo"} · ${dataLabel} · nessuna lavorazione nel gruppo`
     : totaleLavorateGruppo
       ? `${dataLabel} · ${totaleLavorateGruppo === 1 ? "1 pratica lavorata" : `${totaleLavorateGruppo} pratiche lavorate`}`
-      : `${dataLabel} · nessuna lavorazione`;
+    : `${dataLabel} · nessuna lavorazione`;
   const titoloLavorate = isOggi(dataLavorate)
     ? vistaGruppoLavorate
       ? "Lavorate oggi · gruppo"
@@ -1116,28 +1116,28 @@ export default async function HomePage({
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
             Sintesi lavorazione
           </h2>
-          <LavorateGiornoKpi
-            title={titoloLavorate}
-            hint={hintGiorno}
-            dataIso={dataIso}
-            operatori={lavoratePerOperatore}
+        <LavorateGiornoKpi
+          title={titoloLavorate}
+          hint={hintGiorno}
+          dataIso={dataIso}
+          operatori={lavoratePerOperatore}
             praticheCambioCodice={praticheCambioCodice}
-            href={buildPraticheQuery({ lavorateData: dataIso })}
+          href={buildPraticheQuery({ lavorateData: dataIso })}
             vistaGruppo={vistaGruppoLavorate}
             totaleLavorateGruppo={vistaGruppoLavorate ? totaleLavorateGruppo : undefined}
-          />
-        </div>
+        />
+      </div>
 
         {!isManutenzione(user) ? (
           <div className="min-w-0">
-            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
               Codici scarico per mandante e perimetro
-            </h2>
+        </h2>
             <CodiciMandantePerimetroTable
               righe={codiciMandantePerimetro}
               gruppoSenzaPerimetri={mostraGruppo && !gruppoPerimetriConfigurati}
             />
-          </div>
+        </div>
         ) : null}
       </div>
 

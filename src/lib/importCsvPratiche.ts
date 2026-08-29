@@ -1,9 +1,9 @@
-import { parseDateOnly } from "@/lib/domain";
 import {
   csvColIndex,
   csvInt,
   csvMoney,
   csvStr,
+  parseCsvDate,
 } from "@/lib/importContesto";
 
 export type CsvPraticaRow = {
@@ -148,9 +148,19 @@ export function parseCsvPraticaRow(
     "numero_di_commessa"
   );
 
-  const scadIdx = csvColIndex(header, "scadenza_affido", "scadenza affido", "scadenza");
+  const scadIdx = csvColIndex(
+    header,
+    "scadenza_affido",
+    "scadenza affido",
+    "scadenza_mandato",
+    "scadenza mandato",
+    "scad_mandato",
+    "data_scadenza",
+    "data scadenza",
+    "scadenza"
+  );
   const scadRaw = scadIdx >= 0 ? cols[scadIdx]?.trim() || "" : "";
-  const scadenza = scadRaw ? parseDateOnly(scadRaw) : null;
+  const scadenza = scadRaw ? parseCsvDate(scadRaw) : null;
 
   const statoCsvIdx = csvColIndex(header, "stato", "in_lavorazione", "in lavorazione");
   const statoCsvRaw = statoCsvIdx >= 0 ? cols[statoCsvIdx]?.trim() || "" : "";
@@ -187,7 +197,7 @@ export function parseCsvPraticaRow(
       rateArretrate: rateArretrate != null,
       residuo: residuoCsv != null,
       nettoDaPagare: nettoCsv != null,
-      scadenza: Boolean(scadRaw),
+      scadenza: scadenza != null,
       stato: Boolean(statoCsvRaw),
       contratto: contratto != null,
       commessa: commessa != null,

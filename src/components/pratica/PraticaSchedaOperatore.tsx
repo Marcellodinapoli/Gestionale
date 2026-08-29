@@ -23,6 +23,7 @@ import {
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCodaNav";
 import { codiceScaricoPratica } from "@/lib/scarico";
 import type { RecordingMode } from "@/lib/recordingMode";
+import type { PraticheStessoDebitoreClientPayload } from "@/lib/praticheStessoDebitoreClient";
 
 type AnagraficaPersona = {
   id?: string;
@@ -160,6 +161,7 @@ export function PraticaSchedaOperatore({
   elencoAperto,
   origineId,
   origineNumero,
+  collegatePayload = null,
 }: {
   pratica: PraticaData;
   canEditNotes: boolean;
@@ -180,6 +182,7 @@ export function PraticaSchedaOperatore({
   elencoAperto?: boolean;
   origineId?: string;
   origineNumero?: string;
+  collegatePayload?: PraticheStessoDebitoreClientPayload | null;
 }) {
   const rateAperte = pratica.rate.filter((r) => !r.pagata);
   const totale =
@@ -399,6 +402,8 @@ export function PraticaSchedaOperatore({
           promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
           promessaImporto={pratica.promessaImporto}
           residuo={pratica.residuo}
+          initialCollegate={collegatePayload}
+          suppressF9Flash={Boolean(elencoAperto && nav.filtroCollegata)}
           showRecordingControl={
             !praticaBloccata &&
             ["OPERATOR", "SUPERVISOR", "BACK_OFFICE"].includes(currentUserRole || "")

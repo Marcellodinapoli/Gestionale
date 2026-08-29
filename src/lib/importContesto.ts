@@ -9,6 +9,7 @@ export {
   csvStr,
   detectCsvDelimiter,
   normalizeCsvColName,
+  parseCsvDate,
   parseCsvHeader,
   validateCsvLottoRighe,
 } from "@/lib/importCsvUtils";

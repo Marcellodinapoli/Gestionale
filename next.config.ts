@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
     "@google-cloud/firestore",
     "google-gax",
     "google-auth-library",
+    "jwks-rsa",
+    "jose",
   ],
 };
 

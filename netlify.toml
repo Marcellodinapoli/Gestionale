@@ -19,12 +19,13 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "22"
+  NODE_VERSION = "22.12.0"
   OPERATIONAL_BACKEND = "firebase"
 
-# Import CSV / login Firebase: bundler esplicito per firebase-admin
+# firebase-admin + jwks-rsa: non bundlare (jose ESM)
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin", "jwks-rsa", "jose", "@google-cloud/firestore", "google-gax", "google-auth-library"]
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

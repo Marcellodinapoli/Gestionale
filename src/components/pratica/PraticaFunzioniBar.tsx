@@ -32,6 +32,8 @@ import {
 import {
   fetchPraticheStessoDebitore,
   peekPraticheStessoDebitore,
+  seedPraticheStessoDebitore,
+  type PraticheStessoDebitoreClientPayload,
 } from "@/lib/praticheStessoDebitoreClient";
 import { useEscBack } from "@/lib/useEscBack";
 import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
@@ -134,6 +136,8 @@ export function PraticaFunzioniBar({
   nextPraticaHref,
   showRecordingControl,
   recordingMode = "manual",
+  initialCollegate = null,
+  suppressF9Flash = false,
 }: {
   praticaId: string;
   attivo?: "fatture" | "estratto" | "incassi";
@@ -147,6 +151,10 @@ export function PraticaFunzioniBar({
   nextPraticaHref?: string | null;
   showRecordingControl?: boolean;
   recordingMode?: RecordingMode;
+  /** Payload collegate già noto (SSR / navigazione elenco). */
+  initialCollegate?: PraticheStessoDebitoreClientPayload | null;
+  /** Niente lampeggio F9 (click tra pratiche collegate). */
+  suppressF9Flash?: boolean;
 }) {
   const router = useRouter();
   const [popup, setPopup] = useState<PopupKey | null>(null);
@@ -167,45 +175,53 @@ export function PraticaFunzioniBar({
 
   useEffect(() => {
     let cancelled = false;
-    setFlashF9(false);
 
-    const cached = peekPraticheStessoDebitore(praticaId);
-    if (cached) {
-      setCorrente(cached.corrente);
-      setAltre(cached.altre);
-      setAltreChiuse(cached.altreChiuse);
-      if (cached.altre.length > 0) {
+    function applyPayload(data: PraticheStessoDebitoreClientPayload) {
+      setCorrente(data.corrente);
+      setAltre(data.altre);
+      setAltreChiuse(data.altreChiuse);
+      if (!suppressF9Flash && data.altre.length > 0) {
         requestAnimationFrame(() => {
           if (!cancelled) setFlashF9(true);
         });
       }
+    }
+
+    setFlashF9(false);
+
+    if (initialCollegate) {
+      seedPraticheStessoDebitore(initialCollegate);
+      applyPayload(initialCollegate);
       return () => {
         cancelled = true;
       };
     }
 
-    setCorrente(null);
-    setAltre([]);
-    setAltreChiuse([]);
-    // Differisce leggermente: non compete con il first paint della scheda.
+    const cached = peekPraticheStessoDebitore(praticaId);
+    if (cached) {
+      applyPayload(cached);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!suppressF9Flash) {
+      setCorrente(null);
+      setAltre([]);
+      setAltreChiuse([]);
+    }
+
     const timer = window.setTimeout(() => {
       fetchPraticheStessoDebitore(praticaId).then((data) => {
         if (cancelled || !data) return;
-        setCorrente(data.corrente);
-        setAltre(data.altre);
-        setAltreChiuse(data.altreChiuse);
-        if (data.altre.length > 0) {
-          requestAnimationFrame(() => {
-            if (!cancelled) setFlashF9(true);
-          });
-        }
+        applyPayload(data);
       });
-    }, 50);
+    }, suppressF9Flash ? 0 : 50);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [praticaId]);
+  }, [praticaId, initialCollegate, suppressF9Flash]);
 
   const haCollegateInLavorazione = altre.length > 0;
   const haIntestateChiuse =
