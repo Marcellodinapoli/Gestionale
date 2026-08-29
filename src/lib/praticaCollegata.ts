@@ -37,6 +37,15 @@ export function buildPraticaCollegataElencoHref(
   return buildPraticaCollegataHref(id, filtro, { elenco: true, da: da ?? id });
 }
 
+/** Chiude il pannello elenco ma resta nel filtro collegate (paginazione 1/N, F3, frecce). */
+export function buildPraticaCollegataChiudiElencoHref(
+  id: string,
+  filtro: FiltroCollegata,
+  da?: string
+) {
+  return buildPraticaCollegataHref(id, filtro, { da });
+}
+
 export function parsePraticaOrigine(value?: string | null) {
   return value?.trim() || undefined;
 }

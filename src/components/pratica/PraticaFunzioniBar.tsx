@@ -21,6 +21,7 @@ import { InviaMessaggioCollega } from "@/components/pratica/InviaMessaggioColleg
 import { CercaPraticaPopup } from "@/components/pratica/CercaPraticaPopup";
 import { AgendaMemoPopup } from "@/components/pratica/AgendaMemoPopup";
 import { CalcolatricePopup } from "@/components/pratica/CalcolatricePopup";
+import { IncassoPopup } from "@/components/pratica/IncassoPopup";
 import { PianoRientroPopup } from "@/components/pratica/PianoRientroPopup";
 import { SaldoStralcioPopup } from "@/components/pratica/SaldoStralcioPopup";
 import { InserisciNotaServizio } from "@/components/pratica/RegistroNote";
@@ -31,11 +32,13 @@ import {
 } from "@/lib/praticaCollegata";
 import {
   fetchPraticheStessoDebitore,
+  normalizePayloadForPratica,
   peekPraticheStessoDebitore,
   seedPraticheStessoDebitore,
   type PraticheStessoDebitoreClientPayload,
 } from "@/lib/praticheStessoDebitoreClient";
 import { useEscBack } from "@/lib/useEscBack";
+import { canShowIncassoPopup } from "@/lib/permissions";
 import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
 import type { RecordingMode } from "@/lib/recordingMode";
@@ -55,7 +58,8 @@ type PopupKey =
   | "messaggi"
   | "piano"
   | "stralcio"
-  | "calcolatrice";
+  | "calcolatrice"
+  | "incasso";
 
 const BTN_BASE =
   "inline-flex h-7 w-14 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap px-0.5 text-center text-[10px] font-semibold leading-none";
@@ -138,6 +142,7 @@ export function PraticaFunzioniBar({
   recordingMode = "manual",
   initialCollegate = null,
   suppressF9Flash = false,
+  currentUserRole,
 }: {
   praticaId: string;
   attivo?: "fatture" | "estratto" | "incassi";
@@ -155,6 +160,7 @@ export function PraticaFunzioniBar({
   initialCollegate?: PraticheStessoDebitoreClientPayload | null;
   /** Niente lampeggio F9 (click tra pratiche collegate). */
   suppressF9Flash?: boolean;
+  currentUserRole?: string;
 }) {
   const router = useRouter();
   const [popup, setPopup] = useState<PopupKey | null>(null);
@@ -177,13 +183,30 @@ export function PraticaFunzioniBar({
     let cancelled = false;
 
     function applyPayload(data: PraticheStessoDebitoreClientPayload) {
-      setCorrente(data.corrente);
-      setAltre(data.altre);
-      setAltreChiuse(data.altreChiuse);
-      if (!suppressF9Flash && data.altre.length > 0) {
+      const normalized = normalizePayloadForPratica(data, praticaId);
+      setCorrente(normalized.corrente);
+      setAltre(normalized.altre);
+      setAltreChiuse(normalized.altreChiuse);
+      if (!suppressF9Flash && normalized.altre.length > 0) {
         requestAnimationFrame(() => {
           if (!cancelled) setFlashF9(true);
         });
+      }
+    }
+
+    if (suppressF9Flash) {
+      setFlashF9(false);
+      const fromSsr = initialCollegate
+        ? normalizePayloadForPratica(initialCollegate, praticaId)
+        : null;
+      const fromCache = peekPraticheStessoDebitore(praticaId);
+      const data = fromSsr ?? fromCache;
+      if (data) {
+        seedPraticheStessoDebitore(data);
+        applyPayload(data);
+        return () => {
+          cancelled = true;
+        };
       }
     }
 
@@ -227,6 +250,7 @@ export function PraticaFunzioniBar({
   const haIntestateChiuse =
     (corrente && isPraticaChiusa(corrente.stato)) || altreChiuse.length > 0;
   const azioniBloccate = praticaLocked || !canEditNotes;
+  const showIncassoPopup = canShowIncassoPopup(currentUserRole);
 
   useEscBack(`/pratiche/${praticaId}`, Boolean(attivo) && !popup);
 
@@ -461,6 +485,17 @@ export function PraticaFunzioniBar({
               Calcolatrice
             </button>
           </Hint>
+          {showIncassoPopup ? (
+            <Hint label="Registra incasso">
+              <button
+                type="button"
+                className={BTN_TOOL}
+                onClick={() => setPopup("incasso")}
+              >
+                Inserisci incasso
+              </button>
+            </Hint>
+          ) : null}
         </span>
 
         {showRecordingControl ? (
@@ -558,6 +593,14 @@ export function PraticaFunzioniBar({
         onClose={() => setPopup(null)}
       >
         <CalcolatricePopup />
+      </Modal>
+
+      <Modal
+        open={popup === "incasso"}
+        title="Inserisci incasso"
+        onClose={() => setPopup(null)}
+      >
+        <IncassoPopup praticaId={praticaId} onDone={() => setPopup(null)} />
       </Modal>
     </>
   );

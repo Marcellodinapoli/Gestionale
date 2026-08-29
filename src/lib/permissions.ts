@@ -95,6 +95,11 @@ export function richiedeInternoPerChiamata(role: Role) {
   return role === "OPERATOR";
 }
 
+/** Popup incasso in barra strumenti pratica (esclusi operatore e supervisor). */
+export function canShowIncassoPopup(role: Role | string | null | undefined) {
+  return role !== "SUPERVISOR" && role !== "OPERATOR";
+}
+
 /** Back office e amministrazione possono fissare la postazione e saltare la selezione al login. */
 export function canImpostarePostazioneFissa(role: Role) {
   return role === "BACK_OFFICE" || role === "AMMINISTRAZIONE";

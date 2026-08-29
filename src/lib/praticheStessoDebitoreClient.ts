@@ -1,5 +1,7 @@
 "use client";
 
+import { isPraticaChiusa } from "@/lib/praticaCollegata";
+
 export type PraticaCollegataVoceClient = {
   id: string;
   numero: string;
@@ -34,6 +36,23 @@ const inflight = new Map<
   Promise<PraticheStessoDebitoreClientPayload | null>
 >();
 
+/** Adatta il payload cluster alla pratica corrente (cache condivisa tra collegate). */
+export function normalizePayloadForPratica(
+  payload: PraticheStessoDebitoreClientPayload,
+  praticaId: string
+): PraticheStessoDebitoreClientPayload {
+  if (payload.corrente.id === praticaId) return payload;
+  const all = [payload.corrente, ...payload.altre, ...payload.altreChiuse];
+  const hit = all.find((v) => v.id === praticaId);
+  if (!hit) return payload;
+  const others = all.filter((v) => v.id !== praticaId);
+  return {
+    corrente: hit,
+    altre: others.filter((v) => !isPraticaChiusa(v.stato)),
+    altreChiuse: others.filter((v) => isPraticaChiusa(v.stato)),
+  };
+}
+
 function storeCluster(data: PraticheStessoDebitoreClientPayload) {
   const at = Date.now();
   const ids = new Set<string>([
@@ -63,7 +82,7 @@ export function peekPraticheStessoDebitore(
     cache.delete(praticaId);
     return null;
   }
-  return hit.data;
+  return normalizePayloadForPratica(hit.data, praticaId);
 }
 
 /**
@@ -84,7 +103,10 @@ export function fetchPraticheStessoDebitore(
   )
     .then((res) => (res.ok ? res.json() : null))
     .then((data: PraticheStessoDebitoreClientPayload | null) => {
-      if (data?.corrente) storeCluster(data);
+      if (data?.corrente) {
+        storeCluster(data);
+        return normalizePayloadForPratica(data, praticaId);
+      }
       return data;
     })
     .catch(() => null)

@@ -7,6 +7,23 @@ import { isPraticaChiusa } from "@/lib/praticaCollegata";
 import { parsePerimetri } from "@/lib/mandantePerimetri";
 import { ttlGet, ttlSet } from "@/lib/firebase/ttlCache";
 
+/** Adatta il payload cluster alla pratica corrente (cache condivisa tra collegate). */
+export function payloadForPratica(
+  payload: PraticheStessoDebitorePayload,
+  praticaId: string
+): PraticheStessoDebitorePayload {
+  if (payload.corrente.id === praticaId) return payload;
+  const all = [payload.corrente, ...payload.altre, ...payload.altreChiuse];
+  const hit = all.find((v) => v.id === praticaId);
+  if (!hit) return payload;
+  const others = all.filter((v) => v.id !== praticaId);
+  return {
+    corrente: hit,
+    altre: others.filter((v) => !isPraticaChiusa(v.stato)),
+    altreChiuse: others.filter((v) => isPraticaChiusa(v.stato)),
+  };
+}
+
 export type PraticaCollegataVoce = {
   id: string;
   numero: string;
@@ -111,7 +128,7 @@ export async function loadPraticheStessoDebitorePayload(
     "praticheCollegateV2",
     praticaId
   );
-  if (cached) return cached;
+  if (cached) return payloadForPratica(cached, praticaId);
 
   const pratica = await prisma.pratica.findUnique({
     where: { id: praticaId },
@@ -162,10 +179,10 @@ export async function loadPraticheStessoDebitorePayload(
       .map((p) => mapVoce(p, cf)),
   };
 
-  ttlSet(tenantId, "praticheCollegateV2", payload, 20_000, praticaId);
+  ttlSet(tenantId, "praticheCollegateV2", payload, 60_000, praticaId);
   // Stesso cluster: cache anche per gli altri id (click tra collegate).
   for (const v of [...payload.altre, ...payload.altreChiuse]) {
-    ttlSet(tenantId, "praticheCollegateV2", payload, 20_000, v.id);
+    ttlSet(tenantId, "praticheCollegateV2", payload, 60_000, v.id);
   }
   return payload;
 }

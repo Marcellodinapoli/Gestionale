@@ -17,6 +17,7 @@ import {
 } from "@/components/pratica/PraticaExtraLazy";
 import { IncassoForm } from "@/components/pratica/IncassoForm";
 import {
+  buildPraticaCollegataChiudiElencoHref,
   buildPraticaCollegataHref,
   etichettaFiltroCollegata,
 } from "@/lib/praticaCollegata";
@@ -263,16 +264,30 @@ export function PraticaSchedaOperatore({
         </div>
         {origineId && nav.filtroCollegata ? (
           <Link
-            href={`/pratiche/${origineId}`}
+            href={
+              origineId === pratica.id
+                ? elencoAperto
+                  ? buildPraticaCollegataChiudiElencoHref(
+                      pratica.id,
+                      nav.filtroCollegata,
+                      origineId
+                    )
+                  : `/pratiche/${origineId}`
+                : `/pratiche/${origineId}`
+            }
             className="flex shrink-0 items-center gap-1 rounded border border-[#2d6a4f] bg-gradient-to-b from-[#b7e4c7] to-[#74c69d] px-2 py-0.5 text-[11px] font-semibold text-[#1b4332] hover:from-[#d8f3dc]"
             title={
               origineId === pratica.id
-                ? "Esci dal filtro collegate e torna alla coda di lavoro"
+                ? elencoAperto
+                  ? "Chiudi elenco collegate (resta paginazione 1/N)"
+                  : "Esci dal filtro collegate e torna alla coda di lavoro"
                 : "Torna alla pratica in cui stavi lavorando"
             }
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Ritorna{origineNumero ? ` ${origineNumero}` : ""}
+            {origineId === pratica.id && elencoAperto
+              ? "Chiudi elenco"
+              : `Ritorna${origineNumero ? ` ${origineNumero}` : ""}`}
           </Link>
         ) : null}
       </div>
@@ -403,12 +418,13 @@ export function PraticaSchedaOperatore({
           promessaImporto={pratica.promessaImporto}
           residuo={pratica.residuo}
           initialCollegate={collegatePayload}
-          suppressF9Flash={Boolean(elencoAperto && nav.filtroCollegata)}
+          suppressF9Flash={Boolean(nav.filtroCollegata)}
           showRecordingControl={
             !praticaBloccata &&
             ["OPERATOR", "SUPERVISOR", "BACK_OFFICE"].includes(currentUserRole || "")
           }
           recordingMode={recordingMode}
+          currentUserRole={currentUserRole}
           nextPraticaHref={(() => {
             const nextIdx = nav.page;
             if (nextIdx >= nav.totalPages) return null;

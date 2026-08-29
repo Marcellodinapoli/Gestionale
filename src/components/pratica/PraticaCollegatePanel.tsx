@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEscBack } from "@/lib/useEscBack";
 import { X } from "lucide-react";
 import {
+  buildPraticaCollegataChiudiElencoHref,
   buildPraticaCollegataHref,
   etichettaFiltroCollegata,
   type FiltroCollegata,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/praticaCollegata";
 import {
   fetchPraticheStessoDebitore,
+  normalizePayloadForPratica,
   peekPraticheStessoDebitore,
   seedPraticheStessoDebitore,
   type PraticheStessoDebitoreClientPayload,
@@ -57,12 +59,17 @@ export function PraticaCollegatePanel({
   const [loading, setLoading] = useState(!initialData);
 
   useEffect(() => {
-    if (initialData) {
-      seedPraticheStessoDebitore(initialData);
-      setCorrente(initialData.corrente);
-      setAltre(initialData.altre);
-      setAltreChiuse(initialData.altreChiuse);
+    function applyCluster(data: PraticheStessoDebitoreClientPayload) {
+      const normalized = normalizePayloadForPratica(data, praticaId);
+      seedPraticheStessoDebitore(normalized);
+      setCorrente(normalized.corrente);
+      setAltre(normalized.altre);
+      setAltreChiuse(normalized.altreChiuse);
       setLoading(false);
+    }
+
+    if (initialData) {
+      applyCluster(initialData);
       return;
     }
 
@@ -70,10 +77,7 @@ export function PraticaCollegatePanel({
 
     const cached = peekPraticheStessoDebitore(praticaId);
     if (cached) {
-      setCorrente(cached.corrente);
-      setAltre(cached.altre);
-      setAltreChiuse(cached.altreChiuse);
-      setLoading(false);
+      applyCluster(cached);
       return () => {
         cancelled = true;
       };
@@ -83,9 +87,7 @@ export function PraticaCollegatePanel({
     fetchPraticheStessoDebitore(praticaId)
       .then((data) => {
         if (cancelled || !data) return;
-        setCorrente(data.corrente);
-        setAltre(data.altre);
-        setAltreChiuse(data.altreChiuse);
+        applyCluster(data);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -95,7 +97,13 @@ export function PraticaCollegatePanel({
     };
   }, [praticaId, initialData]);
 
-  useEscBack(buildPraticaCollegataHref(praticaId, filtro, { da: origineId }));
+  const chiudiElencoHref = buildPraticaCollegataChiudiElencoHref(
+    praticaId,
+    filtro,
+    origineId
+  );
+
+  useEscBack(chiudiElencoHref);
 
   const lista = useMemo(() => {
     const tutte =
@@ -138,7 +146,8 @@ export function PraticaCollegatePanel({
   }
 
   function chiudi() {
-    router.push(buildPraticaCollegataHref(praticaId, filtro, { da: origineId }));
+    router.replace(chiudiElencoHref);
+    router.refresh();
   }
 
   return (
@@ -246,7 +255,8 @@ export function PraticaCollegatePanel({
       </div>
 
       <div className="shrink-0 border-t border-[var(--line)] bg-[#f5f7fa] px-3 py-2 text-[10px] text-[var(--muted)]">
-        Clicca una riga per l&apos;anteprima a sinistra. Esc chiude l&apos;elenco.
+        Clicca una riga per l&apos;anteprima a sinistra. Esc chiude l&apos;elenco;
+        frecce e F3 restano sulle collegate.
       </div>
     </aside>
   );
