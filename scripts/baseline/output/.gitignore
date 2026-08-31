@@ -1,0 +1,4 @@
+# Output baseline — generato da `npm run baseline`
+*.json
+*.md
+!.gitkeep

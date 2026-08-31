@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/admin";
 import type { SessionUser } from "@/lib/permissions";
 
@@ -43,7 +43,7 @@ export async function listCollaboratorsForSupervisor(
           supervisorId: user.id,
         };
 
-  const operators = await prisma.user.findMany({
+  const operators = await usersDbFromUser(user).findMany({
     where,
     orderBy: { name: "asc" },
     select: {
@@ -93,7 +93,7 @@ export async function assertSupervisorCanViewFirebaseUid(
   let email = String(data?.email ?? "").trim();
 
   if (!gestionaleUserId && email) {
-    const byEmail = await prisma.user.findFirst({
+    const byEmail = await usersDbFromUser(user).findFirst({
       where: { tenantId: user.tenantId, email },
       select: { id: true, name: true, email: true, supervisorId: true, role: true },
     });
@@ -107,7 +107,7 @@ export async function assertSupervisorCanViewFirebaseUid(
     throw new Error("Collaboratore non collegato al gestionale");
   }
 
-  const operator = await prisma.user.findFirst({
+  const operator = await usersDbFromUser(user).findFirst({
     where: { id: gestionaleUserId, tenantId: user.tenantId, role: "OPERATOR" },
     select: { id: true, name: true, email: true, supervisorId: true },
   });

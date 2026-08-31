@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { euro } from "@/lib/domain";
 import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { STATO_LABELS } from "@/lib/permissions";
@@ -14,6 +15,8 @@ const LIMIT = 30;
 export async function GET(req: Request) {
   const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
+
+  const praticaModel = praticaDbFromUser(user);
 
   const baseScope = await praticaScopeWhere(user);
 
@@ -34,8 +37,8 @@ export async function GET(req: Request) {
   const term = q.trim();
 
   const [total, rows] = await Promise.all([
-    prisma.pratica.count({ where }),
-    prisma.pratica.findMany({
+    praticaModel.count({ where }),
+    praticaModel.findMany({
       where,
       include: {
         debitore: true,

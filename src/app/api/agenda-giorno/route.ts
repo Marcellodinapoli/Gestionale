@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
 import { can, isManutenzione } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
-import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { parseDataAgenda, formatDataAgenda } from "@/lib/agendaVista";
+import { buildAgendaScopeContext } from "@/lib/agenda/buildAgendaScope";
+import { loadAgendaGiornoAuto } from "@/lib/agenda/loadAgenda";
 
 export async function GET(req: Request) {
   const user = await requireApiUser();
@@ -12,8 +12,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ data: formatDataAgenda(new Date()), voci: [] });
   }
 
-  const baseScope = await praticaScopeWhere(user);
-
   const url = new URL(req.url);
   const giorno = parseDataAgenda(url.searchParams.get("data"));
   const start = new Date(giorno);
@@ -21,38 +19,21 @@ export async function GET(req: Request) {
   const end = new Date(giorno);
   end.setHours(23, 59, 59, 999);
 
-  const [pratiche, impegni] = await Promise.all([
-    prisma.pratica.findMany({
-      where: {
-        AND: [baseScope, { memoAt: { gte: start, lte: end } }],
-      },
-      include: { debitore: true, assegnatario: { select: { name: true } } },
-      orderBy: { memoAt: "asc" },
-      take: 100,
-    }),
-    prisma.impegnoAgenda.findMany({
-      where: {
-        userId: user.id,
-        completato: false,
-        memoAt: { gte: start, lte: end },
-      },
-      orderBy: { memoAt: "asc" },
-      take: 100,
-    }),
-  ]);
+  const ctx = await buildAgendaScopeContext(user);
+  const { pratiche, impegni } = await loadAgendaGiornoAuto(ctx, user, user.id, start, end);
 
   const voci = [
     ...pratiche.map((p) => ({
       kind: "pratica" as const,
       id: p.id,
-      memoAt: p.memoAt!.toISOString(),
+      memoAt: p.memoAt,
       label: `${p.numero} · ${p.debitore.nome} ${p.debitore.cognome}`,
       dettaglio: p.assegnatario?.name ? `Affidata a: ${p.assegnatario.name}` : null,
     })),
     ...impegni.map((i) => ({
       kind: "libero" as const,
       id: i.id,
-      memoAt: i.memoAt.toISOString(),
+      memoAt: i.memoAt,
       label: i.titolo,
       dettaglio: i.nota,
     })),

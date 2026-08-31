@@ -9,6 +9,7 @@ import {
   liquidaMassivaAction,
   updateImportoProvvigioneAction,
 } from "@/actions/provvigioniAdmin";
+import { isImportoFissoProvvigioneId } from "@/lib/provvigioniImportoFisso";
 import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
 import { ProvvigioniPannelloEconomico } from "@/components/provvigioni/ProvvigioniListaPerimetro";
 
@@ -25,6 +26,7 @@ type Riga = {
   stato: string;
   statoLabel: string;
   perimetro: string;
+  codiceScarico: string;
 };
 
 function euro(value: number) {
@@ -44,7 +46,7 @@ export function ProvvigioniTableAdmin({
   const [liquidando, setLiquidando] = useState(false);
 
   const righe = sezioni.flatMap((s) => s.righe);
-  const maturate = righe.filter((r) => r.stato === "MATURATA");
+  const maturate = righe.filter((r) => r.stato === "MATURATA" && !isImportoFissoProvvigioneId(r.id));
   const allSelected = maturate.length > 0 && maturate.every((r) => selected.has(r.id));
 
   function toggleAll() {
@@ -137,8 +139,10 @@ export function ProvvigioniTableAdmin({
                 <thead className="bg-slate-50 text-left text-[var(--muted)]">
                   <tr>
                     <th className="w-8 px-2 py-2" />
+                    <th className="px-3 py-2">Perimetro</th>
                     <th className="px-3 py-2">Data</th>
                     <th>Operatore</th>
+                    <th>Codice scarico</th>
                     <th>Pratica</th>
                     <th>Debitore</th>
                     <th>Incasso</th>
@@ -159,7 +163,7 @@ export function ProvvigioniTableAdmin({
                   ))}
                   {!sez.righe.length ? (
                     <tr>
-                      <td colSpan={10} className="px-3 py-4 text-center text-[var(--muted)]">
+                      <td colSpan={12} className="px-3 py-4 text-center text-[var(--muted)]">
                         Nessun movimento in questo perimetro nel mese selezionato.
                       </td>
                     </tr>
@@ -184,6 +188,7 @@ function RigaProvvigione({
   onToggle: () => void;
 }) {
   const router = useRouter();
+  const fisso = isImportoFissoProvvigioneId(r.id);
   const [editing, setEditing] = useState(false);
   const [importo, setImporto] = useState(String(r.importo));
   const [perc, setPerc] = useState(String(r.percentuale));
@@ -216,7 +221,7 @@ function RigaProvvigione({
   return (
     <tr className="border-t border-[var(--line)]">
       <td className="px-2 py-2">
-        {r.stato === "MATURATA" && (
+        {r.stato === "MATURATA" && !fisso && (
           <input
             type="checkbox"
             checked={checked}
@@ -225,12 +230,18 @@ function RigaProvvigione({
           />
         )}
       </td>
+      <td className="px-3 py-2">{r.perimetro}</td>
       <td className="px-3 py-2 whitespace-nowrap">{r.data}</td>
       <td>{r.operatoreNome}</td>
+      <td className="font-mono text-xs">{r.codiceScarico}</td>
       <td>
-        <Link className="text-[var(--accent)] underline" href={`/pratiche/${r.praticaId}`}>
-          {r.praticaNumero}
-        </Link>
+        {fisso || !r.praticaId ? (
+          <span className="text-[var(--muted)]">{r.praticaNumero}</span>
+        ) : (
+          <Link className="text-[var(--accent)] underline" href={`/pratiche/${r.praticaId}`}>
+            {r.praticaNumero}
+          </Link>
+        )}
       </td>
       <td>{r.debitoreNome}</td>
       <td>{euro(r.baseImporto)}</td>
@@ -257,9 +268,9 @@ function RigaProvvigione({
         )}
       </td>
       <td>
-        <button onClick={toggleStato} title="Cambia stato">
+        {fisso ? (
           <span
-            className={`inline-flex cursor-pointer rounded-full px-2 py-0.5 text-xs font-semibold ${
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
               r.stato === "LIQUIDATA"
                 ? "bg-emerald-100 text-emerald-800"
                 : "bg-amber-100 text-amber-800"
@@ -267,10 +278,22 @@ function RigaProvvigione({
           >
             {r.statoLabel}
           </span>
-        </button>
+        ) : (
+          <button onClick={toggleStato} title="Cambia stato">
+            <span
+              className={`inline-flex cursor-pointer rounded-full px-2 py-0.5 text-xs font-semibold ${
+                r.stato === "LIQUIDATA"
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-amber-100 text-amber-800"
+              }`}
+            >
+              {r.statoLabel}
+            </span>
+          </button>
+        )}
       </td>
       <td>
-        {editing ? (
+        {fisso ? null : editing ? (
           <span className="flex items-center gap-1">
             <button onClick={salva} disabled={saving} className="text-emerald-600">
               <Check className="h-3.5 w-3.5" />

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { usersDb } from "@/lib/usersRepo";
 import type { Prisma } from "@prisma/client";
 import { isManutenzione, type SessionUser } from "@/lib/permissions";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
@@ -42,8 +42,9 @@ export async function getGruppoLavoroForSupervisor(
   tenantId: string,
   supervisorId: string
 ): Promise<GruppoLavoro> {
+  const userModel = usersDb({ tenantId, tenantSlug: tenantId });
   const [supervisor, operators] = await Promise.all([
-    prisma.user.findFirst({
+    userModel.findFirst({
       where: { id: supervisorId, tenantId },
       select: {
         id: true,
@@ -56,7 +57,7 @@ export async function getGruppoLavoroForSupervisor(
         tenantId: true,
       },
     }),
-    prisma.user.findMany({
+    userModel.findMany({
       where: {
         supervisorId,
         active: true,

@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { postazioniDbFromUser } from "@/lib/postazioniRepo";
+import { sediDbFromUser } from "@/lib/sediRepo";
 import { requirePermission } from "@/lib/guard";
 import { Card, PageHeader } from "@/components/ui";
 import { PostazioniTable } from "@/components/postazioni/PostazioniTable";
@@ -14,7 +15,7 @@ export default async function PostazioniPage({
   const sedeFiltro = String(sp.sede || "").trim() || null;
 
   const [postazioni, sedi] = await Promise.all([
-    prisma.postazione.findMany({
+    postazioniDbFromUser(user).findMany({
       where: {
         tenantId: user.tenantId,
         ...(sedeFiltro ? { sedeId: sedeFiltro } : {}),
@@ -28,7 +29,7 @@ export default async function PostazioniPage({
         },
       },
     }),
-    prisma.sede.findMany({
+    sediDbFromUser(user).findMany({
       where: { tenantId: user.tenantId, active: true },
       orderBy: { nome: "asc" },
       select: { id: true, nome: true },

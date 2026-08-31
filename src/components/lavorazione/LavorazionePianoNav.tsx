@@ -116,12 +116,6 @@ export function LavorazionePianoNav({
               <Plus className="h-4 w-4" /> Nuovo piano
             </button>
           ) : null}
-
-          {!datePiani.includes(dataPiano) && canEdit ? (
-            <p className="pb-1 text-xs text-amber-700">
-              Piano non ancora salvato · compila le righe e clicca Salva
-            </p>
-          ) : null}
         </div>
 
         <LavorazioneAggiornaButton className="pb-0.5" />

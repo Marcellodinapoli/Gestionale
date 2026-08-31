@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireWritableUser } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
@@ -27,11 +28,12 @@ function revalidateGruppo() {
 export async function addOperatoreAlGruppoAction(formData: FormData) {
   const user = await requireSupervisor();
   const operatoreId = String(formData.get("operatoreId") || "");
-  const op = await prisma.user.findUnique({ where: { id: operatoreId } });
+  const userModel = usersDbFromUser(user);
+  const op = await userModel.findUnique({ where: { id: operatoreId } });
   if (!op || op.role !== "OPERATOR" || !op.active || op.tenantId !== user.tenantId) {
     fail("Seleziona un operatore");
   }
-  await prisma.user.update({
+  await userModel.update({
     where: { id: operatoreId },
     data: { supervisorId: user.id },
   });
@@ -48,11 +50,12 @@ export async function addOperatoreAlGruppoAction(formData: FormData) {
 export async function removeOperatoreDalGruppoAction(formData: FormData) {
   const user = await requireSupervisor();
   const operatoreId = String(formData.get("operatoreId") || "");
-  const op = await prisma.user.findUnique({ where: { id: operatoreId } });
+  const userModel = usersDbFromUser(user);
+  const op = await userModel.findUnique({ where: { id: operatoreId } });
   if (!op || op.supervisorId !== user.id || op.tenantId !== user.tenantId) {
     fail("Operatore non presente nel gruppo");
   }
-  await prisma.user.update({
+  await userModel.update({
     where: { id: operatoreId },
     data: { supervisorId: null },
   });
@@ -68,8 +71,9 @@ export async function removeOperatoreDalGruppoAction(formData: FormData) {
 
 export async function updateGruppoNomeAction(formData: FormData) {
   const user = await requireSupervisor();
+  const userModel = usersDbFromUser(user);
   const nome = String(formData.get("gruppoNome") || "").trim() || null;
-  await prisma.user.update({
+  await userModel.update({
     where: { id: user.id },
     data: { gruppoNome: nome },
   });
@@ -85,6 +89,7 @@ export async function updateGruppoNomeAction(formData: FormData) {
 
 export async function updateGruppoMandantiAction(formData: FormData) {
   const user = await requireSupervisor();
+  const userModel = usersDbFromUser(user);
   const raw = String(formData.get("gruppoMandanti") || "").trim();
   let parsed: ReturnType<typeof parseGruppoMandanti> = [];
   if (raw) {
@@ -98,13 +103,13 @@ export async function updateGruppoMandantiAction(formData: FormData) {
 
   const mandanteIds = [...new Set(parsed.map((a) => a.mandanteId))];
   if (mandanteIds.length) {
-    const count = await prisma.mandante.count({
+    const count = await mandantiDbFromUser(user).count({
       where: { tenantId: user.tenantId, id: { in: mandanteIds } },
     });
     if (count !== mandanteIds.length) fail("Una o più mandanti non sono valide");
   }
 
-  await prisma.user.update({
+  await userModel.update({
     where: { id: user.id },
     data: { gruppoMandanti: parsed.length ? serializeGruppoMandanti(parsed) : null },
   });
@@ -126,7 +131,8 @@ export async function resetPasswordAction(formData: FormData) {
   if (!targetId || !newPassword) fail("Dati mancanti");
   if (newPassword.length < 6) fail("La password deve avere almeno 6 caratteri");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");

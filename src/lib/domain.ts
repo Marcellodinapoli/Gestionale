@@ -1,4 +1,8 @@
+import { debitoriDb } from "@/lib/debitoriRepo";
+import { garantiDb } from "@/lib/garantiRepo";
+import { appendAudit } from "@/lib/auditRepo";
 import { prisma } from "@/lib/prisma";
+import { praticaDb, praticaDbFromUser, type PraticaDbContext } from "@/lib/praticheRepo";
 import type { Prisma } from "@prisma/client";
 import { isManutenzione, type SessionUser } from "@/lib/permissions";
 import {
@@ -91,12 +95,16 @@ function cfQueryVariants(values: Array<string | null | undefined>) {
 export async function debitoreIdsStessoCf(
   codiceFiscale: string | null | undefined,
   fallbackId: string,
-  tenantId?: string
+  tenantId?: string,
+  tenantSlug?: string
 ) {
   const cf = normalizeCf(codiceFiscale);
   if (!cf) return [fallbackId];
   const variants = cfQueryVariants([codiceFiscale, cf]);
-  const rows = await prisma.debitore.findMany({
+  const rows = await debitoriDb({
+    tenantId: tenantId ?? "",
+    tenantSlug: tenantSlug ?? tenantId ?? "",
+  }).findMany({
     where: {
       codiceFiscale: { in: variants },
       ...(tenantId ? { tenantId } : {}),
@@ -114,6 +122,8 @@ export async function praticaIdsCollegatePerCf(
   praticaId: string,
   opts?: {
     stessoMandante?: boolean;
+    tenantSlug?: string;
+    tenantId?: string;
     /** Evita un secondo findUnique se la pratica è già caricata. */
     seed?: {
       id: string;
@@ -125,10 +135,18 @@ export async function praticaIdsCollegatePerCf(
   }
 ) {
   const stessoMandante = opts?.stessoMandante ?? true;
-  const pratica =
+  const db = (tenantId: string, tenantSlug?: string) =>
+    praticaDb({
+      tenantId,
+      tenantSlug: tenantSlug ?? opts?.tenantSlug ?? tenantId,
+      role: "ADMIN",
+      userId: tenantId,
+    });
+
+  const praticaRaw =
     opts?.seed && opts.seed.id === praticaId
       ? opts.seed
-      : await prisma.pratica.findUnique({
+      : await db(opts?.tenantId ?? "", opts?.tenantSlug).findUnique({
           where: { id: praticaId },
           select: {
             id: true,
@@ -138,11 +156,18 @@ export async function praticaIdsCollegatePerCf(
             garanti: { select: { codiceFiscale: true } },
           },
         });
-  if (!pratica) return [];
+  if (!praticaRaw) return [];
+  const pratica = praticaRaw as {
+    id: string;
+    tenantId: string;
+    mandanteId: string;
+    debitore: { codiceFiscale: string | null };
+    garanti?: Array<{ codiceFiscale: string | null }>;
+  };
 
   const rawCfs = [
     pratica.debitore.codiceFiscale,
-    ...(pratica.garanti ?? []).map((g) => g.codiceFiscale),
+    ...(pratica.garanti ?? []).map((g: { codiceFiscale: string | null }) => g.codiceFiscale),
   ];
   const cfs = new Set<string>();
   for (const raw of rawCfs) {
@@ -155,14 +180,20 @@ export async function praticaIdsCollegatePerCf(
   const variants = cfQueryVariants(rawCfs);
 
   const [debitori, garanti] = await Promise.all([
-    prisma.debitore.findMany({
+    debitoriDb({
+      tenantId: pratica.tenantId,
+      tenantSlug: opts?.tenantSlug ?? pratica.tenantId,
+    }).findMany({
       where: {
         tenantId: pratica.tenantId,
         codiceFiscale: { in: variants },
       },
       select: { id: true, codiceFiscale: true },
     }),
-    prisma.garante.findMany({
+    garantiDb({
+      tenantId: pratica.tenantId,
+      tenantSlug: opts?.tenantSlug ?? pratica.tenantId,
+    }).findMany({
       where: { codiceFiscale: { in: variants } },
       select: { praticaId: true, codiceFiscale: true },
     }),
@@ -179,7 +210,7 @@ export async function praticaIdsCollegatePerCf(
   if (debitoreIds.length) or.push({ debitoreId: { in: debitoreIds } });
   if (daGarante.length) or.push({ id: { in: daGarante } });
 
-  const rows = await prisma.pratica.findMany({
+  const rows = await db(pratica.tenantId, opts?.tenantSlug).findMany({
     where: {
       tenantId: pratica.tenantId,
       ...(stessoMandante ? { mandanteId: pratica.mandanteId } : {}),
@@ -193,14 +224,22 @@ export async function praticaIdsCollegatePerCf(
 
 export async function praticheStessoDebitoreIds(
   praticaId: string,
-  filtro: FiltroCollegata
+  filtro: FiltroCollegata,
+  ctx?: Pick<PraticaDbContext, "tenantId" | "tenantSlug">
 ) {
   const ids = await praticaIdsCollegatePerCf(praticaId, {
     stessoMandante: filtro === "aperta",
+    tenantId: ctx?.tenantId,
+    tenantSlug: ctx?.tenantSlug,
   });
   if (!ids.length) return [];
 
-  const rows = await prisma.pratica.findMany({
+  const rows = await praticaDb({
+    tenantId: ctx?.tenantId ?? "",
+    tenantSlug: ctx?.tenantSlug ?? ctx?.tenantId ?? "",
+    role: "ADMIN",
+    userId: ctx?.tenantId ?? "",
+  }).findMany({
     where: { id: { in: ids } },
     select: { id: true, stato: true },
     orderBy: { numero: "asc" },
@@ -212,7 +251,8 @@ export async function praticheStessoDebitoreIds(
 }
 
 export async function canAccessPratica(user: SessionUser, praticaId: string) {
-  const found = await prisma.pratica.findFirst({
+  const praticaModel = praticaDbFromUser(user);
+  const found = await praticaModel.findFirst({
     where: { id: praticaId, AND: [praticaWhere(user)] },
     select: { id: true },
   });
@@ -220,10 +260,12 @@ export async function canAccessPratica(user: SessionUser, praticaId: string) {
 
   const collegataIds = await praticaIdsCollegatePerCf(praticaId, {
     stessoMandante: false,
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
   });
   if (collegataIds.length < 2) return false;
 
-  const sibling = await prisma.pratica.findFirst({
+  const sibling = await praticaModel.findFirst({
     where: {
       id: { in: collegataIds },
       AND: [praticaWhere(user)],
@@ -236,27 +278,19 @@ export async function canAccessPratica(user: SessionUser, praticaId: string) {
 export async function writeAudit(input: {
   userId?: string | null;
   tenantId?: string | null;
+  tenantSlug?: string | null;
   action: string;
   entity: string;
   entityId?: string | null;
   dettaglio?: string | null;
 }) {
-  let tenantId = input.tenantId || null;
-  if (!tenantId && input.userId) {
-    const u = await prisma.user.findUnique({
-      where: { id: input.userId },
-      select: { tenantId: true },
-    });
-    tenantId = u?.tenantId ?? null;
-  }
-  await prisma.auditLog.create({
-    data: {
-      tenantId,
-      userId: input.userId || null,
-      action: input.action,
-      entity: input.entity,
-      entityId: input.entityId || null,
-      dettaglio: input.dettaglio || null,
-    },
+  await appendAudit({
+    tenantId: input.tenantId ?? null,
+    tenantSlug: input.tenantSlug ?? undefined,
+    userId: input.userId ?? null,
+    action: input.action,
+    entity: input.entity,
+    entityId: input.entityId ?? null,
+    dettaglio: input.dettaglio ?? null,
   });
 }

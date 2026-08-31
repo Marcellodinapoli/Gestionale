@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { requireUser } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { AccountEditor } from "@/components/account/AccountEditor";
@@ -14,7 +15,7 @@ import {
 export default async function AccountPage() {
   const session = await requireUser();
 
-  const user = await prisma.user.findUnique({
+  const user = await usersDbFromUser(session).findUnique({
     where: { id: session.id },
     select: {
       name: true,
@@ -36,7 +37,7 @@ export default async function AccountPage() {
   });
 
   const postazioni = gestiscePostazione
-    ? await prisma.postazione.findMany({
+    ? await postazioniDbFromUser(session).findMany({
         where: { active: true, tenantId: session.tenantId },
         orderBy: [{ sedeRef: { nome: "asc" } }, { nome: "asc" }],
         include: {

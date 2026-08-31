@@ -25,7 +25,7 @@ export default async function AppLayout({
     redirect("/seleziona-postazione");
   }
   const { getDialClientConfig } = await import("@/lib/telephony");
-  const dialConfig = await getDialClientConfig(user.tenantId);
+  const dialConfig = await getDialClientConfig(user.tenantId, user.tenantSlug);
   return (
     <AppShell user={user}>
       <NavPrefetch />

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireUser } from "@/lib/guard";
 import {
   canAccessPratica,
@@ -17,11 +18,12 @@ export default async function EstrattoContoPage({
   searchParams: Promise<{ embed?: string }>;
 }) {
   const user = await requireUser();
+  const praticaModel = praticaDbFromUser(user);
   const { id } = await params;
   const { embed } = await searchParams;
   if (!(await canAccessPratica(user, id))) notFound();
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await praticaModel.findUnique({
     where: { id },
     include: {
       debitore: true,

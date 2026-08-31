@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
 import type { SessionUser } from "@/lib/permissions";
 
 export type RegistrazioniFilterOpts = {
@@ -84,7 +85,8 @@ export async function registrazioneAccessible(
       return true;
     }
     const scope = await praticaScopeWhere(user);
-    const hit = await prisma.pratica.findFirst({
+    const praticaModel = praticaDbFromUser(user);
+    const hit = await praticaModel.findFirst({
       where: { AND: [scope, { id: rec.praticaId }] },
       select: { id: true },
     });
@@ -92,7 +94,8 @@ export async function registrazioneAccessible(
   }
 
   const scope = await praticaScopeWhere(user);
-  const hit = await prisma.pratica.findFirst({
+  const praticaModel = praticaDbFromUser(user);
+  const hit = await praticaModel.findFirst({
     where: { AND: [scope, { id: rec.praticaId }] },
     select: { id: true },
   });

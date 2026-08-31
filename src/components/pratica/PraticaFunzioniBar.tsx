@@ -42,6 +42,7 @@ import { canShowIncassoPopup } from "@/lib/permissions";
 import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
 import type { RecordingMode } from "@/lib/recordingMode";
+import type { CodiceScaricoPerimetro } from "@/lib/mandantePerimetri";
 
 type Voce = {
   id: string;
@@ -133,6 +134,7 @@ export function PraticaFunzioniBar({
   canEditNotes,
   praticaLocked = false,
   codiceScarico,
+  codiciScaricoOperatore = [],
   memoAt,
   promessaAt,
   promessaImporto,
@@ -149,6 +151,7 @@ export function PraticaFunzioniBar({
   canEditNotes?: boolean;
   praticaLocked?: boolean;
   codiceScarico?: string | null;
+  codiciScaricoOperatore?: CodiceScaricoPerimetro[];
   memoAt?: string | null;
   promessaAt?: string | null;
   promessaImporto?: number | null;
@@ -545,6 +548,7 @@ export function PraticaFunzioniBar({
           <InserisciNotaServizio
             praticaId={praticaId}
             codiceScarico={codiceScarico}
+            codiciScaricoOperatore={codiciScaricoOperatore}
             promessaAt={promessaAt}
             promessaImporto={promessaImporto}
             bozzaNota={notaBozza?.testo}

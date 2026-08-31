@@ -1,27 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
 import { praticaWhere } from "@/lib/domain";
 import { requireWritableUser } from "@/lib/guard";
 import { markMessaggiLetti } from "@/lib/memoAgenda";
+import { messaggiAgendaFromUser } from "@/lib/messaggiAgendaRepo";
+import { praticaDbFromUser, resolveTenantSlug } from "@/lib/praticheRepo";
 
 function fail(message: string): never {
   throw new Error(message);
 }
 
 export async function markMessaggioAgendaLettoAction(formData: FormData) {
-  await requireWritableUser();
+  const user = await requireWritableUser();
   const id = String(formData.get("messageId") || "");
-  const msg = await prisma.messaggioAgenda.findUnique({
-    where: { id },
-    include: { pratica: { select: { id: true } } },
-  });
+  const repo = messaggiAgendaFromUser(user);
+  const tenantSlug = resolveTenantSlug(user);
+  const msg = await repo.getById(tenantSlug, user.tenantId, id);
   if (!msg) fail("Messaggio non trovato");
-  await prisma.messaggioAgenda.update({
-    where: { id },
-    data: { letto: true, lettoAt: new Date() },
-  });
+  await repo.markLetto(tenantSlug, user.tenantId, id);
   revalidatePath("/agenda");
   revalidatePath("/messaggi");
   if (msg.praticaId) revalidatePath(`/pratiche/${msg.praticaId}`);
@@ -32,12 +29,12 @@ export async function markMessaggiPraticaLettiAction(formData: FormData) {
   const user = await requireWritableUser();
   const praticaId = String(formData.get("praticaId") || "");
   if (!praticaId) fail("Pratica mancante");
-  const pratica = await prisma.pratica.findFirst({
+  const pratica = await praticaDbFromUser(user).findFirst({
     where: { id: praticaId, ...praticaWhere(user) },
     select: { id: true },
   });
   if (!pratica) fail("Pratica non trovata");
-  await markMessaggiLetti(praticaId);
+  await markMessaggiLetti(praticaId, user.tenantId, resolveTenantSlug(user));
   revalidatePath("/agenda");
   revalidatePath("/messaggi");
   revalidatePath(`/pratiche/${praticaId}`);

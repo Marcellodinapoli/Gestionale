@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
 import { requirePermission } from "@/lib/guard";
 import { praticaScopeWhere, resolveGruppoPerimetroContext } from "@/lib/gruppoPerimetroScope";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
@@ -94,7 +96,7 @@ export default async function AffidiPage({
 
   const mandantiDb = vuoto
     ? []
-    : await prisma.mandante.findMany({
+    : await mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
         select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
@@ -111,7 +113,7 @@ export default async function AffidiPage({
     vuoto
       ? Promise.resolve([])
       : isSupervisor
-        ? prisma.user.findMany({
+        ? usersDbFromUser(user).findMany({
             where: {
               tenantId: user.tenantId,
               supervisorId: user.id,
@@ -121,7 +123,7 @@ export default async function AffidiPage({
             orderBy: { name: "asc" },
             select: { id: true, name: true, role: true, acronimo: true },
           })
-        : prisma.user.findMany({
+        : usersDbFromUser(user).findMany({
             where: {
               tenantId: user.tenantId,
               role: { in: ["OPERATOR", "SUPERVISOR"] },
@@ -133,7 +135,7 @@ export default async function AffidiPage({
     vuoto
       ? Promise.resolve([])
       : isSupervisor
-        ? prisma.user.findMany({
+        ? usersDbFromUser(user).findMany({
             where: { tenantId: user.tenantId, role: "OPERATOR", active: true },
             orderBy: { name: "asc" },
             select: {
@@ -152,7 +154,7 @@ export default async function AffidiPage({
   const idsOperatoriFiltro = isSupervisor ? memberIds : operatori.map((o) => o.id);
   const baseScope = await praticaScopeWhere(user);
 
-  const praticheScope = await prisma.pratica.findMany({
+  const praticheScope = await praticaDbFromUser(user).findMany({
     where: { AND: [baseScope] },
     select: {
       id: true,
@@ -267,7 +269,7 @@ export default async function AffidiPage({
 
   const gruppiLavoro =
     !isVistaGruppo
-      ? await prisma.user.findMany({
+      ? await usersDbFromUser(user).findMany({
           where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
           select: {
             id: true,
@@ -285,7 +287,7 @@ export default async function AffidiPage({
       : [];
 
   const altriGruppi = isSupervisor
-    ? await prisma.user.findMany({
+    ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
           role: "SUPERVISOR",

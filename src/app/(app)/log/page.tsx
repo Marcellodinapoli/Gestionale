@@ -1,17 +1,18 @@
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/guard";
-import { dataOraIt, nessunDatoWhere } from "@/lib/domain";
+import { dataOraIt } from "@/lib/domain";
 import { Card, PageHeader } from "@/components/ui";
 import { isManutenzione } from "@/lib/permissions";
+import { auditRepoFromUser } from "@/lib/auditRepo";
 
 export default async function LogPage() {
   const user = await requirePermission("audit:view");
-  const logs = await prisma.auditLog.findMany({
-    where: isManutenzione(user) ? nessunDatoWhere() : { tenantId: user.tenantId },
-    include: { user: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
+  const logs = await auditRepoFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
     take: 100,
+    includeUser: true,
+    ...(isManutenzione(user) ? {} : {}),
   });
+
+  const filtered = isManutenzione(user) ? [] : logs;
 
   return (
     <div>
@@ -28,9 +29,9 @@ export default async function LogPage() {
             </tr>
           </thead>
           <tbody>
-            {logs.map((l) => (
+            {filtered.map((l) => (
               <tr key={l.id} className="border-t border-[var(--line)]">
-                <td className="py-2 whitespace-nowrap">{dataOraIt(l.createdAt)}</td>
+                <td className="py-2 whitespace-nowrap">{dataOraIt(new Date(l.createdAt))}</td>
                 <td>{l.user?.name || "—"}</td>
                 <td>{l.action}</td>
                 <td>

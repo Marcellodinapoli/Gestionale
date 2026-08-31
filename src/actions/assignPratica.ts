@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { canAccessPratica, writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 import { parseTipoAffido, dividePraticheEquamente, validaAffidoPratica, titolarePratica, type TipoAffido } from "@/lib/affido";
@@ -15,7 +16,7 @@ function fail(message: string): never {
 
 async function assertPuoAffidareA(user: SessionUser, assegnatarioId: string | null) {
   if (user.role === "SUPERVISOR" && assegnatarioId) {
-    const op = await prisma.user.findUnique({ where: { id: assegnatarioId } });
+    const op = await usersDbFromUser(user).findUnique({ where: { id: assegnatarioId } });
     if (!op || (op.supervisorId !== user.id && op.id !== user.id)) {
       fail("Puoi affidare solo al tuo team");
     }
@@ -29,12 +30,13 @@ async function assegnaPratica(
   tipo: TipoAffido,
   titolareEsplicito?: string | null
 ) {
-  const pratica = await prisma.pratica.findUnique({ where: { id: praticaId } });
+  const praticaModel = praticaDbFromUser(user);
+  const pratica = await praticaModel.findUnique({ where: { id: praticaId } });
   if (!pratica) fail("Pratica non trovata");
   if (!(await canAccessPratica(user, praticaId)) && user.role !== "ADMIN") {
     fail("Non puoi assegnare questa pratica");
   }
-  await assertPraticaNotLockedByOther(user.id, praticaId);
+  await assertPraticaNotLockedByOther(user, praticaId);
 
   const err = validaAffidoPratica(pratica, tipo, assegnatarioId, titolareEsplicito);
   if (err) fail(err);
@@ -42,7 +44,7 @@ async function assegnaPratica(
   const titolareCorrente = titolarePratica(pratica, titolareEsplicito);
 
   if (tipo === "ripristina") {
-    await prisma.pratica.update({
+    await praticaModel.update({
       where: { id: praticaId },
       data: { assegnatarioId: titolareCorrente },
     });
@@ -58,7 +60,7 @@ async function assegnaPratica(
   }
 
   if (!assegnatarioId) {
-    await prisma.pratica.update({
+    await praticaModel.update({
       where: { id: praticaId },
       data: {
         assegnatarioId: null,
@@ -78,7 +80,7 @@ async function assegnaPratica(
   }
 
   if (tipo === "temporaneo") {
-    await prisma.pratica.update({
+    await praticaModel.update({
       where: { id: praticaId },
       data: {
         assegnatarioId,
@@ -94,7 +96,7 @@ async function assegnaPratica(
       dettaglio: `temporaneo ${assegnatarioId} · titolare ${titolareCorrente}`,
     });
   } else {
-    await prisma.pratica.update({
+    await praticaModel.update({
       where: { id: praticaId },
       data: {
         assegnatarioId,
@@ -215,7 +217,7 @@ export async function affidoEquoMassivoAction(formData: FormData) {
           role: { in: ["OPERATOR", "SUPERVISOR"] },
         };
 
-  const team = await prisma.user.findMany({
+  const team = await usersDbFromUser(user).findMany({
     where: teamWhere,
     select: { id: true, name: true, acronimo: true },
   });

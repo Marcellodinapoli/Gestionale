@@ -12,7 +12,7 @@ import {
   voceToPraticheHrefTotale,
   type VoceLavorazioneSuggerita,
 } from "@/lib/lavorazioneSuggerita";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
 
 export async function POST(req: Request) {
   const user = await requireApiUser();
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
   }
 
-  const sup = await prisma.user.findFirst({
+  const sup = await usersDbFromUser(user).findFirst({
     where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR", active: true },
     select: { id: true, gruppoMandanti: true },
   });
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Supervisor non trovato" }, { status: 404 });
   }
 
-  const operatoriGruppo = await prisma.user.findMany({
+  const operatoriGruppo = await usersDbFromUser(user).findMany({
     where: {
       tenantId: user.tenantId,
       supervisorId,
@@ -81,12 +81,16 @@ export async function POST(req: Request) {
     scope,
     memberIds,
     tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
     dataPiano,
     salvatoAt,
     operatoreId,
   };
 
-  const { totale, lavorate } = await conteggiVoceLavorazione(voce, baseOpts);
+  const { totale, lavorate } = await conteggiVoceLavorazione(voce, {
+    ...baseOpts,
+    totaleSoloFiltro: !operatoreId,
+  });
 
   const operatori =
     user.role === "OPERATOR"

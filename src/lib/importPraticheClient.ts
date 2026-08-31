@@ -83,6 +83,7 @@ export async function importPraticheCsvChunked(input: {
 
   let initData: {
     error?: string;
+    chunkSize?: number;
     ctx?: PraticheImportContextClient;
   } = {};
   try {
@@ -95,19 +96,20 @@ export async function importPraticheCsvChunked(input: {
   }
 
   const ctx = initData.ctx;
+  const chunkSize = initData.chunkSize && initData.chunkSize > 0 ? initData.chunkSize : IMPORT_PRATICHE_CHUNK_SIZE;
   let created = 0;
   let updated = 0;
   let skipped = 0;
   let maxScadenzaCsv: string | null = null;
 
   const chunks: string[][] = [];
-  for (let i = 0; i < parsed.dataLines.length; i += IMPORT_PRATICHE_CHUNK_SIZE) {
-    chunks.push(parsed.dataLines.slice(i, i + IMPORT_PRATICHE_CHUNK_SIZE));
+  for (let i = 0; i < parsed.dataLines.length; i += chunkSize) {
+    chunks.push(parsed.dataLines.slice(i, i + chunkSize));
   }
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]!;
-    const doneRows = Math.min((i + 1) * IMPORT_PRATICHE_CHUNK_SIZE, totalRows);
+    const doneRows = Math.min((i + 1) * chunkSize, totalRows);
     const pct = Math.round(5 + (doneRows / totalRows) * 90);
     input.onProgress?.(
       pct,
@@ -145,7 +147,7 @@ export async function importPraticheCsvChunked(input: {
       return {
         error:
           chunkData.error ||
-          `Errore al blocco ${i + 1}/${chunks.length} (righe ~${i * IMPORT_PRATICHE_CHUNK_SIZE + 1})`,
+          `Errore al blocco ${i + 1}/${chunks.length} (righe ~${i * chunkSize + 1})`,
       };
     }
 

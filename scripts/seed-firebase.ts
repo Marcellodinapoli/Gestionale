@@ -49,6 +49,7 @@ const PERIMETRI_BNL = serializePerimetri([
     ricevuta: emptyLatoEconomico(),
     pagata: latoProvvigioneDemo(),
     codiciScarico: [],
+    codiciScaricoOperatori: [],
     smsPreimpostati: [],
   },
   {
@@ -59,6 +60,7 @@ const PERIMETRI_BNL = serializePerimetri([
     ricevuta: emptyLatoEconomico(),
     pagata: latoProvvigioneDemo(),
     codiciScarico: [],
+    codiciScaricoOperatori: [],
     smsPreimpostati: [],
   },
   {
@@ -69,6 +71,7 @@ const PERIMETRI_BNL = serializePerimetri([
     ricevuta: emptyLatoEconomico(),
     pagata: latoProvvigioneDemo(),
     codiciScarico: [],
+    codiciScaricoOperatori: [],
     smsPreimpostati: [],
   },
 ]);

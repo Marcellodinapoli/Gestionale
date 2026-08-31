@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
+import { incassiDbFromUser } from "@/lib/incassiRepo";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import { canAccessPratica } from "@/lib/domain";
@@ -20,6 +22,10 @@ import {
 } from "@/lib/praticaCoda";
 import { getRecordingMode } from "@/lib/recordingConfig";
 import { getPraticaWorkContext } from "@/lib/praticaLock";
+import {
+  codiciScaricoOperatoriEffettivi,
+  codiciScaricoOperatoriPerPratica,
+} from "@/lib/mandantePerimetri";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
 import { PraticaSchedaOperatore } from "@/components/pratica/PraticaSchedaOperatore";
 import { PraticaLockWatcher } from "@/components/pratica/PraticaLockWatcher";
@@ -47,6 +53,7 @@ export default async function PraticaDetailPage({
   }>;
 }) {
   const user = await requireUser();
+  const praticaModel = praticaDbFromUser(user);
   const { id } = await params;
   const sp = await searchParams;
   const {
@@ -68,7 +75,7 @@ export default async function PraticaDetailPage({
     getRecordingMode(user.tenantId),
     canAccessPratica(user, id),
     filtroCollegata
-      ? loadPraticheStessoDebitorePayload(user.tenantId, id)
+      ? loadPraticheStessoDebitorePayload(user.tenantId, id, user.tenantSlug ?? user.tenantId)
       : Promise.resolve(null),
   ]);
   if (!accessOk) notFound();
@@ -91,7 +98,7 @@ export default async function PraticaDetailPage({
   // Include leggero: anagrafica + rate. Note/incassi dettaglio via /extra.
   // Solo somma importi per il campo «Pagato» in scheda.
   const [pratica, workCtx, originePratica, incassiSum] = await Promise.all([
-    prisma.pratica.findUnique({
+    praticaModel.findUnique({
       where: { id },
       include: {
         debitore: {
@@ -99,7 +106,7 @@ export default async function PraticaDetailPage({
             recapiti: { orderBy: [{ tipo: "asc" }, { ordine: "asc" }] },
           },
         },
-        mandante: { select: { codice: true, ragioneSociale: true } },
+        mandante: { select: { codice: true, ragioneSociale: true, perimetri: true } },
         assegnatario: { select: { name: true } },
         rate: { orderBy: { numeroRata: "asc" } },
         garanti: {
@@ -110,14 +117,14 @@ export default async function PraticaDetailPage({
         },
       },
     }),
-    getPraticaWorkContext(user.id, id),
+    getPraticaWorkContext(user, id),
     origineId
-      ? prisma.pratica.findUnique({
+      ? praticaModel.findUnique({
           where: { id: origineId },
           select: { numero: true },
         })
       : Promise.resolve(null),
-    prisma.incasso.aggregate({
+    incassiDbFromUser(user).aggregate({
       where: { praticaId: id },
       _sum: { importo: true },
     }),
@@ -125,6 +132,12 @@ export default async function PraticaDetailPage({
   if (!pratica) notFound();
 
   const pagato = Math.max(0, incassiSum._sum.importo || 0);
+  const codiciScaricoOperatore = codiciScaricoOperatoriEffettivi(
+    codiciScaricoOperatoriPerPratica(
+      pratica.mandante.perimetri,
+      pratica.numeroMandante
+    )
+  );
 
   const { canWork, lockedByName } = workCtx;
 
@@ -174,6 +187,7 @@ export default async function PraticaDetailPage({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <PraticaSchedaOperatore
             pratica={{ ...pratica, pagato }}
+            codiciScaricoOperatore={codiciScaricoOperatore}
             canEditNotes={canWork}
             canEditStato={canWork && can(user, "pratiche:update:stato")}
             canRegistraIncasso={canWork && can(user, "incassi:create")}

@@ -17,7 +17,8 @@ export async function GET(req: Request) {
 
   const payload = await loadPraticheStessoDebitorePayload(
     user.tenantId,
-    praticaId
+    praticaId,
+    user.tenantSlug ?? user.tenantId
   );
   if (!payload) {
     return NextResponse.json({ error: "Pratica non trovata" }, { status: 404 });

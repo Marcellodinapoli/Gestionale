@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/guard";
 import { MandanteSchedaEditor } from "@/components/mandanti/MandanteSchedaEditor";
@@ -11,7 +12,7 @@ export default async function MandanteDettaglioPage({
   const user = await requirePermission("mandanti:manage");
   const { id } = await params;
 
-  const mandante = await prisma.mandante.findFirst({
+  const mandante = await mandantiDbFromUser(user).findFirst({
     where: { id, tenantId: user.tenantId },
     include: { _count: { select: { pratiche: true } } },
   });

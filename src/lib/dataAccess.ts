@@ -1,20 +1,24 @@
 /**
- * Piano dati operativo Credixa.
+ * Accesso ai dati operativi Credixa.
  *
- * Regola: le pagine leggono sempre dal **data plane Firebase** (cache operativa).
- * Un eventuale DB del cliente NON viene interrogato a ogni apertura pagina:
- * un connettore sincronizza in background (incrementale) verso Firebase.
+ * Con DATABASE_PROVIDER=connector:
+ *   Credixa → Repository → ConnectorClient → Connettore → SQL Server
  *
- * Netlify = frontend; Firebase = backend operativo e cache di sync.
+ * Con DATABASE_PROVIDER=firestore (default durante migrazione):
+ *   Credixa → prisma → firebasePrisma → Firestore
+ *
+ * Formazione resta sempre su Firebase indipendentemente da questo provider.
  */
 
-export type OperationalBackend = "firebase" | "company";
+import { getDatabaseProvider } from "@/lib/data/config";
+
+export type OperationalBackend = "firestore" | "connector";
 export type FormazioneBackend = "firebase";
 
 export function getOperationalBackend(): OperationalBackend {
-  const raw = (process.env.OPERATIONAL_BACKEND || "firebase").trim().toLowerCase();
-  if (raw === "company") return "company";
-  return "firebase";
+  const provider = getDatabaseProvider();
+  if (provider === "connector") return "connector";
+  return "firestore";
 }
 
 export function getFormazioneBackend(): FormazioneBackend {
@@ -22,59 +26,41 @@ export function getFormazioneBackend(): FormazioneBackend {
 }
 
 export function assertOperationalBackendReady() {
-  if (getOperationalBackend() === "company") {
-    throw new Error(
-      "Connettore database aziendale non ancora implementato. Usa Firebase (OPERATIONAL_BACKEND=firebase)."
-    );
+  if (getOperationalBackend() === "connector") {
+    const url = process.env.CONNECTOR_BASE_URL || "http://localhost:8443";
+    if (!url) {
+      throw new Error("CONNECTOR_BASE_URL non configurato");
+    }
   }
 }
 
-/**
- * Sorgente di verità per le pagine UI.
- * Anche con connettore company attivo, le letture runtime restano su Firebase
- * (alimentato dalla sync incrementale).
- */
-export type RuntimeDataPlane = "firebase";
+export type RuntimeDataPlane = "connector" | "firestore";
 
 export function getRuntimeDataPlane(): RuntimeDataPlane {
-  return "firebase";
-}
-
-export type SyncCursor = {
-  tenantId: string;
-  collection: string;
-  /** ISO timestamp ultima sync riuscita (updatedAt / mirroredAt). */
-  since: string | null;
-};
-
-export type SyncBatchResult = {
-  upserted: number;
-  deleted: number;
-  cursor: string | null;
-  done: boolean;
-};
-
-/**
- * Contratto connettore → Firebase (futuro server cliente).
- * Implementazioni: no-op oggi; company connector in seguito.
- */
-export interface OperationalConnector {
-  readonly id: string;
-  pullIncremental(cursor: SyncCursor): Promise<SyncBatchResult>;
-  pushLocalChange?(args: {
-    tenantId: string;
-    collection: string;
-    id: string;
-    payload: Record<string, unknown>;
-  }): Promise<void>;
+  return getOperationalBackend() === "connector" ? "connector" : "firestore";
 }
 
 export function describeDataArchitecture() {
+  const backend = getOperationalBackend();
   return {
-    frontend: "netlify",
+    frontend: "nextjs",
     runtimeReads: getRuntimeDataPlane(),
-    operationalBackend: getOperationalBackend(),
-    pageLoadsHitCustomerDb: false,
-    syncMode: "incremental-to-firebase",
+    operationalBackend: backend,
+    pageLoadsHitCustomerDb: backend === "connector",
+    syncMode: backend === "connector" ? "direct-via-connector" : "firestore-legacy",
+    formazioneBackend: getFormazioneBackend(),
   } as const;
 }
+
+/** Tipi legacy per sync incrementale Firebase (non usati con connector diretto). */
+export type SyncCursor = { since: string; collection?: string };
+export type SyncBatchResult = {
+  upserted: number;
+  deleted: number;
+  cursor?: SyncCursor | string | null;
+  done?: boolean;
+};
+export type OperationalConnector = {
+  id: string;
+  pullIncremental(cursor: SyncCursor): Promise<SyncBatchResult>;
+};

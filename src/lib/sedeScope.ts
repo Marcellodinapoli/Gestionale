@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { usersDb } from "@/lib/usersRepo";
 import type { SessionUser } from "@/lib/permissions";
 
 export {
@@ -47,7 +47,7 @@ export async function userIdsInSede(
   sedeId: string | null
 ): Promise<string[] | null> {
   if (!sedeId) return null;
-  const users = await prisma.user.findMany({
+  const users = await usersDb({ tenantId, tenantSlug: tenantId }).findMany({
     where: { tenantId, active: true, sedeId },
     select: { id: true },
   });

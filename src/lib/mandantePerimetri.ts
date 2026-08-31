@@ -1,4 +1,9 @@
 import { METODI_INCASSO } from "@/lib/metodoIncasso";
+import {
+  CODICI_SCARICO,
+  CODICE_SCARICO_LABELS,
+  statoDaCodiceScarico,
+} from "@/lib/scarico";
 
 /** Scaglione: al superamento della soglia (% su affidato o incassato) la provvigione indicata sostituisce quella base. */
 export type ScaglioneBase = "affidato" | "incassato";
@@ -35,7 +40,7 @@ export type LatoEconomico = {
 };
 
 export const SCAGLIONE_BASE_LABELS: Record<ScaglioneBase, string> = {
-  affidato: "% su affidato",
+  affidato: "% su affido pratiche",
   incassato: "% su incassato",
 };
 
@@ -70,7 +75,10 @@ export type MandantePerimetro = {
   ricevuta: LatoEconomico;
   /** Provvigioni e incentivi che l'agenzia paga ai collaboratori. */
   pagata: LatoEconomico;
+  /** Codici scarico back office (provvigioni, scaglioni, statistiche). */
   codiciScarico: CodiceScaricoPerimetro[];
+  /** Codici scarico selezionabili dagli operatori in lavorazione. */
+  codiciScaricoOperatori: CodiceScaricoPerimetro[];
   smsPreimpostati: SmsPresetPerimetro[];
 };
 
@@ -140,6 +148,41 @@ export function acronimoPerimetroLotto(
   }
 
   return lot;
+}
+
+/** Codici scarico operatori sul perimetro (per chiave import / lotto). */
+export function codiciScaricoOperatoriPerPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined
+): CodiceScaricoPerimetro[] {
+  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
+  return hit?.codiciScaricoOperatori ?? [];
+}
+
+/** Elenco operatori effettivo: configurato sul perimetro o default standard. */
+export function codiciScaricoOperatoriEffettivi(
+  codici: CodiceScaricoPerimetro[]
+): CodiceScaricoPerimetro[] {
+  if (codici.length) return codici;
+  return CODICI_SCARICO.map((codice) => ({
+    codice,
+    descrizione: CODICE_SCARICO_LABELS[codice],
+  }));
+}
+
+export function isCodiceScaricoOperatore(
+  codice: string,
+  codici: CodiceScaricoPerimetro[]
+): boolean {
+  const key = codice.trim().toUpperCase();
+  if (!key) return false;
+  return codici.some((c) => c.codice.trim().toUpperCase() === key);
+}
+
+export function isCodicePromessaOperatore(codice: string): boolean {
+  const key = codice.trim().toUpperCase();
+  if (!key) return false;
+  return key === "PPC" || statoDaCodiceScarico(key) === "PROMESSA";
 }
 
 /** Codici scarico configurati sul perimetro (per acronimo interno). */
@@ -370,6 +413,7 @@ export function emptyPerimetro(
     ricevuta: emptyLatoEconomico(),
     pagata: emptyLatoEconomico(),
     codiciScarico: [],
+    codiciScaricoOperatori: [],
     smsPreimpostati: [],
   };
 }
@@ -545,6 +589,7 @@ export function parsePerimetri(raw: string | null | undefined): MandantePerimetr
           ricevuta: normalizeLato(o.ricevuta),
           pagata: normalizeLato(o.pagata),
           codiciScarico: normalizeCodiciScarico(o.codiciScarico),
+          codiciScaricoOperatori: normalizeCodiciScarico(o.codiciScaricoOperatori),
           smsPreimpostati: normalizeSmsPresets(o.smsPreimpostati),
         } satisfies MandantePerimetro;
       })
@@ -590,6 +635,7 @@ export function loadPerimetriForEditor(mandante: {
         ricevuta: legacyRicevuta,
         pagata: emptyLatoEconomico(),
         codiciScarico: legacyCodici,
+        codiciScaricoOperatori: [],
         smsPreimpostati: legacySms,
       },
     ];

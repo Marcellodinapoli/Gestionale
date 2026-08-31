@@ -12,9 +12,16 @@ import {
   emptyVoce,
   applyPerimetroRiga,
   clearPerimetroRiga,
+  applyCodiceScaricoVoce,
   codiciScaricoPerRiga,
+  colonneOperatoriVisibili,
+  conteggioRigaVisibile,
+  etichettaPerimetroSelect,
   labelPerimetroVoce,
   matchPerimetroRiga,
+  perimetriRigaPerSelect,
+  totaliFooterLavorazione,
+  voceAffectsConteggi,
   type PerimetroRigaLavorazione,
   type VoceLavorazioneConConteggi,
   type VoceLavorazioneSuggerita,
@@ -81,19 +88,19 @@ function VoceRiga({
   loadingConteggi?: boolean;
   perimetriRiga?: PerimetroRigaLavorazione[];
 }) {
-  const colonneOperatori = mostraOperatori
-    ? operatoriGruppo
-    : operatoreCorrenteId
-      ? operatoriGruppo.filter((o) => o.id === operatoreCorrenteId)
-      : [];
+  const colonneOperatori = colonneOperatoriVisibili(operatoriGruppo, {
+    mostraOperatori,
+    operatoreCorrenteId,
+  });
 
   const filtroLabel = describeAltriFiltri(voce.filtri);
   const haFiltri = hasAltriFiltri(voce.filtri);
   const haOpzioniPerimetro = Boolean(perimetriRiga?.length);
   const mostraPerimetro = canEdit || haOpzioniPerimetro;
   const perimetroSelezionato = haOpzioniPerimetro ? matchPerimetroRiga(voce, perimetriRiga!) : "";
-  const perimetriAffido = perimetriRiga?.filter((p) => p.situazione === "affido") ?? [];
-  const perimetriLavorazione = perimetriRiga?.filter((p) => p.situazione === "lavorazione") ?? [];
+  const opzioniPerimetro = haOpzioniPerimetro
+    ? perimetriRigaPerSelect(perimetriRiga!, perimetroSelezionato)
+    : [];
   const codiciScaricoVoce = haOpzioniPerimetro
     ? perimetroSelezionato
       ? codiciScaricoPerRiga(voce, perimetriRiga!)
@@ -117,6 +124,8 @@ function VoceRiga({
     };
   }
 
+  const totaleRiga = conteggioRigaVisibile(voce, colonneOperatori);
+
   return (
     <tr className="border-t border-[var(--line)] hover:bg-[#fafbfc]">
       {mostraPerimetro ? (
@@ -139,24 +148,11 @@ function VoceRiga({
               <option value="">
                 {haOpzioniPerimetro ? "— Perimetro —" : "Nessun perimetro (configura in Affidi)"}
               </option>
-              {perimetriAffido.length ? (
-                <optgroup label="In affido">
-                  {perimetriAffido.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              {perimetriLavorazione.length ? (
-                <optgroup label="In lavorazione">
-                  {perimetriLavorazione.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
+              {opzioniPerimetro.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {etichettaPerimetroSelect(p)}
+                </option>
+              ))}
             </select>
           ) : (
             <span className="text-xs text-[var(--navy)]">
@@ -167,27 +163,11 @@ function VoceRiga({
       ) : null}
       <td className="px-2 py-1.5 align-top">
         {canEdit ? (
-          <input
-            value={voce.descrizione}
-            onChange={(e) => onChange({ ...voce, descrizione: e.target.value })}
-            placeholder="Descrizione…"
-            className="min-w-[8rem] w-full rounded border border-[var(--line)] px-1.5 py-1 text-xs"
-          />
-        ) : (
-          <span className="text-xs font-medium text-[var(--navy)]">{voce.descrizione || "—"}</span>
-        )}
-      </td>
-      <td className="px-2 py-1.5 align-top">
-        {canEdit ? (
           <select
             value={codiceScaricoSelezionato}
             onChange={(e) => {
               const codiceScarico = e.target.value as VoceLavorazioneSuggerita["codiceScarico"];
-              onChange({
-                ...voce,
-                codiceScarico,
-                ...(codiceScarico === "ND" ? { descrizione: "Pratiche nuove" } : {}),
-              });
+              onChange(applyCodiceScaricoVoce(voce, codiceScarico));
             }}
             className="h-7 min-w-[4.5rem] rounded border border-[var(--line)] px-1 text-xs uppercase"
             disabled={haOpzioniPerimetro && !perimetroSelezionato}
@@ -204,6 +184,18 @@ function VoceRiga({
               ? "Nulli"
               : voce.codiceScarico || "—"}
           </span>
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-top">
+        {canEdit ? (
+          <input
+            value={voce.descrizione}
+            onChange={(e) => onChange({ ...voce, descrizione: e.target.value })}
+            placeholder="Descrizione…"
+            className="min-w-[8rem] w-full rounded border border-[var(--line)] px-1.5 py-1 text-xs"
+          />
+        ) : (
+          <span className="text-xs font-medium text-[var(--navy)]">{voce.descrizione || "—"}</span>
         )}
       </td>
       <td className="min-w-[10rem] px-2 py-1.5 align-top">
@@ -265,10 +257,10 @@ function VoceRiga({
       })}
       <td className="px-2 py-1.5 text-center align-top text-xs font-medium">
         <ConteggioCell
-          totale={voce.totale}
-          lavorate={voce.lavorate}
-          hrefTotale={voce.hrefTotale}
-          hrefLavorate={voce.hrefLavorate}
+          totale={totaleRiga.totale}
+          lavorate={totaleRiga.lavorate}
+          hrefTotale={totaleRiga.hrefTotale}
+          hrefLavorate={totaleRiga.hrefLavorate}
           loading={loadingConteggi}
         />
       </td>
@@ -364,11 +356,10 @@ export function LavorazioneSuggeritaBar({
 
   const displayVoci = dirty ? voci : (conteggiOverride ?? initialVoci);
 
-  const colonneOperatori = mostraOperatori
-    ? operatoriGruppo
-    : operatoreCorrenteId
-      ? operatoriGruppo.filter((o) => o.id === operatoreCorrenteId)
-      : operatoriGruppo;
+  const colonneOperatori = colonneOperatoriVisibili(operatoriGruppo, {
+    mostraOperatori,
+    operatoreCorrenteId,
+  });
 
   const fetchConteggiVoce = useCallback(
     async (voce: VoceLavorazioneSuggerita) => {
@@ -454,9 +445,13 @@ export function LavorazioneSuggeritaBar({
   function updateVoce(index: number, next: VoceLavorazioneSuggerita) {
     markDirty();
     setVoci((prev) => {
-      const merged = baseVoci(prev).map((v, i) => (i === index ? { ...v, ...next } : v));
+      const base = baseVoci(prev);
+      const merged = base.map((v, i) => (i === index ? { ...v, ...next } : v));
       const voce = merged[index];
-      if (voce) scheduleRefresh(index, voce);
+      const prevVoce = base[index];
+      if (voce && prevVoce && voceAffectsConteggi(prevVoce, voce)) {
+        scheduleRefresh(index, voce);
+      }
       return merged;
     });
   }
@@ -548,21 +543,10 @@ export function LavorazioneSuggeritaBar({
       })
     : "";
 
-  const totaliPerOperatore = colonneOperatori.map((op) => {
-    let totale = 0;
-    let lavorate = 0;
-    for (const voce of displayVoci) {
-      const c = voce.operatori.find((o) => o.id === op.id);
-      if (c) {
-        totale += c.totale;
-        lavorate += c.lavorate;
-      }
-    }
-    return { id: op.id, totale, lavorate };
-  });
-
-  const totalePratiche = displayVoci.reduce((s, v) => s + v.totale, 0);
-  const lavoratePratiche = displayVoci.reduce((s, v) => s + v.lavorate, 0);
+  const { totaliPerOperatore, totalePratiche, lavoratePratiche } = totaliFooterLavorazione(
+    displayVoci,
+    colonneOperatori
+  );
   const mostraColonnaPerimetro = canEdit || Boolean(perimetriRiga?.length);
   const colspanBase = 5 + (mostraColonnaPerimetro ? 1 : 0);
 
@@ -646,8 +630,8 @@ export function LavorazioneSuggeritaBar({
               {mostraColonnaPerimetro ? (
                 <th className="min-w-[11rem] px-2 py-2">Perimetro</th>
               ) : null}
-              <th className="min-w-[9rem] px-2 py-2">Descrizione</th>
               <th className="w-16 px-2 py-2">Cod. scar.</th>
+              <th className="min-w-[9rem] px-2 py-2">Descrizione</th>
               <th className="min-w-[10rem] px-2 py-2">Filtro pratiche</th>
               <th className="min-w-[6rem] px-2 py-2">Note</th>
               <th className="min-w-[6rem] px-2 py-2">Note aggiuntive</th>

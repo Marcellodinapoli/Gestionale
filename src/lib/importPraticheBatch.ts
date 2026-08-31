@@ -1,11 +1,14 @@
-import { prisma } from "@/lib/prisma";
-import { writeAudit } from "@/lib/domain";
+import "server-only";
+
+import { praticaDb } from "@/lib/praticheRepo";
+import { importBatchRepo } from "@/lib/importBatchRepo";
+import { appendAudit } from "@/lib/auditRepo";
+import { isConnectorProvider } from "@/lib/data/factory";
 import {
   debitoreUpdateFromCsv,
   ImportPraticaIndex,
   parseCsvPraticaRow,
   praticaUpdateFromCsv,
-  type ExistingPraticaImport,
 } from "@/lib/importCsvPratiche";
 import { IMPORT_PRATICHE_CHUNK_SIZE } from "@/lib/importCsvUtils";
 import {
@@ -26,20 +29,14 @@ export type PraticheImportContext = {
   fileName: string | null;
 };
 
-async function nextNumeroPratica(tenantId: string) {
-  const last = await prisma.pratica.findFirst({
-    where: { tenantId },
-    orderBy: { createdAt: "desc" },
-    select: { numero: true },
-  });
-  const year = new Date().getFullYear();
-  const match = last?.numero?.match(/(\d+)$/);
-  const n = match ? Number(match[1]) + 1 : 1;
-  return `PRC-${year}-${String(n).padStart(4, "0")}`;
+/** Chunk HTTP: 500 righe con connector (1 tx SQL/chunk), 15 con firestore (timeout Netlify). */
+export function importPraticheChunkSize(): number {
+  return isConnectorProvider() ? 500 : IMPORT_PRATICHE_CHUNK_SIZE;
 }
 
 export async function initPraticheImportBatch(input: {
   tenantId: string;
+  tenantSlug?: string;
   userId: string;
   userName: string;
   mandanteId: string;
@@ -50,35 +47,30 @@ export async function initPraticheImportBatch(input: {
   scadenzaMandato: Date | null;
   fileName: string | null;
 }): Promise<PraticheImportContext> {
-  const existing = await prisma.importBatch.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      tipo: "PRATICHE",
-      mandanteId: input.mandanteId,
-      perimetro: input.perimetro,
-      lotto: input.lotto,
-    },
-    orderBy: { createdAt: "desc" },
+  const slug = input.tenantSlug ?? input.tenantId;
+  const repo = importBatchRepo({ tenantId: input.tenantId, tenantSlug: slug });
+  const existing = await repo.findByLotKey(slug, input.tenantId, {
+    mandanteId: input.mandanteId,
+    perimetro: input.perimetro,
+    lotto: input.lotto,
   });
 
   const isIntegrazione = Boolean(existing);
   const batch =
     existing ??
-    (await prisma.importBatch.create({
-      data: {
-        tenantId: input.tenantId,
-        tipo: "PRATICHE",
-        mandanteId: input.mandanteId,
-        mandanteCodice: input.mandanteCodice,
-        perimetro: input.perimetro,
-        lotto: input.lotto,
-        affidoIl: input.affidoIl,
-        scadenzaMandato: input.scadenzaMandato ?? undefined,
-        fileName: input.fileName,
-        nPratiche: 0,
-        createdById: input.userId,
-        createdByName: input.userName,
-      },
+    (await repo.create(slug, input.tenantId, {
+      tenantId: input.tenantId,
+      tipo: "PRATICHE",
+      mandanteId: input.mandanteId,
+      mandanteCodice: input.mandanteCodice,
+      perimetro: input.perimetro,
+      lotto: input.lotto,
+      affidoIl: input.affidoIl.toISOString(),
+      scadenzaMandato: input.scadenzaMandato?.toISOString() ?? null,
+      fileName: input.fileName,
+      nPratiche: 0,
+      createdById: input.userId,
+      createdByName: input.userName,
     }));
 
   return {
@@ -94,7 +86,6 @@ export async function initPraticheImportBatch(input: {
   };
 }
 
-/** Cache indice integrazione tra chunk (stessa istanza serverless). */
 const integrazioneIndexCache = new Map<string, ImportPraticaIndex>();
 
 export function clearIntegrazioneIndexCache(batchId: string) {
@@ -103,6 +94,7 @@ export function clearIntegrazioneIndexCache(batchId: string) {
 
 export async function processPraticheImportChunk(input: {
   tenantId: string;
+  tenantSlug?: string;
   ctx: PraticheImportContext;
   header: string[];
   delim: string;
@@ -114,19 +106,20 @@ export async function processPraticheImportChunk(input: {
   maxScadenza: string | null;
 }> {
   const { tenantId, ctx, header, delim, lines } = input;
-  let created = 0;
-  let updated = 0;
+  const slug = input.tenantSlug ?? tenantId;
+  const dbCtx = { tenantId, tenantSlug: slug };
+  const importRepo = importBatchRepo(dbCtx);
   let skipped = 0;
   let maxScadenza: Date | null = null;
 
-  const existingPratiche: ExistingPraticaImport[] = [];
   let index: ImportPraticaIndex;
   if (ctx.isIntegrazione) {
     const cached = integrazioneIndexCache.get(ctx.batchId);
     if (cached) {
       index = cached;
     } else {
-      const loaded = await prisma.pratica.findMany({
+      const praticaModel = praticaDb({ ...dbCtx, role: "ADMIN", userId: "" });
+      const loaded = await praticaModel.findMany({
         where: importBatchPraticheWhere(tenantId, ctx),
         select: importBatchPraticaSelectForIndex,
       });
@@ -134,8 +127,11 @@ export async function processPraticheImportChunk(input: {
       integrazioneIndexCache.set(ctx.batchId, index);
     }
   } else {
-    index = new ImportPraticaIndex(existingPratiche);
+    index = new ImportPraticaIndex([]);
   }
+
+  const creates: Parameters<typeof importRepo.processImportChunk>[2]["creates"] = [];
+  const updates: Parameters<typeof importRepo.processImportChunk>[2]["updates"] = [];
 
   for (const line of lines) {
     const cols = line.split(delim);
@@ -152,24 +148,20 @@ export async function processPraticheImportChunk(input: {
     const match = ctx.isIntegrazione ? index.find(row) : null;
 
     if (match) {
-      await prisma.debitore.update({
-        where: { id: match.debitoreId },
-        data: debitoreUpdateFromCsv(row),
-      });
-      await prisma.pratica.update({
-        where: { id: match.id },
-        data: {
+      updates.push({
+        praticaId: match.id,
+        debitoreId: match.debitoreId,
+        debitore: debitoreUpdateFromCsv(row) as Record<string, unknown>,
+        pratica: {
           ...praticaUpdateFromCsv(row, match),
           importBatchId: ctx.batchId,
-        },
+        } as Record<string, unknown>,
       });
-      updated += 1;
       continue;
     }
 
-    const debitore = await prisma.debitore.create({
-      data: {
-        tenantId,
+    creates.push({
+      debitore: {
         nome: row.nome,
         cognome: row.cognome,
         codiceFiscale: row.cf,
@@ -179,18 +171,13 @@ export async function processPraticheImportChunk(input: {
         cap: row.cap,
         provincia: row.provincia,
       },
-    });
-    const pratica = await prisma.pratica.create({
-      data: {
-        tenantId,
-        numero: await nextNumeroPratica(tenantId),
+      pratica: {
         mandanteId: ctx.mandanteId,
-        debitoreId: debitore.id,
         numeroMandante: row.lottoRiga,
         contratto: row.contratto,
         commessa: row.commessa,
-        dataAffido: ctx.affidoIl,
-        scadenza: row.scadenza,
+        dataAffido: ctx.affidoIl.toISOString(),
+        scadenza: row.scadenza?.toISOString() ?? null,
         capitale: row.capitale,
         interessi: row.interessi,
         spese: row.spese,
@@ -203,28 +190,35 @@ export async function processPraticheImportChunk(input: {
         importBatchId: ctx.batchId,
       },
     });
+  }
 
-    if (ctx.isIntegrazione) {
+  const result = await importRepo.processImportChunk(slug, tenantId, { creates, updates });
+
+  if (ctx.isIntegrazione && result.createdPratiche?.length) {
+    for (const p of result.createdPratiche) {
       index.register(
         {
-          id: pratica.id,
-          debitoreId: debitore.id,
-          contratto: row.contratto,
-          commessa: row.commessa,
-          stato: row.statoPratica,
+          id: p.id,
+          debitoreId: p.debitoreId,
+          contratto: p.contratto,
+          commessa: p.commessa,
+          stato: p.stato,
           codiceScarico: null,
           note: null,
-          debitore: { codiceFiscale: row.cf },
+          debitore: { codiceFiscale: p.codiceFiscale },
         },
-        row
+        {
+          contratto: p.contratto,
+          commessa: p.commessa,
+          cf: p.codiceFiscale,
+        } as never
       );
     }
-    created += 1;
   }
 
   return {
-    created,
-    updated,
+    created: result.created,
+    updated: result.updated,
     skipped,
     maxScadenza: maxScadenza?.toISOString() ?? null,
   };
@@ -232,60 +226,51 @@ export async function processPraticheImportChunk(input: {
 
 export async function finalizePraticheImport(input: {
   tenantId: string;
+  tenantSlug?: string;
   userId: string;
   ctx: PraticheImportContext;
   totals: { created: number; updated: number; skipped: number };
   maxScadenzaCsv: Date | null;
 }) {
   const { ctx, totals, tenantId, userId } = input;
+  const slug = input.tenantSlug ?? tenantId;
+  const repo = importBatchRepo({ tenantId, tenantSlug: slug });
   const imported = totals.created + totals.updated;
 
   if (imported === 0) {
     if (!ctx.isIntegrazione) {
-      await prisma.importBatch.delete({ where: { id: ctx.batchId } }).catch(() => undefined);
+      await repo.delete(slug, tenantId, ctx.batchId).catch(() => undefined);
     }
     clearIntegrazioneIndexCache(ctx.batchId);
     return { imported: 0, totale: 0 };
   }
 
-  const praticheBatch = await prisma.pratica.findMany({
-    where: importBatchPraticheWhere(tenantId, ctx),
-    select: { id: true, importBatchId: true },
-  });
-  for (const p of praticheBatch) {
-    if (p.importBatchId !== ctx.batchId) {
-      await prisma.pratica
-        .update({ where: { id: p.id }, data: { importBatchId: ctx.batchId } })
-        .catch(() => undefined);
-    }
-  }
-  const totale = praticheBatch.length;
-
-  const batch = await prisma.importBatch.findFirst({
-    where: { id: ctx.batchId, tenantId },
-    select: { scadenzaMandato: true },
+  const { totale } = await repo.linkPraticheToBatch(slug, tenantId, {
+    batchId: ctx.batchId,
+    mandanteId: ctx.mandanteId,
+    lotto: ctx.lotto,
+    affidoIl: ctx.affidoIl.toISOString(),
   });
 
+  const batch = await repo.getById(slug, tenantId, ctx.batchId);
   const scadenzaToSave =
     ctx.scadenzaMandato ??
     input.maxScadenzaCsv ??
-    batch?.scadenzaMandato ??
+    (batch?.scadenzaMandato ? new Date(batch.scadenzaMandato) : null) ??
     null;
 
-  await prisma.importBatch.update({
-    where: { id: ctx.batchId },
-    data: {
-      nPratiche: totale,
-      ...(ctx.fileName ? { fileName: ctx.fileName } : {}),
-      ...(scadenzaToSave ? { scadenzaMandato: scadenzaToSave } : {}),
-    },
+  await repo.update(slug, tenantId, ctx.batchId, {
+    nPratiche: totale,
+    ...(ctx.fileName ? { fileName: ctx.fileName } : {}),
+    ...(scadenzaToSave ? { scadenzaMandato: scadenzaToSave.toISOString() } : {}),
   });
 
   clearIntegrazioneIndexCache(ctx.batchId);
 
-  await writeAudit({
+  await appendAudit({
     userId,
     tenantId,
+    tenantSlug: slug,
     action: ctx.isIntegrazione ? "import_integrazione" : "import",
     entity: "pratica",
     entityId: ctx.batchId,

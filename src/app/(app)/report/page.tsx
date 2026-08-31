@@ -1,4 +1,6 @@
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { prisma } from "@/lib/prisma";
+import { registrazioniDbFromUser } from "@/lib/registrazioniRepo";
 import { requirePermission } from "@/lib/guard";
 import { dataOraIt } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
@@ -29,7 +31,7 @@ export default async function ReportPage({
 
   const allOperatori = isManutenzione(user)
     ? []
-    : await prisma.user.findMany({
+    : await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
           role: { in: ["OPERATOR", "SUPERVISOR"] },
@@ -63,7 +65,7 @@ export default async function ReportPage({
     externalOperatore,
   });
 
-  const rows = await prisma.registrazioneChiamata.findMany({
+  const rows = await registrazioniDbFromUser(user).findMany({
     where,
     include: {
       operatore: { select: { id: true, name: true } },

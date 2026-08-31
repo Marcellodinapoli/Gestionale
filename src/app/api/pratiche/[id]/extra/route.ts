@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireApiUser } from "@/lib/guard";
 import { canAccessPratica } from "@/lib/domain";
 
@@ -11,12 +12,14 @@ export async function GET(
   const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
 
+  const praticaModel = praticaDbFromUser(user);
+
   const { id } = await ctx.params;
   if (!(await canAccessPratica(user, id))) {
     return NextResponse.json({ error: "Pratica non visibile" }, { status: 404 });
   }
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await praticaModel.findUnique({
     where: { id },
     select: {
       id: true,

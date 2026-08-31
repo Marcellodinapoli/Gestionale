@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { mandantiDb } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 import { parsePerimetri, numeroMandantePerimetro } from "@/lib/mandantePerimetri";
 
@@ -53,7 +54,7 @@ export async function nomiPerimetriGruppo(
 ): Promise<string[]> {
   if (!assegnazioni.length) return [];
 
-  const mandantiDb = await prisma.mandante.findMany({
+  const mandantiRows = await mandantiDb({ tenantId, tenantSlug: tenantId }).findMany({
     where: {
       tenantId,
       id: { in: [...new Set(assegnazioni.map((a) => a.mandanteId))] },
@@ -63,7 +64,7 @@ export async function nomiPerimetriGruppo(
 
   const nomi: string[] = [];
   for (const a of assegnazioni) {
-    const m = mandantiDb.find((x) => x.id === a.mandanteId);
+    const m = mandantiRows.find((x) => x.id === a.mandanteId);
     if (!m) continue;
     const perimetri = parsePerimetri(m.perimetri);
     if (!a.perimetriIds.length) {

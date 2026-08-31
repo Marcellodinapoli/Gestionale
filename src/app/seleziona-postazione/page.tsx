@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 import { canImpostarePostazioneFissa, mustChoosePostazioneAlLogin, requiresPostazione } from "@/lib/permissions";
@@ -15,7 +16,7 @@ export default async function SelezionaPostazionePage() {
     redirect("/");
   }
 
-  const postazioni = await prisma.postazione.findMany({
+  const postazioni = await postazioniDbFromUser(user).findMany({
     where: { active: true, tenantId: user.tenantId },
     orderBy: [{ sedeRef: { nome: "asc" } }, { nome: "asc" }],
     include: {

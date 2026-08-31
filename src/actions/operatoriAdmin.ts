@@ -1,11 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { sediDbFromUser } from "@/lib/sediRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
 import { ruoliCreabiliDa, type Role } from "@/lib/permissions";
+import { annoNascitaDaCodiceFiscale, normalizeCf } from "@/lib/codiceFiscale";
+import {
+  assertCondizioneEconomica,
+  parseCondizioneEconomica,
+  parseImportoFisso,
+} from "@/lib/condizioneEconomica";
 import bcrypt from "bcryptjs";
 
 function fail(message: string): never {
@@ -30,12 +37,13 @@ export async function updateAcronimoAction(formData: FormData) {
   const acronimo = String(formData.get("acronimo") || "").trim().toUpperCase() || null;
   if (!targetId) fail("Utente mancante");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
 
-  await prisma.user.update({
+  await userModel.update({
     where: { id: targetId },
     data: { acronimo },
   });
@@ -54,17 +62,30 @@ export async function updateAcronimoAction(formData: FormData) {
 export async function createOperatoreAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
   const name = String(formData.get("name") || "").trim();
+  const cognome = String(formData.get("cognome") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const password = String(formData.get("password") || "").trim();
   const acronimo = String(formData.get("acronimo") || "").trim().toUpperCase() || null;
+  const codiceFiscaleRaw = String(formData.get("codiceFiscale") || "").trim();
+  const codiceFiscale = normalizeCf(codiceFiscaleRaw) || null;
+  const residenza = String(formData.get("residenza") || "").trim() || null;
+  const annoNascitaRaw = String(formData.get("annoNascita") || "").trim();
+  let annoNascita = annoNascitaRaw ? Number(annoNascitaRaw) : null;
+  if (codiceFiscale) {
+    const derived = annoNascitaDaCodiceFiscale(codiceFiscale);
+    if (derived != null) annoNascita = derived;
+  }
   const formazioneOnly = parseAccesso(formData);
   let role = String(formData.get("role") || "OPERATOR").trim();
   const supervisorId = String(formData.get("supervisorId") || "").trim() || null;
   const sedeId = String(formData.get("sedeId") || "").trim() || null;
 
-  if (!name || !email || !password) fail("Nome, email e password obbligatori");
+  if (!name || !cognome || !email || !password) fail("Nome, cognome, email e password obbligatori");
   if (password.length < 6) fail("La password deve avere almeno 6 caratteri");
   if (!sedeId) fail("Sede obbligatoria");
+  if (codiceFiscale && codiceFiscale.length !== 16) {
+    fail("Codice fiscale non valido (16 caratteri)");
+  }
 
   if (formazioneOnly) {
     role = "OPERATOR";
@@ -72,28 +93,44 @@ export async function createOperatoreAction(formData: FormData) {
 
   assertRuoloCreabile(user.role, role);
 
-  const sede = await prisma.sede.findFirst({
+  const userModel = usersDbFromUser(user);
+  const sedeModel = sediDbFromUser(user);
+
+  const sede = await sedeModel.findFirst({
     where: { id: sedeId, tenantId: user.tenantId, active: true },
   });
   if (!sede) fail("Sede non valida");
 
-  const exists = await prisma.user.findUnique({
+  const exists = await userModel.findUnique({
     where: { tenantId_email: { tenantId: user.tenantId, email } },
   });
   if (exists) fail("Email già in uso in questa azienda");
 
   if (supervisorId) {
-    const sup = await prisma.user.findFirst({
+    const sup = await userModel.findFirst({
       where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
     });
     if (!sup) fail("Supervisor non valido");
   }
 
+  const condizioneEconomica = formazioneOnly ? "SOLO_PROVV" : parseCondizioneEconomica(formData.get("condizioneEconomica"));
+  const importoFisso =
+    !formazioneOnly && role === "OPERATOR" && condizioneEconomica === "FISSO_PROVV"
+      ? parseImportoFisso(formData.get("importoFisso"))
+      : null;
+  if (!formazioneOnly && role === "OPERATOR") {
+    assertCondizioneEconomica(condizioneEconomica, importoFisso);
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
-  await prisma.user.create({
+  await userModel.create({
     data: {
       tenantId: user.tenantId,
       name,
+      cognome,
+      codiceFiscale,
+      annoNascita,
+      residenza,
       email,
       passwordHash,
       passwordChangedAt: new Date(),
@@ -102,6 +139,8 @@ export async function createOperatoreAction(formData: FormData) {
       supervisorId,
       sedeId,
       formazioneOnly,
+      condizioneEconomica,
+      importoFisso,
     },
   });
   await writeAudit({
@@ -109,7 +148,7 @@ export async function createOperatoreAction(formData: FormData) {
     tenantId: user.tenantId,
     action: "create",
     entity: "user",
-    dettaglio: `creato ${name} (${role}${formazioneOnly ? ", solo formazione" : ""})`,
+    dettaglio: `creato ${name} ${cognome} (${role}${formazioneOnly ? ", solo formazione" : ""})`,
   });
   revalidatePath("/operatori");
   revalidatePath("/utenti");
@@ -121,7 +160,8 @@ export async function updateFormazioneOnlyAction(formData: FormData) {
   const formazioneOnly = parseAccesso(formData);
   if (!targetId) fail("Utente mancante");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
@@ -129,7 +169,7 @@ export async function updateFormazioneOnlyAction(formData: FormData) {
     fail("Non puoi limitare l'accesso a questo ruolo");
   }
 
-  await prisma.user.update({
+  await userModel.update({
     where: { id: targetId },
     data: { formazioneOnly },
   });
@@ -149,13 +189,14 @@ export async function deleteOperatoreAction(formData: FormData) {
   const targetId = String(formData.get("userId") || "").trim();
   if (!targetId) fail("Utente mancante");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
   if (target.id === user.id) fail("Non puoi eliminare te stesso");
 
-  await prisma.user.update({
+  await userModel.update({
     where: { id: targetId },
     data: { active: false },
   });
@@ -177,7 +218,8 @@ export async function updateRuoloAction(formData: FormData) {
   const role = String(formData.get("role") || "").trim();
   if (!targetId || !role) fail("Dati mancanti");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
@@ -186,7 +228,7 @@ export async function updateRuoloAction(formData: FormData) {
     fail("Solo l'admin azienda può assegnare il ruolo Admin");
   }
 
-  await prisma.user.update({
+  await userModel.update({
     where: { id: targetId },
     data: {
       role,
@@ -214,7 +256,8 @@ export async function resetPasswordAmministrazioneAction(formData: FormData) {
   if (!targetId || !newPassword) fail("Dati mancanti");
   if (newPassword.length < 6) fail("La password deve avere almeno 6 caratteri");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
@@ -236,13 +279,14 @@ export async function updateSedeUtenteAction(formData: FormData) {
   const sedeId = String(formData.get("sedeId") || "").trim() || null;
   if (!targetId) fail("Utente mancante");
 
-  const target = await prisma.user.findFirst({
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
 
   if (sedeId) {
-    const sede = await prisma.sede.findFirst({
+    const sede = await sediDbFromUser(user).findFirst({
       where: { id: sedeId, tenantId: user.tenantId },
     });
     if (!sede) fail("Sede non valida");
@@ -250,7 +294,7 @@ export async function updateSedeUtenteAction(formData: FormData) {
     fail("L'amministrazione deve avere una sede di appartenenza");
   }
 
-  await prisma.user.update({
+  await userModel.update({
     where: { id: targetId },
     data: { sedeId },
   });
@@ -263,4 +307,104 @@ export async function updateSedeUtenteAction(formData: FormData) {
     dettaglio: `sede ${target.name}: ${sedeId || "nessuna"}`,
   });
   revalidatePath("/operatori");
+}
+
+export async function updateOperatoreAction(formData: FormData) {
+  const user = await requireWritablePermission("operatori:manage");
+  const targetId = String(formData.get("userId") || "").trim();
+  const name = String(formData.get("name") || "").trim();
+  const cognome = String(formData.get("cognome") || "").trim();
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const acronimo = String(formData.get("acronimo") || "").trim().toUpperCase() || null;
+  const sedeId = String(formData.get("sedeId") || "").trim() || null;
+  const supervisorId = String(formData.get("supervisorId") || "").trim() || null;
+  const codiceFiscaleRaw = String(formData.get("codiceFiscale") || "").trim();
+  const codiceFiscale = normalizeCf(codiceFiscaleRaw) || null;
+  const residenza = String(formData.get("residenza") || "").trim() || null;
+  const annoNascitaRaw = String(formData.get("annoNascita") || "").trim();
+  let annoNascita = annoNascitaRaw ? Number(annoNascitaRaw) : null;
+  if (codiceFiscale) {
+    const derived = annoNascitaDaCodiceFiscale(codiceFiscale);
+    if (derived != null) annoNascita = derived;
+  }
+
+  if (!targetId) fail("Utente mancante");
+  if (!name || !cognome || !email) fail("Nome, cognome e email obbligatori");
+  if (!sedeId) fail("Sede obbligatoria");
+  if (codiceFiscale && codiceFiscale.length !== 16) {
+    fail("Codice fiscale non valido (16 caratteri)");
+  }
+
+  const userModel = usersDbFromUser(user);
+  const target = await userModel.findFirst({
+    where: { id: targetId, tenantId: user.tenantId },
+  });
+  if (!target) fail("Utente non trovato");
+
+  const dup = await userModel.findUnique({
+    where: { tenantId_email: { tenantId: user.tenantId, email } },
+  });
+  if (dup && dup.id !== targetId) fail("Email già in uso in questa azienda");
+
+  const sede = await sediDbFromUser(user).findFirst({
+    where: { id: sedeId, tenantId: user.tenantId, active: true },
+  });
+  if (!sede) fail("Sede non valida");
+
+  let condizioneEconomica = parseCondizioneEconomica(target.condizioneEconomica);
+  let importoFisso =
+    target.importoFisso != null ? Number(target.importoFisso) : null;
+
+  if (target.role === "OPERATOR" && !target.formazioneOnly) {
+    condizioneEconomica = parseCondizioneEconomica(formData.get("condizioneEconomica"));
+    importoFisso =
+      condizioneEconomica === "FISSO_PROVV"
+        ? parseImportoFisso(formData.get("importoFisso"))
+        : null;
+    assertCondizioneEconomica(condizioneEconomica, importoFisso);
+  } else {
+    condizioneEconomica = "SOLO_PROVV";
+    importoFisso = null;
+  }
+
+  if (supervisorId) {
+    const sup = await userModel.findFirst({
+      where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
+    });
+    if (!sup) fail("Supervisor non valido");
+  }
+
+  const data: Record<string, unknown> = {
+    name,
+    cognome,
+    email,
+    acronimo,
+    sedeId,
+    codiceFiscale,
+    annoNascita,
+    residenza,
+    condizioneEconomica,
+    importoFisso,
+  };
+
+  if (target.role === "OPERATOR" && !target.formazioneOnly) {
+    data.supervisorId = supervisorId;
+  }
+
+  await userModel.update({
+    where: { id: targetId },
+    data,
+  });
+
+  await writeAudit({
+    userId: user.id,
+    tenantId: user.tenantId,
+    action: "update",
+    entity: "user",
+    entityId: targetId,
+    dettaglio: `modificato ${name} ${cognome}`,
+  });
+  revalidatePath("/operatori");
+  revalidatePath("/utenti");
+  revalidatePath("/provigioni");
 }

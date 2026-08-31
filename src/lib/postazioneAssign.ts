@@ -1,11 +1,15 @@
-import { prisma } from "@/lib/prisma";
+import { postazioniDb } from "@/lib/postazioniRepo";
 
 export async function validaPostazionePerUtente(
   postazioneId: string,
   userId: string,
-  tenantId: string
+  tenantId: string,
+  tenantSlug?: string | null
 ) {
-  const postazione = await prisma.postazione.findFirst({
+  const postazione = await postazioniDb({
+    tenantId,
+    tenantSlug: tenantSlug ?? tenantId,
+  }).findFirst({
     where: { id: postazioneId, tenantId, active: true },
     include: {
       occupanti: {

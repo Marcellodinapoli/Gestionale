@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { requireApiUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
+import { registrazioniDbFromUser } from "@/lib/registrazioniRepo";
 import { pathRegistrazione } from "@/lib/registrazioneAudio";
 import { registrazioneAccessible } from "@/lib/registrazioniScope";
 
@@ -18,7 +18,7 @@ export async function GET(
   }
 
   const { id } = await params;
-  const rec = await prisma.registrazioneChiamata.findFirst({
+  const rec = await registrazioniDbFromUser(user).findFirst({
     where: { id },
     select: {
       fileName: true,

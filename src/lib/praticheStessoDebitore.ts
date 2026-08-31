@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
 import {
   normalizeCf,
   praticaIdsCollegatePerCf,
@@ -121,8 +122,16 @@ function mapVoce(
 /** Carica F9/F10 in un passaggio (niente doppio find della pratica corrente). */
 export async function loadPraticheStessoDebitorePayload(
   tenantId: string,
-  praticaId: string
+  praticaId: string,
+  tenantSlug?: string
 ): Promise<PraticheStessoDebitorePayload | null> {
+  const ctx: PraticaDbContext = {
+    tenantId,
+    tenantSlug: tenantSlug ?? tenantId,
+    role: "ADMIN",
+    userId: tenantId,
+  };
+  const praticaModel = praticaDb(ctx);
   const cached = ttlGet<PraticheStessoDebitorePayload>(
     tenantId,
     "praticheCollegateV2",
@@ -130,7 +139,7 @@ export async function loadPraticheStessoDebitorePayload(
   );
   if (cached) return payloadForPratica(cached, praticaId);
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await praticaModel.findUnique({
     where: { id: praticaId },
     include: {
       debitore: true,
@@ -145,6 +154,8 @@ export async function loadPraticheStessoDebitorePayload(
 
   const linkedIds = await praticaIdsCollegatePerCf(pratica.id, {
     stessoMandante: false,
+    tenantId: pratica.tenantId,
+    tenantSlug: ctx.tenantSlug,
     seed: {
       id: pratica.id,
       tenantId: pratica.tenantId,
@@ -156,7 +167,7 @@ export async function loadPraticheStessoDebitorePayload(
 
   const fetchIds = linkedIds.filter((id) => id !== pratica.id);
   const rows = fetchIds.length
-    ? await prisma.pratica.findMany({
+    ? await praticaModel.findMany({
         where: { id: { in: fetchIds } },
         include: {
           debitore: true,

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { requireUser } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui";
@@ -7,7 +7,7 @@ import { RubricaGriglia } from "@/components/rubrica/RubricaGriglia";
 export default async function RubricaPage() {
   const user = await requireUser();
 
-  const utenti = await prisma.user.findMany({
+  const utenti = await usersDbFromUser(user).findMany({
     where: {
       active: true,
       tenantId: user.tenantId,

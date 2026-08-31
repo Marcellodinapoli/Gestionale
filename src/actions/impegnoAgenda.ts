@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/domain";
 import { requireWritableUser } from "@/lib/guard";
+import { impegniAgendaFromUser } from "@/lib/impegniAgendaRepo";
+import { resolveTenantSlug } from "@/lib/praticheRepo";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -19,13 +20,13 @@ export async function salvaImpegnoLiberoAction(formData: FormData) {
   const memoAt = new Date(scheduledAtRaw);
   if (Number.isNaN(memoAt.getTime())) fail("Data/ora non valida");
 
-  const impegno = await prisma.impegnoAgenda.create({
-    data: {
-      userId: user.id,
-      titolo,
-      nota: nota || null,
-      memoAt,
-    },
+  const repo = impegniAgendaFromUser(user);
+  const tenantSlug = resolveTenantSlug(user);
+  const impegno = await repo.create(tenantSlug, user.tenantId, {
+    userId: user.id,
+    titolo,
+    nota: nota || null,
+    memoAt,
   });
 
   await writeAudit({
@@ -42,14 +43,13 @@ export async function salvaImpegnoLiberoAction(formData: FormData) {
 export async function completaImpegnoLiberoAction(formData: FormData) {
   const user = await requireWritableUser();
   const id = String(formData.get("impegnoId") || "");
-  const impegno = await prisma.impegnoAgenda.findUnique({ where: { id } });
+  const repo = impegniAgendaFromUser(user);
+  const tenantSlug = resolveTenantSlug(user);
+  const impegno = await repo.getById(tenantSlug, user.tenantId, id);
   if (!impegno || impegno.userId !== user.id) fail("Impegno non trovato");
   if (impegno.completato) return;
 
-  await prisma.impegnoAgenda.update({
-    where: { id },
-    data: { completato: true, completatoAt: new Date() },
-  });
+  await repo.complete(tenantSlug, user.tenantId, id, user.id);
   await writeAudit({
     userId: user.id,
     action: "impegno_completo",

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { configurazioneDbFromUser } from "@/lib/configurazioneRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 import { isSecretConfigKey, SECRET_CONFIG_KEYS } from "@/lib/configSecrets";
@@ -9,7 +9,8 @@ import { isSecretConfigKey, SECRET_CONFIG_KEYS } from "@/lib/configSecrets";
 /** Elimina eventuali secret già salvati per il tenant (password, API key, ecc.). */
 export async function purgeSecretConfigAction() {
   const user = await requireWritablePermission("users:manage");
-  const result = await prisma.configurazioneSistema.deleteMany({
+  const configModel = configurazioneDbFromUser(user);
+  const result = await configModel.deleteMany({
     where: {
       tenantId: user.tenantId,
       chiave: { in: [...SECRET_CONFIG_KEYS] },
@@ -46,8 +47,10 @@ export async function salvaConfigurazioneAction(formData: FormData) {
     );
   }
 
+  const configModel = configurazioneDbFromUser(user);
+
   for (const { chiave, valore } of safe) {
-    await prisma.configurazioneSistema.upsert({
+    await configModel.upsert({
       where: {
         tenantId_chiave: { tenantId: user.tenantId, chiave },
       },
@@ -57,7 +60,7 @@ export async function salvaConfigurazioneAction(formData: FormData) {
   }
 
   // In caso fossero rimaste chiavi vecchie, le cancella sempre al salvataggio.
-  await prisma.configurazioneSistema.deleteMany({
+  await configModel.deleteMany({
     where: {
       tenantId: user.tenantId,
       chiave: { in: [...SECRET_CONFIG_KEYS] },

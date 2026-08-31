@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { praticaDb } from "@/lib/praticheRepo";
+import { importBatchRepo } from "@/lib/importBatchRepo";
 import { operatorSigla } from "@/lib/noteFormat";
 import type { GruppoLavoro } from "@/lib/gruppoLavoro";
 import { gruppoLavoroPraticaWhere } from "@/lib/gruppoLavoro";
@@ -202,6 +203,7 @@ export async function buildStatisticheGruppo(
   filtri: StatisticheFiltri,
   opts?: {
     tenantId?: string;
+    tenantSlug?: string;
     tutteLePratiche?: boolean;
     /** Scope aggiuntivo (es. perimetri del gruppo). */
     extraWhere?: Prisma.PraticaWhereInput | null;
@@ -253,7 +255,16 @@ export async function buildStatisticheGruppo(
     ],
   };
 
-  const pratiche = await prisma.pratica.findMany({
+  const tid = opts?.tenantId;
+  const tsl = opts?.tenantSlug ?? tid ?? "";
+  if (!tid || !tsl) {
+    return {
+      sezioni: [],
+      totale: buildRiga("AGENZIA", "—", "—", "—", [], defaultCodiciScarico(), true),
+      praticheCount: 0,
+    };
+  }
+  const pratiche = await praticaDb({ tenantId: tid, tenantSlug: tsl }).findMany({
     where,
     include: {
       mandante: { select: { codice: true, perimetri: true } },
@@ -266,10 +277,10 @@ export async function buildStatisticheGruppo(
 
   const tenantId = opts?.tenantId ?? pratiche[0]?.tenantId;
 
+  const tenantSlug = opts?.tenantSlug ?? opts?.tenantId ?? tenantId;
   const importBatches = tenantId
-    ? await prisma.importBatch.findMany({
-        where: { tenantId },
-        select: { mandanteId: true, lotto: true, perimetro: true },
+    ? await importBatchRepo({ tenantId, tenantSlug }).list(tenantSlug, tenantId, {
+        take: 200,
       })
     : [];
 

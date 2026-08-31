@@ -1,7 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { getCurrentUser } from "@/lib/auth";
 
 export type SbloccoPrivacyState = {
@@ -23,7 +23,7 @@ export async function sbloccaPrivacyAction(
     return { ok: false, error: "Reinserisci la password" };
   }
 
-  const dbUser = await prisma.user.findUnique({
+  const dbUser = await usersDbFromUser(user).findUnique({
     where: { id: user.id },
     select: { passwordHash: true, active: true },
   });

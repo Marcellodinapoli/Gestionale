@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import {
@@ -20,19 +21,20 @@ export default async function IncassiRegistratiPage({
   searchParams: Promise<{ embed?: string }>;
 }) {
   const user = await requireUser();
+  const praticaModel = praticaDbFromUser(user);
   const { id } = await params;
   const { embed } = await searchParams;
   if (!(await canAccessPratica(user, id))) notFound();
 
   const [pratica, work] = await Promise.all([
-    prisma.pratica.findUnique({
+    praticaModel.findUnique({
       where: { id },
       include: {
         debitore: true,
         incassi: { include: { user: true }, orderBy: { data: "desc" } },
       },
     }),
-    getPraticaWorkContext(user.id, id),
+    getPraticaWorkContext(user, id),
   ]);
   if (!pratica) notFound();
   const { canWork } = work;

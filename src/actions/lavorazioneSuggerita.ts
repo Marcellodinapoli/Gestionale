@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { requireWritableUser } from "@/lib/guard";
 import { writeAudit } from "@/lib/domain";
 import {
@@ -29,7 +29,7 @@ async function resolveSupervisorId(
     return user.id;
   }
   if (user.role !== "ADMIN") fail("Non autorizzato");
-  const sup = await prisma.user.findFirst({
+  const sup = await usersDbFromUser(user).findFirst({
     where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
     select: { id: true },
   });
@@ -90,7 +90,7 @@ export async function saveLavorazioneSuggeritaAction(formData: FormData) {
 
   const { store } = await loadLavorazioneStore(supervisorId, user.tenantId);
   const next = upsertPiano(store, dataPiano, voci, { salvatoAt: new Date().toISOString() });
-  await saveLavorazioneStore(supervisorId, next);
+  await saveLavorazioneStore(supervisorId, next, user.tenantId);
 
   await writeAudit({
     userId: user.id,
@@ -111,7 +111,7 @@ export async function deleteLavorazionePianoAction(formData: FormData) {
 
   const { store } = await loadLavorazioneStore(supervisorId, user.tenantId);
   const next = removePiano(store, dataPiano);
-  await saveLavorazioneStore(supervisorId, next);
+  await saveLavorazioneStore(supervisorId, next, user.tenantId);
 
   await writeAudit({
     userId: user.id,

@@ -7,6 +7,7 @@ import {
   type GruppoPerimetroOpts,
 } from "@/lib/codiciMandantePerimetro";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
 import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
 import { isManutenzione, type SessionUser } from "@/lib/permissions";
 
@@ -152,7 +153,8 @@ export async function filtraIdsPraticaScope(
   if (!ctx.nelGruppo) return ids;
   if (ctx.nessunPerimetroGruppo) return [];
   const scope = await praticaScopeWhere(user);
-  const allowed = await prisma.pratica.findMany({
+  const praticaModel = praticaDbFromUser(user);
+  const allowed = await praticaModel.findMany({
     where: { AND: [scope, { id: { in: ids } }] },
     select: { id: true },
   });

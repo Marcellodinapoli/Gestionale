@@ -2,6 +2,7 @@
 
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/domain";
 import { requireUser } from "@/lib/guard";
@@ -34,7 +35,7 @@ export async function updateAccountTelefoniaAction(formData: FormData) {
   const interno = normalizzaInterno(String(formData.get("interno") || ""));
   const prefissoChiamata = normalizzaPrefisso(String(formData.get("prefissoChiamata") || ""));
 
-  await prisma.user.update({
+  await usersDbFromUser(user).update({
     where: { id: user.id },
     data: { interno, prefissoChiamata },
   });
@@ -68,7 +69,7 @@ export async function changePasswordAction(formData: FormData) {
     fail("La nuova password deve essere diversa da quella attuale");
   }
 
-  const dbUser = await prisma.user.findUnique({
+  const dbUser = await usersDbFromUser(user).findUnique({
     where: { id: user.id },
     select: { passwordHash: true },
   });

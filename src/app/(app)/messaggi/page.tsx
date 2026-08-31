@@ -1,8 +1,9 @@
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/guard";
-import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { PageHeader } from "@/components/ui";
 import { AgendaMessaggiPanel } from "@/components/agenda/AgendaMessaggiPanel";
+import { buildAgendaScopeContext } from "@/lib/agenda/buildAgendaScope";
+import { loadMessaggiAgendaScopedAuto } from "@/lib/agenda/loadAgenda";
+import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
 
 export default async function MessaggiPage({
   searchParams,
@@ -11,45 +12,44 @@ export default async function MessaggiPage({
 }) {
   const user = await requirePermission("agenda:view");
   const sp = await searchParams;
-  const praticaScope = await praticaScopeWhere(user);
+  const ctx = await buildAgendaScopeContext(user);
 
-  const [messaggiPratica, intern] = await Promise.all([
-    prisma.messaggioAgenda.findMany({
-      where: {
-        pratica: praticaScope,
-      },
-      include: {
-        pratica: {
-          select: {
-            id: true,
-            numero: true,
-            debitore: { select: { nome: true, cognome: true } },
-          },
-        },
-        user: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
-    prisma.messaggioInterno.findMany({
-      where: {
-        OR: [{ toUserId: user.id }, { fromUserId: user.id }],
-      },
-      include: {
-        fromUser: { select: { id: true, name: true } },
-        toUser: { select: { id: true, name: true } },
-        pratica: {
-          select: {
-            id: true,
-            numero: true,
-            debitore: { select: { nome: true, cognome: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
+  const [messaggiPraticaRaw, intern] = await Promise.all([
+    loadMessaggiAgendaScopedAuto(ctx, user),
+    messaggiInterniFromUser(user).list(ctx.tenantSlug, ctx.tenantId, {
+      userId: user.id,
       take: 100,
     }),
   ]);
+
+  const messaggiPratica = messaggiPraticaRaw.map((m) => {
+    const row = m as {
+      id: string;
+      praticaId: string;
+      line: string;
+      letto: boolean;
+      lettoAt?: string | null;
+      createdAt: string;
+      pratica?: {
+        numero: string;
+        debitore?: { nome: string; cognome: string };
+      };
+      user?: { name: string };
+    };
+    return {
+      id: row.id,
+      praticaId: row.praticaId,
+      praticaNumero: row.pratica?.numero ?? "",
+      debitore: row.pratica?.debitore
+        ? `${row.pratica.debitore.cognome} ${row.pratica.debitore.nome}`
+        : "",
+      line: row.line,
+      autore: row.user?.name ?? "",
+      createdAt: row.createdAt,
+      letto: row.letto,
+      lettoAt: row.lettoAt ?? null,
+    };
+  });
 
   const daLeggere =
     intern.filter((m) => m.toUserId === user.id && !m.letto).length +
@@ -72,29 +72,19 @@ export default async function MessaggiPage({
           id: m.id,
           fromUserId: m.fromUserId,
           toUserId: m.toUserId,
-          fromName: m.fromUser.name,
-          toName: m.toUser.name,
+          fromName: m.fromUser?.name ?? "",
+          toName: m.toUser?.name ?? "",
           testo: m.testo,
-          createdAt: m.createdAt.toISOString(),
+          createdAt: m.createdAt,
           letto: m.letto,
-          lettoAt: m.lettoAt?.toISOString() ?? null,
+          lettoAt: m.lettoAt,
           praticaId: m.praticaId,
           praticaNumero: m.pratica?.numero ?? null,
-          debitore: m.pratica
+          debitore: m.pratica?.debitore
             ? `${m.pratica.debitore.cognome} ${m.pratica.debitore.nome}`
             : null,
         }))}
-        messaggiPratica={messaggiPratica.map((m) => ({
-          id: m.id,
-          praticaId: m.praticaId,
-          praticaNumero: m.pratica.numero,
-          debitore: `${m.pratica.debitore.cognome} ${m.pratica.debitore.nome}`,
-          line: m.line,
-          autore: m.user.name,
-          createdAt: m.createdAt.toISOString(),
-          letto: m.letto,
-          lettoAt: m.lettoAt?.toISOString() ?? null,
-        }))}
+        messaggiPratica={messaggiPratica}
       />
     </div>
   );

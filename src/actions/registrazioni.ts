@@ -2,12 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
+import { registrazioniDbFromUser } from "@/lib/registrazioniRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 import { assertPraticaLockHeld } from "@/lib/praticaLock";
 
 export async function confermaRegistrazioneTelefonataAction(formData: FormData) {
   const user = await requireWritablePermission("pratiche:work");
+  const praticaModel = praticaDbFromUser(user);
 
   const praticaId = String(formData.get("praticaId") || "").trim();
   const numero = String(formData.get("numero") || "").trim();
@@ -18,7 +21,7 @@ export async function confermaRegistrazioneTelefonataAction(formData: FormData) 
     throw new Error("Pratica mancante");
   }
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await praticaModel.findUnique({
     where: { id: praticaId },
     select: { id: true, numero: true },
   });
@@ -26,9 +29,9 @@ export async function confermaRegistrazioneTelefonataAction(formData: FormData) 
     throw new Error("Pratica non trovata");
   }
 
-  await assertPraticaLockHeld(user.id, praticaId);
+  await assertPraticaLockHeld(user, praticaId);
 
-  await prisma.registrazioneChiamata.create({
+  await registrazioniDbFromUser(user).create({
     data: {
       praticaId,
       operatoreId: user.id,

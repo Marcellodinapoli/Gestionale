@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireUser } from "@/lib/guard";
 import { euro, dataIt } from "@/lib/domain";
 import {
@@ -62,6 +64,7 @@ export default async function PratichePage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await requireUser();
+  const praticaModel = praticaDbFromUser(user);
   const sp = await searchParams;
 
   // Default: pratiche in lavorazione (stato assente in URL → applica filtro)
@@ -88,10 +91,17 @@ export default async function PratichePage({
   const needImportoTot = Boolean(altri?.importoTotDa || altri?.importoTotA);
   const needTotInc = Boolean(altri?.totIncassatoDa || altri?.totIncassatoA);
 
+  const praticaCtx: PraticaDbContext = {
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
+    role: user.role,
+    userId: user.id,
+  };
+
   const [operatoriListRaw, mandantiListRaw, temporaneaIdsRaw, lottiRows, importoTotIdsRaw, totIncassatoIdsRaw] =
     await Promise.all([
       canFilterOp
-        ? prisma.user.findMany({
+        ? usersDbFromUser(user).findMany({
             where: {
               tenantId: user.tenantId,
               role: { in: ["OPERATOR", "SUPERVISOR"] },
@@ -104,15 +114,15 @@ export default async function PratichePage({
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
-      prisma.mandante.findMany({
+      mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
         select: { id: true, codice: true, ragioneSociale: true },
       }),
       needTemporanea
-        ? idsAffidoTemporaneo(user.tenantId)
+        ? idsAffidoTemporaneo(praticaCtx)
         : Promise.resolve([] as string[]),
-      prisma.pratica.groupBy({
+      praticaModel.groupBy({
         by: ["numeroMandante"],
         where: {
           AND: [
@@ -123,10 +133,10 @@ export default async function PratichePage({
         },
       }),
       needImportoTot
-        ? idsImportoTotale(user.tenantId, altri?.importoTotDa, altri?.importoTotA)
+        ? idsImportoTotale(praticaCtx, altri?.importoTotDa, altri?.importoTotA)
         : Promise.resolve(null as string[] | null),
       needTotInc
-        ? idsTotIncassato(user.tenantId, altri?.totIncassatoDa, altri?.totIncassatoA)
+        ? idsTotIncassato(praticaCtx, altri?.totIncassatoDa, altri?.totIncassatoA)
         : Promise.resolve(null as string[] | null),
     ]);
 
@@ -204,12 +214,12 @@ export default async function PratichePage({
     },
   };
 
-  const total = await prisma.pratica.count({ where });
+  const total = await praticaModel.count({ where });
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const safeSkip = (safePage - 1) * pageSize;
 
-  const pratiche = await prisma.pratica.findMany({
+  const pratiche = await praticaModel.findMany({
     where,
     include,
     orderBy: buildOrderBy(codaNav.sort, codaNav.dir),

@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/guard";
-import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { PageHeader } from "@/components/ui";
 import { AgendaCalendarioPanel } from "@/components/agenda/AgendaCalendarioPanel";
+import { buildAgendaScopeContext } from "@/lib/agenda/buildAgendaScope";
+import { loadAgendaCalendarioAuto } from "@/lib/agenda/loadAgenda";
 
 export default async function AgendaPage({
   searchParams,
@@ -21,48 +21,27 @@ export default async function AgendaPage({
     redirect(sp.filtro ? `/messaggi?filtro=${encodeURIComponent(sp.filtro)}` : "/messaggi");
   }
 
-  const baseScope = await praticaScopeWhere(user);
-
-  const [items, impegni] = await Promise.all([
-    prisma.pratica.findMany({
-      where: {
-        AND: [baseScope, { memoAt: { not: null } }],
-      },
-      include: {
-        debitore: { select: { nome: true, cognome: true } },
-        assegnatario: { select: { name: true } },
-      },
-      orderBy: { memoAt: "asc" },
-      take: 200,
-    }),
-    prisma.impegnoAgenda.findMany({
-      where: { userId: user.id, completato: false },
-      include: { user: { select: { name: true } } },
-      orderBy: { memoAt: "asc" },
-      take: 200,
-    }),
-  ]);
+  const ctx = await buildAgendaScopeContext(user);
+  const { pratiche, impegni } = await loadAgendaCalendarioAuto(ctx, user, user.id);
 
   const calendario = [
-    ...items.map((p) => ({
+    ...pratiche.map((p) => ({
       kind: "pratica" as const,
       id: p.id,
-      memoAt: p.memoAt!.toISOString(),
+      memoAt: p.memoAt,
       numero: p.numero,
-      debitore: p.debitore
-        ? `${p.debitore.nome} ${p.debitore.cognome}`
-        : "—",
-      tipoContatto: p.tipoContatto,
-      esitoContatto: p.esitoContatto,
+      debitore: p.debitore ? `${p.debitore.nome} ${p.debitore.cognome}` : "—",
+      tipoContatto: p.tipoContatto ?? null,
+      esitoContatto: p.esitoContatto ?? null,
       assegnatario: p.assegnatario?.name || null,
     })),
     ...impegni.map((i) => ({
       kind: "libero" as const,
       id: i.id,
-      memoAt: i.memoAt.toISOString(),
+      memoAt: i.memoAt,
       titolo: i.titolo,
       nota: i.nota,
-      autore: i.user?.name || "—",
+      autore: i.userName || "—",
     })),
   ].sort((a, b) => new Date(a.memoAt).getTime() - new Date(b.memoAt).getTime());
 

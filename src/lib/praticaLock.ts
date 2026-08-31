@@ -1,181 +1,131 @@
-import { prisma } from "@/lib/prisma";
+import "server-only";
+import type { SessionUser } from "@/lib/permissions";
+import type {
+  LockRepository,
+  LockTenantScope,
+  PraticaLockStatus,
+} from "@/lib/data/contracts/lock";
+import {
+  PRATICA_LOCK_TTL_MS,
+  PRATICA_LOCK_HEARTBEAT_MS,
+} from "@/lib/data/contracts/lock";
+import { isConnectorProvider } from "@/lib/data/factory";
+import { createConnectorLockRepository } from "@/lib/data/connector/ConnectorLockRepository";
+import { firestoreLockRepository } from "@/lib/praticaLockFirestore";
 
-export const PRATICA_LOCK_TTL_MS = 45_000;
-
-export type PraticaLockStatus = {
-  owned: boolean;
-  lockedBy: { id: string; name: string } | null;
-};
+export { PRATICA_LOCK_TTL_MS, PRATICA_LOCK_HEARTBEAT_MS };
+export type { PraticaLockStatus };
 
 export type PraticaWorkContext = {
   canWork: boolean;
   lockedByName: string | null;
 };
 
-function lockExpired(lastHeartbeatAt: Date) {
-  return Date.now() - lastHeartbeatAt.getTime() > PRATICA_LOCK_TTL_MS;
+export function lockScopeFromUser(user: {
+  tenantId: string;
+  tenantSlug?: string | null;
+}): LockTenantScope {
+  return {
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
+  };
 }
 
-async function purgeExpiredLocks() {
-  const cutoff = new Date(Date.now() - PRATICA_LOCK_TTL_MS);
-  await prisma.praticaLock.deleteMany({
-    where: { lastHeartbeatAt: { lt: cutoff } },
-  });
+function lockRepo(scope?: LockTenantScope): LockRepository {
+  if (isConnectorProvider()) {
+    if (!scope) throw new Error("Lock tenant scope richiesto con DATABASE_PROVIDER=connector");
+    return createConnectorLockRepository(scope);
+  }
+  return firestoreLockRepository;
 }
 
 export async function acquirePraticaLock(
   praticaId: string,
-  userId: string
+  userId: string,
+  scope?: LockTenantScope
 ): Promise<PraticaLockStatus> {
-  return prisma.$transaction(async (tx) => {
-    const cutoff = new Date(Date.now() - PRATICA_LOCK_TTL_MS);
-    await tx.praticaLock.deleteMany({
-      where: { lastHeartbeatAt: { lt: cutoff } },
-    });
-
-    const existing = await tx.praticaLock.findUnique({
-      where: { praticaId },
-      include: { user: { select: { id: true, name: true } } },
-    });
-
-    const now = new Date();
-
-    if (!existing) {
-      await tx.praticaLock.create({
-        data: { praticaId, userId, lastHeartbeatAt: now },
-      });
-      return { owned: true, lockedBy: null };
-    }
-
-    if (existing.userId === userId || lockExpired(existing.lastHeartbeatAt)) {
-      await tx.praticaLock.update({
-        where: { praticaId },
-        data: { userId, lastHeartbeatAt: now },
-      });
-      return { owned: true, lockedBy: null };
-    }
-
-    return {
-      owned: false,
-      lockedBy: { id: existing.user.id, name: existing.user.name },
-    };
-  });
+  return lockRepo(scope).acquire(praticaId, userId);
 }
 
 export async function getPraticaLockStatus(
   praticaId: string,
-  userId: string
+  userId: string,
+  scope?: LockTenantScope
 ): Promise<PraticaLockStatus> {
-  await purgeExpiredLocks();
-
-  const existing = await prisma.praticaLock.findUnique({
-    where: { praticaId },
-    include: { user: { select: { id: true, name: true } } },
-  });
-
-  if (!existing) {
-    return { owned: false, lockedBy: null };
-  }
-
-  if (existing.userId === userId) {
-    return { owned: true, lockedBy: null };
-  }
-
-  return {
-    owned: false,
-    lockedBy: { id: existing.user.id, name: existing.user.name },
-  };
+  return lockRepo(scope).getStatus(praticaId, userId);
 }
 
-export async function renewPraticaLock(praticaId: string, userId: string): Promise<PraticaLockStatus> {
-  const existing = await prisma.praticaLock.findUnique({
-    where: { praticaId },
-    include: { user: { select: { id: true, name: true } } },
-  });
-
-  if (!existing || lockExpired(existing.lastHeartbeatAt)) {
-    return acquirePraticaLock(praticaId, userId);
-  }
-
-  if (existing.userId !== userId) {
-    return {
-      owned: false,
-      lockedBy: { id: existing.user.id, name: existing.user.name },
-    };
-  }
-
-  await prisma.praticaLock.update({
-    where: { praticaId },
-    data: { lastHeartbeatAt: new Date() },
-  });
-
-  return { owned: true, lockedBy: null };
+export async function renewPraticaLock(
+  praticaId: string,
+  userId: string,
+  scope?: LockTenantScope
+): Promise<PraticaLockStatus> {
+  return lockRepo(scope).renew(praticaId, userId);
 }
 
-export async function releasePraticaLock(praticaId: string, userId: string) {
-  await prisma.praticaLock.deleteMany({
-    where: { praticaId, userId },
-  });
+export async function releasePraticaLock(
+  praticaId: string,
+  userId: string,
+  scope?: LockTenantScope
+) {
+  await lockRepo(scope).release(praticaId, userId);
 }
 
-export async function releaseAllUserLocks(userId: string) {
-  await prisma.praticaLock.deleteMany({ where: { userId } });
+export async function releaseAllUserLocks(userId: string, scope?: LockTenantScope) {
+  await lockRepo(scope).releaseAllForUser(userId);
+}
+
+export async function releasePraticaLockForImport(praticaId: string, scope?: LockTenantScope) {
+  await lockRepo(scope).releaseForPratica(praticaId);
+}
+
+export async function findActivePraticaLocks(praticaIds: string[], scope?: LockTenantScope) {
+  return lockRepo(scope).findActiveByPraticaIds(praticaIds);
 }
 
 export async function getPraticaWorkContext(
-  userId: string,
+  user: SessionUser,
   praticaId: string
 ): Promise<PraticaWorkContext> {
-  const status = await getPraticaLockStatus(praticaId, userId);
+  const scope = lockScopeFromUser(user);
+  const status = await getPraticaLockStatus(praticaId, user.id, scope);
 
   if (status.lockedBy) {
     return { canWork: false, lockedByName: status.lockedBy.name };
   }
 
   if (status.owned) {
-    await renewPraticaLock(praticaId, userId);
+    await renewPraticaLock(praticaId, user.id, scope);
     return { canWork: true, lockedByName: null };
   }
 
-  const acquired = await acquirePraticaLock(praticaId, userId);
+  const acquired = await acquirePraticaLock(praticaId, user.id, scope);
   return {
     canWork: acquired.owned,
     lockedByName: acquired.lockedBy?.name ?? null,
   };
 }
 
-export async function assertPraticaNotLockedByOther(userId: string, praticaId: string) {
-  await purgeExpiredLocks();
+export async function assertPraticaNotLockedByOther(
+  user: SessionUser,
+  praticaId: string
+) {
+  const scope = lockScopeFromUser(user);
+  const existing = await getPraticaLockStatus(praticaId, user.id, scope);
 
-  const existing = await prisma.praticaLock.findUnique({
-    where: { praticaId },
-    include: { user: { select: { id: true, name: true } } },
-  });
-
-  if (
-    existing &&
-    !lockExpired(existing.lastHeartbeatAt) &&
-    existing.userId !== userId
-  ) {
-    throw new Error(`Pratica in uso da ${existing.user.name}`);
+  if (!existing.owned && existing.lockedBy) {
+    throw new Error(`Pratica in uso da ${existing.lockedBy.name}`);
   }
 }
 
-export async function assertPraticaLockHeld(userId: string, praticaId: string) {
-  await purgeExpiredLocks();
+export async function assertPraticaLockHeld(user: SessionUser, praticaId: string) {
+  const scope = lockScopeFromUser(user);
+  const existing = await getPraticaLockStatus(praticaId, user.id, scope);
 
-  const existing = await prisma.praticaLock.findUnique({
-    where: { praticaId },
-    include: { user: { select: { id: true, name: true } } },
-  });
-
-  if (!existing || lockExpired(existing.lastHeartbeatAt) || existing.userId !== userId) {
-    const name = existing?.user.name ?? "un altro operatore";
+  if (!existing.owned) {
+    const name = existing.lockedBy?.name ?? "un altro operatore";
     throw new Error(`Pratica in uso da ${name}`);
   }
 
-  await prisma.praticaLock.update({
-    where: { praticaId },
-    data: { lastHeartbeatAt: new Date() },
-  });
+  await renewPraticaLock(praticaId, user.id, scope);
 }

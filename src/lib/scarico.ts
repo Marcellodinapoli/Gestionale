@@ -49,6 +49,12 @@ export function parseCodiceScaricoVoce(cod: string): CodiceScaricoVoce {
   return "";
 }
 
+/** Descrizione predefinita riga lavorazione per codice scarico (es. Nulli → Pratiche nuove). */
+export function descrizioneDaCodiceScaricoVoce(codice: CodiceScaricoVoce): string {
+  if (codice === CODICE_SCARICO_NULLI) return "Pratiche nuove";
+  return "";
+}
+
 /** Where Prisma: campo codiceScarico assente o non valido (stato IN_LAVORAZIONE non mappa codici). */
 export function whereSenzaCodiceScaricoPratica() {
   return {

@@ -27,6 +27,7 @@ export function SediTable({ sedi }: { sedi: SedeRow[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<SedeRow>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   if (!sedi.length) {
     return (
@@ -38,6 +39,11 @@ export function SediTable({ sedi }: { sedi: SedeRow[] }) {
 
   return (
     <div className="overflow-x-auto">
+      {saveError ? (
+        <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {saveError}
+        </p>
+      ) : null}
       <table className="w-full text-sm">
         <thead className="text-left text-[var(--muted)]">
           <tr>
@@ -167,6 +173,7 @@ export function SediTable({ sedi }: { sedi: SedeRow[] }) {
                           className="rounded p-1.5 hover:bg-emerald-50"
                           title="Salva"
                           onClick={async () => {
+                            setSaveError(null);
                             const fd = new FormData();
                             fd.set("id", s.id);
                             fd.set("nome", String(d.nome || "").trim());
@@ -177,10 +184,16 @@ export function SediTable({ sedi }: { sedi: SedeRow[] }) {
                             fd.set("telefono", String(d.telefono || ""));
                             fd.set("email", String(d.email || ""));
                             fd.set("note", String(d.note || ""));
-                            await aggiornaSedeAction(fd);
-                            setEditingId(null);
-                            setDraft({});
-                            router.refresh();
+                            try {
+                              await aggiornaSedeAction(fd);
+                              setEditingId(null);
+                              setDraft({});
+                              router.refresh();
+                            } catch (e) {
+                              setSaveError(
+                                e instanceof Error ? e.message : "Errore durante il salvataggio"
+                              );
+                            }
                           }}
                         >
                           <Check className="h-4 w-4 text-emerald-700" />
@@ -189,6 +202,7 @@ export function SediTable({ sedi }: { sedi: SedeRow[] }) {
                           type="button"
                           className="rounded p-1.5 hover:bg-slate-100"
                           onClick={() => {
+                            setSaveError(null);
                             setEditingId(null);
                             setDraft({});
                           }}
@@ -203,6 +217,7 @@ export function SediTable({ sedi }: { sedi: SedeRow[] }) {
                           className="rounded p-1.5 hover:bg-slate-100"
                           title="Modifica"
                           onClick={() => {
+                            setSaveError(null);
                             setEditingId(s.id);
                             setDraft({});
                           }}

@@ -8,6 +8,7 @@ import {
   finalizePraticheImport,
   initPraticheImportBatch,
   processPraticheImportChunk,
+  importPraticheChunkSize,
   type PraticheImportContext,
 } from "@/lib/importPraticheBatch";
 
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
     fd.set("affidoIl", String(body.affidoIl || ""));
     if (body.scadenzaMandato) fd.set("scadenzaMandato", String(body.scadenzaMandato));
 
-    const contesto = await parseImportContesto(fd, user.tenantId);
+    const contesto = await parseImportContesto(fd, user.tenantId, user.tenantSlug ?? user.tenantId);
     if ("error" in contesto) {
       return NextResponse.json({ error: contesto.error }, { status: 400 });
     }
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
 
     const ctx = await initPraticheImportBatch({
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
       userId: user.id,
       userName: user.name,
       mandanteId,
@@ -99,6 +101,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      chunkSize: importPraticheChunkSize(),
       ctx: ctxForClient(ctx),
     });
   }
@@ -116,6 +119,7 @@ export async function POST(request: Request) {
 
     const result = await processPraticheImportChunk({
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
       ctx: ctxFromClient(rawCtx),
       header,
       delim,
@@ -140,6 +144,7 @@ export async function POST(request: Request) {
     const ctx = ctxFromClient(rawCtx);
     const { imported, totale } = await finalizePraticheImport({
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
       userId: user.id,
       ctx,
       totals,

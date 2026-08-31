@@ -1,5 +1,6 @@
 import { parseDateOnly } from "@/lib/domain";
 import { parsePerimetri } from "@/lib/mandantePerimetri";
+import { mandantiDb } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 
 export {
@@ -26,7 +27,8 @@ export type ImportContesto = {
 /** Legge e valida mandante / perimetro / lotto / affido dal form di import. */
 export async function parseImportContesto(
   formData: FormData,
-  tenantId: string
+  tenantId: string,
+  tenantSlug?: string
 ): Promise<{ ok: ImportContesto } | { error: string }> {
   const mandanteId = String(formData.get("mandanteId") || "").trim();
   const perimetro = String(formData.get("perimetro") || "").trim();
@@ -48,7 +50,10 @@ export async function parseImportContesto(
     return { error: "Scadenza mandato non valida" };
   }
 
-  const mandante = await prisma.mandante.findFirst({
+  const mandante = await mandantiDb({
+    tenantId,
+    tenantSlug: tenantSlug ?? tenantId,
+  }).findFirst({
     where: { id: mandanteId, tenantId },
     select: { id: true, codice: true, perimetri: true },
   });

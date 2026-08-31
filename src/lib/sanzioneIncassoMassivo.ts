@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { praticaDb } from "@/lib/praticheRepo";
+import { findActivePraticaLocks } from "@/lib/praticaLock";
+import { messaggiInterniRepo } from "@/lib/messaggiInterniRepo";
 
 export const SANZIONE_ATTIVA_PREFIX = "SANZIONE ATTIVA";
 
@@ -9,12 +11,19 @@ export const SANZIONE_ATTIVA_PREFIX = "SANZIONE ATTIVA";
 export async function notificaSanzioneIncassoMassivo(input: {
   fromUserId: string;
   tenantId: string;
+  tenantSlug: string;
   praticaIds: string[];
 }) {
   const ids = [...new Set(input.praticaIds.filter(Boolean))];
   if (!ids.length) return { notificati: 0 };
 
-  const pratiche = await prisma.pratica.findMany({
+  const praticaModel = praticaDb({
+    tenantId: input.tenantId,
+    tenantSlug: input.tenantSlug,
+    role: "ADMIN",
+    userId: input.fromUserId,
+  });
+  const pratiche = await praticaModel.findMany({
     where: { id: { in: ids }, tenantId: input.tenantId },
     select: {
       id: true,
@@ -52,18 +61,15 @@ export async function notificaSanzioneIncassoMassivo(input: {
     if (p.operatoreTitolareId) row.destinatari.add(p.operatoreTitolareId);
   }
 
-  const mandanteIds = [...byMandante.keys()];
-  const locks = await prisma.praticaLock.findMany({
-    where: {
-      pratica: { tenantId: input.tenantId, mandanteId: { in: mandanteIds } },
-    },
-    select: {
-      userId: true,
-      pratica: { select: { mandanteId: true } },
-    },
+  const praticaIdsForLocks = pratiche.map((p) => p.id);
+  const locks = await findActivePraticaLocks(praticaIdsForLocks, {
+    tenantId: input.tenantId,
+    tenantSlug: input.tenantSlug,
   });
   for (const lock of locks) {
-    const row = byMandante.get(lock.pratica.mandanteId);
+    const p = pratiche.find((x) => x.id === lock.praticaId);
+    if (!p) continue;
+    const row = byMandante.get(p.mandanteId);
     if (row) row.destinatari.add(lock.userId);
   }
 
@@ -75,14 +81,17 @@ export async function notificaSanzioneIncassoMassivo(input: {
 
     for (const toUserId of info.destinatari) {
       if (toUserId === input.fromUserId) continue;
-      await prisma.messaggioInterno.create({
-        data: {
+      await messaggiInterniRepo({
+        tenantId: input.tenantId,
+        tenantSlug: input.tenantSlug,
+      }).createMany(input.tenantSlug, input.tenantId, [
+        {
           fromUserId: input.fromUserId,
           toUserId,
           praticaId: null,
           testo,
         },
-      });
+      ]);
       notificati += 1;
     }
   }

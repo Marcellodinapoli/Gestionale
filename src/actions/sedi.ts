@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { sediDbFromUser } from "@/lib/sediRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireWritableUser } from "@/lib/guard";
 import { canManageSedi } from "@/lib/permissions";
@@ -29,7 +30,8 @@ function sedeFieldsFromForm(formData: FormData, prefix = "") {
 
 export async function completaSetupSediAction(formData: FormData) {
   const user = await requireSediManager();
-  const existing = await prisma.sede.count({
+  const sedeModel = sediDbFromUser(user);
+  const existing = await sedeModel.count({
     where: { tenantId: user.tenantId, active: true },
   });
   if (existing > 0) {
@@ -49,7 +51,7 @@ export async function completaSetupSediAction(formData: FormData) {
     if (nomiVisti.has(key)) throw new Error(`Nome sede duplicato: ${fields.nome}`);
     nomiVisti.add(key);
 
-    const sede = await prisma.sede.create({
+    const sede = await sedeModel.create({
       data: {
         tenantId: user.tenantId,
         ...fields,
@@ -60,7 +62,7 @@ export async function completaSetupSediAction(formData: FormData) {
   }
 
   if (!user.sedeId && createdIds[0]) {
-    await prisma.user.update({
+    await usersDbFromUser(user).update({
       where: { id: user.id },
       data: { sedeId: createdIds[0] },
     });
@@ -86,12 +88,13 @@ export async function creaSedeAction(formData: FormData) {
   const fields = sedeFieldsFromForm(formData);
   if (!fields.nome) throw new Error("Nome obbligatorio");
 
-  const exists = await prisma.sede.findUnique({
+  const sedeModel = sediDbFromUser(user);
+  const exists = await sedeModel.findUnique({
     where: { tenantId_nome: { tenantId: user.tenantId, nome: fields.nome } },
   });
   if (exists) throw new Error("Nome sede già esistente");
 
-  const sede = await prisma.sede.create({
+  const sede = await sedeModel.create({
     data: { tenantId: user.tenantId, ...fields, active: true },
   });
   await writeAudit({
@@ -113,17 +116,18 @@ export async function aggiornaSedeAction(formData: FormData) {
   const fields = sedeFieldsFromForm(formData);
   if (!id || !fields.nome) throw new Error("Dati mancanti");
 
-  const current = await prisma.sede.findFirst({
+  const sedeModel = sediDbFromUser(user);
+  const current = await sedeModel.findFirst({
     where: { id, tenantId: user.tenantId },
   });
   if (!current) throw new Error("Sede non trovata");
 
-  const duplicato = await prisma.sede.findFirst({
+  const duplicato = await sedeModel.findFirst({
     where: { tenantId: user.tenantId, nome: fields.nome, NOT: { id } },
   });
   if (duplicato) throw new Error("Nome sede già esistente");
 
-  await prisma.sede.update({ where: { id }, data: fields });
+  await sedeModel.update({ where: { id }, data: fields });
   await writeAudit({
     userId: user.id,
     tenantId: user.tenantId,
@@ -135,22 +139,21 @@ export async function aggiornaSedeAction(formData: FormData) {
   revalidatePath("/sedi");
   revalidatePath("/postazioni");
   revalidatePath("/operatori");
-  redirect("/sedi");
 }
 
 export async function toggleSedeAction(formData: FormData) {
   const user = await requireSediManager();
   const id = String(formData.get("id") || "");
-  const sede = await prisma.sede.findFirst({
+  const sedeModel = sediDbFromUser(user);
+  const sede = await sedeModel.findFirst({
     where: { id, tenantId: user.tenantId },
   });
   if (!sede) return;
 
-  await prisma.sede.update({
+  await sedeModel.update({
     where: { id },
     data: { active: !sede.active },
   });
   revalidatePath("/sedi");
   revalidatePath("/postazioni");
-  redirect("/sedi");
 }

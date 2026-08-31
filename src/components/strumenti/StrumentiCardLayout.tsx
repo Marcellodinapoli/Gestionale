@@ -21,7 +21,9 @@ export function StrumentiCardHeader({
   return (
     <header className="shrink-0 border-b border-[var(--line)]">
       <div className="flex items-center gap-2.5 bg-[#e8eef4] px-4 py-3 sm:px-6">
-        {Icon ? <Icon className="h-4 w-4 shrink-0 text-[var(--accent)]" aria-hidden /> : null}
+        {Icon ? (
+          <Icon className="h-4 w-4 shrink-0 text-[#FB8C00]" aria-hidden />
+        ) : null}
         <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--navy)]">{title}</h2>
       </div>
       {children ? (

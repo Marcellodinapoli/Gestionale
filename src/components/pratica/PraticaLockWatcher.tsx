@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-
-const HEARTBEAT_MS = 15_000;
+import { subscribeLock } from "@/lib/realtime/RealtimeService";
+import { PRATICA_LOCK_HEARTBEAT_MS } from "@/lib/data/contracts/lock";
 
 export function PraticaLockWatcher({
   praticaId,
@@ -16,6 +16,13 @@ export function PraticaLockWatcher({
 
   useEffect(() => {
     const url = `/api/pratiche/${praticaId}/lock`;
+
+    const unsub = subscribeLock(praticaId, {
+      onUpdate: (ev) => {
+        if (owned && !ev.owned) router.refresh();
+        if (!owned && !ev.lockedByName) router.refresh();
+      },
+    });
 
     if (owned) {
       function heartbeat() {
@@ -32,27 +39,18 @@ export function PraticaLockWatcher({
       }
 
       heartbeat();
-      const intervalId = window.setInterval(heartbeat, HEARTBEAT_MS);
+      const intervalId = window.setInterval(heartbeat, PRATICA_LOCK_HEARTBEAT_MS);
       window.addEventListener("pagehide", release);
 
       return () => {
+        unsub();
         window.clearInterval(intervalId);
         window.removeEventListener("pagehide", release);
         release();
       };
     }
 
-    function poll() {
-      fetch(url)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: { lockedByName?: string | null } | null) => {
-          if (data && !data.lockedByName) router.refresh();
-        })
-        .catch(() => {});
-    }
-
-    const intervalId = window.setInterval(poll, HEARTBEAT_MS);
-    return () => window.clearInterval(intervalId);
+    return unsub;
   }, [praticaId, owned, router]);
 
   return null;

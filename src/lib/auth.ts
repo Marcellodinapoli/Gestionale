@@ -2,18 +2,13 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { Role, SessionUser } from "@/lib/permissions";
+import { isPasswordExpired } from "@/lib/passwordPolicy";
 
 const COOKIE = "gestionale_session";
-const PASSWORD_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function secret() {
   const value = process.env.SESSION_SECRET || "dev-only-secret-not-for-prod";
   return new TextEncoder().encode(value);
-}
-
-function passwordExpired(passwordChangedAt: Date | null | undefined) {
-  if (!passwordChangedAt) return true;
-  return Date.now() - passwordChangedAt.getTime() >= PASSWORD_MAX_AGE_MS;
 }
 
 export async function createSession(user: SessionUser) {
@@ -47,7 +42,7 @@ export async function clearSession() {
 }
 
 type SessionUserInternal = SessionUser & {
-  passwordChangedAt: Date | null;
+  passwordChangedAt: Date | string | null;
 };
 
 /**
@@ -64,17 +59,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     if (!id) return null;
     const tenantId = payload.tenantId ? String(payload.tenantId) : undefined;
 
-    const { prisma } = await import("@/lib/prisma");
-    const user = await prisma.user.findFirst({
-      where: tenantId ? { id, tenantId } : { id },
-      include: {
-        tenant: { select: { id: true, slug: true, nome: true, active: true } },
-        postazione: { select: { interno: true, email: true, nome: true } },
-        sede: { select: { id: true, nome: true } },
-      },
-    });
+    const { loadSessionUser } = await import("@/lib/data/operationalAccess");
+    const user = await loadSessionUser(id, tenantId);
     if (!user || user.active === false) return null;
-    if (user.tenant?.active === false) return null;
     const session: SessionUserInternal = {
       id: user.id,
       email: user.email,
@@ -82,16 +69,16 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       role: user.role as Role,
       supervisorId: user.supervisorId,
       tenantId: user.tenantId,
-      tenantSlug: user.tenant.slug,
-      tenantNome: user.tenant.nome,
+      tenantSlug: user.tenantSlug,
+      tenantNome: user.tenantNome,
       postazioneId: user.postazioneId,
       postazioneFissa: Boolean(user.postazioneFissa),
-      interno: user.interno?.trim() || user.postazione?.interno || null,
+      interno: user.interno?.trim() || user.postazioneInterno || null,
       prefissoChiamata: user.prefissoChiamata?.trim() || null,
-      postazioneEmail: user.postazione?.email ?? null,
-      postazioneNome: user.postazione?.nome ?? null,
+      postazioneEmail: user.postazioneEmail ?? null,
+      postazioneNome: user.postazioneNome ?? null,
       sedeId: user.sedeId,
-      sedeNome: user.sede?.nome ?? null,
+      sedeNome: user.sedeNome ?? null,
       formazioneOnly: user.formazioneOnly,
       passwordChangedAt: user.passwordChangedAt ?? null,
     };
@@ -105,5 +92,5 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 export async function isCurrentUserPasswordExpired(): Promise<boolean> {
   const user = (await getCurrentUser()) as SessionUserInternal | null;
   if (!user) return true;
-  return passwordExpired(user.passwordChangedAt);
+  return isPasswordExpired(user.passwordChangedAt);
 }

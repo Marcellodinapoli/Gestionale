@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
 
 /** Ruoli le cui attività contano come lavorazione (note, SMS, e-mail, telefonate, …). */
 export const RUOLI_LAVORAZIONE = ["OPERATOR", "SUPERVISOR"] as const;
@@ -144,10 +144,12 @@ export function buildOrderBy(
 export async function orderPraticaIdsByUltimaLavorazione(
   where: Prisma.PraticaWhereInput,
   dir: SortDir,
+  ctx: PraticaDbContext,
   skip = 0,
   take?: number
 ): Promise<string[]> {
-  const rows = await prisma.pratica.findMany({
+  const praticaModel = praticaDb(ctx);
+  const rows = await praticaModel.findMany({
     where,
     select: {
       id: true,

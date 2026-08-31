@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { usersDb } from "@/lib/usersRepo";
+import { praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
 import { parseDataIso, startOfDay, startOfNextDay, formatDataIso } from "@/lib/lavorateOggi";
 import { attivitaLavorazioneWhere } from "@/lib/praticaOrdine";
 import {
@@ -10,6 +11,7 @@ import {
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import {
   codiceScaricoPratica,
+  descrizioneDaCodiceScaricoVoce,
   parseCodiceScaricoVoce,
   whereSenzaCodiceScaricoPratica,
   type CodiceScaricoVoce,
@@ -81,11 +83,7 @@ function parseLavorateFields(o: Record<string, unknown>, fallback: string) {
 }
 
 export function defaultVociLavorazione(): VoceLavorazioneSuggerita[] {
-  return [
-    { ...emptyVoce("Promesse di pagamento in scadenza"), codiceScarico: "PPC" },
-    emptyVoce("Pratiche in lavorazione da contattare"),
-    emptyVoce("Nuovi affidamenti del giorno"),
-  ];
+  return [emptyVoce()];
 }
 
 export function parseLavorazioneSuggerita(
@@ -118,10 +116,12 @@ function parseVoceItem(item: unknown, dataPiano?: string): VoceLavorazioneSugger
   const cod = String(o.codiceScarico || "").trim();
   const fallback = dataPiano && parseDataIso(dataPiano) ? dataPiano : formatDataIso(new Date());
   const { lavorateDa, lavorateA } = parseLavorateFields(o, fallback);
+  const codiceScarico = parseCodiceScaricoVoce(cod);
+  const descrizioneRaw = String(o.descrizione || "").trim();
   return {
     id,
-    descrizione: String(o.descrizione || "").trim(),
-    codiceScarico: parseCodiceScaricoVoce(cod),
+    descrizione: descrizioneRaw || descrizioneDaCodiceScaricoVoce(codiceScarico),
+    codiceScarico,
     filtri: parseVoceFiltri(o),
     lavorateDa,
     lavorateA,
@@ -234,21 +234,22 @@ export async function loadLavorazioneStore(supervisorId: string, tenantId: strin
   };
 }
 
-export async function saveLavorazioneStore(supervisorId: string, store: LavorazioneStore) {
-  await saveSupervisorLavorazione(supervisorId, serializeLavorazioneStore(store));
+export async function saveLavorazioneStore(supervisorId: string, store: LavorazioneStore, tenantId: string) {
+  await saveSupervisorLavorazione(supervisorId, serializeLavorazioneStore(store), tenantId);
 }
 
 /** Lettura/scrittura piano lavorazione sul campo User.lavorazioneSuggerita. */
 export async function loadSupervisorLavorazione(supervisorId: string, tenantId: string) {
-  const row = await prisma.user.findFirst({
+  const userModel = usersDb({ tenantId, tenantSlug: tenantId });
+  const row = await userModel.findFirst({
     where: { id: supervisorId, tenantId },
     select: { lavorazioneSuggerita: true, name: true, gruppoNome: true },
   });
   return row ?? null;
 }
 
-export async function saveSupervisorLavorazione(supervisorId: string, json: string) {
-  await prisma.user.update({
+export async function saveSupervisorLavorazione(supervisorId: string, json: string, tenantId: string) {
+  await usersDb({ tenantId, tenantSlug: tenantId }).update({
     where: { id: supervisorId },
     data: { lavorazioneSuggerita: json },
   });
@@ -285,7 +286,7 @@ function mergeVoceHrefParams(
 
 export async function buildVocePraticaWhere(
   voce: VoceLavorazioneSuggerita,
-  tenantId: string
+  ctx: import("@/lib/praticheRepo").PraticaDbContext
 ): Promise<Prisma.PraticaWhereInput> {
   const and: Prisma.PraticaWhereInput[] = [{ stato: STATO_LAVORAZIONE_FISSO }];
 
@@ -302,12 +303,12 @@ export async function buildVocePraticaWhere(
     const needImportoTot = !!(filtri.importoTotDa || filtri.importoTotA);
     const needTotInc = !!(filtri.totIncassatoDa || filtri.totIncassatoA);
     const [temporaneaIds, importoTotIds, totIncassatoIds] = await Promise.all([
-      needTemp ? idsAffidoTemporaneo(tenantId) : Promise.resolve(undefined),
+      needTemp ? idsAffidoTemporaneo(ctx) : Promise.resolve(undefined),
       needImportoTot
-        ? idsImportoTotale(tenantId, filtri.importoTotDa, filtri.importoTotA)
+        ? idsImportoTotale(ctx, filtri.importoTotDa, filtri.importoTotA)
         : Promise.resolve(undefined),
       needTotInc
-        ? idsTotIncassato(tenantId, filtri.totIncassatoDa, filtri.totIncassatoA)
+        ? idsTotIncassato(ctx, filtri.totIncassatoDa, filtri.totIncassatoA)
         : Promise.resolve(undefined),
     ]);
     and.push(
@@ -380,12 +381,23 @@ export async function conteggiVoceLavorazione(
     scope: Prisma.PraticaWhereInput;
     memberIds: string[];
     tenantId: string;
+    tenantSlug: string;
     dataPiano: string;
     salvatoAt?: string;
     operatoreId?: string;
+    /** Totale pratiche del filtro voce, senza vincolo assegnatario (colonna «Tot. pratiche»). */
+    totaleSoloFiltro?: boolean;
   }
 ): Promise<{ totale: number; lavorate: number }> {
-  const voceWhere = await buildVocePraticaWhere(voce, opts.tenantId);
+  const voceWhere = await buildVocePraticaWhere(voce, {
+    tenantId: opts.tenantId,
+    tenantSlug: opts.tenantSlug,
+    role: "ADMIN",
+    userId: opts.tenantId,
+  });
+  const baseWhere: Prisma.PraticaWhereInput = {
+    AND: [opts.scope, voceWhere],
+  };
   const memberFilter: Prisma.PraticaWhereInput = opts.operatoreId
     ? {
         OR: [
@@ -400,18 +412,30 @@ export async function conteggiVoceLavorazione(
         ],
       };
 
-  const where: Prisma.PraticaWhereInput = {
-    AND: [opts.scope, voceWhere, memberFilter],
-  };
+  const whereTotale: Prisma.PraticaWhereInput =
+    opts.operatoreId != null
+      ? { AND: [baseWhere, memberFilter] }
+      : opts.totaleSoloFiltro
+        ? baseWhere
+        : { AND: [baseWhere, memberFilter] };
 
-  const totale = await prisma.pratica.count({ where });
+  const praticaModel = praticaDb({
+    tenantId: opts.tenantId,
+    tenantSlug: opts.tenantSlug,
+    role: "ADMIN",
+    userId: opts.tenantId,
+  });
+
+  const totale = await praticaModel.count({ where: whereTotale });
 
   const intervallo = intervalloLavorazione(opts.dataPiano, opts.salvatoAt);
+  const whereLavorateBase =
+    opts.operatoreId != null || opts.totaleSoloFiltro ? baseWhere : whereTotale;
 
-  const lavorate = await prisma.pratica.count({
+  const lavorate = await praticaModel.count({
     where: {
       AND: [
-        where,
+        whereLavorateBase,
         {
           attivita: {
             some: {
@@ -436,6 +460,7 @@ export async function conteggiLavorazioneSuggerita(
     scope: Prisma.PraticaWhereInput;
     memberIds: string[];
     tenantId: string;
+    tenantSlug: string;
     dataPiano: string;
     salvatoAt?: string;
     operatoreId?: string;
@@ -444,7 +469,10 @@ export async function conteggiLavorazioneSuggerita(
 ): Promise<VoceLavorazioneConConteggi[]> {
   const out: VoceLavorazioneConConteggi[] = [];
   for (const voce of voci) {
-    const { totale, lavorate } = await conteggiVoceLavorazione(voce, opts);
+    const { totale, lavorate } = await conteggiVoceLavorazione(voce, {
+      ...opts,
+      totaleSoloFiltro: !opts.operatoreId,
+    });
     const operatori: OperatoreConteggiLavorazione[] = [];
 
     if (opts.operatori?.length && !opts.operatoreId) {
@@ -512,6 +540,20 @@ function labelConAcronimo(
   return peri === "—" ? mandanteCodice : `${mandanteCodice} · ${peri}`;
 }
 
+/** Etichetta perimetro con lotto quando serve a distinguere omonimi (es. IFI · MO · 1426001). */
+export function labelPerimetroRigaLavorazione(
+  mandanteCodice: string,
+  perimetro: string,
+  acronimo?: string | null
+) {
+  const lotto = perimetro.trim();
+  const acr = acronimo?.trim() || "";
+  if (lotto && lotto !== "—" && acr && lotto !== acr) {
+    return `${mandanteCodice} · ${acr} · ${lotto}`;
+  }
+  return labelConAcronimo(mandanteCodice, perimetro, acronimo);
+}
+
 function labelPerimetro(
   r: Pick<RigaCodiciMandantePerimetro, "mandanteId" | "mandanteCodice" | "perimetro">,
   elenco?: Array<{
@@ -527,7 +569,7 @@ function labelPerimetro(
   );
   const chiave = viaLotto || r.perimetro;
   const acronimo = elenco ? resolveAcronimoPerimetro(chiave, elenco) : null;
-  return labelConAcronimo(r.mandanteCodice, r.perimetro, acronimo);
+  return labelPerimetroRigaLavorazione(r.mandanteCodice, r.perimetro, acronimo);
 }
 
 function codiceSlotToVoce(codice: CodiceConteggioKey): CodiceScaricoVoce {
@@ -548,9 +590,11 @@ function sortPerimetriRiga(rows: PerimetroRigaLavorazione[]): PerimetroRigaLavor
 
 /** Conteggi pratiche affidate per mandante · perimetro · codice scarico. */
 export async function conteggiAffidatePerCodicePerimetro(
-  scope: Prisma.PraticaWhereInput
+  scope: Prisma.PraticaWhereInput,
+  ctx: PraticaDbContext
 ): Promise<Map<string, number>> {
-  const pratiche = await prisma.pratica.findMany({
+  const praticaModel = praticaDb(ctx);
+  const pratiche = await praticaModel.findMany({
     where: {
       AND: [
         scope,
@@ -639,8 +683,123 @@ export function buildPerimetriRigaLavorazione(
 }
 
 /**
+ * Elenco perimetro in lavorazione: solo voci configurate su Affidi/gruppo (es. Riattivazioni),
+ * non un'opzione per ogni lotto presente nei dati.
+ */
+export function perimetriRigaSoloConfigurazione(
+  config: Array<{
+    mandanteId: string;
+    mandanteCodice: string;
+    perimetro: string;
+    acronimo?: string;
+    perimetroLabel?: string;
+  }>,
+  daDati: PerimetroRigaLavorazione[],
+  perimetriByMandante?: Map<
+    string,
+    Array<{ nomeInterno: string; nomeMandante: string; descrizione?: string }>
+  >,
+  lottoPerimetroByKey?: Map<string, string>
+): PerimetroRigaLavorazione[] {
+  if (!config.length) {
+    return sortPerimetriRiga(daDati.filter((p) => p.situazione === "lavorazione"));
+  }
+
+  const byKey = new Map<string, PerimetroRigaLavorazione>();
+
+  for (const c of config) {
+    const perimetro = c.perimetro.trim() || "—";
+    const elenco = perimetriByMandante?.get(c.mandanteId);
+    const acronimo =
+      c.acronimo?.trim() ||
+      (elenco ? resolveAcronimoPerimetro(perimetro, elenco) : null);
+    const key = `lav|${c.mandanteId}|${perimetro}`;
+    byKey.set(key, {
+      key,
+      situazione: "lavorazione",
+      mandanteId: c.mandanteId,
+      mandanteCodice: c.mandanteCodice,
+      perimetro,
+      label:
+        c.perimetroLabel?.trim() ||
+        labelPerimetroRigaLavorazione(c.mandanteCodice, perimetro, acronimo),
+      codici: [],
+    });
+  }
+
+  for (const row of daDati) {
+    if (row.situazione !== "lavorazione") continue;
+    const configPerimetro = resolveConfigPerimetroPerDati(
+      row,
+      config,
+      perimetriByMandante,
+      lottoPerimetroByKey
+    );
+    if (!configPerimetro) continue;
+    const key = `lav|${row.mandanteId}|${configPerimetro}`;
+    const target = byKey.get(key);
+    if (!target) continue;
+    for (const cod of row.codici) {
+      const existing = target.codici.find((x) => x.codice === cod.codice);
+      if (existing) existing.count += cod.count;
+      else target.codici.push({ ...cod });
+    }
+  }
+
+  return sortPerimetriRiga([...byKey.values()]);
+}
+
+function resolveConfigPerimetroPerDati(
+  row: PerimetroRigaLavorazione,
+  config: Array<{
+    mandanteId: string;
+    perimetro: string;
+    acronimo?: string;
+    perimetroLabel?: string;
+  }>,
+  perimetriByMandante?: Map<
+    string,
+    Array<{ nomeInterno: string; nomeMandante: string; descrizione?: string }>
+  >,
+  lottoPerimetroByKey?: Map<string, string>
+): string | null {
+  const lotto = row.perimetro.trim();
+  const direct = config.find(
+    (c) => c.mandanteId === row.mandanteId && c.perimetro.trim() === lotto
+  );
+  if (direct) return direct.perimetro.trim();
+
+  const batchPeri = lottoPerimetroByKey?.get(`${row.mandanteId}|${lotto}`)?.trim();
+  if (batchPeri) {
+    const byBatch = config.find(
+      (c) =>
+        c.mandanteId === row.mandanteId &&
+        (c.perimetro.trim() === batchPeri ||
+          c.acronimo?.trim() === batchPeri ||
+          c.perimetroLabel?.toLowerCase().includes(batchPeri.toLowerCase()))
+    );
+    if (byBatch) return byBatch.perimetro.trim();
+  }
+
+  const elenco = perimetriByMandante?.get(row.mandanteId);
+  if (elenco) {
+    const chiave = batchPeri || lotto;
+    const acr = resolveAcronimoPerimetro(chiave, elenco);
+    if (acr) {
+      const byAcr = config.find(
+        (c) => c.mandanteId === row.mandanteId && c.acronimo?.trim() === acr
+      );
+      if (byAcr) return byAcr.perimetro.trim();
+    }
+  }
+
+  return null;
+}
+
+/**
  * Garantisce voci perimetro anche senza pratiche (solo anagrafica mandante/gruppo),
  * così in modifica piano la colonna Perimetro resta utilizzabile.
+ * @deprecated preferire perimetriRigaSoloConfigurazione
  */
 export function mergePerimetriRigaConConfig(
   existing: PerimetroRigaLavorazione[],
@@ -665,14 +824,18 @@ export function mergePerimetriRigaConConfig(
     const acronimo =
       c.acronimo?.trim() ||
       (elenco ? resolveAcronimoPerimetro(perimetro, elenco) : null);
-    for (const situazione of ["affido", "lavorazione"] as const) {
+    const situazioni: PerimetroRigaLavorazione["situazione"][] = ["lavorazione"];
+    const affKey = `aff|${c.mandanteId}|${perimetro}`;
+    if (byKey.has(affKey)) situazioni.unshift("affido");
+
+    for (const situazione of situazioni) {
       const prefix = situazione === "affido" ? "aff" : "lav";
       const key = `${prefix}|${c.mandanteId}|${perimetro}`;
       const prev = byKey.get(key);
       if (prev) {
         byKey.set(key, {
           ...prev,
-          label: labelConAcronimo(c.mandanteCodice, perimetro, acronimo),
+          label: labelPerimetroRigaLavorazione(c.mandanteCodice, perimetro, acronimo),
         });
         continue;
       }
@@ -682,7 +845,7 @@ export function mergePerimetriRigaConConfig(
         mandanteId: c.mandanteId,
         mandanteCodice: c.mandanteCodice,
         perimetro,
-        label: labelConAcronimo(c.mandanteCodice, perimetro, acronimo),
+        label: labelPerimetroRigaLavorazione(c.mandanteCodice, perimetro, acronimo),
         codici: [],
       });
     }

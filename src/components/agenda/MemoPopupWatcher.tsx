@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   markMemoLettoAction,
   markMessaggioInternoLettoAction,
   postponeMemoPraticaAction,
 } from "@/actions/core";
 import type { MemoAlertPayload } from "@/lib/memoAlerts";
+import { subscribeMemoAlerts } from "@/lib/realtime/RealtimeService";
 import { operatorSigla } from "@/lib/noteFormat";
 
 function MemoPopup({
@@ -211,26 +212,14 @@ export function MemoPopupWatcher({ userName }: { userName: string }) {
   const [alert, setAlert] = useState<MemoAlertPayload | null>(null);
   const [total, setTotal] = useState(0);
 
-  const poll = useCallback(async () => {
-    try {
-      const res = await fetch("/api/memo-alerts", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as {
-        alerts: MemoAlertPayload[];
-        total: number;
-      };
-      setTotal(data.total);
-      setAlert(data.alerts[0] ?? null);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   useEffect(() => {
-    poll();
-    const id = window.setInterval(poll, 20_000);
-    return () => window.clearInterval(id);
-  }, [poll]);
+    return subscribeMemoAlerts({
+      onUpdate: (data) => {
+        setTotal(data.total);
+        setAlert((data.alerts[0] as MemoAlertPayload | undefined) ?? null);
+      },
+    });
+  }, []);
 
   if (!alert) return null;
 
@@ -241,7 +230,6 @@ export function MemoPopupWatcher({ userName }: { userName: string }) {
       userName={userName}
       onDone={() => {
         setAlert(null);
-        void poll();
       }}
     />
   );

@@ -8,7 +8,11 @@ import {
   toggleFissaAttivitaAction,
   updateAttivitaAction,
 } from "@/actions/core";
-import { CODICI_SCARICO, CODICE_SCARICO_LABELS } from "@/lib/scarico";
+import {
+  codiciScaricoOperatoriEffettivi,
+  isCodicePromessaOperatore,
+  type CodiceScaricoPerimetro,
+} from "@/lib/mandantePerimetri";
 
 export type AttivitaRow = {
   id: string;
@@ -175,6 +179,7 @@ function NotaRiga({
 export function InserisciNotaServizio({
   praticaId,
   codiceScarico,
+  codiciScaricoOperatore = [],
   promessaAt,
   promessaImporto,
   bozzaNota,
@@ -184,6 +189,7 @@ export function InserisciNotaServizio({
 }: {
   praticaId: string;
   codiceScarico?: string | null;
+  codiciScaricoOperatore?: CodiceScaricoPerimetro[];
   promessaAt?: string | null;
   promessaImporto?: number | null;
   bozzaNota?: string | null;
@@ -193,6 +199,7 @@ export function InserisciNotaServizio({
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const codiciOperatore = codiciScaricoOperatoriEffettivi(codiciScaricoOperatore);
   const [nota, setNota] = useState("");
   const [codice, setCodice] = useState(codiceScarico || "");
   const [promessa, setPromessa] = useState(promessaAt || "");
@@ -239,8 +246,8 @@ export function InserisciNotaServizio({
       fd.set("praticaId", praticaId);
       fd.set("nota", nota.trim());
       fd.set("codScarico", codice);
-      if (codice === "PPC" && promessa) fd.set("promessaAt", promessa);
-      if (codice === "PPC" && importoPromessa.trim()) {
+      if (isCodicePromessaOperatore(codice) && promessa) fd.set("promessaAt", promessa);
+      if (isCodicePromessaOperatore(codice) && importoPromessa.trim()) {
         fd.set("promessaImporto", importoPromessa.trim());
       }
       await salvaNotaServizioPraticaAction(fd);
@@ -286,14 +293,14 @@ export function InserisciNotaServizio({
                 className="mt-0.5 h-8 w-full rounded border border-[var(--line)] px-1.5 text-[13px]"
               >
                 <option value="">—</option>
-                {CODICI_SCARICO.map((c) => (
-                  <option key={c} value={c}>
-                    {c} — {CODICE_SCARICO_LABELS[c]}
+                {codiciOperatore.map((c) => (
+                  <option key={c.codice} value={c.codice}>
+                    {c.codice} — {c.descrizione}
                   </option>
                 ))}
               </select>
             </label>
-            {codice === "PPC" ? (
+            {isCodicePromessaOperatore(codice) ? (
               <>
                 <label className="w-full min-w-[120px] shrink-0 text-xs sm:w-[138px]">
                   <span className="font-semibold text-[var(--muted)]">Data promessa</span>

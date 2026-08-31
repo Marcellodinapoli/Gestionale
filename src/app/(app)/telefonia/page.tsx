@@ -25,7 +25,7 @@ export default async function TelefoniaPage() {
   const user = await getCurrentUser();
   if (!user || !can(user, "telephony:manage")) redirect("/");
 
-  const cfg = await getTenantTelephonyConfig(user.tenantId);
+  const cfg = await getTenantTelephonyConfig(user.tenantId, user.tenantSlug);
   ensureProvidersRegistered();
 
   const activeKey =

@@ -1,5 +1,10 @@
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import {
+  findActivePostazione,
+  findTenantBySlug,
+  findUserByEmail,
+  updateUserLogin,
+} from "@/lib/data/operationalAccess";
 import { writeAudit } from "@/lib/domain";
 import {
   mustChoosePostazioneAlLogin,
@@ -40,14 +45,12 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
   if (!email) return loginError("Inserisci l'email");
   if (!password) return loginError("Inserisci la password");
 
-  const tenant = await prisma.tenant.findUnique({ where: { slug } });
+  const tenant = await findTenantBySlug(slug);
   if (!tenant || tenant.active === false) {
     return loginError("Azienda non trovata o non attiva");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { tenantId_email: { tenantId: tenant.id, email } },
-  });
+  const user = await findUserByEmail(tenant.id, email);
   if (!user) {
     console.error("[login] utente assente", { slug, email, tenantId: tenant.id });
     return loginError("Credenziali non valide");
@@ -71,27 +74,23 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
   const keepPostazione = Boolean(user.postazioneFissa && user.postazioneId);
   let postazioneIdDopoLogin: string | null = user.postazioneId;
 
-  if (keepPostazione) {
-    const postazione = await prisma.postazione.findFirst({
-      where: { id: user.postazioneId!, tenantId: tenant.id, active: true },
-    });
+  if (keepPostazione && user.postazioneId) {
+    const postazione = await findActivePostazione(tenant.id, user.postazioneId, tenant.slug);
     if (!postazione) {
       postazioneIdDopoLogin = null;
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date(), postazioneId: null, postazioneFissa: false },
+      await updateUserLogin(user.id, {
+        lastLoginAt: new Date(),
+        postazioneId: null,
+        postazioneFissa: false,
       });
     } else {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      });
+      await updateUserLogin(user.id, { lastLoginAt: new Date() });
     }
   } else {
     postazioneIdDopoLogin = null;
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date(), postazioneId: null },
+    await updateUserLogin(user.id, {
+      lastLoginAt: new Date(),
+      postazioneId: null,
     });
   }
 
@@ -110,6 +109,7 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
   await writeAudit({
     userId: user.id,
     tenantId: user.tenantId,
+    tenantSlug: tenant.slug,
     action: "login",
     entity: "user",
     entityId: user.id,
@@ -134,6 +134,7 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     await needsSediSetup({
       role: user.role as Role,
       tenantId: user.tenantId,
+      tenantSlug: tenant.slug,
     })
   ) {
     return { ok: true, href: "/setup-sedi", session };
@@ -154,6 +155,9 @@ export function mapLoginException(e: unknown): LoginFailure {
   }
   if (message.includes("Credenziali Firebase Admin mancanti")) {
     return loginError("Firebase non configurato sul server");
+  }
+  if (message.includes("Connector") || message.includes("ECONNREFUSED")) {
+    return loginError("Database operativo non disponibile. Riprovare tra poco.");
   }
   return loginError(message);
 }

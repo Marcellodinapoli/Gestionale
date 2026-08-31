@@ -11,11 +11,18 @@ import {
   updateSedeUtenteAction,
   updateFormazioneOnlyAction,
 } from "@/actions/operatoriAdmin";
+import { Modal } from "@/components/Modal";
+import {
+  ModificaOperatoreForm,
+  type OperatoreModifica,
+} from "@/components/operatori/ModificaOperatoreForm";
 import { ROLE_LABELS, ruoliCreabiliDa, type Role } from "@/lib/permissions";
+import type { CondizioneEconomica } from "@/lib/condizioneEconomica";
 
 type Utente = {
   id: string;
   name: string;
+  cognome: string | null;
   email: string;
   role: string;
   roleLabel: string;
@@ -28,9 +35,16 @@ type Utente = {
   supervisorName: string | null;
   sedeId: string | null;
   sedeNome: string | null;
+  condizioneEconomica: string;
+  condizioneEconomicaValue: CondizioneEconomica;
+  importoFisso: number | null;
+  supervisorId: string | null;
+  codiceFiscale: string | null;
+  residenza: string | null;
 };
 
 type SedeOpt = { id: string; nome: string };
+type SupervisorOpt = { id: string; name: string };
 
 function fmtOra(iso: string | null) {
   if (!iso) return "—";
@@ -46,10 +60,12 @@ function fmtOra(iso: string | null) {
 export function OperatoriGestione({
   utenti,
   sedi,
+  supervisori,
   creatorRole,
 }: {
   utenti: Utente[];
   sedi: SedeOpt[];
+  supervisori: SupervisorOpt[];
   creatorRole: Role;
 }) {
   const ruoliAssegnabili = [
@@ -62,8 +78,10 @@ export function OperatoriGestione({
         <thead className="text-left text-[var(--muted)]">
           <tr>
             <th className="py-2">Nome</th>
+            <th>Cognome</th>
             <th>Email</th>
             <th>Ruolo</th>
+            <th>Condizione econ.</th>
             <th>Accesso</th>
             <th>Sede</th>
             <th>Team</th>
@@ -74,6 +92,7 @@ export function OperatoriGestione({
             <th>Logout</th>
             <th>Password</th>
             <th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -82,6 +101,7 @@ export function OperatoriGestione({
               key={u.id}
               utente={u}
               sedi={sedi}
+              supervisori={supervisori}
               ruoliAssegnabili={ruoliAssegnabili}
             />
           ))}
@@ -94,13 +114,16 @@ export function OperatoriGestione({
 function RigaOperatore({
   utente,
   sedi,
+  supervisori,
   ruoliAssegnabili,
 }: {
   utente: Utente;
   sedi: SedeOpt[];
+  supervisori: SupervisorOpt[];
   ruoliAssegnabili: Role[];
 }) {
   const router = useRouter();
+  const [editOpen, setEditOpen] = useState(false);
   const [editAcr, setEditAcr] = useState(false);
   const [acronimo, setAcronimo] = useState(utente.acronimo || "");
   const [savingAcr, setSavingAcr] = useState(false);
@@ -146,9 +169,27 @@ function RigaOperatore({
     }
   }
 
+  const operatoreModifica: OperatoreModifica = {
+    id: utente.id,
+    name: utente.name,
+    cognome: utente.cognome,
+    email: utente.email,
+    role: utente.role,
+    acronimo: utente.acronimo,
+    formazioneOnly: utente.formazioneOnly,
+    sedeId: utente.sedeId,
+    supervisorId: utente.supervisorId,
+    codiceFiscale: utente.codiceFiscale,
+    residenza: utente.residenza,
+    condizioneEconomica: utente.condizioneEconomicaValue,
+    importoFisso: utente.importoFisso,
+  };
+
   return (
+    <>
     <tr className="border-t border-[var(--line)]">
       <td className="py-2 font-medium">{utente.name}</td>
+      <td className="py-2">{utente.cognome?.trim() || "—"}</td>
       <td className="text-xs text-[var(--muted)]">{utente.email}</td>
       <td>
         {ruoliAssegnabili.includes(utente.role as Role) ||
@@ -175,6 +216,23 @@ function RigaOperatore({
           </select>
         ) : (
           <span className="text-xs">{utente.roleLabel}</span>
+        )}
+      </td>
+      <td className="text-xs">
+        {utente.role === "OPERATOR" ? (
+          <>
+            {utente.condizioneEconomica}
+            {utente.importoFisso != null ? (
+              <span className="block text-[var(--muted)]">
+                {new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(
+                  utente.importoFisso
+                )}
+                /mese
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="text-[var(--muted)]">—</span>
         )}
       </td>
       <td>
@@ -318,6 +376,16 @@ function RigaOperatore({
       </td>
       <td>
         <button
+          type="button"
+          onClick={() => setEditOpen(true)}
+          className="flex items-center gap-1 rounded border border-[var(--line)] bg-white px-2 py-1 text-[10px] font-semibold text-[var(--navy)] hover:bg-slate-50"
+          title={`Modifica ${utente.name}`}
+        >
+          <Pencil className="h-3 w-3" /> Modifica
+        </button>
+      </td>
+      <td>
+        <button
           onClick={async () => {
             if (!confirm(`Eliminare ${utente.name}?`)) return;
             const fd = new FormData();
@@ -332,5 +400,27 @@ function RigaOperatore({
         </button>
       </td>
     </tr>
+
+    <Modal
+      open={editOpen}
+      title={`Modifica — ${utente.name}${utente.cognome ? ` ${utente.cognome}` : ""}`}
+      wide
+      onClose={() => setEditOpen(false)}
+    >
+      <div className="p-4">
+        <ModificaOperatoreForm
+          key={editOpen ? utente.id : "closed"}
+          utente={operatoreModifica}
+          sedi={sedi}
+          supervisori={supervisori}
+          onSuccess={() => {
+            setEditOpen(false);
+            router.refresh();
+          }}
+          onCancel={() => setEditOpen(false)}
+        />
+      </div>
+    </Modal>
+    </>
   );
 }

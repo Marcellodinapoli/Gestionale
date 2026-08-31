@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { ROLE_LABELS, isManutenzione, type Role } from "@/lib/permissions";
 import { operatorSigla } from "@/lib/noteFormat";
 
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const elenco = url.searchParams.get("elenco") === "1";
 
   // Destinatari: tutti i ruoli operativi, esclusa manutenzione (e se stessi).
-  const all = await prisma.user.findMany({
+  const all = await usersDbFromUser(user).findMany({
     where: {
       active: true,
       id: { not: user.id },

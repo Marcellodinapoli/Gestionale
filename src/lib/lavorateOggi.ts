@@ -1,5 +1,7 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { auditRepoFromUser } from "@/lib/auditRepo";
+import { attivitaDbFromUser } from "@/lib/attivitaRepo";
+import { praticaDb, praticaDbFromUser, type PraticaDbContext } from "@/lib/praticheRepo";
 import { operatorSigla } from "@/lib/noteFormat";
 import type { SessionUser } from "@/lib/permissions";
 import { STATO_LABELS } from "@/lib/permissions";
@@ -64,8 +66,9 @@ async function mapCodiciCambiatiInGiornata(
   const { gte, lt } = intervalloGiornata(data);
 
   const praticaScope = await resolvePraticaScope(user, opts);
+  const praticaModel = praticaDbFromUser(user);
 
-  const visibili = await prisma.pratica.findMany({
+  const visibili = await praticaModel.findMany({
     where: praticaScope,
     select: { id: true, stato: true },
   });
@@ -76,15 +79,15 @@ async function mapCodiciCambiatiInGiornata(
     return new Map<string, Set<CodiceScarico>>();
   }
 
-  const logs = await prisma.auditLog.findMany({
-    where: {
-      createdAt: { gte, lt },
-      entity: "pratica",
-      entityId: { in: [...visibiliIds] },
-      action: { in: ["stato_update", "piano", "incasso"] },
-    },
-    select: { action: true, entityId: true, dettaglio: true },
-    orderBy: { createdAt: "asc" },
+  const auditRepo = auditRepoFromUser(user);
+  const logs = await auditRepo.list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+    createdAtGte: gte.toISOString(),
+    createdAtLt: lt.toISOString(),
+    entity: "pratica",
+    entityIdsIn: [...visibiliIds],
+    action: ["stato_update", "piano", "incasso"],
+    orderBy: "asc",
+    take: 5000,
   });
 
   const perPratica = new Map<string, Set<CodiceScarico>>();
@@ -140,12 +143,21 @@ export async function praticheLavorateInGiornata(
   const { gte, lt } = intervalloGiornata(data);
 
   const praticaScope = await resolvePraticaScope(user, opts);
+  const praticaModel = praticaDbFromUser(user);
 
-  const attivita = await prisma.attivita.findMany({
+  const praticaIdsVisibili = (
+    await praticaModel.findMany({
+      where: praticaScope,
+      select: { id: true },
+    })
+  ).map((p) => p.id);
+  if (!praticaIdsVisibili.length) return [];
+
+  const attivita = await attivitaDbFromUser(user).findMany({
     where: {
       ...attivitaLavorazioneWhere,
       createdAt: { gte, lt },
-      pratica: praticaScope,
+      praticaId: { in: praticaIdsVisibili },
     },
     include: { user: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
@@ -172,8 +184,9 @@ export async function riepilogoCodiciLavorazioneInGiornata(
   opts?: { data?: Date; memberIds?: string[]; scopeWhere?: Prisma.PraticaWhereInput }
 ): Promise<RiepilogoCodiciLavorazione> {
   const praticaScope = await resolvePraticaScope(user, opts);
+  const praticaModel = praticaDbFromUser(user);
 
-  const visibili = await prisma.pratica.findMany({
+  const visibili = await praticaModel.findMany({
     where: praticaScope,
     select: { id: true, stato: true, codiceScarico: true },
   });
@@ -211,8 +224,9 @@ export async function praticheConCambioCodiceInGiornata(
   const { gte, lt } = intervalloGiornata(data);
 
   const praticaScope = await resolvePraticaScope(user, opts);
+  const praticaModel = praticaDbFromUser(user);
 
-  const visibili = await prisma.pratica.findMany({
+  const visibili = await praticaModel.findMany({
     where: praticaScope,
     select: {
       id: true,
@@ -228,26 +242,24 @@ export async function praticheConCambioCodiceInGiornata(
   const praticaById = new Map(visibili.map((p) => [p.id, p]));
   const statoById = new Map(visibili.map((p) => [p.id, p.stato]));
 
+  const auditRepo = auditRepoFromUser(user);
   const [logsGiorno, logsPrima] = await Promise.all([
-    prisma.auditLog.findMany({
-      where: {
-        createdAt: { gte, lt },
-        entity: "pratica",
-        entityId: { in: visibiliIds },
-        action: { in: ["stato_update", "piano", "incasso", "contatto_update", "scarico_update"] },
-      },
-      select: { action: true, entityId: true, dettaglio: true, createdAt: true, userId: true },
-      orderBy: { createdAt: "asc" },
+    auditRepo.list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+      createdAtGte: gte.toISOString(),
+      createdAtLt: lt.toISOString(),
+      entity: "pratica",
+      entityIdsIn: visibiliIds,
+      action: ["stato_update", "piano", "incasso", "contatto_update", "scarico_update"],
+      orderBy: "asc",
+      take: 5000,
     }),
-    prisma.auditLog.findMany({
-      where: {
-        createdAt: { lt: gte },
-        entity: "pratica",
-        entityId: { in: visibiliIds },
-        action: { in: ["stato_update", "piano", "incasso", "contatto_update", "scarico_update"] },
-      },
-      select: { action: true, entityId: true, dettaglio: true, createdAt: true, userId: true },
-      orderBy: { createdAt: "desc" },
+    auditRepo.list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+      createdAtLt: gte.toISOString(),
+      entity: "pratica",
+      entityIdsIn: visibiliIds,
+      action: ["stato_update", "piano", "incasso", "contatto_update", "scarico_update"],
+      orderBy: "desc",
+      take: 5000,
     }),
   ]);
 

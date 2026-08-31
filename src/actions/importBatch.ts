@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { debitoriDb, debitoreRecapitoDb } from "@/lib/debitoriRepo";
+import { incassiDb } from "@/lib/incassiRepo";
+import { importBatchRepo } from "@/lib/importBatchRepo";
+import { praticaDb } from "@/lib/praticheRepo";
+import { releasePraticaLockForImport } from "@/lib/praticaLock";
 import { writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 import {
@@ -12,30 +16,30 @@ import {
 import { importBatchPraticheWhere } from "@/lib/importBatchPratiche";
 
 export async function listImportBatchPratiche(
-  tenantId: string
+  tenantId: string,
+  tenantSlug?: string
 ): Promise<ImportBatchListItem[]> {
-  const batches = await prisma.importBatch.findMany({
-    where: { tenantId, tipo: "PRATICHE" },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const slug = tenantSlug ?? tenantId;
+  const dbCtx = { tenantId, tenantSlug: slug };
+  const incassoModel = incassiDb(dbCtx);
+  const repo = importBatchRepo(dbCtx);
+  const praticaModel = praticaDb({ ...dbCtx, role: "ADMIN", userId: "" });
+  const batches = await repo.list(slug, tenantId, { tipo: "PRATICHE", take: 50 });
 
   const items: ImportBatchListItem[] = [];
   for (const b of batches) {
-    const pratiche = await prisma.pratica.findMany({
+    const pratiche = await praticaModel.findMany({
       where: importBatchPraticheWhere(tenantId, {
         mandanteId: b.mandanteId,
         lotto: b.lotto,
-        affidoIl: b.affidoIl,
+        affidoIl: new Date(b.affidoIl),
       }),
       select: { id: true, note: true, codiceScaricoAt: true },
     });
-    const ids = pratiche.map((p) => p.id);
+    const ids = pratiche.map((p) => p.id as string);
     const nPratiche = ids.length;
     if (nPratiche !== b.nPratiche) {
-      await prisma.importBatch
-        .update({ where: { id: b.id }, data: { nPratiche } })
-        .catch(() => undefined);
+      await repo.update(slug, tenantId, b.id, { nPratiche }).catch(() => undefined);
     }
     const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
     const nCodice = pratiche.filter((p) =>
@@ -43,7 +47,7 @@ export async function listImportBatchPratiche(
     ).length;
     let nIncassi = 0;
     if (ids.length) {
-      nIncassi = await prisma.incasso.count({
+      nIncassi = await incassoModel.count({
         where: { praticaId: { in: ids } },
       });
     }
@@ -54,23 +58,11 @@ export async function listImportBatchPratiche(
       mandanteCodice: b.mandanteCodice,
       perimetro: b.perimetro,
       lotto: b.lotto,
-      affidoIl:
-        b.affidoIl instanceof Date
-          ? b.affidoIl.toISOString().slice(0, 10)
-          : String(b.affidoIl).slice(0, 10),
-      scadenzaMandato: (() => {
-        const s = (b as { scadenzaMandato?: Date | string | null }).scadenzaMandato;
-        if (!s) return null;
-        return s instanceof Date
-          ? s.toISOString().slice(0, 10)
-          : String(s).slice(0, 10);
-      })(),
+      affidoIl: new Date(b.affidoIl).toISOString().slice(0, 10),
+      scadenzaMandato: b.scadenzaMandato ? b.scadenzaMandato.slice(0, 10) : null,
       fileName: b.fileName ?? null,
       nPratiche,
-      createdAt:
-        b.createdAt instanceof Date
-          ? b.createdAt.toISOString()
-          : String(b.createdAt),
+      createdAt: b.createdAt,
       createdByName: b.createdByName ?? null,
       hasMovimenti: nIncassi > 0,
       hasNote: nNote > 0,
@@ -94,39 +86,29 @@ export type EliminaImportBatchPrepareResult =
       total: number;
     };
 
-async function deletePraticaImportCascade(praticaId: string) {
-  await prisma.praticaLock.deleteMany({ where: { praticaId } }).catch(() => undefined);
-  await prisma.attivita.deleteMany({ where: { praticaId } });
-  await prisma.fattura.deleteMany({ where: { praticaId } });
-  await prisma.pianoRata.deleteMany({ where: { praticaId } });
-  await prisma.documento.deleteMany({ where: { praticaId } });
-  await prisma.provvigione.deleteMany({ where: { praticaId } }).catch(() => undefined);
-  await prisma.messaggioAgenda.deleteMany({ where: { praticaId } }).catch(() => undefined);
-  await prisma.messaggioInterno.deleteMany({ where: { praticaId } }).catch(() => undefined);
-  await prisma.registrazioneChiamata.deleteMany({ where: { praticaId } }).catch(() => undefined);
-
-  const garanti = await prisma.garante.findMany({
-    where: { praticaId },
-    select: { id: true },
-  });
-  for (const g of garanti) {
-    await prisma.garanteRecapito.deleteMany({ where: { garanteId: g.id } });
-  }
-  await prisma.garante.deleteMany({ where: { praticaId } });
-  await prisma.pratica.delete({ where: { id: praticaId } });
+async function deletePraticaImportCascade(
+  praticaId: string,
+  dbCtx: { tenantId: string; tenantSlug: string }
+) {
+  await releasePraticaLockForImport(praticaId, dbCtx).catch(() => undefined);
+  await importBatchRepo(dbCtx).deletePraticaForImport(
+    dbCtx.tenantSlug,
+    dbCtx.tenantId,
+    praticaId
+  );
 }
 
-async function loadImportBatchPratiche(tenantId: string, batchId: string) {
-  const batch = await prisma.importBatch.findFirst({
-    where: { id: batchId, tenantId, tipo: "PRATICHE" },
-  });
-  if (!batch) return { error: "Import non trovato" as const };
+async function loadImportBatchPratiche(tenantId: string, tenantSlug: string, batchId: string) {
+  const repo = importBatchRepo({ tenantId, tenantSlug });
+  const batch = await repo.getById(tenantSlug, tenantId, batchId);
+  if (!batch || batch.tipo !== "PRATICHE") return { error: "Import non trovato" as const };
 
-  const pratiche = await prisma.pratica.findMany({
+  const praticaModel = praticaDb({ tenantId, tenantSlug, role: "ADMIN", userId: "" });
+  const pratiche = await praticaModel.findMany({
     where: importBatchPraticheWhere(tenantId, {
       mandanteId: batch.mandanteId,
       lotto: batch.lotto,
-      affidoIl: batch.affidoIl,
+      affidoIl: new Date(batch.affidoIl),
     }),
     select: {
       id: true,
@@ -175,7 +157,7 @@ export async function eliminaImportBatchPrepareAction(
   const batchId = String(formData.get("batchId") || "").trim();
   if (!batchId) return { error: "Import non specificato" };
 
-  const loaded = await loadImportBatchPratiche(user.tenantId, batchId);
+  const loaded = await loadImportBatchPratiche(user.tenantId, user.tenantSlug ?? user.tenantId, batchId);
   if ("error" in loaded) {
     return { error: loaded.error ?? "Import non trovato" };
   }
@@ -187,7 +169,8 @@ export async function eliminaImportBatchPrepareAction(
   }
 
   if (valid.praticaIds.length) {
-    const nIncassi = await prisma.incasso.count({
+    const incassoModel = incassiDb({ tenantId: user.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId });
+    const nIncassi = await incassoModel.count({
       where: { praticaId: { in: valid.praticaIds } },
     });
     if (nIncassi > 0) {
@@ -224,19 +207,19 @@ export async function eliminaImportBatchChunkAction(formData: FormData) {
     return { error: "Nessuna pratica da eliminare" };
   }
 
-  const batch = await prisma.importBatch.findFirst({
-    where: { id: batchId, tenantId: user.tenantId, tipo: "PRATICHE" },
-    select: { id: true, mandanteId: true, lotto: true, affidoIl: true },
-  });
+  const slug = user.tenantSlug ?? user.tenantId;
+  const repo = importBatchRepo({ tenantId: user.tenantId, tenantSlug: slug });
+  const batch = await repo.getById(slug, user.tenantId, batchId);
   if (!batch) return { error: "Import non trovato" };
 
-  const pratiche = await prisma.pratica.findMany({
+  const praticaModel = praticaDb({ tenantId: user.tenantId, tenantSlug: slug, role: "ADMIN", userId: "" });
+  const pratiche = await praticaModel.findMany({
     where: {
       id: { in: praticaIds },
       ...importBatchPraticheWhere(user.tenantId, {
         mandanteId: batch.mandanteId,
         lotto: batch.lotto,
-        affidoIl: batch.affidoIl,
+        affidoIl: new Date(batch.affidoIl),
       }),
     },
     select: { id: true },
@@ -246,7 +229,10 @@ export async function eliminaImportBatchChunkAction(formData: FormData) {
   }
 
   for (const p of pratiche) {
-    await deletePraticaImportCascade(p.id);
+    await deletePraticaImportCascade(p.id, {
+      tenantId: user.tenantId,
+      tenantSlug: slug,
+    });
   }
 
   return { deleted: pratiche.length };
@@ -260,16 +246,17 @@ export async function eliminaImportBatchFinalizeAction(formData: FormData) {
   const nPratiche = Number(formData.get("nPratiche") || 0);
   if (!batchId) return { error: "Import non specificato" };
 
-  const batch = await prisma.importBatch.findFirst({
-    where: { id: batchId, tenantId: user.tenantId, tipo: "PRATICHE" },
-  });
+  const slug = user.tenantSlug ?? user.tenantId;
+  const repo = importBatchRepo({ tenantId: user.tenantId, tenantSlug: slug });
+  const batch = await repo.getById(slug, user.tenantId, batchId);
   if (!batch) return { error: "Import non trovato" };
 
-  const restanti = await prisma.pratica.count({
+  const praticaModel = praticaDb({ tenantId: user.tenantId, tenantSlug: slug, role: "ADMIN", userId: "" });
+  const restanti = await praticaModel.count({
     where: importBatchPraticheWhere(user.tenantId, {
       mandanteId: batch.mandanteId,
       lotto: batch.lotto,
-      affidoIl: batch.affidoIl,
+      affidoIl: new Date(batch.affidoIl),
     }),
   });
   if (restanti > 0) {
@@ -286,17 +273,22 @@ export async function eliminaImportBatchFinalizeAction(formData: FormData) {
   }
 
   for (const debitoreId of debitoreIds) {
-    const altre = await prisma.pratica.count({ where: { debitoreId } });
+    const altre = await praticaModel.count({ where: { debitoreId } });
     if (altre > 0) continue;
-    await prisma.debitoreRecapito.deleteMany({ where: { debitoreId } });
-    await prisma.debitore.delete({ where: { id: debitoreId } }).catch(() => undefined);
+    const dbCtx = {
+      tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
+    };
+    await debitoreRecapitoDb(dbCtx).deleteMany({ where: { debitoreId } });
+    await debitoriDb(dbCtx).delete({ where: { id: debitoreId } }).catch(() => undefined);
   }
 
-  await prisma.importBatch.delete({ where: { id: batchId } });
+  await repo.delete(slug, user.tenantId, batchId);
 
   await writeAudit({
     userId: user.id,
     tenantId: user.tenantId,
+    tenantSlug: slug,
     action: "delete_import",
     entity: "importBatch",
     entityId: batchId,

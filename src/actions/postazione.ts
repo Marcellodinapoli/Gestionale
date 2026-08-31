@@ -2,7 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { postazioniDbFromUser } from "@/lib/postazioniRepo";
+import { sediDbFromUser } from "@/lib/sediRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireUser, requireWritablePermission } from "@/lib/guard";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
@@ -16,13 +18,18 @@ export async function selezionaPostazioneAction(formData: FormData) {
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) return { error: "Seleziona una postazione" };
 
-  const validazione = await validaPostazionePerUtente(postazioneId, user.id, user.tenantId);
+  const validazione = await validaPostazionePerUtente(
+    postazioneId,
+    user.id,
+    user.tenantId,
+    user.tenantSlug ?? undefined
+  );
   if ("error" in validazione) return { error: validazione.error };
 
   const postazioneFissa =
     canImpostarePostazioneFissa(user.role) && formData.get("postazioneFissa") === "on";
 
-  await prisma.user.update({
+  await usersDbFromUser(user).update({
     where: { id: user.id },
     data: { postazioneId, postazioneFissa },
   });
@@ -45,14 +52,19 @@ export async function updateAccountPostazioneAction(formData: FormData) {
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) throw new Error("Seleziona una postazione");
 
-  const validazione = await validaPostazionePerUtente(postazioneId, user.id, user.tenantId);
+  const validazione = await validaPostazionePerUtente(
+    postazioneId,
+    user.id,
+    user.tenantId,
+    user.tenantSlug ?? undefined
+  );
   if ("error" in validazione) throw new Error(validazione.error);
 
   const postazioneFissa = canImpostarePostazioneFissa(user.role)
     ? formData.get("postazioneFissa") === "on"
     : false;
 
-  await prisma.user.update({
+  await usersDbFromUser(user).update({
     where: { id: user.id },
     data: { postazioneId, postazioneFissa },
   });
@@ -80,7 +92,7 @@ export async function creaPostazioneAction(formData: FormData) {
   const sedeId = String(formData.get("sedeId") || "").trim();
   if (!sedeId) throw new Error("Sede obbligatoria");
 
-  const sede = await prisma.sede.findFirst({
+  const sede = await sediDbFromUser(user).findFirst({
     where: { id: sedeId, tenantId: user.tenantId, active: true },
   });
   if (!sede) throw new Error("Sede non valida");
@@ -90,12 +102,14 @@ export async function creaPostazioneAction(formData: FormData) {
   const numeroFisso = String(formData.get("numeroFisso") || "").trim() || null;
   const note = String(formData.get("note") || "").trim() || null;
 
-  const exists = await prisma.postazione.findFirst({
+  const postazioneModel = postazioniDbFromUser(user);
+
+  const exists = await postazioneModel.findFirst({
     where: { tenantId: user.tenantId, nome },
   });
   if (exists) throw new Error("Nome postazione già esistente");
 
-  await prisma.postazione.create({
+  await postazioneModel.create({
     data: {
       tenantId: user.tenantId,
       nome,
@@ -131,7 +145,7 @@ export async function aggiornaPostazioneAction(formData: FormData) {
   const sedeId = String(formData.get("sedeId") || "").trim();
   if (!sedeId) throw new Error("Sede obbligatoria");
 
-  const sede = await prisma.sede.findFirst({
+  const sede = await sediDbFromUser(user).findFirst({
     where: { id: sedeId, tenantId: user.tenantId },
   });
   if (!sede) throw new Error("Sede non valida");
@@ -141,17 +155,19 @@ export async function aggiornaPostazioneAction(formData: FormData) {
   const numeroFisso = String(formData.get("numeroFisso") || "").trim() || null;
   const note = String(formData.get("note") || "").trim() || null;
 
-  const current = await prisma.postazione.findFirst({
+  const postazioneModel = postazioniDbFromUser(user);
+
+  const current = await postazioneModel.findFirst({
     where: { id, tenantId: user.tenantId },
   });
   if (!current) throw new Error("Postazione non trovata");
 
-  const duplicato = await prisma.postazione.findFirst({
+  const duplicato = await postazioneModel.findFirst({
     where: { tenantId: user.tenantId, nome, NOT: { id } },
   });
   if (duplicato) throw new Error("Nome postazione già esistente");
 
-  await prisma.postazione.update({
+  await postazioneModel.update({
     where: { id },
     data: { nome, interno, email, numeroFisso, sedeId, note },
   });
@@ -164,18 +180,19 @@ export async function togglePostazioneAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
 
   const id = String(formData.get("id") || "");
-  const postazione = await prisma.postazione.findFirst({
+  const postazioneModel = postazioniDbFromUser(user);
+  const postazione = await postazioneModel.findFirst({
     where: { id, tenantId: user.tenantId },
   });
   if (!postazione) return;
 
-  await prisma.postazione.update({
+  await postazioneModel.update({
     where: { id },
     data: { active: !postazione.active },
   });
 
   if (postazione.active) {
-    await prisma.user.updateMany({
+    await usersDbFromUser(user).updateMany({
       where: { postazioneId: id, tenantId: user.tenantId },
       data: { postazioneId: null, postazioneFissa: false },
     });
@@ -189,17 +206,18 @@ export async function eliminaPostazioneAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
 
   const id = String(formData.get("id") || "");
-  const postazione = await prisma.postazione.findFirst({
+  const postazioneModel = postazioniDbFromUser(user);
+  const postazione = await postazioneModel.findFirst({
     where: { id, tenantId: user.tenantId },
   });
   if (!postazione) return;
 
-  await prisma.user.updateMany({
+  await usersDbFromUser(user).updateMany({
     where: { postazioneId: id, tenantId: user.tenantId },
     data: { postazioneId: null },
   });
 
-  await prisma.postazione.delete({ where: { id } });
+  await postazioneModel.delete({ where: { id } });
 
   revalidatePath("/postazioni");
   redirect("/postazioni");

@@ -1,0 +1,17 @@
+-- Drop tabelle 002+ per re-run migrazioni (solo dev)
+IF OBJECT_ID('dbo.DashboardKpi', 'U') IS NOT NULL DROP TABLE dbo.DashboardKpi;
+IF OBJECT_ID('dbo.AuditLog', 'U') IS NOT NULL DROP TABLE dbo.AuditLog;
+IF OBJECT_ID('dbo.ConfigurazioneSistema', 'U') IS NOT NULL DROP TABLE dbo.ConfigurazioneSistema;
+IF OBJECT_ID('dbo.ImpegniAgenda', 'U') IS NOT NULL DROP TABLE dbo.ImpegniAgenda;
+IF OBJECT_ID('dbo.MessaggiAgenda', 'U') IS NOT NULL DROP TABLE dbo.MessaggiAgenda;
+IF OBJECT_ID('dbo.MessaggiInterni', 'U') IS NOT NULL DROP TABLE dbo.MessaggiInterni;
+IF OBJECT_ID('dbo.PraticheLock', 'U') IS NOT NULL DROP TABLE dbo.PraticheLock;
+IF OBJECT_ID('dbo.RegistrazioniChiamate', 'U') IS NOT NULL DROP TABLE dbo.RegistrazioniChiamate;
+IF OBJECT_ID('dbo.Documenti', 'U') IS NOT NULL DROP TABLE dbo.Documenti;
+IF OBJECT_ID('dbo.Fatture', 'U') IS NOT NULL DROP TABLE dbo.Fatture;
+IF OBJECT_ID('dbo.Provvigioni', 'U') IS NOT NULL DROP TABLE dbo.Provvigioni;
+IF OBJECT_ID('dbo.Incassi', 'U') IS NOT NULL DROP TABLE dbo.Incassi;
+IF OBJECT_ID('dbo.Attivita', 'U') IS NOT NULL DROP TABLE dbo.Attivita;
+IF OBJECT_ID('dbo.PianoRate', 'U') IS NOT NULL DROP TABLE dbo.PianoRate;
+IF OBJECT_ID('dbo.GaranteRecapiti', 'U') IS NOT NULL DROP TABLE dbo.GaranteRecapiti;
+IF OBJECT_ID('dbo.Garanti', 'U') IS NOT NULL DROP TABLE dbo.Garanti;

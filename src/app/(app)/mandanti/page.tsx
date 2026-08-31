@@ -1,3 +1,4 @@
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/guard";
 import { createMandanteAction } from "@/actions/core";
@@ -8,7 +9,7 @@ import Link from "next/link";
 
 export default async function MandantiPage() {
   const user = await requirePermission("mandanti:manage");
-  const mandanti = await prisma.mandante.findMany({
+  const mandanti = await mandantiDbFromUser(user).findMany({
     where: isManutenzione(user) ? nessunDatoWhere() : { tenantId: user.tenantId },
     include: { _count: { select: { pratiche: true } } },
     orderBy: { codice: "asc" },

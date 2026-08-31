@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { parseDataIso, startOfDay, startOfNextDay } from "@/lib/lavorateOggi";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { rateScaduteSomeWhere } from "@/lib/rate";
 export {
   ALTRI_FILTRI_KEYS,
@@ -64,72 +65,32 @@ function numRange(da?: string, a?: string): { gte?: number; lte?: number } | und
   };
 }
 
-export async function idsAffidoTemporaneo(tenantId: string): Promise<string[]> {
-  const rows = await prisma.pratica.findMany({
-    where: {
-      tenantId,
-      assegnatarioId: { not: null },
-      operatoreTitolareId: { not: null },
-    },
-    select: { id: true, assegnatarioId: true, operatoreTitolareId: true },
-  });
-  return rows
-    .filter((r) => r.assegnatarioId && r.operatoreTitolareId && r.assegnatarioId !== r.operatoreTitolareId)
-    .map((r) => r.id);
+export async function idsAffidoTemporaneo(ctx: PraticaDbContext): Promise<string[]> {
+  return idsAffidoTemporaneoForTenant(ctx);
 }
 
-/** Pratiche con (capitale+interessi+spese) nel range. */
+/** Pratiche con (capitale+interessi+spese) nel range — SQL-side in connector mode. */
 export async function idsImportoTotale(
-  tenantId: string,
+  ctx: PraticaDbContext,
   da?: string,
   a?: string
 ): Promise<string[] | null> {
   const from = parseNum(da);
   const to = parseNum(a);
   if (from == null && to == null) return null;
-  const rows = await prisma.pratica.findMany({
-    where: { tenantId },
-    select: { id: true, capitale: true, interessi: true, spese: true },
-  });
-  return rows
-    .filter((r) => {
-      const tot = (r.capitale || 0) + (r.interessi || 0) + (r.spese || 0);
-      if (from != null && tot < from) return false;
-      if (to != null && tot > to) return false;
-      return true;
-    })
-    .map((r) => r.id);
+  return idsImportoTotaleForTenant(ctx, from ?? undefined, to ?? undefined);
 }
 
-/** Pratiche con SUM(incassi.importo) nel range. */
+/** Pratiche con tot incassato nel range — SQL-side in connector mode. */
 export async function idsTotIncassato(
-  tenantId: string,
+  ctx: PraticaDbContext,
   da?: string,
   a?: string
 ): Promise<string[] | null> {
   const from = parseNum(da);
   const to = parseNum(a);
   if (from == null && to == null) return null;
-  const pratiche = await prisma.pratica.findMany({
-    where: { tenantId },
-    select: { id: true },
-  });
-  const incassi = await prisma.incasso.findMany({
-    where: { pratica: { tenantId } },
-    select: { praticaId: true, importo: true },
-  });
-  const sumBy = new Map<string, number>();
-  for (const i of incassi) {
-    sumBy.set(i.praticaId, (sumBy.get(i.praticaId) || 0) + (i.importo || 0));
-  }
-  return pratiche
-    .filter((p) => {
-      const tot = sumBy.get(p.id) || 0;
-      if (from != null && tot < from) return false;
-      if (to != null && tot > to) return false;
-      return true;
-    })
-    .map((p) => p.id);
+  return idsTotIncassatoForTenant(ctx, from ?? undefined, to ?? undefined);
 }
 
 export function altriFiltriWhere(

@@ -1,3 +1,4 @@
+import { mandantiDb } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 import type { LatoEconomico } from "@/lib/mandantePerimetri";
 import { parsePerimetri, numeroMandantePerimetro } from "@/lib/mandantePerimetri";
@@ -15,6 +16,7 @@ export {
   etichettaIncentivo,
   provvigioniMetodoLabelEntries,
   provvigioniCodiceLabelEntries,
+  mancanoPezziPerScaglione,
   type MetricheCodiceScarico,
   type PerformanceProvvigioni,
 } from "@/lib/provvigioniPerimetroUi";
@@ -34,7 +36,7 @@ export async function configProvvigioniPerimetriGruppo(
 ): Promise<PerimetroProvvigioniConfig[]> {
   if (!assegnazioni.length) return [];
 
-  const mandantiDb = await prisma.mandante.findMany({
+  const mandantiRows = await mandantiDb({ tenantId, tenantSlug: tenantId }).findMany({
     where: {
       tenantId,
       id: { in: [...new Set(assegnazioni.map((a) => a.mandanteId))] },
@@ -44,7 +46,7 @@ export async function configProvvigioniPerimetriGruppo(
 
   const out: PerimetroProvvigioniConfig[] = [];
   for (const a of assegnazioni) {
-    const m = mandantiDb.find((x) => x.id === a.mandanteId);
+    const m = mandantiRows.find((x) => x.id === a.mandanteId);
     if (!m) continue;
     const perimetri = parsePerimetri(m.perimetri);
     const targets = !a.perimetriIds.length
@@ -73,7 +75,7 @@ export async function configProvvigioniMandanti(
   tenantId: string,
   opts?: { mandanteIds?: string[]; soloPerimetro?: string }
 ): Promise<PerimetroProvvigioniConfig[]> {
-  const mandantiDb = await prisma.mandante.findMany({
+  const mandantiRows = await mandantiDb({ tenantId, tenantSlug: tenantId }).findMany({
     where: {
       tenantId,
       ...(opts?.mandanteIds?.length ? { id: { in: opts.mandanteIds } } : {}),
@@ -83,7 +85,7 @@ export async function configProvvigioniMandanti(
   });
 
   const out: PerimetroProvvigioniConfig[] = [];
-  for (const m of mandantiDb) {
+  for (const m of mandantiRows) {
     const perimetri = parsePerimetri(m.perimetri);
     for (const p of perimetri) {
       const nome = numeroMandantePerimetro(p);

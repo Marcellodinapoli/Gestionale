@@ -15,7 +15,6 @@ import {
   ContabilePreviewLazy,
   RegistroNoteLazy,
 } from "@/components/pratica/PraticaExtraLazy";
-import { IncassoForm } from "@/components/pratica/IncassoForm";
 import {
   buildPraticaCollegataChiudiElencoHref,
   buildPraticaCollegataHref,
@@ -23,6 +22,7 @@ import {
 } from "@/lib/praticaCollegata";
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCodaNav";
 import { codiceScaricoPratica } from "@/lib/scarico";
+import type { CodiceScaricoPerimetro } from "@/lib/mandantePerimetri";
 import type { RecordingMode } from "@/lib/recordingMode";
 import type { PraticheStessoDebitoreClientPayload } from "@/lib/praticheStessoDebitoreClient";
 
@@ -150,6 +150,7 @@ function HeaderRigaDati({
 
 export function PraticaSchedaOperatore({
   pratica,
+  codiciScaricoOperatore = [],
   canEditNotes,
   canEditStato,
   canRegistraIncasso,
@@ -165,6 +166,7 @@ export function PraticaSchedaOperatore({
   collegatePayload = null,
 }: {
   pratica: PraticaData;
+  codiciScaricoOperatore?: CodiceScaricoPerimetro[];
   canEditNotes: boolean;
   canEditStato: boolean;
   canRegistraIncasso?: boolean;
@@ -413,6 +415,7 @@ export function PraticaSchedaOperatore({
           canEditNotes={canEditNotes}
           praticaLocked={praticaBloccata}
           codiceScarico={codiceScaricoPratica(pratica.stato, pratica.codiceScarico)}
+          codiciScaricoOperatore={codiciScaricoOperatore}
           memoAt={datetimeLocalValue(pratica.memoAt)}
           promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
           promessaImporto={pratica.promessaImporto}
@@ -441,7 +444,7 @@ export function PraticaSchedaOperatore({
         />
       </div>
 
-      {/* Registro note — riempie fino all'incasso / paginazione */}
+      {/* Registro note — riempie fino alla paginazione */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-1.5 pb-0 max-lg:min-h-[240px] lg:min-h-0">
         <RegistroNoteLazy
           praticaId={pratica.id}
@@ -451,8 +454,6 @@ export function PraticaSchedaOperatore({
           )}
         />
       </div>
-
-      {canRegistraIncasso ? <IncassoForm praticaId={pratica.id} compact /> : null}
 
       <div className="shrink-0">
         <PaginazioneBar

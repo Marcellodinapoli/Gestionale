@@ -1,18 +1,43 @@
-import { prisma } from "@/lib/prisma";
+import { praticaDb } from "@/lib/praticheRepo";
 import { formatMemoAlertLine } from "@/lib/memoAlerts";
+import { messaggiAgendaFromUser } from "@/lib/messaggiAgendaRepo";
+import type { SessionUser } from "@/lib/permissions";
+
+function stubUser(tenantId: string, tenantSlug: string, userId = ""): SessionUser {
+  return {
+    tenantId,
+    tenantSlug,
+    id: userId,
+    role: "ADMIN",
+    name: "",
+    email: "",
+    active: true,
+    supervisorId: null,
+  } as SessionUser;
+}
 
 export async function syncMessaggioAgenda(input: {
   praticaId: string;
   userId: string;
+  tenantId: string;
+  tenantSlug: string;
   memoAt: Date | null;
   nota?: string | null;
 }) {
+  const repo = messaggiAgendaFromUser(stubUser(input.tenantId, input.tenantSlug, input.userId));
+
   if (!input.memoAt) {
-    await markMessaggiLetti(input.praticaId);
+    await markMessaggiLetti(input.praticaId, input.tenantId, input.tenantSlug);
     return;
   }
 
-  const pratica = await prisma.pratica.findUnique({
+  const praticaModel = praticaDb({
+    tenantId: input.tenantId,
+    tenantSlug: input.tenantSlug,
+    role: "ADMIN",
+    userId: input.userId,
+  });
+  const pratica = await praticaModel.findUnique({
     where: { id: input.praticaId },
     include: { debitore: true, mandante: true },
   });
@@ -28,32 +53,20 @@ export async function syncMessaggioAgenda(input: {
   const nota = input.nota?.trim();
   const line = nota ? `${base} — ${nota}` : base;
 
-  const aperto = await prisma.messaggioAgenda.findFirst({
-    where: { praticaId: input.praticaId, letto: false },
-    orderBy: { createdAt: "desc" },
-  });
-
-  if (aperto) {
-    await prisma.messaggioAgenda.update({
-      where: { id: aperto.id },
-      data: { memoAt: input.memoAt, line, userId: input.userId },
-    });
-    return;
-  }
-
-  await prisma.messaggioAgenda.create({
-    data: {
-      praticaId: input.praticaId,
-      userId: input.userId,
-      memoAt: input.memoAt,
-      line,
-    },
+  await repo.upsertOpen(input.tenantSlug, input.tenantId, {
+    praticaId: input.praticaId,
+    userId: input.userId,
+    memoAt: input.memoAt,
+    line,
   });
 }
 
-export async function markMessaggiLetti(praticaId: string) {
-  await prisma.messaggioAgenda.updateMany({
-    where: { praticaId, letto: false },
-    data: { letto: true, lettoAt: new Date() },
-  });
+export async function markMessaggiLetti(
+  praticaId: string,
+  tenantId: string,
+  tenantSlug?: string
+) {
+  const slug = tenantSlug ?? tenantId;
+  const repo = messaggiAgendaFromUser(stubUser(tenantId, slug));
+  await repo.markPraticaLetti(slug, tenantId, praticaId);
 }

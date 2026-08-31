@@ -1,5 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { mandantiDb } from "@/lib/mandantiRepo";
+import { praticaDb, praticaDbFromUser } from "@/lib/praticheRepo";
 import { praticaWhere } from "@/lib/domain";
 import type { SessionUser } from "@/lib/permissions";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
@@ -41,14 +43,14 @@ export async function gruppoPerimetroScopeWhere(
   assegnazioni: GruppoMandanteAssegnazione[]
 ): Promise<Prisma.PraticaWhereInput | null> {
   if (!assegnazioni.length) return null;
-  const mandantiDb = await prisma.mandante.findMany({
+  const mandantiRows = await mandantiDb({ tenantId, tenantSlug: tenantId }).findMany({
     where: {
       tenantId,
       id: { in: [...new Set(assegnazioni.map((a) => a.mandanteId))] },
     },
     select: { id: true, perimetri: true },
   });
-  const mandanti = mandantiDb.map((m) => ({
+  const mandanti = mandantiRows.map((m) => ({
     id: m.id,
     perimetri: parsePerimetriList(m.perimetri),
   }));
@@ -105,7 +107,8 @@ export async function codiciPerMandantePerimetro(
   );
   if (!where) return [];
 
-  const pratiche = await prisma.pratica.findMany({
+  const praticaModel = praticaDbFromUser(user);
+  const pratiche = await praticaModel.findMany({
     where,
     include: {
       mandante: { select: { codice: true, ragioneSociale: true } },
@@ -155,7 +158,8 @@ export async function inLavorazionePerPerimetro(
   );
   if (!where) return [];
 
-  const pratiche = await prisma.pratica.findMany({
+  const praticaModel = praticaDbFromUser(user);
+  const pratiche = await praticaModel.findMany({
     where,
     include: {
       mandante: { select: { codice: true } },
@@ -186,12 +190,18 @@ export async function inLavorazionePerPerimetro(
  */
 export async function daAffidarePerPerimetroGruppo(
   tenantId: string,
-  gruppoMandanti: GruppoMandanteAssegnazione[]
+  gruppoMandanti: GruppoMandanteAssegnazione[],
+  tenantSlug?: string
 ): Promise<RigaDaAffidarePerimetro[]> {
   const scope = await gruppoPerimetroScopeWhere(tenantId, gruppoMandanti);
   if (!scope) return [];
 
-  const pratiche = await prisma.pratica.findMany({
+  const pratiche = await praticaDb({
+    tenantId,
+    tenantSlug: tenantSlug ?? tenantId,
+    role: "ADMIN",
+    userId: tenantId,
+  }).findMany({
     where: {
       tenantId,
       assegnatarioId: null,

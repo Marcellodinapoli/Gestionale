@@ -4,6 +4,7 @@
 import {
   CODICI_SCARICO,
   CODICE_SCARICO_NULLI,
+  descrizioneDaCodiceScaricoVoce,
   type CodiceScaricoVoce,
 } from "@/lib/scarico";
 import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
@@ -156,6 +157,18 @@ export function codiciScaricoPerRiga(
   return opzioni;
 }
 
+export function applyCodiceScaricoVoce(
+  voce: VoceLavorazioneSuggerita,
+  codiceScarico: CodiceScaricoVoce
+): VoceLavorazioneSuggerita {
+  const descrizioneAuto = descrizioneDaCodiceScaricoVoce(codiceScarico);
+  return {
+    ...voce,
+    codiceScarico,
+    ...(descrizioneAuto ? { descrizione: descrizioneAuto } : {}),
+  };
+}
+
 export function labelPerimetroVoce(
   voce: VoceLavorazioneSuggerita,
   perimetri: PerimetroRigaLavorazione[]
@@ -164,6 +177,91 @@ export function labelPerimetroVoce(
   if (!key) return "—";
   const peri = perimetri.find((p) => p.key === key);
   if (!peri) return "—";
-  const situazione = peri.situazione === "affido" ? "In affido" : "In lavorazione";
-  return `${situazione} · ${peri.label}`;
+  return etichettaPerimetroSelect(peri);
+}
+
+/** Voce unica nel menu: perimetro + situazione (affido / lavorazione). */
+export function etichettaPerimetroSelect(p: PerimetroRigaLavorazione): string {
+  const situazione =
+    p.situazione === "affido" ? "In affido" : "In lavorazione";
+  return `${p.label} — ${situazione}`;
+}
+
+/** Opzioni perimetro ordinate: solo voci configurate in lavorazione (+ selezione affido legacy). */
+export function perimetriRigaPerSelect(
+  perimetri: PerimetroRigaLavorazione[],
+  selectedKey?: string
+): PerimetroRigaLavorazione[] {
+  const seen = new Set<string>();
+  const out: PerimetroRigaLavorazione[] = [];
+  for (const p of perimetri) {
+    if (seen.has(p.key)) continue;
+    if (p.situazione !== "lavorazione" && p.key !== selectedKey) continue;
+    seen.add(p.key);
+    out.push(p);
+  }
+  return out.sort((a, b) =>
+    etichettaPerimetroSelect(a).localeCompare(etichettaPerimetroSelect(b), "it", {
+      numeric: true,
+    })
+  );
+}
+
+/** Colonne operatori visibili in tabella (supervisor = tutti, operatore = solo sé). */
+export function colonneOperatoriVisibili(
+  operatoriGruppo: Array<{ id: string; name: string }>,
+  opts: { mostraOperatori?: boolean; operatoreCorrenteId?: string }
+) {
+  if (opts.mostraOperatori) return operatoriGruppo;
+  if (opts.operatoreCorrenteId) {
+    return operatoriGruppo.filter((o) => o.id === opts.operatoreCorrenteId);
+  }
+  return [];
+}
+
+/** Totali riga «Tot. pratiche» = conteggio filtro voce (non somma colonne operatore). */
+export function conteggioRigaVisibile(
+  voce: VoceLavorazioneConConteggi,
+  _colonneOperatori: Array<{ id: string }>
+): Pick<VoceLavorazioneConConteggi, "totale" | "lavorate" | "hrefTotale" | "hrefLavorate"> {
+  return {
+    totale: voce.totale,
+    lavorate: voce.lavorate,
+    hrefTotale: voce.hrefTotale,
+    hrefLavorate: voce.hrefLavorate,
+  };
+}
+
+export function totaliFooterLavorazione(
+  voci: VoceLavorazioneConConteggi[],
+  colonneOperatori: Array<{ id: string; name: string }>
+) {
+  const totaliPerOperatore = colonneOperatori.map((op) => {
+    let totale = 0;
+    let lavorate = 0;
+    for (const voce of voci) {
+      const c = voce.operatori.find((o) => o.id === op.id);
+      if (c) {
+        totale += c.totale;
+        lavorate += c.lavorate;
+      }
+    }
+    return { id: op.id, totale, lavorate };
+  });
+
+  const totalePratiche = voci.reduce((s, v) => s + v.totale, 0);
+  const lavoratePratiche = voci.reduce((s, v) => s + v.lavorate, 0);
+
+  return { totaliPerOperatore, totalePratiche, lavoratePratiche };
+}
+
+/** True se la modifica alla voce può cambiare totali/lavorate (non descrizione/note libere). */
+export function voceAffectsConteggi(
+  prev: VoceLavorazioneSuggerita,
+  next: VoceLavorazioneSuggerita
+): boolean {
+  if (prev.codiceScarico !== next.codiceScarico) return true;
+  if (prev.contestoPerimetro !== next.contestoPerimetro) return true;
+  if (prev.lavorateDa !== next.lavorateDa || prev.lavorateA !== next.lavorateA) return true;
+  return JSON.stringify(prev.filtri) !== JSON.stringify(next.filtri);
 }

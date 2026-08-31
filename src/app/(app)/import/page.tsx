@@ -2,6 +2,7 @@ import { requirePermission } from "@/lib/guard";
 import { PageHeader, Card } from "@/components/ui";
 import { ImportPanels } from "@/components/ImportPanels";
 import { ImportBatchList } from "@/components/ImportBatchList";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
 import { isManutenzione } from "@/lib/permissions";
@@ -18,7 +19,7 @@ export default async function ImportPage({
 
   const mandantiRaw = isManutenzione(user)
     ? []
-    : await prisma.mandante.findMany({
+    : await mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
         select: {
@@ -38,7 +39,7 @@ export default async function ImportPage({
 
   const importBatches = isManutenzione(user)
     ? []
-    : await listImportBatchPratiche(user.tenantId);
+    : await listImportBatchPratiche(user.tenantId, user.tenantSlug ?? user.tenantId);
 
   const lottiEsistenti = importBatches.map((b) => ({
     id: b.id,

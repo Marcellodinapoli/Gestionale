@@ -56,6 +56,10 @@ model User {
   tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   email         String
   name          String
+  cognome       String?
+  codiceFiscale String?
+  annoNascita   Int?
+  residenza     String?
   passwordHash  String
   passwordChangedAt DateTime @default(now())
   role          String
@@ -64,6 +68,8 @@ model User {
   formazioneOnly Boolean   @default(false)
   interno       String?
   prefissoChiamata String?
+  condizioneEconomica String @default("SOLO_PROVV")
+  importoFisso   Float?
   active        Boolean    @default(true)
   supervisorId  String?
   gruppoNome    String?

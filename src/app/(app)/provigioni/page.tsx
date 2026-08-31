@@ -1,5 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { provvigioniDbFromUser } from "@/lib/provvigioniRepo";
+import { sediDbFromUser } from "@/lib/sediRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { requirePermission } from "@/lib/guard";
 import { dataIt, euro } from "@/lib/domain";
 import { provvigioneStatoLabel, provvigioniWhere } from "@/lib/provvigioni";
@@ -9,6 +13,12 @@ import { gruppoPerimetroScopeWhere } from "@/lib/codiciMandantePerimetro";
 import { elencoPerimetriTuttiMandanti, parsePerimetroAffidi } from "@/lib/affidiPerimetro";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
 import { buildSezioniProvvigioni } from "@/lib/provvigioniDisplay";
+import { metricheScaglioniPerPerimetro } from "@/lib/provvigioniScaglioniMetriche";
+import {
+  buildRigheImportoFisso,
+  type OperatoreImportoFisso,
+} from "@/lib/provvigioniImportoFisso";
+import { parseCondizioneEconomica } from "@/lib/condizioneEconomica";
 import {
   configProvvigioniMandanti,
   configProvvigioniPerimetriGruppo,
@@ -26,6 +36,7 @@ import {
   userIdsInSede,
 } from "@/lib/sedeScope";
 import { prismaCount } from "@/lib/prismaCount";
+import { codiceScaricoPratica } from "@/lib/scarico";
 
 function inizioMese(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
@@ -46,6 +57,8 @@ function mapRigaProvvigione(r: {
   pratica: {
     numero: string;
     numeroMandante: string | null;
+    stato: string;
+    codiceScarico: string | null;
     debitore: { nome: string; cognome: string };
   };
   incasso: { data: Date };
@@ -63,6 +76,8 @@ function mapRigaProvvigione(r: {
     stato: r.stato,
     statoLabel: provvigioneStatoLabel(r.stato),
     perimetro: r.pratica.numeroMandante?.trim() || "—",
+    codiceScarico:
+      codiceScaricoPratica(r.pratica.stato, r.pratica.codiceScarico) ?? "—",
   };
 }
 
@@ -96,6 +111,7 @@ export default async function ProvigioniPage({
   }>;
 }) {
   const user = await requirePermission("provigioni:view");
+  const provvigioniModel = provvigioniDbFromUser(user);
   const {
     mese: meseRaw,
     mandante: mandanteId,
@@ -118,7 +134,7 @@ export default async function ProvigioniPage({
   const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
   const sediOpts =
     user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
-      ? await prisma.sede.findMany({
+      ? await sediDbFromUser(user).findMany({
           where: { tenantId: user.tenantId, active: true },
           orderBy: { nome: "asc" },
           select: { id: true, nome: true },
@@ -129,13 +145,14 @@ export default async function ProvigioniPage({
   const da = inizioMese(ref);
   const a = fineMese(ref);
   const meseValue = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`;
+  const meseLabel = ref.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 
   const isAmministrazione = user.role === "AMMINISTRAZIONE";
   const isAdmin = user.role === "ADMIN";
   const canFilter = isAdmin || isAmministrazione;
 
   const operatori = canFilter
-    ? await prisma.user.findMany({
+    ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
           role: { in: ["OPERATOR", "SUPERVISOR"] },
@@ -143,19 +160,19 @@ export default async function ProvigioniPage({
           ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
         },
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, condizioneEconomica: true, importoFisso: true },
       })
     : [];
 
   const mandantiDb = canFilter
-    ? await prisma.mandante.findMany({
+    ? await mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { ragioneSociale: "asc" },
         select: {
           id: true,
           codice: true,
           ragioneSociale: true,
-          ...(isAmministrazione ? { perimetri: true as const } : {}),
+          ...(canFilter ? { perimetri: true as const } : {}),
         },
       })
     : [];
@@ -167,7 +184,7 @@ export default async function ProvigioniPage({
   }));
 
   const supervisori = isAdmin || isAmministrazione
-    ? await prisma.user.findMany({
+    ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
           role: "SUPERVISOR",
@@ -178,18 +195,19 @@ export default async function ProvigioniPage({
       })
     : [];
 
-  const perimetriRefs = isAmministrazione
-    ? elencoPerimetriTuttiMandanti(
-        mandantiDb.map((m) => ({
-          id: m.id,
-          codice: m.codice,
-          ragioneSociale: m.ragioneSociale,
-          perimetri: parsePerimetriList(
-            "perimetri" in m ? (m.perimetri as string) : "[]"
-          ),
-        }))
-      )
-    : [];
+  const perimetriRefs =
+    isAmministrazione || isAdmin
+      ? elencoPerimetriTuttiMandanti(
+          mandantiDb.map((m) => ({
+            id: m.id,
+            codice: m.codice,
+            ragioneSociale: m.ragioneSociale,
+            perimetri: parsePerimetriList(
+              "perimetri" in m ? (m.perimetri as string) : "[]"
+            ),
+          }))
+        )
+      : [];
 
   const perimetroDecoded = parsePerimetroAffidi(perimetroRaw);
   const perimetroValido =
@@ -204,7 +222,7 @@ export default async function ProvigioniPage({
   let membriGruppo: Array<{ id: string; name: string; role: string }> = [];
 
   if (isAdmin && gruppoId) {
-    const sup = await prisma.user.findFirst({
+    const sup = await usersDbFromUser(user).findFirst({
       where: { id: gruppoId, tenantId: user.tenantId },
       select: { gruppoMandanti: true },
     });
@@ -230,11 +248,17 @@ export default async function ProvigioniPage({
   const praticaAmministrazione = isAmministrazione
     ? praticaFiltroAmministrazione(mandanteId, perimetroValido)
     : undefined;
+  const praticaAdminMandante =
+    isAdmin && !gruppoId && mandanteId
+      ? praticaFiltroAmministrazione(mandanteId, perimetroValido) ?? { mandanteId }
+      : isAdmin && mandanteId
+        ? { mandanteId }
+        : {};
 
   const praticaExtra: Prisma.PraticaWhereInput = isAmministrazione
     ? { ...(praticaAmministrazione || {}) }
     : {
-        ...(mandanteId ? { mandanteId } : {}),
+        ...(isAdmin ? praticaAdminMandante : mandanteId ? { mandanteId } : {}),
         ...(periScope && (!canFilter || gruppoId) ? periScope : {}),
       };
 
@@ -270,12 +294,16 @@ export default async function ProvigioniPage({
 
   const [righe, totali, maturate, liquidate, configsGruppo, totMie, totOperatori, groupByOperatore, groupByOperatoreStato] =
     await Promise.all([
-      prisma.provvigione.findMany({
+      provvigioniModel.findMany({
         where: wherePeriodo,
         include: {
           operatore: { select: { name: true } },
           pratica: {
-            include: {
+            select: {
+              numero: true,
+              numeroMandante: true,
+              stato: true,
+              codiceScarico: true,
               debitore: { select: { nome: true, cognome: true } },
             },
           },
@@ -283,16 +311,16 @@ export default async function ProvigioniPage({
         },
         orderBy: { createdAt: "desc" },
       }),
-      prisma.provvigione.aggregate({
+      provvigioniModel.aggregate({
         where: wherePeriodo,
         _sum: { importo: true },
         _count: true,
       }),
-      prisma.provvigione.aggregate({
+      provvigioniModel.aggregate({
         where: { ...wherePeriodo, stato: "MATURATA" },
         _sum: { importo: true },
       }),
-      prisma.provvigione.aggregate({
+      provvigioniModel.aggregate({
         where: { ...wherePeriodo, stato: "LIQUIDATA" },
         _sum: { importo: true },
       }),
@@ -300,21 +328,21 @@ export default async function ProvigioniPage({
         ? configProvvigioniPerimetriGruppo(user.tenantId, gruppoMandanti)
         : Promise.resolve([]),
       user.role === "SUPERVISOR"
-        ? prisma.provvigione.aggregate({
+        ? provvigioniModel.aggregate({
             where: { ...wherePeriodo, operatoreId: user.id },
             _sum: { importo: true },
             _count: true,
           })
         : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
       user.role === "SUPERVISOR" && operatorIdsTeam.length
-        ? prisma.provvigione.aggregate({
+        ? provvigioniModel.aggregate({
             where: { ...wherePeriodo, operatoreId: { in: operatorIdsTeam } },
             _sum: { importo: true },
             _count: true,
           })
         : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
       user.role === "SUPERVISOR" && operatoriGruppo.length
-        ? prisma.provvigione.groupBy({
+        ? provvigioniModel.groupBy({
             by: ["operatoreId"],
             where: whereTeamSenzaOperatore,
             _sum: { importo: true },
@@ -322,13 +350,55 @@ export default async function ProvigioniPage({
           })
         : Promise.resolve([]),
       user.role === "SUPERVISOR" && operatoriGruppo.length
-        ? prisma.provvigione.groupBy({
+        ? provvigioniModel.groupBy({
             by: ["operatoreId", "stato"],
             where: whereTeamSenzaOperatore,
             _sum: { importo: true },
           })
         : Promise.resolve([]),
     ]);
+
+  const operatoriPerFissoIds = new Set<string>();
+  if (user.role === "OPERATOR") {
+    operatoriPerFissoIds.add(user.id);
+  } else if (operatoreEffettivo && operatoreEffettivo !== "__nessuno__") {
+    operatoriPerFissoIds.add(operatoreEffettivo);
+  } else if (user.role === "SUPERVISOR") {
+    for (const op of operatoriGruppo) operatoriPerFissoIds.add(op.id);
+  } else if (canFilter) {
+    for (const op of operatori) operatoriPerFissoIds.add(op.id);
+  }
+
+  const operatoriFissoRaw =
+    operatoriPerFissoIds.size > 0
+      ? await usersDbFromUser(user).findMany({
+          where: {
+            tenantId: user.tenantId,
+            id: { in: [...operatoriPerFissoIds] },
+            active: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            condizioneEconomica: true,
+            importoFisso: true,
+          },
+        })
+      : [];
+
+  const operatoriFisso: OperatoreImportoFisso[] = operatoriFissoRaw.map((o) => ({
+    id: o.id,
+    name: o.name,
+    condizioneEconomica: parseCondizioneEconomica(o.condizioneEconomica),
+    importoFisso: o.importoFisso != null ? Number(o.importoFisso) : null,
+  }));
+
+  const fissoPerOperatore = new Map(
+    operatoriFisso
+      .filter((o) => o.condizioneEconomica === "FISSO_PROVV" && o.importoFisso != null)
+      .map((o) => [o.id, o.importoFisso!])
+  );
+  const totaleFisso = [...fissoPerOperatore.values()].reduce((s, n) => s + n, 0);
 
   let configs = configsGruppo;
 
@@ -340,11 +410,28 @@ export default async function ProvigioniPage({
   } else if (canFilter && mandanteId && !gruppoId) {
     configs = await configProvvigioniMandanti(user.tenantId, {
       mandanteIds: [mandanteId],
+      soloPerimetro: perimetroValido,
     });
   }
 
   const righeMapped = righe.map(mapRigaProvvigione);
-  const sezioni = buildSezioniProvvigioni(righeMapped, configs);
+  const metricheScaglioni = configs.length
+    ? await metricheScaglioniPerPerimetro(
+        user,
+        configs,
+        praticaFiltroAmministrazione(mandanteId, perimetroValido)
+      )
+    : new Map();
+  const righeFisso = buildRigheImportoFisso(operatoriFisso, meseLabel);
+  const righeComplete = [...righeMapped, ...righeFisso];
+  const sezioni = buildSezioniProvvigioni(righeComplete, configs, metricheScaglioni);
+
+  const totaleMese = (totali._sum.importo || 0) + totaleFisso;
+  const totaleMaturate = (maturate._sum.importo || 0) + totaleFisso;
+  const totaleMieConFisso = (totMie._sum.importo || 0) + (fissoPerOperatore.get(user.id) ?? 0);
+  const totOperatoriConFisso =
+    (totOperatori._sum.importo || 0) +
+    operatorIdsTeam.reduce((s, id) => s + (fissoPerOperatore.get(id) ?? 0), 0);
 
   const riepilogoOperatori =
     user.role === "SUPERVISOR"
@@ -360,9 +447,9 @@ export default async function ProvigioniPage({
             return {
               id: op.id,
               name: op.name,
-              importo: tot?._sum.importo ?? 0,
-              count: prismaCount(tot?._count),
-              maturate: mat?._sum.importo ?? 0,
+              importo: (tot?._sum.importo ?? 0) + (fissoPerOperatore.get(op.id) ?? 0),
+              count: prismaCount(tot?._count) + (fissoPerOperatore.has(op.id) ? 1 : 0),
+              maturate: (mat?._sum.importo ?? 0) + (fissoPerOperatore.get(op.id) ?? 0),
               liquidate: liq?._sum.importo ?? 0,
               isSelf: op.id === user.id,
             };
@@ -380,7 +467,7 @@ export default async function ProvigioniPage({
         ? `Team · ${operatoriGruppo.map((m) => m.name).join(", ") || user.name} · perimetri del gruppo`
         : isAmministrazione
           ? "Filtra per mandato, perimetro e operatore"
-          : "Tutte le provvigioni · filtra per mandante e gruppo";
+          : "Tutte le provvigioni · filtra per mandante, perimetro e gruppo";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -470,6 +557,24 @@ export default async function ProvigioniPage({
               </select>
             </label>
             <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Perimetro</span>
+              <select
+                name="perimetro"
+                defaultValue={mandanteId && perimetroValido ? perimetroValido : ""}
+                disabled={!mandanteId || Boolean(gruppoId)}
+                className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm disabled:opacity-50"
+              >
+                <option value="">Tutti</option>
+                {perimetriRefs
+                  .filter((p) => p.mandanteId === mandanteId)
+                  .map((p) => (
+                    <option key={`${p.mandanteId}|${p.perimetro}`} value={p.perimetro}>
+                      {p.perimetroLabel}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="text-sm">
               <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Operatore</span>
               <select
                 name="operatore"
@@ -512,24 +617,25 @@ export default async function ProvigioniPage({
         }`}
       >
         <Card title={user.role === "SUPERVISOR" ? "Totale team" : "Totale mese"}>
-          <p className="text-2xl font-semibold">{euro(totali._sum.importo || 0)}</p>
+          <p className="text-2xl font-semibold">{euro(totaleMese)}</p>
           <p className="mt-1 text-xs text-[var(--muted)]">
-            {prismaCount(totali._count)} movimenti
+            {prismaCount(totali._count) + righeFisso.length} movimenti
+            {totaleFisso > 0 ? ` · di cui ${euro(totaleFisso)} fisso` : ""}
           </p>
         </Card>
         {user.role === "SUPERVISOR" ? (
           <>
             <Card title="Tue provvigioni">
               <p className="text-2xl font-semibold text-[var(--navy)]">
-                {euro(totMie._sum.importo || 0)}
+                {euro(totaleMieConFisso)}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">
-                {prismaCount(totMie._count)} movimenti
+                {prismaCount(totMie._count) + (fissoPerOperatore.has(user.id) ? 1 : 0)} movimenti
               </p>
             </Card>
             <Card title="Operatori del gruppo">
               <p className="text-2xl font-semibold text-[var(--navy)]">
-                {euro(totOperatori._sum.importo || 0)}
+                {euro(totOperatoriConFisso)}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">
                 {prismaCount(totOperatori._count)} movimenti
@@ -539,7 +645,7 @@ export default async function ProvigioniPage({
         ) : null}
         <Card title="Maturate">
           <p className="text-2xl font-semibold text-[var(--accent)]">
-            {euro(maturate._sum.importo || 0)}
+            {euro(totaleMaturate)}
           </p>
           <p className="mt-1 text-xs text-[var(--muted)]">Da liquidare</p>
         </Card>

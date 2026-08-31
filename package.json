@@ -12,7 +12,12 @@
     "db:seed:demo": "tsx scripts/seed-firebase.ts",
     "postinstall": "prisma generate --schema src/lib/firebase/schema.prisma",
     "build:netlify": "prisma generate --schema src/lib/firebase/schema.prisma && next build --webpack",
-    "firebase:verify": "node scripts/verify-firebase.mjs"
+    "firebase:verify": "node scripts/verify-firebase.mjs",
+    "baseline": "tsx --tsconfig scripts/baseline/tsconfig.json scripts/baseline/run-baseline.ts",
+    "db:migrate:sql": "node database/scripts/run-migrations.mjs",
+    "db:seed:sql": "node database/seed/seed-sql-dev.mjs",
+    "db:wipe:sql": "node database/scripts/wipe-sql-data.mjs --confirm",
+    "connector:dev": "npm run dev --prefix connector"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
@@ -35,6 +40,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
+    "mssql": "^11.0.1",
     "prisma": "5.22.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",

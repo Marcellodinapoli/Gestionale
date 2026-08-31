@@ -1,5 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { configurazioneDbForTenant } from "@/lib/configurazioneRepo";
 import { getCurrentUser } from "@/lib/auth";
+import { resolveTenantSlugForConnector } from "@/lib/tenant";
 import {
   normalizeRecordingMode,
   type RecordingMode,
@@ -8,15 +9,17 @@ import {
 export type { RecordingMode } from "@/lib/recordingMode";
 export { normalizeRecordingMode } from "@/lib/recordingMode";
 
-export async function getRecordingMode(tenantId?: string): Promise<RecordingMode> {
-  let tid = tenantId;
-  if (!tid) {
-    const user = await getCurrentUser();
-    tid = user?.tenantId;
-  }
+export async function getRecordingMode(
+  tenantId?: string,
+  tenantSlug?: string | null
+): Promise<RecordingMode> {
+  const user = await getCurrentUser();
+  const tid = tenantId ?? user?.tenantId;
   if (!tid) return "manual";
 
-  const row = await prisma.configurazioneSistema.findUnique({
+  const slug = await resolveTenantSlugForConnector(tid, tenantSlug ?? user?.tenantSlug);
+
+  const row = await configurazioneDbForTenant(tid, slug).findUnique({
     where: {
       tenantId_chiave: { tenantId: tid, chiave: "voip_recording_mode" },
     },

@@ -1,14 +1,79 @@
 import Link from "next/link";
 import { euro } from "@/lib/domainFormat";
+import { isImportoFissoProvvigioneId } from "@/lib/provvigioniImportoFisso";
 import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
 import {
   etichettaIncentiviCash,
-  etichettaScaglioni,
+  etichettaScaglione,
+  mancanoPezziPerScaglione,
   performancePerc,
+  provvigionePercEffettiva,
   provvigioniCodiceLabelEntries,
   provvigioniMetodoLabelEntries,
   scaglioneProvvigioneAttuale,
 } from "@/lib/provvigioniPerimetroUi";
+import type { ScaglioneProvvigione } from "@/lib/mandantePerimetri";
+
+function pillsProvvigioniScaglione(
+  scaglione: ScaglioneProvvigione,
+  codici: ReturnType<typeof provvigioniCodiceLabelEntries>
+) {
+  const target = scaglione.codiceScarico?.trim().toUpperCase() || null;
+  if (codici.length) {
+    return codici.map((c) => ({
+      key: c.codice,
+      label: c.label,
+      perc: target && c.codice.toUpperCase() === target ? scaglione.provvigionePerc : c.perc,
+    }));
+  }
+  return [
+    {
+      key: "scaglione",
+      label: "Provvigione scaglione",
+      perc: scaglione.provvigionePerc,
+    },
+  ];
+}
+
+function ProvvigioniIncentivoPills({ labels }: { labels: string[] }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {labels.map((testo, i) => (
+        <span
+          key={i}
+          className="rounded-full border-2 border-violet-400 bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-950"
+        >
+          {testo}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ProvvigioniCodicePills({
+  items,
+  variant,
+}: {
+  items: { key: string; label: string; perc: number }[];
+  variant: "attivo" | "successivo";
+}) {
+  const cls =
+    variant === "attivo"
+      ? "border-2 border-emerald-400 font-semibold text-emerald-900"
+      : "border-2 border-amber-400 font-semibold text-amber-950";
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((c) => (
+        <span
+          key={c.key}
+          className={`rounded-full border-2 bg-white px-2 py-0.5 text-[11px] ${cls}`}
+        >
+          {c.label}: <strong>{c.perc}%</strong>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export type ProvvigioneRigaLista = {
   id: string;
@@ -23,6 +88,7 @@ export type ProvvigioneRigaLista = {
   stato: string;
   statoLabel: string;
   perimetro: string;
+  codiceScarico: string;
 };
 
 function RigaTabella({
@@ -32,14 +98,21 @@ function RigaTabella({
   r: ProvvigioneRigaLista;
   showOperatore?: boolean;
 }) {
+  const fisso = isImportoFissoProvvigioneId(r.id);
   return (
     <tr className="border-t border-[var(--line)]">
+      <td className="px-3 py-2">{r.perimetro}</td>
       <td className="px-3 py-2 whitespace-nowrap">{r.data}</td>
       {showOperatore ? <td className="px-3 py-2">{r.operatoreNome}</td> : null}
+      <td className="px-3 py-2 font-mono text-xs">{r.codiceScarico}</td>
       <td className="px-3 py-2">
-        <Link className="text-[var(--accent)] underline" href={`/pratiche/${r.praticaId}`}>
-          {r.praticaNumero}
-        </Link>
+        {fisso || !r.praticaId ? (
+          <span className="text-[var(--muted)]">{r.praticaNumero}</span>
+        ) : (
+          <Link className="text-[var(--accent)] underline" href={`/pratiche/${r.praticaId}`}>
+            {r.praticaNumero}
+          </Link>
+        )}
       </td>
       <td className="px-3 py-2">{r.debitoreNome}</td>
       <td className="px-3 py-2 text-right tabular-nums">{euro(r.baseImporto)}</td>
@@ -65,19 +138,37 @@ export function ProvvigioniPannelloEconomico({
 }: {
   sez: SezioneProvvigioni<ProvvigioneRigaLista>;
 }) {
+  if (sez.perimetro === "Compenso fisso") {
+    return (
+      <div className="border-b border-[var(--line)] px-4 py-3 text-xs text-[var(--muted)]">
+        Retribuzione fissa mensile configurata sull&apos;operatore, oltre alle provvigioni variabili.
+      </div>
+    );
+  }
+
   const lato = sez.pagata;
   const metodi = lato ? provvigioniMetodoLabelEntries(lato) : [];
   const codici = lato ? provvigioniCodiceLabelEntries(lato, sez.codiciScarico) : [];
   const incentiviCash = lato ? etichettaIncentiviCash(lato) : [];
-  const scaglioniLabel = lato ? etichettaScaglioni(lato) : [];
   const perf = {
     incassato: sez.incassatoMese,
-    affidatoTotale: sez.affidatoTotale,
-    affidatoPeriodo: sez.affidatoPeriodo,
+    affidatoTotale: sez.performance?.affidatoTotale ?? sez.affidatoTotale,
+    affidatoPeriodo: sez.performance?.affidatoPeriodo ?? sez.affidatoPeriodo,
+    pezziAffido: sez.performance?.pezziAffido,
+    perCodice: sez.performance?.perCodice,
   };
   const { attuale, prossimo } = lato
     ? scaglioneProvvigioneAttuale(perf, lato.scaglioni)
     : { attuale: null, prossimo: null };
+  const provvigioneEffettiva = lato ? provvigionePercEffettiva(lato, perf) : 0;
+  const raggiuntaProssimo = prossimo
+    ? performancePerc(prossimo.base, perf, prossimo.codiceScarico)
+    : 0;
+  const mancaPezzi = prossimo ? mancanoPezziPerScaglione(prossimo, perf) : null;
+  const scaglioneBaseAttivo = Boolean(lato?.scaglioni.length && !attuale);
+  const scaglioneCodiciAttivo = scaglioneBaseAttivo && codici.length > 0;
+  const scaglioneAttualeEvidenziato = scaglioneCodiciAttivo || Boolean(attuale);
+  const mostraGrigliaScaglioni = Boolean(lato?.scaglioni.length);
 
   return (
     <div className="border-b border-[var(--line)] bg-[#f8fafc] px-3 py-3 text-xs">
@@ -122,7 +213,7 @@ export function ProvvigioniPannelloEconomico({
         </div>
       ) : null}
 
-      {codici.length ? (
+      {codici.length && !mostraGrigliaScaglioni ? (
         <div className="mb-2">
           <p className="mb-1 font-semibold text-[var(--navy)]">% per codice scarico</p>
           <div className="flex flex-wrap gap-1.5">
@@ -138,7 +229,118 @@ export function ProvvigioniPannelloEconomico({
         </div>
       ) : null}
 
-      {incentiviCash.length ? (
+      {mostraGrigliaScaglioni ? (
+        <div className="mb-2 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          <div
+            className={`rounded-lg border-2 px-2.5 py-2 ${
+              scaglioneAttualeEvidenziato
+                ? "border-emerald-400 bg-emerald-50/80"
+                : "border-[var(--line)] bg-white"
+            }`}
+          >
+            <p
+              className={`mb-1 font-semibold ${
+                scaglioneAttualeEvidenziato ? "text-emerald-900" : "text-[var(--navy)]"
+              }`}
+            >
+              Scaglione attuale
+            </p>
+            {scaglioneCodiciAttivo ? (
+              <>
+                <ProvvigioniCodicePills items={codici.map((c) => ({ ...c, key: c.codice }))} variant="attivo" />
+                <p className="mt-1 text-[10px] text-emerald-800">
+                  Effettiva nel periodo: {provvigioneEffettiva.toFixed(1)}%
+                </p>
+              </>
+            ) : attuale ? (
+              <>
+                <p className="font-semibold text-emerald-900">{etichettaScaglione(attuale)}</p>
+                {codici.length ? (
+                  <ProvvigioniCodicePills
+                    items={pillsProvvigioniScaglione(attuale, codici)}
+                    variant="attivo"
+                  />
+                ) : null}
+                <p className="mt-1 text-[10px] text-emerald-800">
+                  Effettiva nel periodo: {provvigioneEffettiva.toFixed(1)}%
+                </p>
+              </>
+            ) : scaglioneBaseAttivo ? (
+              <p className="text-lg font-bold tabular-nums text-[var(--navy)]">
+                {lato?.provvigionePerc != null ? `${lato.provvigionePerc}%` : "—"}
+              </p>
+            ) : (
+              <p className="text-[11px] text-[var(--muted)]">—</p>
+            )}
+          </div>
+
+          <div
+            className={`rounded-lg border-2 px-2.5 py-2 ${
+              prossimo ? "border-amber-400 bg-amber-50/80" : "border-[var(--line)] bg-white"
+            }`}
+          >
+            <p
+              className={`mb-1 font-semibold ${
+                prossimo ? "text-amber-950" : "text-[var(--navy)]"
+              }`}
+            >
+              Scaglione successivo
+            </p>
+            {prossimo ? (
+              <>
+                <p className="font-semibold text-amber-950">{etichettaScaglione(prossimo)}</p>
+                <p className="mt-1 text-[10px] text-amber-900">
+                  Avanzamento {raggiuntaProssimo.toFixed(1)}% / {prossimo.sogliaPerc}%
+                  {mancaPezzi ? (
+                    <>
+                      {" "}
+                      ({mancaPezzi.attuali}/{mancaPezzi.pezziAffido} affido pratiche) · mancano{" "}
+                      <strong>{mancaPezzi.mancano}</strong> {mancaPezzi.codice}
+                    </>
+                  ) : (
+                    <> · mancano {(prossimo.sogliaPerc - raggiuntaProssimo).toFixed(1)} punti</>
+                  )}
+                </p>
+                <ProvvigioniCodicePills
+                  items={pillsProvvigioniScaglione(prossimo, codici)}
+                  variant="successivo"
+                />
+              </>
+            ) : attuale ? (
+              <p className="text-[11px] text-[var(--muted)]">Tutti gli scaglioni raggiunti.</p>
+            ) : (
+              <p className="text-[11px] text-[var(--muted)]">—</p>
+            )}
+          </div>
+
+          <div
+            className={`rounded-lg border-2 px-2.5 py-2 ${
+              incentiviCash.length
+                ? "border-violet-400 bg-violet-50/80"
+                : "border-[var(--line)] bg-white"
+            }`}
+          >
+            <p
+              className={`mb-1 font-semibold ${
+                incentiviCash.length ? "text-violet-950" : "text-[var(--navy)]"
+              }`}
+            >
+              Eventuale incentivo
+            </p>
+            {incentiviCash.length ? (
+              <ProvvigioniIncentivoPills labels={incentiviCash} />
+            ) : (
+              <p className="text-[11px] text-[var(--muted)]">Nessun incentivo configurato.</p>
+            )}
+          </div>
+        </div>
+      ) : !lato ? (
+        <p className="text-[10px] text-[var(--muted)]">
+          Regole economiche non configurate su Mandanti → Perimetri (lato pagato ai collaboratori).
+        </p>
+      ) : null}
+
+      {incentiviCash.length && !mostraGrigliaScaglioni ? (
         <div className="mb-2">
           <p className="mb-1 font-semibold text-[var(--navy)]">Incentivi cash</p>
           <ul className="list-inside list-disc space-y-0.5 text-[var(--muted)]">
@@ -147,84 +349,6 @@ export function ProvvigioniPannelloEconomico({
             ))}
           </ul>
         </div>
-      ) : null}
-
-      {lato?.scaglioni.length ? (
-        <div className="mb-2">
-          <p className="mb-1 font-semibold text-[var(--navy)]">Scaglioni provvigione</p>
-          {scaglioniLabel.length ? (
-            <ul className="mb-2 list-inside list-disc space-y-0.5 text-[11px] text-[var(--muted)]">
-              {scaglioniLabel.map((testo, i) => (
-                <li key={i}>{testo}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-
-      {lato?.scaglioni.length ? (
-        <div>
-          <p className="mb-1 font-semibold text-[var(--navy)]">
-            Stato scaglioni (incassato {euro(sez.incassatoMese)}
-            {sez.affidatoTotale > 0 ? ` · affidato ${euro(sez.affidatoTotale)}` : ""})
-          </p>
-          <div className="overflow-x-auto rounded border border-[var(--line)] bg-white">
-            <table className="w-full text-[11px]">
-              <thead className="bg-[#eef2f6] text-left text-[var(--muted)]">
-                <tr>
-                  <th className="px-2 py-1">Codice</th>
-                  <th className="px-2 py-1">Base</th>
-                  <th className="px-2 py-1">Soglia %</th>
-                  <th className="px-2 py-1">Provv. %</th>
-                  <th className="px-2 py-1">Raggiunta</th>
-                  <th className="px-2 py-1">Stato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lato.scaglioni.map((s) => {
-                  const raggiunta = performancePerc(s.base, perf, s.codiceScarico);
-                  const isAttuale = attuale?.id === s.id;
-                  const superato = raggiunta >= s.sogliaPerc;
-                  return (
-                    <tr
-                      key={s.id}
-                      className={`border-t border-[var(--line)] ${isAttuale ? "bg-[#eef4f8] font-semibold" : ""}`}
-                    >
-                      <td className="px-2 py-1 font-mono text-[10px]">
-                        {s.codiceScarico || "Tutti"}
-                      </td>
-                      <td className="px-2 py-1">{s.base === "affidato" ? "Affidato" : "Incassato"}</td>
-                      <td className="px-2 py-1 tabular-nums">{s.sogliaPerc}%</td>
-                      <td className="px-2 py-1 tabular-nums">{s.provvigionePerc}%</td>
-                      <td className="px-2 py-1 tabular-nums">{raggiunta.toFixed(1)}%</td>
-                      <td className="px-2 py-1">
-                        {isAttuale
-                          ? "Attuale"
-                          : superato
-                            ? "Superato"
-                            : prossimo?.id === s.id
-                              ? "Prossimo"
-                              : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {prossimo ? (
-            <p className="mt-1 text-[10px] text-[var(--muted)]">
-              Prossimo scaglione: {prossimo.sogliaPerc}% (
-              {prossimo.base === "affidato" ? "su affidato" : "su incassato"}
-              {prossimo.codiceScarico ? ` · cod. ${prossimo.codiceScarico}` : ""}) → provv.{" "}
-              {prossimo.provvigionePerc}%
-            </p>
-          ) : null}
-        </div>
-      ) : !lato ? (
-        <p className="text-[10px] text-[var(--muted)]">
-          Regole economiche non configurate su Mandanti → Perimetri (lato pagato ai collaboratori).
-        </p>
       ) : null}
     </div>
   );
@@ -237,7 +361,7 @@ export function ProvvigioniListaPerimetro({
   sezioni: SezioneProvvigioni<ProvvigioneRigaLista>[];
   showOperatore?: boolean;
 }) {
-  const colspan = showOperatore ? 8 : 7;
+  const colspan = (showOperatore ? 10 : 9);
 
   if (!sezioni.length) {
     return (
@@ -272,8 +396,10 @@ export function ProvvigioniListaPerimetro({
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-[var(--muted)]">
                 <tr>
+                  <th className="px-3 py-2">Perimetro</th>
                   <th className="px-3 py-2">Data</th>
                   {showOperatore ? <th className="px-3 py-2">Operatore</th> : null}
+                  <th className="px-3 py-2">Codice scarico</th>
                   <th className="px-3 py-2">Pratica</th>
                   <th className="px-3 py-2">Debitore</th>
                   <th className="px-3 py-2 text-right">Incasso</th>

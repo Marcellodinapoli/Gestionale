@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { sediDbFromUser } from "@/lib/sediRepo";
 import { requireUser } from "@/lib/guard";
 import { canManageSedi } from "@/lib/permissions";
 import { redirect } from "next/navigation";
@@ -10,7 +10,7 @@ export default async function SediPage() {
   const user = await requireUser();
   if (!canManageSedi(user)) redirect("/");
 
-  const sedi = await prisma.sede.findMany({
+  const sedi = await sediDbFromUser(user).findMany({
     where: { tenantId: user.tenantId },
     orderBy: { nome: "asc" },
     include: {

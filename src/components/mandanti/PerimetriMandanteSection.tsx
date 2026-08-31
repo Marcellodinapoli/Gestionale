@@ -50,6 +50,7 @@ type PerimetroForm = {
   ricevuta: LatoForm;
   pagata: LatoForm;
   codiciScarico: CodiceScaricoPerimetro[];
+  codiciScaricoOperatori: CodiceScaricoPerimetro[];
   smsPreimpostati: SmsPresetPerimetro[];
   /** Firma codici scarico all'ultimo salvataggio riuscito del perimetro */
   codiciScaricoSavedSig: string;
@@ -196,6 +197,7 @@ function perimetroToForm(p: MandantePerimetro): PerimetroForm {
     ricevuta: latoToForm(p.ricevuta),
     pagata: latoToForm(p.pagata),
     codiciScarico: [...p.codiciScarico],
+    codiciScaricoOperatori: [...p.codiciScaricoOperatori],
     smsPreimpostati: [...p.smsPreimpostati],
     codiciScaricoSavedSig: sig,
   };
@@ -217,6 +219,7 @@ export function formPerimetriToData(items: PerimetroForm[]): MandantePerimetro[]
         ricevuta: formToLato(p.ricevuta),
         pagata: formToLato(p.pagata),
         codiciScarico: p.codiciScarico,
+        codiciScaricoOperatori: p.codiciScaricoOperatori,
         smsPreimpostati: p.smsPreimpostati,
       } satisfies MandantePerimetro;
     })
@@ -638,9 +641,13 @@ function LatoEconomicoEditor({
 function CodiciScaricoPerimetroEditor({
   codici,
   onChange,
+  title,
+  subtitle,
 }: {
   codici: CodiceScaricoPerimetro[];
   onChange: (next: CodiceScaricoPerimetro[]) => void;
+  title: string;
+  subtitle: string;
 }) {
   const [nuovoCodice, setNuovoCodice] = useState("");
   const [nuovaDesc, setNuovaDesc] = useState("");
@@ -660,11 +667,8 @@ function CodiciScaricoPerimetroEditor({
 
   return (
     <div className="rounded border border-[var(--line)] bg-white p-3">
-      <p className="text-xs font-bold uppercase text-[#1a365d]">Codici scarico</p>
-      <p className="mb-3 text-[10px] text-[var(--muted)]">
-        Crea i codici scarico di questo perimetro: servono per associare le
-        provvigioni base e per configurare gli scaglioni.
-      </p>
+      <p className="text-xs font-bold uppercase text-[#1a365d]">{title}</p>
+      <p className="mb-3 text-[10px] text-[var(--muted)]">{subtitle}</p>
       {codici.length > 0 ? (
         <div className="mb-2 space-y-1">
           {codici.map((c, idx) => (
@@ -676,8 +680,8 @@ function CodiciScaricoPerimetroEditor({
                 <>
                   <input
                     value={editCodice}
-                    onChange={(e) => setEditCodice(e.target.value)}
-                    className="h-7 w-20 rounded border border-[var(--line)] px-1.5 text-xs font-mono"
+                    onChange={(e) => setEditCodice(e.target.value.toUpperCase())}
+                    className="h-7 w-20 rounded border border-[var(--line)] px-1.5 text-xs font-mono uppercase"
                   />
                   <input
                     value={editDesc}
@@ -742,9 +746,9 @@ function CodiciScaricoPerimetroEditor({
       <div className="flex flex-wrap items-end gap-2 rounded border border-dashed border-[var(--line)] p-2">
         <input
           value={nuovoCodice}
-          onChange={(e) => setNuovoCodice(e.target.value)}
+          onChange={(e) => setNuovoCodice(e.target.value.toUpperCase())}
           placeholder="Codice (es. PTC)"
-          className="h-8 w-24 rounded border border-[var(--line)] px-2 font-mono text-xs"
+          className="h-8 w-24 rounded border border-[var(--line)] px-2 font-mono text-xs uppercase"
         />
         <input
           value={nuovaDesc}
@@ -1107,6 +1111,8 @@ export function PerimetriMandanteSection({
               {expanded ? (
                 <div className="space-y-3 p-3">
                   <CodiciScaricoPerimetroEditor
+                    title="Codici scarico back office"
+                    subtitle="Codici usati dal back office per provvigioni base, scaglioni e statistiche."
                     codici={p.codiciScarico}
                     onChange={(codiciScarico) =>
                       updatePerimetro(p.id, {
@@ -1114,6 +1120,14 @@ export function PerimetriMandanteSection({
                         ricevuta: cleanLatoCodici(p.ricevuta, codiciScarico),
                         pagata: cleanLatoCodici(p.pagata, codiciScarico),
                       })
+                    }
+                  />
+                  <CodiciScaricoPerimetroEditor
+                    title="Codici scarico operatori"
+                    subtitle="Codici selezionabili dagli operatori in lavorazione sulle pratiche di questo perimetro."
+                    codici={p.codiciScaricoOperatori}
+                    onChange={(codiciScaricoOperatori) =>
+                      updatePerimetro(p.id, { codiciScaricoOperatori })
                     }
                   />
                   {p.codiciScarico.length > 0 && !perimetroProvvigioniUnlocked(p) ? (

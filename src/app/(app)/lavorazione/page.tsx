@@ -1,5 +1,8 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requirePermission } from "@/lib/guard";
 import { praticaWhere } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
@@ -12,7 +15,7 @@ import {
   elencoDatePiano,
   conteggiAffidatePerCodicePerimetro,
   buildPerimetriRigaLavorazione,
-  mergePerimetriRigaConConfig,
+  perimetriRigaSoloConfigurazione,
 } from "@/lib/lavorazioneSuggerita";
 import { codiciPerMandantePerimetro } from "@/lib/codiciMandantePerimetro";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
@@ -30,6 +33,7 @@ export default async function LavorazionePage({
   searchParams: Promise<{ gruppo?: string; giorno?: string; modifica?: string; nuovo?: string }>;
 }) {
   const user = await requirePermission("lavorazione:view");
+  const praticaModel = praticaDbFromUser(user);
   const { gruppo: gruppoId, giorno: giornoRaw, modifica, nuovo } = await searchParams;
   const inModifica = modifica === "1";
   const apriNuovo = nuovo === "1";
@@ -40,7 +44,7 @@ export default async function LavorazionePage({
   const canPickGruppo = user.role === "ADMIN";
 
   const supervisori = canPickGruppo
-    ? await prisma.user.findMany({
+    ? await usersDbFromUser(user).findMany({
         where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
         orderBy: { name: "asc" },
         select: { id: true, name: true, gruppoNome: true },
@@ -53,7 +57,7 @@ export default async function LavorazionePage({
     : gruppo.supervisorId;
 
   if (canPickGruppo && targetSupervisorId) {
-    const sup = await prisma.user.findFirst({
+    const sup = await usersDbFromUser(user).findFirst({
       where: { id: targetSupervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
       select: {
         id: true,
@@ -64,7 +68,7 @@ export default async function LavorazionePage({
         gruppoMandanti: true,
       },
     });
-    const operators = await prisma.user.findMany({
+    const operators = await usersDbFromUser(user).findMany({
       where: {
         tenantId: user.tenantId,
         supervisorId: targetSupervisorId,
@@ -117,21 +121,25 @@ export default async function LavorazionePage({
 
   const [mandantiListRaw, lottiRows, righeCodiciPerimetro, affidatePerCodice, importBatches] =
     await Promise.all([
-      prisma.mandante.findMany({
+      mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
         select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
       }),
-      prisma.pratica.findMany({
+      praticaModel.findMany({
         where: scope,
         distinct: ["numeroMandante"],
         select: { numeroMandante: true },
       }),
       codiciPerMandantePerimetro(user, gruppoPerimetroOpts),
-      conteggiAffidatePerCodicePerimetro(scope),
-      prisma.importBatch.findMany({
-        where: { tenantId: user.tenantId },
-        select: { mandanteId: true, lotto: true, perimetro: true },
+      conteggiAffidatePerCodicePerimetro(scope, {
+        tenantId: user.tenantId,
+        tenantSlug: user.tenantSlug ?? user.tenantId,
+        role: user.role,
+        userId: user.id,
+      }),
+      importBatchRepoFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+        take: 200,
       }),
     ]);
 
@@ -186,20 +194,22 @@ export default async function LavorazionePage({
               ]
         );
 
-  const perimetriRiga = mergePerimetriRigaConConfig(
+  const perimetriRiga = perimetriRigaSoloConfigurazione(
+    configPerimetri.map((c) => ({
+      mandanteId: c.mandanteId,
+      mandanteCodice: c.mandanteCodice,
+      perimetro: c.perimetro,
+      acronimo: c.acronimo,
+      perimetroLabel: c.perimetroLabel,
+    })),
     buildPerimetriRigaLavorazione(
       righeCodiciPerimetro,
       affidatePerCodice,
       perimetriByMandante,
       lottoPerimetroByKey
     ),
-    configPerimetri.map((c) => ({
-      mandanteId: c.mandanteId,
-      mandanteCodice: c.mandanteCodice,
-      perimetro: c.perimetro,
-      acronimo: c.acronimo,
-    })),
-    perimetriByMandante
+    perimetriByMandante,
+    lottoPerimetroByKey
   );
 
   const mandantiList =
@@ -221,6 +231,7 @@ export default async function LavorazionePage({
     scope,
     memberIds: gruppo.memberIds,
     tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
     dataPiano,
     salvatoAt: piano.salvatoAt,
     operatoreId,
@@ -270,6 +281,7 @@ export default async function LavorazionePage({
         scope,
         memberIds: gruppo.memberIds,
         tenantId: user.tenantId,
+        tenantSlug: user.tenantSlug ?? user.tenantId,
         dataPiano: piano.data,
         salvatoAt: piano.salvatoAt,
         operatori: operatoriGruppo.map((o) => ({ id: o.id, name: o.name })),

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { provvigioniDbFromUser } from "@/lib/provvigioniRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 
@@ -11,11 +11,12 @@ function fail(message: string): never {
 
 export async function liquidaProvvigioneAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
+  const provvigioniModel = provvigioniDbFromUser(user);
   const id = String(formData.get("id") || "").trim();
   const stato = String(formData.get("stato") || "LIQUIDATA").trim();
   if (!id) fail("ID mancante");
 
-  await prisma.provvigione.update({
+  await provvigioniModel.update({
     where: { id },
     data: { stato },
   });
@@ -31,12 +32,13 @@ export async function liquidaProvvigioneAction(formData: FormData) {
 
 export async function liquidaMassivaAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
+  const provvigioniModel = provvigioniDbFromUser(user);
   const idsRaw = String(formData.get("ids") || "").trim();
   if (!idsRaw) fail("Nessuna provvigione selezionata");
   const ids = JSON.parse(idsRaw) as string[];
   if (!ids.length) fail("Nessuna provvigione selezionata");
 
-  await prisma.provvigione.updateMany({
+  await provvigioniModel.updateMany({
     where: { id: { in: ids }, stato: "MATURATA" },
     data: { stato: "LIQUIDATA" },
   });
@@ -51,6 +53,7 @@ export async function liquidaMassivaAction(formData: FormData) {
 
 export async function updateImportoProvvigioneAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
+  const provvigioniModel = provvigioniDbFromUser(user);
   const id = String(formData.get("id") || "").trim();
   const importoRaw = String(formData.get("importo") || "").trim();
   const percentualeRaw = String(formData.get("percentuale") || "").trim();
@@ -61,7 +64,7 @@ export async function updateImportoProvvigioneAction(formData: FormData) {
   if (percentualeRaw) data.percentuale = parseFloat(percentualeRaw.replace(",", "."));
   if (!Object.keys(data).length) fail("Nessun dato da aggiornare");
 
-  await prisma.provvigione.update({ where: { id }, data });
+  await provvigioniModel.update({ where: { id }, data });
   await writeAudit({
     userId: user.id,
     action: "update",

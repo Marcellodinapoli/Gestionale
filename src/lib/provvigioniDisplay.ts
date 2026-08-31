@@ -1,5 +1,6 @@
 import type { LatoEconomico } from "@/lib/mandantePerimetri";
 import type { PerimetroProvvigioniConfig } from "@/lib/provvigioniPerimetro";
+import type { PerformanceProvvigioni } from "@/lib/provvigioniPerimetroUi";
 
 export type ProvvigioneConPerimetro = {
   perimetro: string;
@@ -18,12 +19,15 @@ export type SezioneProvvigioni<T extends ProvvigioneConPerimetro> = {
   affidatoTotale: number;
   /** Affidato del mese/perimetro per calcolo base incassato. */
   affidatoPeriodo: number;
+  /** Metriche pezzi affido per scaglioni (stato attuale). */
+  performance: PerformanceProvvigioni | null;
   provvigioniMese: number;
 };
 
 export function buildSezioniProvvigioni<T extends ProvvigioneConPerimetro>(
   righe: T[],
-  configs: PerimetroProvvigioniConfig[]
+  configs: PerimetroProvvigioniConfig[],
+  metriche?: Map<string, PerformanceProvvigioni>
 ): SezioneProvvigioni<T>[] {
   const configByNome = new Map(configs.map((c) => [c.nome, c]));
   const keys = configs.length
@@ -40,6 +44,7 @@ export function buildSezioniProvvigioni<T extends ProvvigioneConPerimetro>(
   return keys.map((perimetro) => {
     const righeSez = righe.filter((r) => (r.perimetro || "—") === perimetro);
     const cfg = configByNome.get(perimetro);
+    const performance = metriche?.get(perimetro) ?? null;
     return {
       perimetro,
       mandanteCodice: cfg?.mandanteCodice ?? "—",
@@ -47,8 +52,9 @@ export function buildSezioniProvvigioni<T extends ProvvigioneConPerimetro>(
       codiciScarico: cfg?.codiciScarico ?? [],
       righe: righeSez,
       incassatoMese: righeSez.reduce((s, r) => s + r.baseImporto, 0),
-      affidatoTotale: 0,
-      affidatoPeriodo: 0,
+      affidatoTotale: performance?.pezziAffido ?? 0,
+      affidatoPeriodo: performance?.pezziAffido ?? 0,
+      performance,
       provvigioniMese: righeSez.reduce((s, r) => s + r.importo, 0),
     };
   });

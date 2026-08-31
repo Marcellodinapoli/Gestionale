@@ -17,12 +17,16 @@ export type MetricheCodiceScarico = {
   incassato: number;
   affidatoTotale: number;
   affidatoPeriodo: number;
+  /** Pezzi con codice scarico (su affido pratiche). */
+  pezzi?: number;
+  pezziAffido?: number;
 };
 
 export type PerformanceProvvigioni = {
   incassato: number;
   affidatoTotale: number;
   affidatoPeriodo?: number;
+  pezziAffido?: number;
   perCodice?: Record<string, MetricheCodiceScarico>;
 };
 
@@ -35,7 +39,13 @@ function metrichePerCodice(
     return perf.perCodice[codice]!;
   }
   if (codice && perf.perCodice) {
-    return { incassato: 0, affidatoTotale: 0, affidatoPeriodo: 0 };
+    return {
+      incassato: 0,
+      affidatoTotale: 0,
+      affidatoPeriodo: 0,
+      pezzi: 0,
+      pezziAffido: perf.pezziAffido,
+    };
   }
   return {
     incassato: perf.incassato,
@@ -50,11 +60,40 @@ export function performancePerc(
   codiceScarico?: string | null
 ): number {
   const m = metrichePerCodice(perf, codiceScarico);
+  const codice = codiceScarico?.trim().toUpperCase() || null;
+  const pezziAffido = m.pezziAffido ?? perf.pezziAffido ?? 0;
+
+  if (base === "affidato" && codice && pezziAffido > 0 && m.pezzi != null) {
+    return (m.pezzi / pezziAffido) * 100;
+  }
   if (base === "affidato") {
     return m.affidatoTotale > 0 ? (m.incassato / m.affidatoTotale) * 100 : 0;
   }
   const denominatore = m.affidatoPeriodo || m.affidatoTotale;
   return denominatore > 0 ? (m.incassato / denominatore) * 100 : 0;
+}
+
+/** Pezzi codice obiettivo mancanti per raggiungere lo scaglione (base affido pratiche). */
+export function mancanoPezziPerScaglione(
+  scaglione: ScaglioneProvvigione,
+  perf: PerformanceProvvigioni
+): { codice: string; mancano: number; attuali: number; obiettivo: number; pezziAffido: number } | null {
+  const codice = scaglione.codiceScarico?.trim().toUpperCase();
+  if (!codice || scaglione.base !== "affidato") return null;
+
+  const m = metrichePerCodice(perf, codice);
+  const pezziAffido = m.pezziAffido ?? perf.pezziAffido ?? 0;
+  const pezzi = m.pezzi ?? 0;
+  if (pezziAffido <= 0) return null;
+
+  const obiettivo = Math.ceil((scaglione.sogliaPerc / 100) * pezziAffido);
+  return {
+    codice,
+    mancano: Math.max(0, obiettivo - pezzi),
+    attuali: pezzi,
+    obiettivo,
+    pezziAffido,
+  };
 }
 
 export function provvigionePercEffettiva(
@@ -99,7 +138,7 @@ export function scaglioneProvvigioneAttuale(
 }
 
 export function etichettaScaglione(s: ScaglioneProvvigione) {
-  const base = SCAGLIONE_BASE_LABELS[s.base];
+  const base = SCAGLIONE_BASE_LABELS[s.base].replace(/^%\s*/, "");
   const codice = etichettaCodiceScaricoScaglione(s.codiceScarico);
   const note = s.note ? ` — ${s.note}` : "";
   return `≥ ${s.sogliaPerc}% ${base} · cod. ${codice} → provv. ${s.provvigionePerc}%${note}`;

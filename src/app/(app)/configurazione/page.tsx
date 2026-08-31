@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { configurazioneDbFromUser } from "@/lib/configurazioneRepo";
 import { requirePermission } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { ConfigurazioneEditor } from "@/components/configurazione/ConfigurazioneEditor";
@@ -8,7 +8,9 @@ import { writeAudit } from "@/lib/domain";
 export default async function ConfigurazionePage() {
   const user = await requirePermission("users:manage");
 
-  const purged = await prisma.configurazioneSistema.deleteMany({
+  const configModel = configurazioneDbFromUser(user);
+
+  const purged = await configModel.deleteMany({
     where: {
       tenantId: user.tenantId,
       chiave: { in: [...SECRET_CONFIG_KEYS] },
@@ -25,7 +27,7 @@ export default async function ConfigurazionePage() {
     });
   }
 
-  const rows = await prisma.configurazioneSistema.findMany({
+  const rows = await configModel.findMany({
     where: { tenantId: user.tenantId },
   });
   const config: Record<string, string> = {};

@@ -1,18 +1,16 @@
 import { Suspense } from "react";
+import { buildHomeKpiContext } from "@/lib/homeKpi/buildContext";
+import { loadHomeKpiAuto } from "@/lib/homeKpi/loadHomeKpi";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/guard";
 import { can, isManutenzione } from "@/lib/permissions";
-import { euro, dataIt, nessunDatoWhere } from "@/lib/domain";
+import { euro, dataIt } from "@/lib/domain";
 import {
   formatDataIso,
   isOggi,
-  lavoratePerOperatoreInGiornata,
-  praticheLavorateInGiornata,
-  praticheConCambioCodiceInGiornata,
   parseDataIso,
   startOfToday,
-  completaOperatoriGruppo,
-  applicaCambiCodicePerOperatore,
 } from "@/lib/lavorateOggi";
 import {
   praticaScopeWhere,
@@ -29,7 +27,7 @@ import { getGruppoLavoro, getGruppoLavoroForSupervisor } from "@/lib/gruppoLavor
 import { DashboardKpi } from "@/components/home/DashboardStat";
 import { MissingSedeBanner, RicaviAltreSediNascostiBanner } from "@/components/sedi/MissingSedeBanner";
 import { SedeRendimentoFilter } from "@/components/sedi/SedeRendimentoFilter";
-import { sedeScopeForRendimento, canViewRicaviFatturatiSede } from "@/lib/sedeScope";
+import { sedeScopeForRendimento } from "@/lib/sedeScope";
 import { GruppoLavoroHomeCard } from "@/components/home/GruppoLavoroHomeCard";
 import { FormazioneMonitorHomeCard } from "@/components/home/FormazioneMonitorHomeCard";
 import { HomeGruppoPicker } from "@/components/home/HomeGruppoPicker";
@@ -38,91 +36,14 @@ import { CodiciMandantePerimetroTable } from "@/components/home/CodiciMandantePe
 import { InLavorazionePerimetroCard } from "@/components/home/InLavorazionePerimetroCard";
 import { DaAffidarePerimetroCard } from "@/components/home/DaAffidarePerimetroCard";
 import { IncassiTipologiaFiltri } from "@/components/home/IncassiTipologiaFiltri";
-import { parsePerimetri } from "@/lib/mandantePerimetri";
-import {
-  codiciPerMandantePerimetro,
-  daAffidarePerPerimetroGruppo,
-  inLavorazionePerPerimetro,
-} from "@/lib/codiciMandantePerimetro";
 import Link from "next/link";
-import type { Prisma } from "@prisma/client";
-import { prismaCount } from "@/lib/prismaCount";
-
-type RiepilogoMandante = {
-  id: string;
-  codice: string;
-  ragioneSociale: string;
-  pratiche: number;
-  affidato: number;
-  incassato: number;
-  percentuale: number;
-};
-
-async function riepilogoMandanti(
-  tenantId: string,
-  sedeId?: string | null
-): Promise<RiepilogoMandante[]> {
-  const praticheWhere: Prisma.PraticaWhereInput = {
-    tenantId,
-    ...(sedeId
-      ? {
-          OR: [
-            { assegnatario: { sedeId } },
-            { operatoreTitolare: { sedeId } },
-          ],
-        }
-      : {}),
-  };
-
-  const [mandanti, pratiche] = await Promise.all([
-    prisma.mandante.findMany({
-      where: { tenantId },
-      select: { id: true, codice: true, ragioneSociale: true },
-      orderBy: { codice: "asc" },
-    }),
-    prisma.pratica.findMany({
-      where: praticheWhere,
-      select: {
-        mandanteId: true,
-        capitale: true,
-        interessi: true,
-        spese: true,
-        incassi: { select: { importo: true } },
-      },
-    }),
-  ]);
-
-  const byMandante = new Map<
-    string,
-    { n: number; affidato: number; incassato: number }
-  >();
-  for (const p of pratiche) {
-    const cur = byMandante.get(p.mandanteId) || { n: 0, affidato: 0, incassato: 0 };
-    cur.n += 1;
-    cur.affidato += (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0);
-    cur.incassato += p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
-    byMandante.set(p.mandanteId, cur);
-  }
-
-  return mandanti.map((m) => {
-    const agg = byMandante.get(m.id) || { n: 0, affidato: 0, incassato: 0 };
-    return {
-      id: m.id,
-      codice: m.codice,
-      ragioneSociale: m.ragioneSociale,
-      pratiche: agg.n,
-      affidato: agg.affidato,
-      incassato: agg.incassato,
-      percentuale: agg.affidato > 0 ? (agg.incassato / agg.affidato) * 100 : 0,
-    };
-  });
-}
+import type { RiepilogoMandanteDto } from "@/lib/data/contracts/dashboard";
 
 function RiepilogoMandantiTable({
   righe,
   mostraTotali = true,
 }: {
-  righe: RiepilogoMandante[];
+  righe: RiepilogoMandanteDto[];
   mostraTotali?: boolean;
 }) {
   const totAffidato = righe.reduce((s, r) => s + r.affidato, 0);
@@ -228,7 +149,7 @@ export default async function HomePage({
 
   const isBackOfficeGruppo = user.role === "BACK_OFFICE" && !isManutenzione(user);
   const supervisoriHome = isBackOfficeGruppo
-    ? await prisma.user.findMany({
+    ? await usersDbFromUser(user).findMany({
         where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
         orderBy: { name: "asc" },
         select: { id: true, name: true, gruppoNome: true },
@@ -270,110 +191,44 @@ export default async function HomePage({
     user.role === "SUPERVISOR" || user.role === "BACK_OFFICE";
   const lavorateOpts = { data: dataLavorate, scopeWhere: where };
 
-  const [totali, inLavoroPerPerimetro, scadute, incassiOggi, lavoratePerOperatoreRaw, praticheLavorateGruppo, praticheCambioCodice, codiciMandantePerimetro, daAffidareGruppo] =
-    await Promise.all([
-      prisma.pratica.count({ where }),
-      inLavorazionePerPerimetro(user, gruppoPerimetroOpts),
-      prisma.pratica.count({
-        where: {
-          ...where,
-          scadenza: { lte: new Date() },
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-        },
-      }),
-      prisma.incasso.aggregate({
-        _sum: { importo: true },
-        where: isManutenzione(user)
-          ? nessunDatoWhere()
-          : can(user, "incassi:create") || can(user, "report:view")
-            ? { data: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } }
-            : { userId: user.id, data: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-      }),
-      lavoratePerOperatoreInGiornata(user, lavorateOpts),
-      vistaGruppoLavorate
-        ? praticheLavorateInGiornata(user, lavorateOpts)
-        : Promise.resolve([]),
-      praticheConCambioCodiceInGiornata(user, lavorateOpts),
-      isManutenzione(user)
-        ? Promise.resolve([])
-        : codiciPerMandantePerimetro(user, gruppoPerimetroOpts),
-      mostraGruppo && !isManutenzione(user)
-        ? daAffidarePerPerimetroGruppo(user.tenantId, gruppo.gruppoMandanti)
-        : Promise.resolve([]),
-    ]);
+  const kpiCtx = await buildHomeKpiContext(user, sp, {
+    gruppo,
+    periCtx,
+    targetSupervisorId,
+  });
 
-  const lavoratePerOperatore = applicaCambiCodicePerOperatore(
-    vistaGruppoLavorate
-      ? completaOperatoriGruppo(lavoratePerOperatoreRaw, gruppo.members)
-      : lavoratePerOperatoreRaw,
-    praticheCambioCodice
-  );
+  const kpi = await loadHomeKpiAuto(kpiCtx, {
+    user,
+    where,
+    gruppo,
+    periCtx,
+    mostraGruppo,
+    vistaGruppoLavorate,
+    gruppoPerimetroOpts,
+    dataLavorate,
+    sedeScopeId: kpiCtx.sedeScopeId,
+    incMandante,
+    incPerimetro,
+  });
+
+  const {
+    totali,
+    scadute,
+    incassiOggiSum,
+    inLavoroPerPerimetro,
+    lavoratePerOperatore,
+    praticheLavorateGruppo,
+    praticheCambioCodice,
+    codiciMandantePerimetro,
+    daAffidareGruppo,
+  } = kpi.shared;
+
+  const incassiOggi = { _sum: { importo: incassiOggiSum } };
 
   if (user.role === "AMMINISTRAZIONE") {
+    const amm = kpi.amministrazione!;
     const { sedeId: sedeFiltro } = sedeScopeForRendimento(user, sedeRaw);
-    const mostraRicavi = canViewRicaviFatturatiSede(user, sedeFiltro || user.sedeId || null);
-    // Contatori operativi: tutte le sedi (o filtro sede se scelto).
-    // Ricavi/provvigioni: solo propria sede.
-    const oggi = new Date();
-    oggi.setHours(0, 0, 0, 0);
-    const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
-    const sedeOps = sedeFiltro || undefined;
     const sedeRicavi = user.sedeId || undefined;
-    const sediOpts = await prisma.sede.findMany({
-      where: { tenantId: user.tenantId, active: true },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true },
-    });
-    const [
-      totPratiche,
-      provvigioniMese,
-      provvigioniDaLiquidare,
-      mandantiCount,
-      operatoriCount,
-    ] = await Promise.all([
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          ...(sedeOps
-            ? {
-                OR: [
-                  { assegnatario: { sedeId: sedeOps } },
-                  { operatoreTitolare: { sedeId: sedeOps } },
-                ],
-              }
-            : {}),
-        },
-      }),
-      sedeRicavi
-        ? prisma.provvigione.aggregate({
-            _sum: { importo: true },
-            where: {
-              createdAt: { gte: inizioMese },
-              pratica: { tenantId: user.tenantId },
-              operatore: { sedeId: sedeRicavi },
-            },
-          })
-        : Promise.resolve({ _sum: { importo: null as number | null } }),
-      sedeRicavi
-        ? prisma.provvigione.aggregate({
-            _sum: { importo: true },
-            where: {
-              stato: "MATURATA",
-              pratica: { tenantId: user.tenantId },
-              operatore: { sedeId: sedeRicavi },
-            },
-          })
-        : Promise.resolve({ _sum: { importo: null as number | null } }),
-      prisma.mandante.count({ where: { tenantId: user.tenantId } }),
-      prisma.user.count({
-        where: {
-          tenantId: user.tenantId,
-          role: { in: ["OPERATOR", "SUPERVISOR"] },
-          active: true,
-          ...(sedeOps ? { sedeId: sedeOps } : {}),
-        },
-      }),
-    ]);
 
     return (
       <div className="space-y-5 pb-8">
@@ -383,7 +238,7 @@ export default async function HomePage({
         />
 
         <SedeRendimentoFilter
-          sedi={sediOpts}
+          sedi={amm.sediOpts}
           sedeId={sedeFiltro}
           basePath="/"
           keepParams={{
@@ -400,15 +255,15 @@ export default async function HomePage({
         ) : null}
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
-          {mostraRicavi && sedeRicavi ? (
+          {amm.mostraRicavi && sedeRicavi ? (
             <>
               <DashboardKpi
                 title="Provvigioni mese (tua sede)"
-                value={euro(provvigioniMese._sum.importo || 0)}
+                value={euro(amm.provvigioniMeseSum || 0)}
               />
               <DashboardKpi
                 title="Provv. da liquidare (tua sede)"
-                value={euro(provvigioniDaLiquidare._sum.importo || 0)}
+                value={euro(amm.provvigioniDaLiquidareSum || 0)}
                 hint="Totale maturate non ancora erogate"
               />
             </>
@@ -418,92 +273,28 @@ export default async function HomePage({
               <DashboardKpi title="Provv. da liquidare" value="—" hint="Solo sulla tua sede" />
             </>
           )}
-          <DashboardKpi title="Pratiche totali" value={totPratiche} />
+          <DashboardKpi title="Pratiche totali" value={amm.totPratiche} />
           <DashboardKpi title="Provvigioni" value="Dettaglio" href="/provigioni" />
         </div>
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
-          <DashboardKpi title="Mandanti" value={mandantiCount} href="/mandanti" />
-          <DashboardKpi title="Operatori attivi" value={operatoriCount} href="/operatori" />
+          <DashboardKpi title="Mandanti" value={amm.mandantiCount} href="/mandanti" />
+          <DashboardKpi title="Operatori attivi" value={amm.operatoriCount} href="/operatori" />
         </div>
       </div>
     );
   }
 
   if (user.role === "ADMIN") {
-    const oggi = new Date();
-    oggi.setHours(0, 0, 0, 0);
-
+    const admin = kpi.admin!;
     const { sedeId: sedeScopeId } = sedeScopeForRendimento(user, sedeRaw);
-    const sediOpts = await prisma.sede.findMany({
-      where: { tenantId: user.tenantId, active: true },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true },
-    });
-    const sedePraticaWhere: Prisma.PraticaWhereInput | undefined = sedeScopeId
-      ? {
-          OR: [
-            { assegnatario: { sedeId: sedeScopeId } },
-            { operatoreTitolare: { sedeId: sedeScopeId } },
-          ],
-        }
-      : undefined;
-    const sedeUserFilter = sedeScopeId ? { sedeId: sedeScopeId } : {};
 
-    const [operatoriCountAdmin] = await Promise.all([
-      prisma.user.count({
-        where: {
-          tenantId: user.tenantId,
-          role: { in: ["OPERATOR", "SUPERVISOR"] },
-          active: true,
-          ...sedeUserFilter,
-        },
-      }),
-    ]);
-
-    const mandantiRiepilogo = await riepilogoMandanti(user.tenantId, sedeScopeId);
+    const mandantiRiepilogo = admin.mandantiRiepilogo;
     const totAffidato = mandantiRiepilogo.reduce((s, r) => s + r.affidato, 0);
     const totIncassato = mandantiRiepilogo.reduce((s, r) => s + r.incassato, 0);
     const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
 
-    const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
-
-    const mandantiFiltro = await prisma.mandante.findMany({
-      where: { tenantId: user.tenantId },
-      orderBy: { codice: "asc" },
-      select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
-    });
-
-    const lottiPerMandante = await prisma.pratica.groupBy({
-      by: ["mandanteId", "numeroMandante"],
-      where: {
-        tenantId: user.tenantId,
-        numeroMandante: { not: null },
-      },
-    });
-    const lottiMap = new Map<string, Set<string>>();
-    for (const row of lottiPerMandante) {
-      const lotto = row.numeroMandante?.trim();
-      if (!lotto) continue;
-      const set = lottiMap.get(row.mandanteId) ?? new Set<string>();
-      set.add(lotto);
-      lottiMap.set(row.mandanteId, set);
-    }
-
-    const mandantiFiltriUi = mandantiFiltro.map((m) => {
-      const fromConfig = parsePerimetri(m.perimetri).map((p) => p.nomeMandante);
-      const fromPratiche = [...(lottiMap.get(m.id) ?? [])];
-      const perimetri = [...new Set([...fromConfig, ...fromPratiche])].sort((a, b) =>
-        a.localeCompare(b, "it")
-      );
-      return {
-        id: m.id,
-        codice: m.codice,
-        ragioneSociale: m.ragioneSociale,
-        perimetri,
-      };
-    });
-
+    const mandantiFiltriUi = admin.mandantiFiltriUi;
     const mandanteFiltroOk =
       incMandante && mandantiFiltriUi.some((m) => m.id === incMandante)
         ? incMandante
@@ -518,221 +309,32 @@ export default async function HomePage({
       return mandantiFiltriUi.some((m) => m.perimetri.includes(p)) ? p : undefined;
     })();
 
-    const praticaIncassoFilter: Prisma.PraticaWhereInput = {
-      tenantId: user.tenantId,
-      ...(mandanteFiltroOk ? { mandanteId: mandanteFiltroOk } : {}),
-      ...(perimetroFiltroOk ? { numeroMandante: perimetroFiltroOk } : {}),
-      ...(sedePraticaWhere ? sedePraticaWhere : {}),
-    };
-    const incassoWhereBase: Prisma.IncassoWhereInput = {
-      pratica: praticaIncassoFilter,
-    };
-
-    const [incassiPerMetodo, incassiPerMetodoMese] = await Promise.all([
-      prisma.incasso.groupBy({
-        by: ["metodo"],
-        where: incassoWhereBase,
-        _sum: { importo: true },
-        _count: true,
-      }),
-      prisma.incasso.groupBy({
-        by: ["metodo"],
-        where: { ...incassoWhereBase, data: { gte: inizioMese } },
-        _sum: { importo: true },
-        _count: true,
-      }),
-    ]);
-    const totImportoMetodi = incassiPerMetodo.reduce(
-      (s, r) => s + (r._sum.importo || 0),
-      0
-    );
-    const tipologieIncasso = incassiPerMetodo
-      .map((r) => ({
-        metodo: r.metodo,
-        label: metodoIncassoLabel(r.metodo),
-        pezzi: prismaCount(r._count),
-        importo: r._sum.importo || 0,
-        perc: totImportoMetodi > 0 ? ((r._sum.importo || 0) / totImportoMetodi) * 100 : 0,
-        meseImporto:
-          incassiPerMetodoMese.find((m) => m.metodo === r.metodo)?._sum.importo || 0,
-        mesePezzi: prismaCount(
-          incassiPerMetodoMese.find((m) => m.metodo === r.metodo)?._count
-        ),
+    const totImportoMetodi = admin.tipologieIncasso.reduce((s, r) => s + r.importo, 0);
+    const tipologieIncasso = admin.tipologieIncasso
+      .map((t) => ({
+        metodo: t.metodo,
+        label: metodoIncassoLabel(t.metodo),
+        pezzi: t.pezzi,
+        importo: t.importo,
+        perc: totImportoMetodi > 0 ? (t.importo / totImportoMetodi) * 100 : 0,
+        meseImporto: t.meseImporto,
+        mesePezzi: t.mesePezzi,
       }))
       .sort((a, b) => b.importo - a.importo);
 
-    // Produttività operatori (attività oggi)
-    const inizioOggi = new Date(oggi);
-    const fineOggi = new Date(oggi);
-    fineOggi.setHours(23, 59, 59, 999);
-    const attivitaPerOperatore = await prisma.attivita.groupBy({
-      by: ["userId"],
-      where: { createdAt: { gte: inizioOggi, lte: fineOggi } },
-      _count: true,
-    });
-    const operatoriAttivi = await prisma.user.findMany({
-      where: {
-        tenantId: user.tenantId,
-        role: { in: ["OPERATOR", "SUPERVISOR"] },
-        active: true,
-        ...sedeUserFilter,
-      },
-      select: { id: true, name: true, supervisorId: true },
-      orderBy: { name: "asc" },
-    });
-    const produttivita = operatoriAttivi.map((o) => ({
-      name: o.name,
-      attivita: prismaCount(attivitaPerOperatore.find((a) => a.userId === o.id)?._count),
-    }));
-
-    // Distribuzione carico per gruppo
-    const supervisori = await prisma.user.findMany({
-      where: {
-        tenantId: user.tenantId,
-        role: "SUPERVISOR",
-        active: true,
-        ...sedeUserFilter,
-      },
-      select: { id: true, name: true, gruppoNome: true },
-      orderBy: { name: "asc" },
-    });
-    const caricoGruppi = await Promise.all(
-      supervisori.map(async (s) => {
-        const memberIds = [
-          s.id,
-          ...(
-            await prisma.user.findMany({
-              where: {
-                tenantId: user.tenantId,
-                supervisorId: s.id,
-                active: true,
-                ...sedeUserFilter,
-              },
-              select: { id: true },
-            })
-          ).map((u) => u.id),
-        ];
-        const [aperte, totali] = await Promise.all([
-          prisma.pratica.count({
-            where: {
-              assegnatarioId: { in: memberIds },
-              stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-              ...(sedePraticaWhere || {}),
-            },
-          }),
-          prisma.pratica.count({
-            where: {
-              assegnatarioId: { in: memberIds },
-              ...(sedePraticaWhere || {}),
-            },
-          }),
-        ]);
-        return {
-          nome: s.gruppoNome || s.name,
-          aperte,
-          totali,
-          membri: memberIds.length,
-        };
-      })
-    );
-
-    // Esiti contatto
-    const esitiContatto = await prisma.pratica.groupBy({
-      by: ["esitoContatto"],
-      where: {
-        tenantId: user.tenantId,
-        esitoContatto: { not: null },
-        ...(sedePraticaWhere || {}),
-      },
-      _count: true,
-    });
-    const totEsiti = esitiContatto.reduce((s, e) => s + prismaCount(e._count), 0);
-
-    // Pratiche in scadenza (prossimi 7 giorni)
-    const tra7gg = new Date(oggi);
-    tra7gg.setDate(tra7gg.getDate() + 7);
-    const [scadute, inScadenza7gg, nonAssegnate] = await Promise.all([
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          scadenza: { lt: oggi },
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-          ...(sedePraticaWhere || {}),
-        },
-      }),
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          scadenza: { gte: oggi, lte: tra7gg },
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-          ...(sedePraticaWhere || {}),
-        },
-      }),
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          assegnatarioId: null,
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-          ...(sedePraticaWhere || {}),
-        },
-      }),
-    ]);
-
-    // Incassi per mandante ultimi 6 mesi
     const mesiIndietro = 6;
-    const daIncassi = new Date(oggi.getFullYear(), oggi.getMonth() - (mesiIndietro - 1), 1);
-    const aIncassi = new Date(oggi.getFullYear(), oggi.getMonth() + 1, 0, 23, 59, 59, 999);
-    const [mandantiAttivi, incassiRows] = await Promise.all([
-      prisma.mandante.findMany({
-        where: { tenantId: user.tenantId },
-        orderBy: { codice: "asc" },
-        select: { id: true, codice: true },
-      }),
-      prisma.incasso.findMany({
-        where: {
-          data: { gte: daIncassi, lte: aIncassi },
-          pratica: {
-            tenantId: user.tenantId,
-            ...(sedePraticaWhere || {}),
-          },
-        },
-        include: {
-          pratica: { select: { mandanteId: true } },
-        },
-      }),
-    ]);
-    const sumsByMonthMandante = new Map<string, number>();
-    for (const row of incassiRows) {
-      const d = row.data instanceof Date ? row.data : new Date(row.data);
-      if (Number.isNaN(d.getTime())) continue;
-      const key = `${d.getFullYear()}-${d.getMonth()}|${row.pratica.mandanteId}`;
-      sumsByMonthMandante.set(key, (sumsByMonthMandante.get(key) || 0) + (row.importo || 0));
-    }
-    const incassiPerMandanteMese: Array<{
-      mese: string;
-      mandanti: Array<{ codice: string; importo: number }>;
-      totale: number;
-    }> = [];
-    for (let i = mesiIndietro - 1; i >= 0; i--) {
-      const da = new Date(oggi.getFullYear(), oggi.getMonth() - i, 1);
-      const mandantiMese: Array<{ codice: string; importo: number }> = [];
-      let totaleMese = 0;
-      for (const m of mandantiAttivi) {
-        const imp = sumsByMonthMandante.get(`${da.getFullYear()}-${da.getMonth()}|${m.id}`) || 0;
-        mandantiMese.push({ codice: m.codice, importo: imp });
-        totaleMese += imp;
-      }
-      incassiPerMandanteMese.push({
-        mese: da.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }),
-        mandanti: mandantiMese,
-        totale: totaleMese,
-      });
-    }
+    const incassiPerMandanteMese = admin.incassiPerMandanteMese;
     const maxMese = Math.max(...incassiPerMandanteMese.map((m) => m.totale), 1);
     const colori = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#be185d", "#65a30d"];
+    const mandantiAttivi = admin.mandantiAttivi;
+    const produttivita = admin.produttivita;
+    const caricoGruppi = admin.caricoGruppi;
+    const esitiContatto = admin.esitiContatto;
+    const totEsiti = esitiContatto.reduce((s, e) => s + e.count, 0);
+    const { scaduteAdmin: scadute, inScadenza7gg, nonAssegnate } = admin;
 
     const sedeNomeAttiva = sedeScopeId
-      ? sediOpts.find((s) => s.id === sedeScopeId)?.nome
+      ? admin.sediOpts.find((s) => s.id === sedeScopeId)?.nome
       : null;
 
     return (
@@ -747,7 +349,7 @@ export default async function HomePage({
         />
 
         <SedeRendimentoFilter
-          sedi={sediOpts}
+          sedi={admin.sediOpts}
           sedeId={sedeScopeId}
           basePath="/"
           keepParams={{
@@ -765,7 +367,7 @@ export default async function HomePage({
             title="% Recupero"
             value={`${totPerc.toFixed(1)}%`}
           />
-          <DashboardKpi title="Operatori attivi" value={operatoriCountAdmin} href="/operatori" />
+          <DashboardKpi title="Operatori attivi" value={admin.operatoriCount} href="/operatori" />
         </div>
 
         {/* Incassi per tipologia */}
@@ -1002,9 +604,8 @@ export default async function HomePage({
               <p className="text-sm text-[var(--muted)]">Nessun esito registrato.</p>
             ) : (
               <div className="space-y-1.5">
-                {esitiContatto
-                  .map((e) => ({ ...e, n: prismaCount(e._count) }))
-                  .sort((a, b) => b.n - a.n)
+                {[...esitiContatto]
+                  .sort((a, b) => b.count - a.count)
                   .map((e, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <span className="w-36 truncate text-xs font-medium">
@@ -1014,13 +615,13 @@ export default async function HomePage({
                         <div
                           className="h-full rounded-full bg-[#1a365d]"
                           style={{
-                            width: `${totEsiti ? (e.n / totEsiti) * 100 : 0}%`,
+                            width: `${totEsiti ? (e.count / totEsiti) * 100 : 0}%`,
                             minWidth: 8,
                           }}
                         />
                       </div>
                       <span className="w-12 text-right text-[10px] text-[var(--muted)]">
-                        {e.n} ({totEsiti ? ((e.n / totEsiti) * 100).toFixed(0) : 0}%)
+                        {e.count} ({totEsiti ? ((e.count / totEsiti) * 100).toFixed(0) : 0}%)
                       </span>
                     </div>
                   ))}

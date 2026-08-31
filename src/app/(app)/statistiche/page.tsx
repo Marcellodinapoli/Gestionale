@@ -1,6 +1,10 @@
 import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
+import { sediDbFromUser } from "@/lib/sediRepo";
+import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { requirePermission } from "@/lib/guard";
 import { dataIt } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
@@ -71,7 +75,7 @@ export default async function StatistichePage({
   const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
   const sediOpts =
     user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
-      ? await prisma.sede.findMany({
+      ? await sediDbFromUser(user).findMany({
           where: { tenantId: user.tenantId, active: true },
           orderBy: { nome: "asc" },
           select: { id: true, nome: true },
@@ -82,7 +86,7 @@ export default async function StatistichePage({
 
   const canFilterGruppo = ["ADMIN", "AMMINISTRAZIONE"].includes(user.role);
   const supervisori = canFilterGruppo
-    ? await prisma.user.findMany({
+    ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
           role: "SUPERVISOR",
@@ -105,12 +109,12 @@ export default async function StatistichePage({
 
   if (canFilterGruppo && gruppoIdEffettivo) {
     const supId = gruppoIdEffettivo;
-    const operators = await prisma.user.findMany({
+    const operators = await usersDbFromUser(user).findMany({
       where: { tenantId: user.tenantId, supervisorId: supId, active: true, role: "OPERATOR" },
       select: { id: true, name: true, role: true, email: true },
       orderBy: { name: "asc" },
     });
-    const sup = await prisma.user.findFirst({
+    const sup = await usersDbFromUser(user).findFirst({
       where: { id: supId, tenantId: user.tenantId },
       select: {
         id: true,
@@ -134,7 +138,7 @@ export default async function StatistichePage({
       memberIds: members.map((m) => m.id),
     };
   } else if (tutteLePratiche) {
-    const allOps = await prisma.user.findMany({
+    const allOps = await usersDbFromUser(user).findMany({
       where: { tenantId: user.tenantId, role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true },
       select: { id: true, name: true, role: true, email: true },
       orderBy: { name: "asc" },
@@ -177,7 +181,7 @@ export default async function StatistichePage({
 
   const mandantiAll = isManutenzione(user)
     ? []
-    : await prisma.mandante.findMany({
+    : await mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
       });
@@ -213,7 +217,7 @@ export default async function StatistichePage({
   // Lotti disponibili: solo perimetri del gruppo (in lavorazione)
   const lottiRows = isManutenzione(user) || nessunPerimetroGruppo
     ? []
-    : await prisma.pratica.findMany({
+    : await praticaDbFromUser(user).findMany({
         where: {
           ...scopeBase,
           stato: { notIn: [...STATI_PRATICA_CHIUSA] },
@@ -235,9 +239,8 @@ export default async function StatistichePage({
 
   const importBatches = isManutenzione(user)
     ? []
-    : await prisma.importBatch.findMany({
-        where: { tenantId: user.tenantId },
-        select: { mandanteId: true, lotto: true, perimetro: true },
+    : await importBatchRepoFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+        take: 200,
       });
 
   const lottoPerimetroByKey = new Map(
@@ -318,11 +321,13 @@ export default async function StatistichePage({
     tutteLePratiche && !sedeScopeId
       ? {
           tenantId: user.tenantId,
+          tenantSlug: user.tenantSlug ?? user.tenantId,
           tutteLePratiche: true,
           mandantiPerimetri: mandantiPerimetriOpts,
         }
       : {
           tenantId: user.tenantId,
+          tenantSlug: user.tenantSlug ?? user.tenantId,
           extraWhere: periScope,
           richiedePerimetriGruppo: usaPerimetriGruppo,
           mandantiPerimetri: mandantiPerimetriOpts,

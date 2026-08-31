@@ -4,6 +4,16 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser, nextNumeroPratica, type PraticaDbContext } from "@/lib/praticheRepo";
+import { mandantiDbFromUser } from "@/lib/mandantiRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
+import { debitoriDbFromUser, debitoreRecapitoDb } from "@/lib/debitoriRepo";
+import { garantiDbFromUser, garanteRecapitoDb } from "@/lib/garantiRepo";
+import { fattureDbFromUser } from "@/lib/fattureRepo";
+import { documentiDbFromUser } from "@/lib/documentiRepo";
+import { createManyPianoRate, pianoRateDbFromUser } from "@/lib/pianoRateRepo";
+import { attivitaDbFromUser, toggleFissaAttivita } from "@/lib/attivitaRepo";
+import { registraIncassoWithSideEffects } from "@/lib/incassiRepo";
 import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
 import { assertCan, can, canManageMandantePerimetri, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
@@ -15,12 +25,21 @@ import {
   writeAudit,
 } from "@/lib/domain";
 import { syncMessaggioAgenda, markMessaggiLetti } from "@/lib/memoAgenda";
+import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
+import { resolveTenantSlug } from "@/lib/praticheRepo";
 import { formatMessaggioCollegaNota } from "@/lib/noteFormat";
 import { calcolaProvvigione, resolveProvvigionePercentuale, resolveProvvigionePercentualeLato } from "@/lib/provvigioni";
-import { parsePerimetri, perimetroPerNome } from "@/lib/mandantePerimetri";
+import {
+  codiciScaricoOperatoriEffettivi,
+  codiciScaricoOperatoriPerPratica,
+  isCodicePromessaOperatore,
+  isCodiceScaricoOperatore,
+  parsePerimetri,
+  perimetroPerNome,
+} from "@/lib/mandantePerimetri";
 import { requireWritablePermission, requireWritableUser } from "@/lib/guard";
 import { STATI_TELEFONO } from "@/lib/statoTelefono";
-import { assertPraticaLockHeld, assertPraticaNotLockedByOther, releaseAllUserLocks } from "@/lib/praticaLock";
+import { assertPraticaLockHeld, assertPraticaNotLockedByOther, releaseAllUserLocks, lockScopeFromUser } from "@/lib/praticaLock";
 import { isPasswordExpired } from "@/lib/passwordPolicy";
 import { validatePasswordComplexity } from "@/lib/passwordRules";
 import { normalizeTenantSlug } from "@/lib/tenant";
@@ -35,23 +54,41 @@ import {
   validateCsvLottoRighe,
 } from "@/lib/importContesto";
 import {
-  debitoreUpdateFromCsv,
-  ImportPraticaIndex,
-  parseCsvPraticaRow,
-  praticaUpdateFromCsv,
-  type ExistingPraticaImport,
-} from "@/lib/importCsvPratiche";
-import {
-  importBatchPraticaSelectForIndex,
-  importBatchPraticheWhere,
-  toExistingPraticaImport,
-} from "@/lib/importBatchPratiche";
-import { isCodiceScarico, statoDaCodiceScarico } from "@/lib/scarico";
+  finalizePraticheImport,
+  initPraticheImportBatch,
+  processPraticheImportChunk,
+  importPraticheChunkSize,
+} from "@/lib/importPraticheBatch";
+import { statoDaCodiceScarico } from "@/lib/scarico";
 import { RUOLI_LAVORAZIONE } from "@/lib/praticaOrdine";
 import { isPraticaChiusa } from "@/lib/praticaCollegata";
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+async function assertCodiceScaricoOperatoreValido(
+  praticaId: string,
+  codice: string | null
+) {
+  if (!codice) return;
+  const pratica = await (await praticaModel()).findUnique({
+    where: { id: praticaId },
+    select: {
+      numeroMandante: true,
+      mandante: { select: { perimetri: true } },
+    },
+  });
+  if (!pratica) fail("Pratica non valida");
+  const codici = codiciScaricoOperatoriEffettivi(
+    codiciScaricoOperatoriPerPratica(
+      pratica.mandante?.perimetri ?? null,
+      pratica.numeroMandante
+    )
+  );
+  if (!isCodiceScaricoOperatore(codice, codici)) {
+    fail("Codice scarico non valido");
+  }
 }
 
 function isRuoloLavorazione(role: string) {
@@ -61,34 +98,92 @@ function isRuoloLavorazione(role: string) {
 export async function logoutAction() {
   const user = await getCurrentUser();
   if (user) {
-    await releaseAllUserLocks(user.id);
+    await releaseAllUserLocks(user.id, lockScopeFromUser(user));
   }
   await clearSession();
   if (user) {
     await Promise.all([
-      prisma.user.update({ where: { id: user.id }, data: { lastLogoutAt: new Date() } }),
+      usersDbFromUser(user).update({ where: { id: user.id }, data: { lastLogoutAt: new Date() } }),
       writeAudit({ userId: user.id, action: "logout", entity: "user", entityId: user.id }),
     ]);
   }
   redirect("/login");
 }
 
-async function nextNumero(tenantId: string) {
-  const last = await prisma.pratica.findFirst({
-    where: { tenantId },
-    orderBy: { createdAt: "desc" },
-    select: { numero: true },
+async function praticaModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return praticaDbFromUser(user);
+}
+
+async function mandanteModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return mandantiDbFromUser(user);
+}
+
+async function debitoreModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return debitoriDbFromUser(user);
+}
+
+async function recapitoModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return debitoreRecapitoDb({
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
   });
-  const year = new Date().getFullYear();
-  const match = last?.numero?.match(/(\d+)$/);
-  const n = match ? Number(match[1]) + 1 : 1;
-  return `PRC-${year}-${String(n).padStart(4, "0")}`;
+}
+
+async function garanteModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return garantiDbFromUser(user);
+}
+
+async function garanteRecapitoModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return garanteRecapitoDb({
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
+  });
+}
+
+async function fatturaModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return fattureDbFromUser(user);
+}
+
+async function documentoModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return documentiDbFromUser(user);
+}
+
+async function pianoRataModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return pianoRateDbFromUser(user);
+}
+
+async function attivitaModel() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sessione richiesta");
+  return attivitaDbFromUser(user);
+}
+
+async function nextNumero(ctx: PraticaDbContext) {
+  return nextNumeroPratica(ctx);
 }
 
 async function assertPraticaWork(user: Awaited<ReturnType<typeof requireWritableUser>>, praticaId: string) {
   if (!(await canAccessPratica(user, praticaId))) fail("Pratica non visibile");
   if (!can(user, "pratiche:work")) fail("Operazione non consentita");
-  await assertPraticaLockHeld(user.id, praticaId);
+  await assertPraticaLockHeld(user, praticaId);
 }
 
 async function assertPraticaEditable(
@@ -96,11 +191,11 @@ async function assertPraticaEditable(
   praticaId: string
 ) {
   if (!(await canAccessPratica(user, praticaId))) fail("Pratica non visibile");
-  await assertPraticaLockHeld(user.id, praticaId);
+  await assertPraticaLockHeld(user, praticaId);
 }
 
 async function assertGaranteOnPratica(praticaId: string, garanteId: string) {
-  const garante = await prisma.garante.findFirst({
+  const garante = await (await garanteModel()).findFirst({
     where: { id: garanteId, praticaId },
     select: { id: true },
   });
@@ -113,7 +208,7 @@ export async function updateDebitoreContattiPrincipaliAction(formData: FormData)
   const praticaId = String(formData.get("praticaId") || "");
   await assertPraticaWork(user, praticaId);
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { debitoreId: true },
   });
@@ -122,7 +217,7 @@ export async function updateDebitoreContattiPrincipaliAction(formData: FormData)
   const telefono = String(formData.get("telefono") || "").trim() || null;
   const email = String(formData.get("email") || "").trim() || null;
 
-  await prisma.debitore.update({
+  await (await debitoreModel()).update({
     where: { id: pratica.debitoreId },
     data: { telefono, email },
   });
@@ -148,17 +243,17 @@ export async function addDebitoreRecapitoAction(formData: FormData) {
   const valore = String(formData.get("valore") || "").trim();
   if (!valore) fail("Inserisci il valore");
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { debitoreId: true },
   });
   if (!pratica) fail("Pratica non trovata");
 
-  const count = await prisma.debitoreRecapito.count({
+  const count = await (await recapitoModel()).count({
     where: { debitoreId: pratica.debitoreId, tipo },
   });
 
-  await prisma.debitoreRecapito.create({
+  await (await recapitoModel()).create({
     data: {
       debitoreId: pratica.debitoreId,
       tipo,
@@ -183,18 +278,18 @@ export async function removeDebitoreRecapitoAction(formData: FormData) {
   const recapitoId = String(formData.get("recapitoId") || "");
   await assertPraticaWork(user, praticaId);
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { debitoreId: true },
   });
   if (!pratica) fail("Pratica non trovata");
 
-  const recapito = await prisma.debitoreRecapito.findFirst({
+  const recapito = await (await recapitoModel()).findFirst({
     where: { id: recapitoId, debitoreId: pratica.debitoreId },
   });
   if (!recapito) fail("Recapito non trovato");
 
-  await prisma.debitoreRecapito.delete({ where: { id: recapitoId } });
+  await (await recapitoModel()).delete({ where: { id: recapitoId } });
 
   await writeAudit({
     userId: user.id,
@@ -214,18 +309,18 @@ export async function updateDebitoreRecapitoAction(formData: FormData) {
   await assertPraticaWork(user, praticaId);
   if (!valore) fail("Inserisci il valore");
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { debitoreId: true },
   });
   if (!pratica) fail("Pratica non trovata");
 
-  const recapito = await prisma.debitoreRecapito.findFirst({
+  const recapito = await (await recapitoModel()).findFirst({
     where: { id: recapitoId, debitoreId: pratica.debitoreId },
   });
   if (!recapito) fail("Recapito non trovato");
 
-  await prisma.debitoreRecapito.update({
+  await (await recapitoModel()).update({
     where: { id: recapitoId },
     data: { valore },
   });
@@ -250,7 +345,7 @@ export async function updateGaranteContattiPrincipaliAction(formData: FormData) 
   const telefono = String(formData.get("telefono") || "").trim() || null;
   const email = String(formData.get("email") || "").trim() || null;
 
-  await prisma.garante.update({
+  await (await garanteModel()).update({
     where: { id: garanteId },
     data: { telefono, email },
   });
@@ -278,11 +373,11 @@ export async function addGaranteRecapitoAction(formData: FormData) {
   const valore = String(formData.get("valore") || "").trim();
   if (!valore) fail("Inserisci il valore");
 
-  const count = await prisma.garanteRecapito.count({
+  const count = await (await garanteRecapitoModel()).count({
     where: { garanteId, tipo },
   });
 
-  await prisma.garanteRecapito.create({
+  await (await garanteRecapitoModel()).create({
     data: {
       garanteId,
       tipo,
@@ -309,12 +404,12 @@ export async function removeGaranteRecapitoAction(formData: FormData) {
   await assertPraticaWork(user, praticaId);
   await assertGaranteOnPratica(praticaId, garanteId);
 
-  const recapito = await prisma.garanteRecapito.findFirst({
+  const recapito = await (await garanteRecapitoModel()).findFirst({
     where: { id: recapitoId, garanteId },
   });
   if (!recapito) fail("Recapito non trovato");
 
-  await prisma.garanteRecapito.delete({ where: { id: recapitoId } });
+  await (await garanteRecapitoModel()).delete({ where: { id: recapitoId } });
 
   await writeAudit({
     userId: user.id,
@@ -336,12 +431,12 @@ export async function updateGaranteRecapitoAction(formData: FormData) {
   await assertGaranteOnPratica(praticaId, garanteId);
   if (!valore) fail("Inserisci il valore");
 
-  const recapito = await prisma.garanteRecapito.findFirst({
+  const recapito = await (await garanteRecapitoModel()).findFirst({
     where: { id: recapitoId, garanteId },
   });
   if (!recapito) fail("Recapito non trovato");
 
-  await prisma.garanteRecapito.update({
+  await (await garanteRecapitoModel()).update({
     where: { id: recapitoId },
     data: { valore },
   });
@@ -372,38 +467,38 @@ export async function updateStatoTelefonoAction(formData: FormData) {
   if (garanteId) {
     await assertGaranteOnPratica(praticaId, garanteId);
     if (target === "principale") {
-      await prisma.garante.update({
+      await (await garanteModel()).update({
         where: { id: garanteId },
         data: { telefonoStato: stato },
       });
     } else {
-      const recapito = await prisma.garanteRecapito.findFirst({
+      const recapito = await (await garanteRecapitoModel()).findFirst({
         where: { id: target, garanteId, tipo: "TELEFONO" },
       });
       if (!recapito) fail("Recapito non trovato");
-      await prisma.garanteRecapito.update({
+      await (await garanteRecapitoModel()).update({
         where: { id: target },
         data: { stato },
       });
     }
   } else {
-    const pratica = await prisma.pratica.findUnique({
+    const pratica = await (await praticaModel()).findUnique({
       where: { id: praticaId },
       select: { debitoreId: true },
     });
     if (!pratica) fail("Pratica non trovata");
 
     if (target === "principale") {
-      await prisma.debitore.update({
+      await (await debitoreModel()).update({
         where: { id: pratica.debitoreId },
         data: { telefonoStato: stato },
       });
     } else {
-      const recapito = await prisma.debitoreRecapito.findFirst({
+      const recapito = await (await recapitoModel()).findFirst({
         where: { id: target, debitoreId: pratica.debitoreId, tipo: "TELEFONO" },
       });
       if (!recapito) fail("Recapito non trovato");
-      await prisma.debitoreRecapito.update({
+      await (await recapitoModel()).update({
         where: { id: target },
         data: { stato },
       });
@@ -427,7 +522,7 @@ export async function addAttivitaAction(formData: FormData) {
   const nota = String(formData.get("nota") || "").trim();
   if (!nota) fail("Inserisci il testo della nota");
 
-  await prisma.attivita.create({
+  await (await attivitaModel()).create({
     data: {
       praticaId,
       userId: user.id,
@@ -437,7 +532,7 @@ export async function addAttivitaAction(formData: FormData) {
   });
 
   const now = new Date();
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: {
       updatedAt: now,
@@ -468,7 +563,7 @@ async function applyScaricoPromessaPratica(
   },
   opts?: { ultimaLavorazione?: boolean }
 ) {
-  const praticaCorrente = await prisma.pratica.findUnique({
+  const praticaCorrente = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { codiceScarico: true },
   });
@@ -479,13 +574,15 @@ async function applyScaricoPromessaPratica(
     : null;
   const now = new Date();
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: {
       codiceScarico: input.codiceScarico,
       ...(codiceScaricoCambiato ? { codiceScaricoAt: now } : {}),
       ...(statoDaCodice ? { stato: statoDaCodice } : {}),
-      ...(input.codiceScarico === "PPC" ? { esitoContatto: "PROMESSA" } : {}),
+      ...(isCodicePromessaOperatore(input.codiceScarico || "")
+        ? { esitoContatto: "PROMESSA" }
+        : {}),
       ...(input.promessaAt ? { promessaAt: input.promessaAt } : {}),
       promessaImporto: input.isPromessa ? input.promessaImporto : null,
       updatedAt: now,
@@ -500,7 +597,7 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   const praticaId = String(formData.get("praticaId") || "");
   await assertPraticaEditable(user, praticaId);
 
-  const main = await prisma.pratica.findUnique({
+  const main = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { tenantId: true, mandanteId: true },
   });
@@ -509,11 +606,9 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   const nota = String(formData.get("nota") || "").trim();
   const codScaricoRaw = String(formData.get("codScarico") || "").trim();
   const codiceScarico = codScaricoRaw || null;
-  if (codiceScarico && !isCodiceScarico(codiceScarico)) {
-    fail("Codice scarico non valido");
-  }
+  await assertCodiceScaricoOperatoreValido(praticaId, codiceScarico);
 
-  const isPromessa = codiceScarico === "PPC";
+  const isPromessa = Boolean(codiceScarico && isCodicePromessaOperatore(codiceScarico));
   const promessaAt = isPromessa
     ? parseDateOnly(String(formData.get("promessaAt") || ""))
     : undefined;
@@ -538,7 +633,7 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   const lavorazione = isRuoloLavorazione(user.role);
 
   if (nota) {
-    await prisma.attivita.create({
+    await (await attivitaModel()).create({
       data: {
         praticaId,
         userId: user.id,
@@ -553,11 +648,14 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   });
 
   const collegateIds = (
-    await praticheStessoDebitoreIds(praticaId, "aperta")
+    await praticheStessoDebitoreIds(praticaId, "aperta", {
+      tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
+    })
   ).filter((id) => id !== praticaId);
 
   const collegate = collegateIds.length
-    ? await prisma.pratica.findMany({
+    ? await (await praticaModel()).findMany({
         where: {
           id: { in: collegateIds },
           tenantId: user.tenantId,
@@ -571,12 +669,12 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   for (const collegata of collegate) {
     if (isPraticaChiusa(collegata.stato)) continue;
     try {
-      await assertPraticaNotLockedByOther(user.id, collegata.id);
+      await assertPraticaNotLockedByOther(user, collegata.id);
     } catch {
       continue;
     }
 
-    await prisma.attivita.create({
+    await (await attivitaModel()).create({
       data: {
         praticaId: collegata.id,
         userId: user.id,
@@ -649,20 +747,20 @@ export async function addAttivitaMassivaAction(formData: FormData) {
       continue;
     }
     try {
-      await assertPraticaNotLockedByOther(user.id, praticaId);
+      await assertPraticaNotLockedByOther(user, praticaId);
     } catch {
       saltate.push(praticaId);
       continue;
     }
 
     if (fissata) {
-      await prisma.attivita.updateMany({
+      await (await attivitaModel()).updateMany({
         where: { praticaId, fissata: true },
         data: { fissata: false },
       });
     }
 
-    await prisma.attivita.create({
+    await (await attivitaModel()).create({
       data: {
         praticaId,
         userId: user.id,
@@ -673,7 +771,7 @@ export async function addAttivitaMassivaAction(formData: FormData) {
         bloccata: false,
       },
     });
-    await prisma.pratica.update({
+    await (await praticaModel()).update({
       where: { id: praticaId },
       data: { updatedAt: now },
     });
@@ -715,7 +813,7 @@ export async function addAttivitaMassivaAction(formData: FormData) {
 export async function updateAttivitaAction(formData: FormData) {
   const user = await requireWritableUser();
   const attivitaId = String(formData.get("attivitaId") || "");
-  const attivita = await prisma.attivita.findUnique({
+  const attivita = await (await attivitaModel()).findUnique({
     where: { id: attivitaId },
     select: { id: true, praticaId: true, bloccata: true },
   });
@@ -728,12 +826,12 @@ export async function updateAttivitaAction(formData: FormData) {
   const nota = String(formData.get("nota") || "").trim();
   if (!nota) fail("Inserisci il testo della nota");
 
-  await prisma.attivita.update({
+  await (await attivitaModel()).update({
     where: { id: attivitaId },
     data: { nota },
   });
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: attivita.praticaId },
     data: { updatedAt: new Date() },
   });
@@ -752,7 +850,7 @@ export async function updateAttivitaAction(formData: FormData) {
 export async function toggleFissaAttivitaAction(formData: FormData) {
   const user = await requireWritableUser();
   const attivitaId = String(formData.get("attivitaId") || "");
-  const attivita = await prisma.attivita.findUnique({
+  const attivita = await (await attivitaModel()).findUnique({
     where: { id: attivitaId },
     select: { id: true, praticaId: true, fissata: true, bloccata: true },
   });
@@ -764,20 +862,12 @@ export async function toggleFissaAttivitaAction(formData: FormData) {
   }
 
   const next = !attivita.fissata;
-  await prisma.$transaction([
-    prisma.attivita.updateMany({
-      where: { praticaId: attivita.praticaId, fissata: true },
-      data: { fissata: false },
-    }),
-    ...(next
-      ? [
-          prisma.attivita.update({
-            where: { id: attivita.id },
-            data: { fissata: true },
-          }),
-        ]
-      : []),
-  ]);
+  await toggleFissaAttivita(
+    { tenantId: user.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId },
+    attivita.id,
+    attivita.praticaId,
+    next
+  );
 
   await writeAudit({
     userId: user.id,
@@ -807,12 +897,12 @@ export async function updateContattoPraticaAction(formData: FormData) {
   const aggiornaCodice = formData.has("codScarico");
   const codScaricoRaw = String(formData.get("codScarico") || "").trim();
   const codiceScarico = codScaricoRaw || null;
-  if (aggiornaCodice && codiceScarico && !isCodiceScarico(codiceScarico)) {
-    fail("Codice scarico non valido");
+  if (aggiornaCodice) {
+    await assertCodiceScaricoOperatoreValido(praticaId, codiceScarico);
   }
 
   const isPromessa =
-    (aggiornaCodice && codiceScarico === "PPC") ||
+    (aggiornaCodice && codiceScarico && isCodicePromessaOperatore(codiceScarico)) ||
     (aggiornaEsito && esitoContatto === "PROMESSA");
 
   const promessaAt = isPromessa
@@ -834,7 +924,7 @@ export async function updateContattoPraticaAction(formData: FormData) {
     aggiornaCodice && codiceScarico ? statoDaCodiceScarico(codiceScarico) : null;
 
   const praticaCorrente = aggiornaCodice
-    ? await prisma.pratica.findUnique({
+    ? await (await praticaModel()).findUnique({
         where: { id: praticaId },
         select: { codiceScarico: true },
       })
@@ -843,7 +933,7 @@ export async function updateContattoPraticaAction(formData: FormData) {
     aggiornaCodice &&
     (praticaCorrente?.codiceScarico || null) !== (codiceScarico || null);
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: {
       ...(aggiornaEsito ? { esitoContatto } : {}),
@@ -854,7 +944,9 @@ export async function updateContattoPraticaAction(formData: FormData) {
             codiceScarico,
             ...(codiceScaricoCambiato ? { codiceScaricoAt: new Date() } : {}),
             ...(statoDaCodice ? { stato: statoDaCodice } : {}),
-            ...(codiceScarico === "PPC" ? { esitoContatto: "PROMESSA" } : {}),
+            ...(codiceScarico && isCodicePromessaOperatore(codiceScarico)
+              ? { esitoContatto: "PROMESSA" }
+              : {}),
           }
         : {}),
       ...(promessaAt ? { promessaAt } : {}),
@@ -866,7 +958,7 @@ export async function updateContattoPraticaAction(formData: FormData) {
     },
   });
   if (aggiornaMemo) {
-    await syncMessaggioAgenda({ praticaId, userId: user.id, memoAt });
+    await syncMessaggioAgenda({ praticaId, userId: user.id, tenantId: user.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId, memoAt });
   }
 
   const dettaglioParts = [
@@ -898,19 +990,21 @@ export async function salvaMemoAgendaAction(formData: FormData) {
   if (Number.isNaN(memoAt.getTime())) fail("Data/ora non valida");
   const nota = String(formData.get("nota") || "").trim();
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: { memoAt },
   });
   await syncMessaggioAgenda({
     praticaId,
     userId: user.id,
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
     memoAt,
     nota: nota || null,
   });
 
   if (nota) {
-    await prisma.attivita.create({
+    await (await attivitaModel()).create({
       data: {
         praticaId,
         userId: user.id,
@@ -925,7 +1019,7 @@ export async function salvaMemoAgendaAction(formData: FormData) {
       },
     });
     if (isRuoloLavorazione(user.role)) {
-      await prisma.pratica.update({
+      await (await praticaModel()).update({
         where: { id: praticaId },
         data: { ultimaLavorazioneAt: new Date() },
       });
@@ -950,11 +1044,11 @@ export async function clearMemoPraticaAction(formData: FormData) {
   const praticaId = String(formData.get("praticaId") || "");
   await assertPraticaEditable(user, praticaId);
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: { memoAt: null },
   });
-  await markMessaggiLetti(praticaId);
+  await markMessaggiLetti(praticaId, user.tenantId, user.tenantSlug ?? user.tenantId);
 
   await writeAudit({
     userId: user.id,
@@ -974,7 +1068,7 @@ export async function postponeMemoPraticaAction(formData: FormData) {
   const mode = String(formData.get("mode") || "sposta");
   await assertPraticaEditable(user, praticaId);
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     select: { memoAt: true },
   });
@@ -987,11 +1081,11 @@ export async function postponeMemoPraticaAction(formData: FormData) {
     next.setMinutes(next.getMinutes() + 30);
   }
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: { memoAt: next },
   });
-  await syncMessaggioAgenda({ praticaId, userId: user.id, memoAt: next });
+  await syncMessaggioAgenda({ praticaId, userId: user.id, tenantId: user.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId, memoAt: next });
 
   await writeAudit({
     userId: user.id,
@@ -1010,7 +1104,7 @@ export async function markMemoLettoAction(formData: FormData) {
   const praticaId = String(formData.get("praticaId") || "");
   await assertPraticaEditable(user, praticaId);
 
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     include: { debitore: true, mandante: true },
   });
@@ -1019,10 +1113,12 @@ export async function markMemoLettoAction(formData: FormData) {
   await syncMessaggioAgenda({
     praticaId,
     userId: user.id,
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
     memoAt: pratica.memoAt,
   });
-  await markMessaggiLetti(praticaId);
-  await prisma.pratica.update({
+  await markMessaggiLetti(praticaId, user.tenantId, user.tenantSlug ?? user.tenantId);
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: { memoAt: null },
   });
@@ -1055,7 +1151,7 @@ export async function sendMessaggioInternoAction(formData: FormData) {
 
   let destinatari: { id: string; name: string }[] = [];
   if (toRole === "ALL" || toRole === "OPERATOR" || toRole === "BACK_OFFICE") {
-    destinatari = await prisma.user.findMany({
+    destinatari = await usersDbFromUser(user).findMany({
       where: {
         tenantId: user.tenantId,
         active: true,
@@ -1068,7 +1164,7 @@ export async function sendMessaggioInternoAction(formData: FormData) {
   } else {
     if (!toUserId) fail("Seleziona un collega oppure un gruppo");
     if (toUserId === user.id) fail("Non puoi inviare un messaggio a te stesso");
-    const dest = await prisma.user.findFirst({
+    const dest = await usersDbFromUser(user).findFirst({
       where: { id: toUserId, tenantId: user.tenantId, active: true },
       select: { id: true, name: true },
     });
@@ -1076,17 +1172,17 @@ export async function sendMessaggioInternoAction(formData: FormData) {
     destinatari = [dest];
   }
 
-  await prisma.messaggioInterno.createMany({
-    data: destinatari.map((d) => ({
-      praticaId: collegata ? praticaId : null,
+  await messaggiInterniFromUser(user).createMany(resolveTenantSlug(user), user.tenantId,
+    destinatari.map((d) => ({
       fromUserId: user.id,
       toUserId: d.id,
+      praticaId: collegata ? praticaId : null,
       testo,
-    })),
-  });
+    }))
+  );
 
   if (collegata && praticaId) {
-    await prisma.attivita.create({
+    await (await attivitaModel()).create({
       data: {
         praticaId,
         userId: user.id,
@@ -1099,7 +1195,7 @@ export async function sendMessaggioInternoAction(formData: FormData) {
       },
     });
     const now = new Date();
-    await prisma.pratica.update({
+    await (await praticaModel()).update({
       where: { id: praticaId },
       data: {
         updatedAt: now,
@@ -1124,12 +1220,11 @@ export async function sendMessaggioInternoAction(formData: FormData) {
 export async function markMessaggioInternoLettoAction(formData: FormData) {
   const user = await requireWritableUser();
   const id = String(formData.get("messageId") || "");
-  const msg = await prisma.messaggioInterno.findUnique({ where: { id } });
+  const repo = messaggiInterniFromUser(user);
+  const tenantSlug = resolveTenantSlug(user);
+  const msg = await repo.getById(tenantSlug, user.tenantId, id);
   if (!msg || msg.toUserId !== user.id) fail("Messaggio non trovato");
-  await prisma.messaggioInterno.update({
-    where: { id },
-    data: { letto: true, lettoAt: new Date() },
-  });
+  await repo.markLetto(tenantSlug, user.tenantId, id, true);
   revalidatePath("/agenda");
   revalidatePath("/messaggi");
   if (msg.praticaId) revalidatePath(`/pratiche/${msg.praticaId}`);
@@ -1140,12 +1235,11 @@ export async function updateMessaggioInternoAction(formData: FormData) {
   const id = String(formData.get("messageId") || "");
   const testo = String(formData.get("testo") || "").trim();
   if (!testo) fail("Scrivi il messaggio");
-  const msg = await prisma.messaggioInterno.findUnique({ where: { id } });
+  const repo = messaggiInterniFromUser(user);
+  const tenantSlug = resolveTenantSlug(user);
+  const msg = await repo.getById(tenantSlug, user.tenantId, id);
   if (!msg || msg.fromUserId !== user.id) fail("Messaggio non trovato");
-  await prisma.messaggioInterno.update({
-    where: { id },
-    data: { testo, letto: false, lettoAt: null },
-  });
+  await repo.updateTesto(tenantSlug, user.tenantId, id, testo);
   await writeAudit({
     userId: user.id,
     action: "msg_interno_edit",
@@ -1161,9 +1255,11 @@ export async function updateMessaggioInternoAction(formData: FormData) {
 export async function deleteMessaggioInternoAction(formData: FormData) {
   const user = await requireWritableUser();
   const id = String(formData.get("messageId") || "");
-  const msg = await prisma.messaggioInterno.findUnique({ where: { id } });
+  const repo = messaggiInterniFromUser(user);
+  const tenantSlug = resolveTenantSlug(user);
+  const msg = await repo.getById(tenantSlug, user.tenantId, id);
   if (!msg || msg.fromUserId !== user.id) fail("Messaggio non trovato");
-  await prisma.messaggioInterno.delete({ where: { id } });
+  await repo.delete(tenantSlug, user.tenantId, id);
   await writeAudit({
     userId: user.id,
     action: "msg_interno_del",
@@ -1190,7 +1286,7 @@ export async function updatePraticaStatoAction(formData: FormData) {
     fail("Inserisci la data della promessa di pagamento");
   }
 
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: { stato, ...(promessaAt ? { promessaAt } : {}) },
   });
@@ -1236,7 +1332,7 @@ async function registraIncassoSuPratica(input: {
 }) {
   const { praticaId, userId } = input;
   if (input.importo <= 0) fail("Importo non valido");
-  const pratica = await prisma.pratica.findUnique({
+  const pratica = await (await praticaModel()).findUnique({
     where: { id: praticaId },
     include: {
       incassi: true,
@@ -1254,9 +1350,39 @@ async function registraIncassoSuPratica(input: {
   );
   const split = ripartiIncasso(input.importo, pratica, gia);
   const nuovoResiduo = Math.max(0, pratica.residuo - split.usato);
-  await prisma.$transaction(async (tx) => {
-    const incasso = await tx.incasso.create({
-      data: {
+  const user = await getCurrentUser();
+  if (!user) fail("Sessione richiesta");
+
+  let provvigioneInput: {
+    praticaId: string;
+    operatoreId: string;
+    baseImporto: number;
+    percentuale: number;
+    importo: number;
+  } | null = null;
+  if (pratica.assegnatarioId) {
+    const metodo = input.metodo || "bonifico";
+    const perimetro = perimetroPerNome(
+      parsePerimetri(pratica.mandante.perimetri),
+      pratica.numeroMandante
+    );
+    const pct = perimetro
+      ? resolveProvvigionePercentualeLato(perimetro.pagata, metodo, pratica.codiceScarico)
+      : resolveProvvigionePercentuale(pratica.mandante, metodo);
+    const prov = calcolaProvvigione(split.usato, pct);
+    provvigioneInput = {
+      praticaId,
+      operatoreId: pratica.assegnatarioId,
+      baseImporto: prov.baseImporto,
+      percentuale: prov.percentuale,
+      importo: prov.importo,
+    };
+  }
+
+  await registraIncassoWithSideEffects(
+    { tenantId: pratica.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId },
+    {
+      incasso: {
         praticaId,
         userId,
         importo: split.usato,
@@ -1269,40 +1395,13 @@ async function registraIncassoSuPratica(input: {
         data: input.data || new Date(),
         dataScadenza: input.dataScadenza ?? null,
       },
-    });
-    if (pratica.assegnatarioId) {
-      const metodo = input.metodo || "bonifico";
-      const perimetro = perimetroPerNome(
-        parsePerimetri(pratica.mandante.perimetri),
-        pratica.numeroMandante
-      );
-      const pct = perimetro
-        ? resolveProvvigionePercentualeLato(
-            perimetro.pagata,
-            metodo,
-            pratica.codiceScarico
-          )
-        : resolveProvvigionePercentuale(pratica.mandante, metodo);
-      const prov = calcolaProvvigione(split.usato, pct);
-      await tx.provvigione.create({
-        data: {
-          incassoId: incasso.id,
-          praticaId,
-          operatoreId: pratica.assegnatarioId,
-          baseImporto: prov.baseImporto,
-          percentuale: prov.percentuale,
-          importo: prov.importo,
-        },
-      });
-    }
-    await tx.pratica.update({
-      where: { id: praticaId },
-      data: {
+      provvigione: provvigioneInput,
+      praticaUpdate: {
         residuo: nuovoResiduo,
         stato: nuovoResiduo <= 0.009 ? "INCASSO" : pratica.stato,
       },
-    });
-  });
+    }
+  );
   await writeAudit({
     userId,
     action: "incasso",
@@ -1349,7 +1448,7 @@ export async function addFatturaAction(formData: FormData) {
   if (importo <= 0) fail("Importo non valido");
   if (!dataFattura || !dataScadenza) fail("Date fattura e scadenza obbligatorie");
 
-  await prisma.fattura.create({
+  await (await fatturaModel()).create({
     data: {
       praticaId,
       numero,
@@ -1378,13 +1477,13 @@ export async function createPianoAction(formData: FormData) {
   await assertPraticaEditable(user, praticaId);
   const nRate = Number(formData.get("nRate") || 0);
   const start = String(formData.get("primaScadenza") || "");
-  const pratica = await prisma.pratica.findUnique({ where: { id: praticaId } });
+  const pratica = await (await praticaModel()).findUnique({ where: { id: praticaId } });
   if (!pratica) fail("Pratica non trovata");
   if (nRate < 2 || nRate > 36 || !start) {
     fail("Indica da 2 a 36 rate e la prima scadenza");
   }
   const quota = Math.round((pratica.residuo / nRate) * 100) / 100;
-  await prisma.pianoRata.deleteMany({ where: { praticaId } });
+  await (await pianoRataModel()).deleteMany({ where: { praticaId } });
   const startDate = new Date(start);
   const rateData = Array.from({ length: nRate }, (_, i) => {
     const scadenza = new Date(startDate);
@@ -1395,10 +1494,14 @@ export async function createPianoAction(formData: FormData) {
         : quota;
     return { praticaId, numeroRata: i + 1, importo, scadenza };
   });
-  await Promise.all(
-    rateData.map((data) => prisma.pianoRata.create({ data }))
+  await createManyPianoRate(
+    {
+      tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
+    },
+    rateData
   );
-  await prisma.pratica.update({
+  await (await praticaModel()).update({
     where: { id: praticaId },
     data: { stato: "PIANO" },
   });
@@ -1422,7 +1525,7 @@ export async function addDocumentoAction(formData: FormData) {
   const nome = String(formData.get("nome") || "").trim();
   const tipo = String(formData.get("tipo") || "allegato");
   if (!nome) fail("Nome documento obbligatorio");
-  await prisma.documento.create({ data: { praticaId, nome, tipo } });
+  await (await documentoModel()).create({ data: { praticaId, nome, tipo } });
   await writeAudit({
     userId: user.id,
     action: "documento",
@@ -1445,7 +1548,7 @@ export async function createMandanteAction(formData: FormData) {
   const pec = String(formData.get("pec") || "").trim() || null;
   const perimetriRaw = String(formData.get("perimetri") || "").trim() || null;
   if (!codice || !ragioneSociale) fail("Acronimo interno e ragione sociale obbligatori");
-  const created = await prisma.mandante.create({
+  const created = await (await mandanteModel()).create({
     data: {
       tenantId: user.tenantId,
       codice,
@@ -1475,7 +1578,7 @@ export async function updateMandanteAction(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) fail("ID mandante mancante");
 
-  const existing = await prisma.mandante.findFirst({
+  const existing = await (await mandanteModel()).findFirst({
     where: { id, tenantId: user.tenantId },
     select: { id: true, perimetri: true },
   });
@@ -1501,7 +1604,7 @@ export async function updateMandanteAction(formData: FormData) {
 
   if (!ragioneSociale) fail("Ragione sociale obbligatoria");
 
-  await prisma.mandante.update({
+  await (await mandanteModel()).update({
     where: { id },
     data: {
       ragioneSociale,
@@ -1546,7 +1649,7 @@ export async function deleteMandanteAction(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) fail("ID mandante mancante");
 
-  const existing = await prisma.mandante.findFirst({
+  const existing = await (await mandanteModel()).findFirst({
     where: { id, tenantId: user.tenantId },
     select: {
       id: true,
@@ -1563,7 +1666,7 @@ export async function deleteMandanteAction(formData: FormData) {
     );
   }
 
-  await prisma.mandante.delete({ where: { id } });
+  await (await mandanteModel()).delete({ where: { id } });
 
   await writeAudit({
     userId: user.id,
@@ -1590,7 +1693,7 @@ export async function createUserAction(formData: FormData) {
   const complexityErr = validatePasswordComplexity(password);
   if (complexityErr) fail(complexityErr);
   const passwordHash = await bcrypt.hash(password, 10);
-  const created = await prisma.user.create({
+  const created = await usersDbFromUser(actor).create({
     data: {
       tenantId: actor.tenantId,
       email,
@@ -1614,7 +1717,7 @@ export async function createUserAction(formData: FormData) {
 
 export async function importCsvAction(formData: FormData) {
   const user = await requireWritablePermission("import:run");
-  const contesto = await parseImportContesto(formData, user.tenantId);
+  const contesto = await parseImportContesto(formData, user.tenantId, user.tenantSlug ?? user.tenantId);
   if ("error" in contesto) return { error: contesto.error };
 
   const file = formData.get("file");
@@ -1640,190 +1743,54 @@ export async function importCsvAction(formData: FormData) {
 
   const fileName = file instanceof File ? file.name : null;
 
-  const existing = await prisma.importBatch.findFirst({
-    where: {
-      tenantId: user.tenantId,
-      tipo: "PRATICHE",
-      mandanteId,
-      perimetro,
-      lotto,
-    },
-    orderBy: { createdAt: "desc" },
+  const ctx = await initPraticheImportBatch({
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
+    userId: user.id,
+    userName: user.name,
+    mandanteId,
+    mandanteCodice,
+    perimetro,
+    lotto,
+    affidoIl,
+    scadenzaMandato,
+    fileName,
   });
-
-  const isIntegrazione = Boolean(existing);
-  const batch =
-    existing ??
-    (await prisma.importBatch.create({
-      data: {
-        tenantId: user.tenantId,
-        tipo: "PRATICHE",
-        mandanteId,
-        mandanteCodice,
-        perimetro,
-        lotto,
-        affidoIl,
-        scadenzaMandato: scadenzaMandato ?? undefined,
-        fileName,
-        nPratiche: 0,
-        createdById: user.id,
-        createdByName: user.name,
-      },
-    }));
 
   let created = 0;
   let updated = 0;
   let skipped = 0;
   let maxScadenzaCsv: Date | null = null;
 
-  const existingPratiche: ExistingPraticaImport[] = isIntegrazione
-    ? (
-        await prisma.pratica.findMany({
-          where: importBatchPraticheWhere(user.tenantId, {
-            mandanteId,
-            lotto,
-            affidoIl,
-          }),
-          select: importBatchPraticaSelectForIndex,
-        })
-      ).map(toExistingPraticaImport)
-    : [];
-
-  const index = new ImportPraticaIndex(existingPratiche);
-
-  for (const line of lines.slice(1)) {
-    const cols = line.split(delim);
-    const row = parseCsvPraticaRow(cols, header, lotto);
-    if (!row) {
-      skipped += 1;
-      continue;
-    }
-
-    if (row.scadenza && (!maxScadenzaCsv || row.scadenza.getTime() > maxScadenzaCsv.getTime())) {
-      maxScadenzaCsv = row.scadenza;
-    }
-
-    const match = isIntegrazione ? index.find(row) : null;
-
-    if (match) {
-      await prisma.debitore.update({
-        where: { id: match.debitoreId },
-        data: debitoreUpdateFromCsv(row),
-      });
-      await prisma.pratica.update({
-        where: { id: match.id },
-        data: {
-          ...praticaUpdateFromCsv(row, match),
-          importBatchId: batch.id,
-        },
-      });
-      updated += 1;
-      continue;
-    }
-
-    const debitore = await prisma.debitore.create({
-      data: {
-        tenantId: user.tenantId,
-        nome: row.nome,
-        cognome: row.cognome,
-        codiceFiscale: row.cf,
-        telefono: row.telefono,
-        citta: row.citta,
-        indirizzo: row.indirizzo,
-        cap: row.cap,
-        provincia: row.provincia,
-      },
-    });
-    const pratica = await prisma.pratica.create({
-      data: {
-        tenantId: user.tenantId,
-        numero: await nextNumero(user.tenantId),
-        mandanteId,
-        debitoreId: debitore.id,
-        numeroMandante: row.lottoRiga,
-        contratto: row.contratto,
-        commessa: row.commessa,
-        dataAffido: affidoIl,
-        scadenza: row.scadenza,
-        capitale: row.capitale,
-        interessi: row.interessi,
-        spese: row.spese,
-        speseRecupero: row.speseRecupero,
-        residuo: row.residuo,
-        importoRata: row.importoRata,
-        rateArretrate: row.rateArretrate,
-        nettoDaPagare: row.nettoDaPagare,
-        stato: row.statoPratica,
-        importBatchId: batch.id,
-      },
-    });
-    if (isIntegrazione) {
-      index.register(
-        {
-          id: pratica.id,
-          debitoreId: debitore.id,
-          contratto: row.contratto,
-          commessa: row.commessa,
-          stato: row.statoPratica,
-          codiceScarico: null,
-          note: null,
-          debitore: { codiceFiscale: row.cf },
-        },
-        row
-      );
-    }
-    created += 1;
-  }
-
-  const imported = created + updated;
-  if (imported === 0) {
-    if (!isIntegrazione) {
-      await prisma.importBatch.delete({ where: { id: batch.id } }).catch(() => undefined);
-    }
-  } else {
-    const praticheBatch = await prisma.pratica.findMany({
-      where: importBatchPraticheWhere(user.tenantId, {
-        mandanteId,
-        lotto,
-        affidoIl,
-      }),
-      select: { id: true, importBatchId: true },
-    });
-    for (const p of praticheBatch) {
-      if (p.importBatchId !== batch.id) {
-        await prisma.pratica
-          .update({ where: { id: p.id }, data: { importBatchId: batch.id } })
-          .catch(() => undefined);
-      }
-    }
-    const totale = praticheBatch.length;
-    const scadenzaToSave =
-      scadenzaMandato ??
-      maxScadenzaCsv ??
-      (batch as { scadenzaMandato?: Date | null }).scadenzaMandato ??
-      null;
-    await prisma.importBatch.update({
-      where: { id: batch.id },
-      data: {
-        nPratiche: totale,
-        ...(fileName ? { fileName } : {}),
-        ...(scadenzaToSave ? { scadenzaMandato: scadenzaToSave } : {}),
-      },
-    });
-  }
-
-  if (imported > 0) {
-    await writeAudit({
-      userId: user.id,
+  const chunkSize = importPraticheChunkSize();
+  for (let i = 1; i < lines.length; i += chunkSize) {
+    const chunkLines = lines.slice(i, i + chunkSize);
+    const res = await processPraticheImportChunk({
       tenantId: user.tenantId,
-      action: isIntegrazione ? "import_integrazione" : "import",
-      entity: "pratica",
-      entityId: batch.id,
-      dettaglio: isIntegrazione
-        ? `Integrazione +${created} nuove · ${updated} aggiornate · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`
-        : `${created} pratiche · ${mandanteCodice} · perimetro ${perimetro} · lotto ${lotto}`,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
+      ctx,
+      header,
+      delim,
+      lines: chunkLines,
     });
+    created += res.created;
+    updated += res.updated;
+    skipped += res.skipped;
+    if (res.maxScadenza) {
+      const d = new Date(res.maxScadenza);
+      if (!maxScadenzaCsv || d.getTime() > maxScadenzaCsv.getTime()) maxScadenzaCsv = d;
+    }
   }
+
+  const { imported, totale } = await finalizePraticheImport({
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug ?? user.tenantId,
+    userId: user.id,
+    ctx,
+    totals: { created, updated, skipped },
+    maxScadenzaCsv,
+  });
+
   revalidatePath("/pratiche");
   revalidatePath("/import");
   if (imported === 0) {
@@ -1832,24 +1799,25 @@ export async function importCsvAction(formData: FormData) {
     };
   }
   return {
-    ok: isIntegrazione
+    ok: ctx.isIntegrazione
       ? `Integrazione completata sul lotto ${lotto}.`
       : `Import completato sul lotto ${lotto}.`,
     importSummary: {
-      isIntegrazione,
+      isIntegrazione: ctx.isIntegrazione,
       lotto,
       mandanteCodice,
       perimetro,
       created,
       updated,
       skipped,
+      totale,
     },
   };
 }
 
 export async function importIncassiCsvAction(formData: FormData) {
   const user = await requireWritablePermission("incassi:create");
-  const contesto = await parseImportContesto(formData, user.tenantId);
+  const contesto = await parseImportContesto(formData, user.tenantId, user.tenantSlug ?? user.tenantId);
   if ("error" in contesto) return { error: contesto.error };
 
   const file = formData.get("file");
@@ -1880,7 +1848,7 @@ export async function importIncassiCsvAction(formData: FormData) {
       errori.push(`Riga ${i + 2}: numero o importo non validi`);
       continue;
     }
-    const pratica = await prisma.pratica.findFirst({
+    const pratica = await (await praticaModel()).findFirst({
       where: {
         tenantId: user.tenantId,
         mandanteId,
@@ -1918,6 +1886,7 @@ export async function importIncassiCsvAction(formData: FormData) {
     const res = await notificaSanzioneIncassoMassivo({
       fromUserId: user.id,
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
       praticaIds: praticaIdsOk,
     });
     notificati = res.notificati;
