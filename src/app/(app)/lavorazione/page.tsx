@@ -22,6 +22,10 @@ import { parsePerimetriList } from "@/lib/mandantePerimetri";
 import { elencoPerimetriGruppoConfig } from "@/lib/affidiPerimetro";
 import { formatDataIso, parseDataIso } from "@/lib/lavorateOggi";
 import { PageHeader } from "@/components/ui";
+import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_PAGE_SELECT_LG_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 import { LavorazioneSuggeritaBar } from "@/components/lavorazione/LavorazioneSuggeritaBar";
 import { LavorazionePianoNav } from "@/components/lavorazione/LavorazionePianoNav";
 import { LavorazionePianiSalvati } from "@/components/lavorazione/LavorazionePianiSalvati";
@@ -313,7 +317,7 @@ export default async function LavorazionePage({
             <select
               name="gruppo"
               defaultValue={gruppoId || supervisorId}
-              className="h-10 min-w-[200px] rounded-lg border border-[var(--line)] px-3 text-sm"
+              className={`min-w-[200px] ${FILTRI_PAGE_SELECT_LG_CLASS}`}
             >
               {supervisori.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -322,7 +326,7 @@ export default async function LavorazionePage({
               ))}
             </select>
           </label>
-          <button className="h-10 rounded-lg border border-[var(--line)] bg-white px-4 text-sm">
+          <button type="submit" className={`h-10 ${FILTRI_APPLY_BUTTON_CLASS}`}>
             Filtra
           </button>
         </form>

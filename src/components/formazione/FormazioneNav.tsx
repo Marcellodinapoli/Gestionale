@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { useFormazioneIntro } from "@/components/formazione/FormazioneIntro";
+import { navigateBack } from "@/lib/navBack";
 
 const BASE_ITEMS = [
   {
@@ -69,6 +70,7 @@ function collaboratorNavBack(pathname: string): string | null {
 
 export function FormazioneNav({ canMonitor = false }: { canMonitor?: boolean }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { openIntro } = useFormazioneIntro();
   const courseDetail = isCourseDetail(pathname);
   const collaboratorBackHref = collaboratorNavBack(pathname);
@@ -83,37 +85,43 @@ export function FormazioneNav({ canMonitor = false }: { canMonitor?: boolean }) 
             const showBack =
               (href === "/formazione/corsi" && courseDetail) ||
               (href === "/formazione/collaboratori" && collaboratorBackHref != null);
-            const linkHref =
+            const fallbackHref =
               href === "/formazione/corsi" && courseDetail
                 ? "/formazione/corsi"
                 : href === "/formazione/collaboratori" && collaboratorBackHref
                   ? collaboratorBackHref
                   : href;
-            const NavIcon = showBack ? ArrowLeft : Icon;
-            const backTitle =
-              href === "/formazione/collaboratori" && collaboratorBackHref
-                ? collaboratorBackHref === "/formazione/collaboratori"
-                  ? "Torna a Collaboratori"
-                  : "Torna ai progressi"
-                : "Torna a Corsi";
+            const itemClass = `-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
+              active
+                ? "border-[#FB8C00] text-[var(--navy)]"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
+            }`;
+
+            if (showBack && active) {
+              return (
+                <button
+                  key={href}
+                  type="button"
+                  onClick={() => navigateBack(router, fallbackHref)}
+                  title="Torna indietro"
+                  aria-label={`Indietro · ${label}`}
+                  className={itemClass}
+                >
+                  <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" />
+                  {label}
+                </button>
+              );
+            }
 
             return (
               <Link
                 key={href}
-                href={linkHref}
-                title={showBack ? backTitle : label}
-                aria-label={showBack ? backTitle : label}
-                className={`-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
-                  active
-                    ? "border-[#FB8C00] text-[var(--navy)]"
-                    : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
-                }`}
+                href={href}
+                title={label}
+                aria-label={label}
+                className={itemClass}
               >
-                <NavIcon
-                  className={`h-4 w-4 shrink-0 ${
-                    showBack ? "text-[var(--accent,#0e7490)]" : "opacity-80"
-                  }`}
-                />
+                <Icon className="h-4 w-4 shrink-0 opacity-80" />
                 {label}
               </Link>
             );

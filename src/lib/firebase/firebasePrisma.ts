@@ -13,6 +13,7 @@ import {
   PRISMA_DELEGATE_TO_MODEL,
   collectionForOpsModel,
 } from "@/lib/firebase/opsCollections";
+import { stringsEqualInsensitive } from "@/lib/filtriTestoWhere";
 import {
   collectionCacheKey,
   docCacheKey,
@@ -75,7 +76,9 @@ function matchScalar(actual: unknown, expected: unknown): boolean {
   }
   if (typeof expected === "object" && expected !== null && !Array.isArray(expected)) {
     const e = expected as Doc;
-    if ("equals" in e) return matchScalar(actual, e.equals);
+    if ("equals" in e) {
+      return stringsEqualInsensitive(actual, e.equals);
+    }
     if ("not" in e) {
       const n = e.not;
       if (n === null) return actual != null;
@@ -114,7 +117,7 @@ function matchScalar(actual: unknown, expected: unknown): boolean {
     }
     return false;
   }
-  return actual === expected;
+  return stringsEqualInsensitive(actual, expected);
 }
 
 async function listTenantIds(db: ReturnType<typeof getFirebaseFirestore>): Promise<string[]> {

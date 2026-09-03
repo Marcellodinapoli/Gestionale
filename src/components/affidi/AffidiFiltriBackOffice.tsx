@@ -7,6 +7,7 @@ import {
   type AffidiNavParams,
 } from "@/components/affidi/AffidiCaricoOperatori";
 import type { PerimetroGruppoRef } from "@/lib/affidiPerimetro";
+import { FILTRI_PAGE_SELECT_CLASS } from "@/components/filtri/filtriFieldStyles";
 
 export function AffidiFiltriBackOffice({
   mandanti,
@@ -51,7 +52,7 @@ export function AffidiFiltriBackOffice({
               coda: codaParsed,
             });
           }}
-          className="h-9 min-w-[10rem] rounded-lg border border-[var(--line)] bg-white px-2 text-sm"
+          className={`min-w-[10rem] ${FILTRI_PAGE_SELECT_CLASS}`}
         >
           <option value="">Tutti i mandati</option>
           {mandanti.map((m) => (
@@ -82,7 +83,7 @@ export function AffidiFiltriBackOffice({
               coda: codaParsed,
             });
           }}
-          className="h-9 min-w-[10rem] rounded-lg border border-[var(--line)] bg-white px-2 text-sm disabled:opacity-50"
+          className={`min-w-[10rem] ${FILTRI_PAGE_SELECT_CLASS} disabled:opacity-50`}
         >
           <option value="">Tutti i perimetri</option>
           {perimetriMandato.map((p) => (
@@ -108,7 +109,7 @@ export function AffidiFiltriBackOffice({
               coda: codaParsed,
             });
           }}
-          className="h-9 min-w-[10rem] rounded-lg border border-[var(--line)] bg-white px-2 text-sm"
+          className={`min-w-[10rem] ${FILTRI_PAGE_SELECT_CLASS}`}
         >
           <option value="">Tutti gli operatori</option>
           {operatori.map((o) => (

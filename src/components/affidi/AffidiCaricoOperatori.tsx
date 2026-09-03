@@ -1,6 +1,11 @@
 import Link from "next/link";
-import { euro } from "@/lib/domainFormat";
 import { isPraticaChiusa } from "@/lib/praticaCollegata";
+import {
+  CODICI_SCARICO,
+  CODICE_SCARICO_LABELS,
+  type CodiceScarico,
+} from "@/lib/scarico";
+import type { CodiciScaricoOperatore } from "@/lib/homeKpi/codiciScaricoAdmin";
 
 export const CODE_LAVORAZIONE = [
   { key: "AFFIDATA", label: "Affidate" },
@@ -8,6 +13,8 @@ export const CODE_LAVORAZIONE = [
   { key: "PROMESSA", label: "Promessa" },
   { key: "PIANO", label: "Piano" },
 ] as const;
+
+const COL_CARICO = "IN_LAVORAZIONE" as const;
 
 export type CodaAffidi =
   | "aperte"
@@ -35,15 +42,23 @@ export type AffidiSezione = "affida";
 export type AffidiNavParams = {
   operatore?: string;
   coda?: CodaAffidi;
+  /** Filtri monitoraggio / elenco pratiche in basso */
   mandato?: string;
   perimetro?: string;
+  /** Filtri incassi e carico operatori */
+  caricoMandato?: string;
+  caricoPerimetro?: string;
+  caricoMese?: string;
   sezione?: AffidiSezione;
 };
 
 export function buildAffidiHref(params?: AffidiNavParams): string {
   const sp = new URLSearchParams();
   if (params?.mandato) sp.set("mandato", params.mandato);
-  if (params?.perimetro) sp.set("perimetro", encodeURIComponent(params.perimetro));
+  if (params?.perimetro) sp.set("perimetro", params.perimetro);
+  if (params?.caricoMandato) sp.set("caricoMandato", params.caricoMandato);
+  if (params?.caricoPerimetro) sp.set("caricoPerimetro", params.caricoPerimetro);
+  if (params?.caricoMese) sp.set("caricoMese", params.caricoMese);
   if (params?.operatore) sp.set("operatore", params.operatore);
   if (params?.coda) sp.set("coda", params.coda);
   if (params?.sezione) sp.set("sezione", params.sezione);
@@ -130,12 +145,43 @@ export type OperatoreCarico = {
   scadute: number;
   residuo: number;
   perStato: Record<string, number>;
+  scarichi?: CodiciScaricoOperatore;
+  incassatoMese?: number;
+  guadagnoMese?: number;
 };
+
+function ScaricoCell({ oggi, mese }: { oggi: number; mese: number }) {
+  return (
+    <span className="tabular-nums">
+      <span className={oggi ? "" : "text-[var(--muted)]"}>{oggi}</span>
+      <span className="text-[var(--muted)]"> / </span>
+      <span className={mese ? "font-semibold text-[var(--navy)]" : "text-[var(--muted)]"}>
+        {mese}
+      </span>
+    </span>
+  );
+}
+
+function valoriScarico(
+  scarichi: CodiciScaricoOperatore | undefined,
+  codice: CodiceScarico
+) {
+  return scarichi?.[codice] ?? { oggi: 0, mese: 0 };
+}
+
+function emptyScarichiOperatore(): CodiciScaricoOperatore {
+  return Object.fromEntries(
+    CODICI_SCARICO.map((codice) => [codice, { oggi: 0, mese: 0 }])
+  ) as CodiciScaricoOperatore;
+}
 
 export function buildCaricoOperatori(
   operatori: Array<{ id: string; name: string; role: string }>,
   pratiche: PraticaAffido[],
-  oggi = new Date()
+  oggi = new Date(),
+  scarichiPerOperatore?: Record<string, CodiciScaricoOperatore>,
+  incassatoPerOperatore?: Record<string, number>,
+  guadagnoPerOperatore?: Record<string, number>
 ): OperatoreCarico[] {
   return operatori.map((op) => {
     const sue = pratiche.filter((p) => p.assegnatarioId === op.id);
@@ -153,6 +199,15 @@ export function buildCaricoOperatori(
       scadute: aperte.filter((p) => p.scadenza && p.scadenza <= oggi).length,
       residuo: aperte.reduce((s, p) => s + p.residuo, 0),
       perStato,
+      ...(scarichiPerOperatore
+        ? { scarichi: scarichiPerOperatore[op.id] ?? emptyScarichiOperatore() }
+        : {}),
+      ...(incassatoPerOperatore
+        ? { incassatoMese: incassatoPerOperatore[op.id] ?? 0 }
+        : {}),
+      ...(guadagnoPerOperatore
+        ? { guadagnoMese: guadagnoPerOperatore[op.id] ?? 0 }
+        : {}),
     };
   });
 }
@@ -162,35 +217,58 @@ export function AffidiCaricoOperatori({
   selezionatoId,
   coda,
   nav,
+  meseLabel,
+  scarichiGruppo,
 }: {
   carico: OperatoreCarico[];
   selezionatoId?: string;
   coda?: CodaAffidi;
-  nav?: Pick<AffidiNavParams, "mandato" | "perimetro">;
+  nav?: Pick<
+    AffidiNavParams,
+    "mandato" | "perimetro" | "caricoMandato" | "caricoPerimetro" | "caricoMese" | "operatore" | "coda"
+  >;
+  meseLabel?: string;
+  scarichiGruppo?: CodiciScaricoOperatore;
 }) {
+  const mostraScarichi = Boolean(scarichiGruppo) || carico.some((o) => o.scarichi);
   const href = (operatore?: string, codaKey?: CodaAffidi) =>
     buildAffidiHref({ ...nav, operatore, coda: codaKey });
-  const tot = (key: string) => carico.reduce((s, o) => s + (o.perStato[key] || 0), 0);
-  const totAperte = carico.reduce((s, o) => s + o.totAperte, 0);
-  const totScadute = carico.reduce((s, o) => s + o.scadute, 0);
-  const totResiduo = carico.reduce((s, o) => s + o.residuo, 0);
-  const totChiuse = carico.reduce((s, o) => s + o.totChiuse, 0);
+  const totInLavorazione = carico.reduce(
+    (s, o) => s + (o.perStato[COL_CARICO] || 0),
+    0
+  );
+  const totScarico = (codice: CodiceScarico) => {
+    if (scarichiGruppo) return scarichiGruppo[codice] ?? { oggi: 0, mese: 0 };
+    return carico.reduce(
+      (acc, o) => {
+        const v = valoriScarico(o.scarichi, codice);
+        return { oggi: acc.oggi + v.oggi, mese: acc.mese + v.mese };
+      },
+      { oggi: 0, mese: 0 }
+    );
+  };
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-sm">
+      <table className="w-full min-w-[480px] text-sm">
         <thead className="text-left text-[var(--muted)]">
           <tr>
             <th className="py-2">Operatore</th>
-            <th className="text-right">Aperte</th>
-            {CODE_LAVORAZIONE.map((c) => (
-              <th key={c.key} className="text-right">
-                {c.label}
-              </th>
-            ))}
-            <th className="text-right">Scadute</th>
-            <th className="text-right">Residuo</th>
-            <th className="text-right">Chiuse</th>
+            <th className="text-right">In lavorazione</th>
+            {mostraScarichi
+              ? CODICI_SCARICO.map((codice) => (
+                  <th
+                    key={codice}
+                    className="text-right"
+                    title={CODICE_SCARICO_LABELS[codice]}
+                  >
+                    <span className="block font-mono">{codice}</span>
+                    <span className="text-[9px] font-normal normal-case">
+                      oggi / {meseLabel ?? "mese"}
+                    </span>
+                  </th>
+                ))
+              : null}
           </tr>
         </thead>
         <tbody>
@@ -213,49 +291,23 @@ export function AffidiCaricoOperatori({
                     <span className="ml-1 text-[10px] text-[var(--muted)]">supervisor</span>
                   ) : null}
                 </td>
-                <td className="text-right font-semibold">
-                  <CountLink
-                    n={o.totAperte}
-                    href={href(o.id, "aperte")}
-                    active={onOp && coda === "aperte"}
-                  />
-                </td>
-                {CODE_LAVORAZIONE.map((c) => (
-                  <td key={c.key} className="text-right">
-                    <CountLink
-                      n={o.perStato[c.key] || 0}
-                      href={href(o.id, c.key)}
-                      active={onOp && coda === c.key}
-                    />
-                  </td>
-                ))}
                 <td className="text-right">
                   <CountLink
-                    n={o.scadute}
-                    href={href(o.id, "scadute")}
-                    active={onOp && coda === "scadute"}
+                    n={o.perStato[COL_CARICO] || 0}
+                    href={href(o.id, COL_CARICO)}
+                    active={onOp && coda === COL_CARICO}
                   />
                 </td>
-                <td className="text-right">
-                  {o.totAperte ? (
-                    <Link
-                      href={href(o.id, "aperte")}
-                      className={`underline ${onOp && coda === "aperte" ? "font-bold text-[var(--navy)]" : "text-[var(--accent)]"}`}
-                    >
-                      {euro(o.residuo)}
-                    </Link>
-                  ) : (
-                    euro(o.residuo)
-                  )}
-                </td>
-                <td className="text-right">
-                  <CountLink
-                    n={o.totChiuse}
-                    href={href(o.id, "chiuse")}
-                    active={onOp && coda === "chiuse"}
-                    muted
-                  />
-                </td>
+                {mostraScarichi
+                  ? CODICI_SCARICO.map((codice) => {
+                      const v = valoriScarico(o.scarichi, codice);
+                      return (
+                        <td key={codice} className="text-right text-xs">
+                          <ScaricoCell oggi={v.oggi} mese={v.mese} />
+                        </td>
+                      );
+                    })
+                  : null}
               </tr>
             );
           })}
@@ -267,40 +319,22 @@ export function AffidiCaricoOperatori({
               </Link>
             </td>
             <td className="text-right">
-              <CountLink n={totAperte} href={href(undefined, "aperte")} active={!selezionatoId && coda === "aperte"} />
-            </td>
-            {CODE_LAVORAZIONE.map((c) => (
-              <td key={c.key} className="text-right">
-                <CountLink
-                  n={tot(c.key)}
-                  href={href(undefined, c.key)}
-                  active={!selezionatoId && coda === c.key}
-                />
-              </td>
-            ))}
-            <td className="text-right">
-              <CountLink n={totScadute} href={href(undefined, "scadute")} active={!selezionatoId && coda === "scadute"} />
-            </td>
-            <td className="text-right">
-              {totAperte ? (
-                <Link
-                  href={href(undefined, "aperte")}
-                  className={`underline ${!selezionatoId && coda === "aperte" ? "font-bold text-[var(--navy)]" : "text-[var(--accent)]"}`}
-                >
-                  {euro(totResiduo)}
-                </Link>
-              ) : (
-                euro(totResiduo)
-              )}
-            </td>
-            <td className="text-right">
               <CountLink
-                n={totChiuse}
-                href={href(undefined, "chiuse")}
-                active={!selezionatoId && coda === "chiuse"}
-                muted
+                n={totInLavorazione}
+                href={href(undefined, COL_CARICO)}
+                active={!selezionatoId && coda === COL_CARICO}
               />
             </td>
+            {mostraScarichi
+              ? CODICI_SCARICO.map((codice) => {
+                  const v = totScarico(codice);
+                  return (
+                    <td key={codice} className="text-right text-xs">
+                      <ScaricoCell oggi={v.oggi} mese={v.mese} />
+                    </td>
+                  );
+                })
+              : null}
           </tr>
           ) : null}
         </tbody>

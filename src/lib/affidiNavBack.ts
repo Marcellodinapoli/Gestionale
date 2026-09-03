@@ -22,6 +22,9 @@ function paramsFromSearch(sp: URLSearchParams): AffidiNavParams {
   return {
     mandato: sp.get("mandato") || undefined,
     perimetro,
+    caricoMandato: sp.get("caricoMandato") || undefined,
+    caricoPerimetro: sp.get("caricoPerimetro") || undefined,
+    caricoMese: sp.get("caricoMese") || undefined,
     operatore: sp.get("operatore") || undefined,
     coda: parseCodaAffidi(sp.get("coda")),
     sezione: sp.get("sezione") === "affida" ? "affida" : undefined,

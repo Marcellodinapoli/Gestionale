@@ -10,6 +10,11 @@ import { isManutenzione } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
 import { PlayerRegistrazione } from "@/components/report/PlayerRegistrazione";
 import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_PAGE_INPUT_CLASS,
+  FILTRI_PAGE_SELECT_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
+import {
   direzioneChiamataLabel,
   formatDurata,
 } from "@/lib/registrazioneAudio";
@@ -101,7 +106,7 @@ export default async function ReportPage({
               name="q"
               defaultValue={query}
               placeholder="Pratica, debitore, operatore"
-              className="h-9 w-52 rounded-lg border border-[var(--line)] px-2 text-sm"
+              className={`w-52 ${FILTRI_PAGE_INPUT_CLASS}`}
             />
           </label>
           <label className="text-xs">
@@ -109,7 +114,7 @@ export default async function ReportPage({
             <select
               name="operatore"
               defaultValue={operatore || ""}
-              className="h-9 min-w-[160px] rounded-lg border border-[var(--line)] px-2 text-sm"
+              className={FILTRI_PAGE_SELECT_CLASS}
             >
               <option value="">
                 {user.role === "BACK_OFFICE"
@@ -154,7 +159,7 @@ export default async function ReportPage({
               type="date"
               name="da"
               defaultValue={da ?? (isSupervisor ? oggi : "")}
-              className="h-9 rounded-lg border border-[var(--line)] px-2 text-sm"
+              className={FILTRI_PAGE_INPUT_CLASS}
             />
           </label>
           <label className="text-xs">
@@ -163,13 +168,10 @@ export default async function ReportPage({
               type="date"
               name="a"
               defaultValue={a ?? (isSupervisor ? oggi : "")}
-              className="h-9 rounded-lg border border-[var(--line)] px-2 text-sm"
+              className={FILTRI_PAGE_INPUT_CLASS}
             />
           </label>
-          <button
-            type="submit"
-            className="h-9 rounded-lg bg-[var(--navy)] px-3 text-sm text-white"
-          >
+          <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
             Filtra
           </button>
         </form>

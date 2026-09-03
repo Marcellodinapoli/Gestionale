@@ -14,6 +14,8 @@ export type HomeSearchParams = {
   lavorateData?: string;
   incMandante?: string;
   incPerimetro?: string;
+  incMese?: string;
+  produttivita?: string;
   gruppo?: string;
   sede?: string;
 };
@@ -117,6 +119,8 @@ export async function buildHomeKpiContext(
     lavorateDate,
     incMandante: sp.incMandante,
     incPerimetro: sp.incPerimetro,
+    incMese: sp.incMese,
+    includeProduttivita: sp.produttivita === "1",
     scope,
     incassiScope,
     includeAdmin: user.role === "ADMIN",

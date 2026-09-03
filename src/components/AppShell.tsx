@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Briefcase,
@@ -17,6 +17,7 @@ import {
   LogOut,
   Menu,
   Phone,
+  PhoneForwarded,
   ScrollText,
   Shield,
   Users,
@@ -46,24 +47,13 @@ import {
 } from "@/components/layout/PraticaHeaderSlot";
 import { ROLE_LABELS, can, canManageSedi, isFormazioneOnly, type SessionUser } from "@/lib/permissions";
 import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
+import { navigateBack } from "@/lib/navBack";
+import { labelForNavBackHref, navBackDisplayLabel } from "@/lib/navBackLabel";
 
 const PRATICHE_BACK_KEY = "credixa:pratiche-back";
 
 function isPratichePath(pathname: string) {
   return pathname === "/pratiche" || pathname.startsWith("/pratiche/");
-}
-
-function sectionLabelFromHref(href: string) {
-  try {
-    const path = href.startsWith("http") ? new URL(href).pathname : href.split("?")[0] || "/";
-    if (path === "/") return "Home";
-    const hit = [...MAIN_LINKS, ...ADMIN_LINKS].find(
-      (l) => path === l.href || path.startsWith(`${l.href}/`)
-    );
-    return hit?.label || "pagina precedente";
-  } catch {
-    return "pagina precedente";
-  }
 }
 
 type NavLink = {
@@ -128,6 +118,12 @@ const MAIN_LINKS: NavLink[] = [
     label: "Lavorazione",
     icon: ClipboardList,
     show: (u) => !isFormazioneOnly(u) && can(u, "lavorazione:view"),
+  },
+  {
+    href: "/predictive-dialer",
+    label: "Dialer",
+    icon: PhoneForwarded,
+    show: (u) => !isFormazioneOnly(u) && can(u, "dialer:operate"),
   },
   { href: "/account", label: "Account", icon: UserCircle, show: () => true },
   { href: "/formazione/progressi", label: "Formazione", icon: GraduationCap, show: (u) => can(u, "formazione:view") },
@@ -208,33 +204,48 @@ function NavItem({
   backNavHref?: string;
   backLabel?: string;
 }) {
+  const router = useRouter();
   const Icon = link.icon;
   const active = navActive(pathname, link.href);
   const showBack = Boolean(backHref) && active && link.href === backNavHref;
-  const href = showBack && backHref ? backHref : link.href;
-  const title = showBack
-    ? backLabel || `Torna a ${sectionLabelFromHref(backHref!)}`
+  const backDisplayLabel = showBack
+    ? navBackDisplayLabel(link.label, backHref!, backLabel)
     : link.label;
-  const label = showBack
-    ? backLabel || sectionLabelFromHref(backHref!)
-    : link.label;
+  const title = showBack ? `Torna a ${backDisplayLabel}` : link.label;
+  const label = showBack ? backDisplayLabel : link.label;
   const showLabel = forceLabel || compact;
+  const itemClass = `flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
+    active
+      ? "bg-white font-semibold text-[#132033]"
+      : "text-white/75 hover:bg-white/10 hover:text-white"
+  }`;
+
+  if (showBack) {
+    return (
+      <button
+        type="button"
+        onClick={() => navigateBack(router, backHref)}
+        className={itemClass}
+        title={title}
+        aria-label={title}
+      >
+        <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" aria-hidden />
+        {showLabel ? (
+          <span className="whitespace-nowrap">{label}</span>
+        ) : (
+          <span className="hidden whitespace-nowrap lg:inline">{label}</span>
+        )}
+      </button>
+    );
+  }
 
   return (
     <Link
-      href={href}
-      className={`flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
-        active
-          ? "bg-white font-semibold text-[#132033]"
-          : "text-white/75 hover:bg-white/10 hover:text-white"
-      }`}
+      href={link.href}
+      className={itemClass}
       title={title}
     >
-      {showBack ? (
-        <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" aria-hidden />
-      ) : (
-        <Icon className="h-4 w-4 shrink-0" />
-      )}
+      <Icon className="h-4 w-4 shrink-0" />
       {showLabel ? (
         <span className="whitespace-nowrap">{label}</span>
       ) : (
@@ -447,6 +458,7 @@ function ResponsiveMainNav({
   links,
   pathname,
   praticheBackHref,
+  praticheBackLabel,
   affidiBackHref,
   affidiBackLabel,
   adminLinks,
@@ -454,6 +466,7 @@ function ResponsiveMainNav({
   links: NavLink[];
   pathname: string;
   praticheBackHref: string | null;
+  praticheBackLabel?: string;
   affidiBackHref: string | null;
   affidiBackLabel?: string;
   adminLinks: NavLink[];
@@ -522,7 +535,11 @@ function ResponsiveMainNav({
 
   const navBackProps = (link: NavLink) => {
     if (link.href === "/pratiche") {
-      return { backHref: praticheBackHref, backNavHref: "/pratiche" as const, backLabel: undefined };
+      return {
+        backHref: praticheBackHref,
+        backNavHref: "/pratiche" as const,
+        backLabel: praticheBackLabel,
+      };
     }
     if (link.href === "/affidi") {
       return {
@@ -613,6 +630,7 @@ export function AppShell({
   const pathname = usePathname();
   const [embedded, setEmbedded] = useState(false);
   const [praticheBackHref, setPraticheBackHref] = useState<string | null>(null);
+  const [praticheBackLabel, setPraticheBackLabel] = useState<string | undefined>();
   const [affidiBackHref, setAffidiBackHref] = useState<string | null>(null);
   const [affidiBackLabel, setAffidiBackLabel] = useState<string | undefined>();
 
@@ -637,14 +655,19 @@ export function AppShell({
       try {
         const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
         const savedPath = saved?.split("?")[0] || "";
-        setPraticheBackHref(saved && !isPratichePath(savedPath) ? saved : "/pratiche");
+        const href = saved && !isPratichePath(savedPath) ? saved : "/pratiche";
+        setPraticheBackHref(href);
+        setPraticheBackLabel(labelForNavBackHref(href));
       } catch {
         setPraticheBackHref("/pratiche");
+        setPraticheBackLabel("Lista pratiche");
       }
     } else if (isPraticheLista) {
       setPraticheBackHref(null);
+      setPraticheBackLabel(undefined);
     } else {
       setPraticheBackHref(null);
+      setPraticheBackLabel(undefined);
       try {
         sessionStorage.setItem(PRATICHE_BACK_KEY, full);
       } catch {
@@ -694,6 +717,7 @@ export function AppShell({
               links={mainLinks}
               pathname={pathname}
               praticheBackHref={praticheBackHref}
+              praticheBackLabel={praticheBackLabel}
               affidiBackHref={affidiBackHref}
               affidiBackLabel={affidiBackLabel}
               adminLinks={adminLinks}

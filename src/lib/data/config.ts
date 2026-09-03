@@ -1,9 +1,14 @@
-export type DatabaseProvider = "firestore" | "connector";
+export type DatabaseProvider = "firestore" | "connector" | "sqlite";
 
 export function getDatabaseProvider(): DatabaseProvider {
   const raw = (process.env.DATABASE_PROVIDER || "firestore").trim().toLowerCase();
   if (raw === "connector") return "connector";
+  if (raw === "sqlite") return "sqlite";
   return "firestore";
+}
+
+export function isSqliteProvider() {
+  return getDatabaseProvider() === "sqlite";
 }
 
 export function getConnectorBaseUrl(): string {

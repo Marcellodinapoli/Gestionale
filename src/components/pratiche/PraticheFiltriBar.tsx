@@ -1,19 +1,42 @@
 "use client";
 
-import { useEffect, useState, type ReactNode, Suspense } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { SlidersHorizontal, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
-import { DebouncedSearchInput } from "@/components/DebouncedSearchInput";
 import { STATO_LABELS } from "@/lib/permissions";
-import { ESITO_CONTATTO_LABELS } from "@/lib/contatto";
-import { formatDataIso, startOfToday } from "@/lib/lavorateOggiUi";
-import { CODICI_SCARICO, CODICE_SCARICO_LABELS } from "@/lib/scarico";
-import { hasAltriFiltri, type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import { formatDataIso, startOfToday, LAVORATE_FASCE, labelLavorateFascia, type LavorateFascia } from "@/lib/lavorateOggiUi";
+import { hasAltriFiltri, ALTRI_FILTRI_PRESERVE_KEYS, type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import { CodScaricoFiltroControls } from "@/components/filtri/CodScaricoFiltroControls";
+import { OperatoreFiltroControls } from "@/components/filtri/OperatoreFiltroControls";
+import { AggiuntivoFiltroControls } from "@/components/filtri/AggiuntivoFiltroControls";
+import { AltriFiltriAttiviElenco } from "@/components/filtri/AltriFiltriAttiviElenco";
+import { TextFiltroControls } from "@/components/filtri/TextFiltroControls";
+import { FILTRI_FIELD_CLASS, QUICK_BAR_COMPOUND_FIELD_CLASS, QUICK_BAR_FIELD_CLASS } from "@/components/filtri/filtriFieldStyles";
+import { SelectFiltroControls } from "@/components/filtri/SelectFiltroControls";
+import { TEXT_FILTER_DEFAULT } from "@/lib/filtriTestoOp";
+import {
+  codiciScaricoFiltroDisponibili,
+  type MandantePerimetriRef,
+} from "@/lib/filtriCodScaricoPerimetro";
+import {
+  lottoFiltroOptions,
+  mandatoIdPerPerimetroFiltro,
+  perimetroFiltroOptions,
+} from "@/lib/filtriPerimetroLottoUi";
 
-const modalField =
-  "h-9 w-full rounded border border-[var(--line)] px-2 text-sm text-[var(--navy)]";
-const modalLabel = "mb-0.5 block text-[11px] font-semibold text-[var(--danger)]";
+const quickBarLabelClass = "mb-0.5 block text-[11px] font-semibold text-[var(--danger)]";
+const modalField = FILTRI_FIELD_CLASS;
+const modalLabel = quickBarLabelClass;
+
+const QUICK_BAR_SELF_KEYS = new Set([
+  "perimetro",
+  "perimetroOp",
+  "operatore",
+  "operatoreOp",
+  "codScarico",
+  "codScaricoOp",
+]);
 
 export const APRI_ALTRI_FILTRI_EVENT = "credixa:apri-altri-filtri";
 
@@ -103,7 +126,6 @@ function DaA({
 export function PraticheFiltriBar({
   q,
   stato,
-  esito,
   lavorate,
   lavorateData,
   lavorateDa,
@@ -116,27 +138,36 @@ export function PraticheFiltriBar({
   operatori,
   mandanti,
   lotti,
+  lottiPerMandato,
   altri,
+  mandantiPerimetri,
+  apriPraticheHref,
 }: {
   q?: string;
   stato?: string;
-  esito?: string;
   lavorate?: boolean;
   lavorateData?: string;
   lavorateDa?: string;
   lavorateA?: string;
   lavorateOggi?: boolean;
-  lavorateFascia?: "mattina" | "pomeriggio";
+  lavorateFascia?: LavorateFascia;
   nonToccateDa?: 10;
   sort?: string;
   dir?: string;
-  operatori?: Array<{ id: string; name: string }>;
+  operatori?: Array<{ id: string; name: string; acronimo?: string | null }>;
   mandanti?: Array<{ id: string; codice: string; ragioneSociale: string }>;
   lotti?: string[];
+  lottiPerMandato?: Record<string, string[]>;
   altri?: AltriFiltri;
+  mandantiPerimetri?: MandantePerimetriRef[];
+  apriPraticheHref?: string | null;
 }) {
   const STATO_DEFAULT = "IN_LAVORAZIONE";
   const [altriFiltriOpen, setAltriFiltriOpen] = useState(false);
+  const [modalMandato, setModalMandato] = useState("");
+  const [modalPerimetro, setModalPerimetro] = useState("");
+  const [modalLotto, setModalLotto] = useState("");
+  const [barPerimetro, setBarPerimetro] = useState("");
   // Non copiare Da→A: è valido compilare una sola data (dal = da quella in poi; al = fino a quella).
   const oggiIso = formatDataIso(startOfToday());
   const legacySingoloGiorno = !lavorateDa && !lavorateA && !!(lavorateData || lavorateOggi);
@@ -148,7 +179,6 @@ export function PraticheFiltriBar({
   const hasFilters = !!(
     q ||
     (stato && stato !== STATO_DEFAULT) ||
-    esito ||
     lavorate ||
     hasLavorateRange ||
     lavorateFascia ||
@@ -156,6 +186,43 @@ export function PraticheFiltriBar({
     hasAltriFiltri(altri)
   );
   const a = altri || {};
+  const perimetriBarOpts = useMemo(
+    () => perimetroFiltroOptions(mandantiPerimetri, a.mandato),
+    [mandantiPerimetri, a.mandato]
+  );
+  const barMandatoId = a.mandato || mandatoIdPerPerimetroFiltro(mandantiPerimetri, barPerimetro);
+  const codiciScaricoBar = useMemo(
+    () => codiciScaricoFiltroDisponibili(mandantiPerimetri, barMandatoId, barPerimetro),
+    [mandantiPerimetri, barMandatoId, barPerimetro]
+  );
+  const perimetriModalOpts = useMemo(
+    () => perimetroFiltroOptions(mandantiPerimetri, modalMandato),
+    [mandantiPerimetri, modalMandato]
+  );
+  const lottiModalOpts = useMemo(
+    () => lottoFiltroOptions(lotti, lottiPerMandato, modalMandato),
+    [lotti, lottiPerMandato, modalMandato]
+  );
+  const codiciScaricoModal = useMemo(
+    () => codiciScaricoFiltroDisponibili(mandantiPerimetri, modalMandato, modalPerimetro),
+    [mandantiPerimetri, modalMandato, modalPerimetro]
+  );
+
+  useEffect(() => {
+    setBarPerimetro(a.perimetro || "");
+  }, [a.perimetro]);
+
+  useEffect(() => {
+    if (altriFiltriOpen) {
+      setModalMandato(a.mandato || "");
+      setModalPerimetro(a.perimetro || "");
+      setModalLotto(a.lotto || "");
+    }
+  }, [altriFiltriOpen, a.mandato, a.perimetro, a.lotto]);
+
+  const altriHiddenKeys = ALTRI_FILTRI_PRESERVE_KEYS.filter(
+    (k) => !QUICK_BAR_SELF_KEYS.has(k)
+  );
 
   useEffect(() => {
     function onApri() {
@@ -187,74 +254,28 @@ export function PraticheFiltriBar({
         id="pratiche-filtro-veloce"
         method="get"
         action="/pratiche"
-        className="flex flex-wrap gap-2"
+        className="flex w-full flex-nowrap items-end gap-1.5 overflow-x-auto pb-0.5"
       >
         {hiddenNav}
         {/* Conserva filtri avanzati quando si usa solo la barra rapida */}
         {hasAltriFiltri(altri)
-          ? (
-              [
-                "debitore",
-                "capDa",
-                "capA",
-                "citta",
-                "prov",
-                "telefono",
-                "affidoDa",
-                "affidoA",
-                "scadenzaDa",
-                "scadenzaA",
-                "mandato",
-                "lotto",
-                "operatore",
-                "codScarico",
-                "sitAffido",
-                "affidoProvvisorio",
-                "importoRataDa",
-                "importoRataA",
-                "residuoDa",
-                "residuoA",
-                "totIncassatoDa",
-                "totIncassatoA",
-                "importoTotDa",
-                "importoTotA",
-                "cfPiva",
-                "garante",
-                "note",
-                "nPraticaDa",
-                "nPraticaA",
-                "promPagDa",
-                "promPagA",
-                "incassatoDa",
-                "incassatoA",
-                "memoDa",
-                "memoA",
-                "rateScadute",
-                "aggiuntivo",
-              ] as const
-            ).map((k) =>
-              a[k] ? <input key={k} type="hidden" name={k} value={a[k]} /> : null
-            )
+          ? altriHiddenKeys.map((k) => {
+              const v = a[k as keyof AltriFiltri];
+              return v ? (
+                <input key={k} type="hidden" name={k} value={String(v)} />
+              ) : null;
+            })
           : null}
 
-        <Suspense
-          fallback={
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Cerca in anagrafica ed estratto conto"
-              className="h-10 min-w-0 w-full flex-1 rounded-lg border border-[var(--line)] px-3 text-sm sm:min-w-56"
-            />
-          }
-        >
-          <DebouncedSearchInput
-            name="q"
-            defaultValue={q}
-            formId="pratiche-filtro-veloce"
-            placeholder="Cerca in anagrafica ed estratto conto"
-            className="h-10 min-w-0 w-full flex-1 rounded-lg border border-[var(--line)] px-3 text-sm sm:min-w-56"
-          />
-        </Suspense>
+        <div className="min-w-[9rem] flex-1">
+        <input
+          name="q"
+          defaultValue={q}
+            placeholder="Cerca anagrafica…"
+            autoComplete="off"
+            className={`${QUICK_BAR_FIELD_CLASS} w-full min-w-0 px-2`}
+        />
+        </div>
         <select
           name="stato"
           key={`stato-${stato || "all"}`}
@@ -262,7 +283,7 @@ export function PraticheFiltriBar({
           onChange={(e) => {
             e.currentTarget.form?.requestSubmit();
           }}
-          className="h-10 min-w-0 w-full rounded-lg border border-[var(--line)] px-3 text-sm sm:w-auto"
+          className={`${QUICK_BAR_FIELD_CLASS} w-[8.75rem] shrink-0 px-2`}
         >
           <option value="">Tutti gli stati</option>
           {Object.entries(STATO_LABELS).map(([value, label]) => (
@@ -271,72 +292,120 @@ export function PraticheFiltriBar({
             </option>
           ))}
         </select>
-        <select
-          name="esito"
-          defaultValue={esito || ""}
-          className="h-10 min-w-0 w-full rounded-lg border border-[var(--line)] px-3 text-sm sm:w-auto"
-        >
-          <option value="">Tutti gli esiti contatto</option>
-          {Object.entries(ESITO_CONTATTO_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <label className="flex h-10 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-2 text-sm sm:px-3">
-          <span className="whitespace-nowrap text-[var(--muted)]">Lavorate dal</span>
+        <label className="block w-[9.5rem] shrink-0">
+          <span className={quickBarLabelClass}>Perimetro</span>
+          <SelectFiltroControls
+            name="perimetro"
+            opName="perimetroOp"
+            defaultValue={a.perimetro || ""}
+            op={a.perimetroOp || TEXT_FILTER_DEFAULT}
+            fieldClass={QUICK_BAR_COMPOUND_FIELD_CLASS}
+            ariaLabel="Perimetro"
+            onValueChange={setBarPerimetro}
+          >
+            <option value="">Tutti</option>
+            {perimetriBarOpts.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+            {a.perimetro && !perimetriBarOpts.some((p) => p.value === a.perimetro) ? (
+              <option value={a.perimetro}>{a.perimetro} (chiuso)</option>
+            ) : null}
+          </SelectFiltroControls>
+        </label>
+        <label className="block w-[10.5rem] shrink-0">
+          <span className={quickBarLabelClass}>Cod. operatore</span>
+          <OperatoreFiltroControls
+            operatore={a.operatore}
+            operatoreOp={a.operatoreOp}
+            fieldClass={QUICK_BAR_COMPOUND_FIELD_CLASS}
+            operatori={operatori || []}
+            disabled={!operatori?.length}
+          />
+        </label>
+        <label className="block w-[10.5rem] shrink-0">
+          <span className={quickBarLabelClass}>Cod. scarico</span>
+          <CodScaricoFiltroControls
+            codScarico={a.codScarico}
+            codScaricoOp={a.codScaricoOp}
+            fieldClass={QUICK_BAR_COMPOUND_FIELD_CLASS}
+            mandatoId={barMandatoId}
+            codiciDisponibili={codiciScaricoBar}
+          />
+        </label>
+        <label className={`flex h-10 shrink-0 items-center gap-1 px-1.5 text-xs ${QUICK_BAR_FIELD_CLASS}`}>
+          <span className="whitespace-nowrap text-[var(--muted)]">Dal</span>
           <input
             type="date"
             name="lavorateDa"
             defaultValue={dataLavorateDa || ""}
-            className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm text-[var(--navy)]"
+            className="h-8 w-[6.75rem] min-w-0 border-0 bg-transparent p-0 text-xs text-[var(--navy)]"
           />
           <span className="text-[var(--muted)]">al</span>
           <input
             type="date"
             name="lavorateA"
             defaultValue={dataLavorateA || ""}
-            className="h-8 min-w-0 border-0 bg-transparent p-0 text-sm text-[var(--navy)]"
+            className="h-8 w-[6.75rem] min-w-0 border-0 bg-transparent p-0 text-xs text-[var(--navy)]"
           />
         </label>
         <select
           name="lavorateFascia"
           defaultValue={lavorateFascia || ""}
-          className="h-10 min-w-0 w-full rounded-lg border border-[var(--line)] px-3 text-sm sm:w-auto"
+          className={`${QUICK_BAR_FIELD_CLASS} w-[8.25rem] shrink-0 px-2`}
           title="Fascia oraria lavorazione"
         >
           <option value="">Tutta la giornata</option>
-          <option value="mattina">Mattina (09:00–13:30)</option>
-          <option value="pomeriggio">Pomeriggio (13:31–19:00)</option>
+          {LAVORATE_FASCE.map((f) => (
+            <option key={f.value} value={f.value} title={`${f.label} (${f.range})`}>
+              {f.label}
+            </option>
+          ))}
         </select>
         <button
           type="submit"
-          className="h-10 rounded-lg border border-[var(--line)] bg-white px-4 text-sm hover:bg-[#eef4f8]"
+          className="h-10 shrink-0 rounded-lg border-2 border-[var(--navy)] bg-[#eef4f8] px-3 text-sm font-semibold text-[var(--navy)] shadow-sm transition-colors hover:bg-[#dce8f0]"
         >
           Filtra
         </button>
+      </form>
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={() => setAltriFiltriOpen(true)}
-          className={`inline-flex h-10 items-center gap-1.5 rounded-lg border px-4 text-sm hover:bg-[#eef4f8] ${
+          className={`inline-flex h-10 items-center gap-1 rounded-lg px-4 text-sm font-semibold shadow-md transition-colors ${
             hasAltriFiltri(altri)
-              ? "border-[var(--navy)]/40 bg-[#e8eef4] font-medium text-[var(--navy)]"
-              : "border-[var(--line)] bg-white"
+              ? "bg-[var(--navy)] text-white ring-2 ring-amber-400 hover:opacity-90"
+              : "bg-[var(--navy)] text-white hover:bg-[#1a3650]"
           }`}
         >
-          <SlidersHorizontal className="h-4 w-4 text-[var(--muted)]" />
-          Altri filtri
+          <SlidersHorizontal className="h-4 w-4 shrink-0" />
+          Tutti i filtri
         </button>
-        {hasFilters ? (
           <Link
             href="/pratiche"
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
+          className={`inline-flex h-10 items-center gap-1 rounded-lg border px-4 text-sm transition-colors ${
+            hasFilters
+              ? "border-[var(--danger)]/30 bg-[#fef2f2] text-[var(--danger)] hover:bg-[#fee2e2]"
+              : "pointer-events-none border-[var(--line)] bg-[#f8fafc] text-[var(--muted)] opacity-60"
+          }`}
+          aria-disabled={!hasFilters}
+          tabIndex={hasFilters ? 0 : -1}
           >
             <X className="h-4 w-4" />
             Annulla filtri
+        </Link>
+        {apriPraticheHref ? (
+          <Link
+            href={apriPraticheHref}
+            prefetch
+            className="inline-flex h-10 items-center rounded-lg border-2 border-emerald-600 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100"
+          >
+            Apri pratiche
           </Link>
         ) : null}
-      </form>
+      </div>
       </div>
 
       {hasLavorateRange ? (
@@ -347,17 +416,13 @@ export function PraticheFiltriBar({
             : dataLavorateDa
               ? ` dal ${new Date(dataLavorateDa + "T12:00:00").toLocaleDateString("it-IT")} in poi`
               : ` fino al ${new Date(dataLavorateA! + "T12:00:00").toLocaleDateString("it-IT")}`}
-          {lavorateFascia === "mattina"
-            ? " (mattina 09:00–13:30)"
-            : lavorateFascia === "pomeriggio"
-              ? " (pomeriggio 13:31–19:00)"
-              : ""}
+          {lavorateFascia ? ` (${labelLavorateFascia(lavorateFascia)})` : ""}
           .
         </p>
       ) : lavorateFascia ? (
         <p className="mb-2 text-xs text-[var(--muted)]">
           Filtro attivo: lavorazioni di oggi in fascia{" "}
-          {lavorateFascia === "mattina" ? "mattina (09:00–13:30)" : "pomeriggio (13:31–19:00)"}.
+          {lavorateFascia ? labelLavorateFascia(lavorateFascia) : ""}.
         </p>
       ) : null}
       {nonToccateDa ? (
@@ -366,21 +431,17 @@ export function PraticheFiltriBar({
           {nonToccateDa} giorni; escluse le promesse con data successiva a oggi).
         </p>
       ) : null}
-      {a.promPagDa || a.promPagA ? (
-        <p className="mb-2 text-xs text-[var(--muted)]">
-          Filtro attivo: data promessa di pagamento
-          {a.promPagDa && a.promPagA
-            ? ` dal ${new Date(a.promPagDa + "T12:00:00").toLocaleDateString("it-IT")} al ${new Date(a.promPagA + "T12:00:00").toLocaleDateString("it-IT")}`
-            : a.promPagDa
-              ? ` dal ${new Date(a.promPagDa + "T12:00:00").toLocaleDateString("it-IT")} in poi`
-              : ` fino al ${new Date(a.promPagA! + "T12:00:00").toLocaleDateString("it-IT")}`}
-          .
-        </p>
-      ) : null}
+
+      <AltriFiltriAttiviElenco
+        filtri={altri}
+        operatori={operatori}
+        mandanti={mandanti}
+        excludeIds={["cod-scarico", "perimetro", "operatore"]}
+      />
 
       <Modal
         open={altriFiltriOpen}
-        title="Altri filtri"
+        title="Tutti i filtri"
         onClose={() => setAltriFiltriOpen(false)}
         wide
       >
@@ -388,7 +449,6 @@ export function PraticheFiltriBar({
           {hiddenNav}
           <input type="hidden" name="q" value={q || ""} />
           <input type="hidden" name="stato" value={stato || ""} />
-          <input type="hidden" name="esito" value={esito || ""} />
           {dataLavorateDa ? (
             <input type="hidden" name="lavorateDa" value={dataLavorateDa} />
           ) : null}
@@ -402,35 +462,44 @@ export function PraticheFiltriBar({
           <div className="space-y-5">
             <SezioneFiltri title="Filtri anagrafica" tone="anagrafica">
               <Field label="Debitore">
-                <input
+                <TextFiltroControls
                   name="debitore"
-                  defaultValue={a.debitore || ""}
+                  opName="debitoreOp"
+                  value={a.debitore || ""}
+                  op={a.debitoreOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Nome / cognome"
-                  className={modalField}
                 />
               </Field>
               <Field label="Città">
-                <input
+                <TextFiltroControls
                   name="citta"
-                  defaultValue={a.citta || ""}
+                  opName="cittaOp"
+                  value={a.citta || ""}
+                  op={a.cittaOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Città debitore"
-                  className={modalField}
                 />
               </Field>
               <Field label="Prov.">
-                <input
+                <TextFiltroControls
                   name="prov"
-                  defaultValue={a.prov || ""}
+                  opName="provOp"
+                  value={a.prov || ""}
+                  op={a.provOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Provincia"
-                  className={modalField}
                 />
               </Field>
               <Field label="Telefono">
-                <input
+                <TextFiltroControls
                   name="telefono"
-                  defaultValue={a.telefono || ""}
+                  opName="telefonoOp"
+                  value={a.telefono || ""}
+                  op={a.telefonoOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Telefono"
-                  className={modalField}
+                  inputType="tel"
                 />
               </Field>
               <DaA
@@ -444,27 +513,33 @@ export function PraticheFiltriBar({
                 placeholderA="99999"
               />
               <Field label="C.F. / P.IVA">
-                <input
+                <TextFiltroControls
                   name="cfPiva"
-                  defaultValue={a.cfPiva || ""}
+                  opName="cfPivaOp"
+                  value={a.cfPiva || ""}
+                  op={a.cfPivaOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Codice fiscale"
-                  className={modalField}
                 />
               </Field>
               <Field label="Garante">
-                <input
+                <TextFiltroControls
                   name="garante"
-                  defaultValue={a.garante || ""}
+                  opName="garanteOp"
+                  value={a.garante || ""}
+                  op={a.garanteOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Nome / CF garante"
-                  className={modalField}
                 />
               </Field>
               <Field label="Note">
-                <input
+                <TextFiltroControls
                   name="note"
-                  defaultValue={a.note || ""}
+                  opName="noteOp"
+                  value={a.note || ""}
+                  op={a.noteOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
                   placeholder="Testo in note / attività"
-                  className={modalField}
                 />
               </Field>
             </SezioneFiltri>
@@ -532,23 +607,29 @@ export function PraticheFiltriBar({
             </SezioneFiltri>
 
             <SezioneFiltri title="Filtri codici" tone="codici">
-              <Field label="Operatore di affido">
-                <select name="operatore" defaultValue={a.operatore || ""} className={modalField}>
-                  <option value="">Tutti</option>
-                  {(operatori || []).map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Cod. operatore">
+                <OperatoreFiltroControls
+                  operatore={a.operatore}
+                  operatoreOp={a.operatoreOp}
+                  fieldClass={modalField}
+                  operatori={operatori || []}
+                  disabled={!operatori?.length}
+                />
               </Field>
               <Field label="Sit. affido">
-                <select name="sitAffido" defaultValue={a.sitAffido || ""} className={modalField}>
+                <SelectFiltroControls
+                  name="sitAffido"
+                  opName="sitAffidoOp"
+                  defaultValue={a.sitAffido || ""}
+                  op={a.sitAffidoOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
+                  ariaLabel="Sit. affido"
+                >
                   <option value="">Tutte</option>
                   <option value="affidata">Affidata</option>
                   <option value="non_affidata">Non affidata</option>
                   <option value="temporanea">Affido temporaneo</option>
-                </select>
+                </SelectFiltroControls>
               </Field>
               <Field label="Affido provvisorio">
                 <select
@@ -561,27 +642,65 @@ export function PraticheFiltriBar({
                 </select>
               </Field>
               <Field label="Mandato">
-                <select name="mandato" defaultValue={a.mandato || ""} className={modalField}>
+                <SelectFiltroControls
+                  name="mandato"
+                  opName="mandatoOp"
+                  value={modalMandato}
+                  op={a.mandatoOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
+                  ariaLabel="Mandato"
+                  onValueChange={setModalMandato}
+                >
                   <option value="">Tutti</option>
                   {(mandanti || []).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.codice} — {m.ragioneSociale}
                     </option>
                   ))}
-                </select>
+                </SelectFiltroControls>
               </Field>
-              <Field label="Perimetro / Lotto">
-                <select name="lotto" defaultValue={a.lotto || ""} className={modalField}>
+              <Field label="Perimetro">
+                <SelectFiltroControls
+                  name="perimetro"
+                  opName="perimetroOp"
+                  value={modalPerimetro}
+                  op={a.perimetroOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
+                  ariaLabel="Perimetro"
+                  onValueChange={setModalPerimetro}
+                >
+                  <option value="">Tutti</option>
+                  {perimetriModalOpts.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                  {a.perimetro &&
+                  !perimetriModalOpts.some((p) => p.value === a.perimetro) ? (
+                    <option value={a.perimetro}>{a.perimetro} (chiuso)</option>
+                  ) : null}
+                </SelectFiltroControls>
+              </Field>
+              <Field label="Lotto">
+                <SelectFiltroControls
+                  name="lotto"
+                  opName="lottoOp"
+                  value={modalLotto}
+                  op={a.lottoOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
+                  ariaLabel="Lotto"
+                  onValueChange={setModalLotto}
+                >
                   <option value="">Tutti (in lavorazione)</option>
-                  {(lotti || []).map((l) => (
+                  {lottiModalOpts.map((l) => (
                     <option key={l} value={l}>
                       {l}
                     </option>
                   ))}
-                  {a.lotto && !(lotti || []).includes(a.lotto) ? (
+                  {a.lotto && !lottiModalOpts.includes(a.lotto) ? (
                     <option value={a.lotto}>{a.lotto} (chiuso)</option>
                   ) : null}
-                </select>
+                </SelectFiltroControls>
               </Field>
               <DaA
                 label="Data affido da / a"
@@ -598,14 +717,13 @@ export function PraticheFiltriBar({
                 defaultA={a.scadenzaA}
               />
               <Field label="Cod. scarico">
-                <select name="codScarico" defaultValue={a.codScarico || ""} className={modalField}>
-                  <option value="">Tutti</option>
-                  {CODICI_SCARICO.map((c) => (
-                    <option key={c} value={c}>
-                      {c} — {CODICE_SCARICO_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
+                <CodScaricoFiltroControls
+                  codScarico={a.codScarico}
+                  codScaricoOp={a.codScaricoOp}
+                  fieldClass={modalField}
+                  mandatoId={modalMandato}
+                  codiciDisponibili={codiciScaricoModal}
+                />
               </Field>
               <DaA
                 label="N. pratica da / a"
@@ -623,9 +741,12 @@ export function PraticheFiltriBar({
                 defaultA={a.memoA}
               />
               <Field label="Aggiuntivo">
-                <select name="aggiuntivo" defaultValue={a.aggiuntivo || ""} className={modalField}>
-                  <option value="">—</option>
-                </select>
+                <AggiuntivoFiltroControls
+                  campo={a.aggiuntivoCampo}
+                  valore={a.aggiuntivoValore}
+                  op={a.aggiuntivoOp || TEXT_FILTER_DEFAULT}
+                  fieldClass={modalField}
+                />
               </Field>
             </SezioneFiltri>
           </div>
@@ -650,7 +771,7 @@ export function PraticheFiltriBar({
             >
               Applica filtri
             </button>
-          </div>
+        </div>
         </form>
       </Modal>
     </>

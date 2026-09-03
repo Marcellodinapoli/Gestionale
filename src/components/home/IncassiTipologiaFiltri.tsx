@@ -2,6 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { incMeseSelectOptions } from "@/lib/incassiMeseFiltro";
+import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_BAR_CONTAINER_CLASS,
+  FILTRI_PAGE_SELECT_CLASS,
+  FILTRI_RESET_BUTTON_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 
 export type MandanteFiltroIncassi = {
   id: string;
@@ -14,16 +21,20 @@ export function IncassiTipologiaFiltri({
   mandanti,
   mandanteId,
   perimetro,
+  mese,
   sedeId,
 }: {
   mandanti: MandanteFiltroIncassi[];
   mandanteId?: string;
   perimetro?: string;
+  mese?: string;
   sedeId?: string | null;
 }) {
   const router = useRouter();
   const [mandante, setMandante] = useState(mandanteId || "");
   const [peri, setPeri] = useState(perimetro || "");
+  const [meseSel, setMeseSel] = useState(mese || "");
+  const meseOpts = useMemo(() => incMeseSelectOptions(), []);
 
   const perimetriOpts = useMemo(() => {
     if (!mandante) {
@@ -34,10 +45,11 @@ export function IncassiTipologiaFiltri({
     return mandanti.find((m) => m.id === mandante)?.perimetri ?? [];
   }, [mandante, mandanti]);
 
-  function buildHref(nextMandante: string, nextPeri: string) {
+  function buildHref(nextMandante: string, nextPeri: string, nextMese: string) {
     const qs = new URLSearchParams();
     if (nextMandante) qs.set("incMandante", nextMandante);
     if (nextPeri) qs.set("incPerimetro", nextPeri);
+    if (nextMese) qs.set("incMese", nextMese);
     if (sedeId) qs.set("sede", sedeId);
     const s = qs.toString();
     return s ? `/?${s}` : "/";
@@ -45,19 +57,20 @@ export function IncassiTipologiaFiltri({
 
   function applica(e: React.FormEvent) {
     e.preventDefault();
-    router.push(buildHref(mandante, peri));
+    router.push(buildHref(mandante, peri, meseSel));
   }
 
   function reset() {
     setMandante("");
     setPeri("");
-    router.push(buildHref("", ""));
+    setMeseSel("");
+    router.push(buildHref("", "", ""));
   }
 
   return (
     <form
       onSubmit={applica}
-      className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-[var(--line)] bg-[#f8fafc] p-3"
+      className={`mb-4 flex flex-wrap items-end gap-2 ${FILTRI_BAR_CONTAINER_CLASS}`}
     >
       <label className="text-xs">
         <span className="mb-1 block font-semibold text-[var(--muted)]">Mandante</span>
@@ -67,7 +80,7 @@ export function IncassiTipologiaFiltri({
             setMandante(e.target.value);
             setPeri("");
           }}
-          className="h-9 min-w-[160px] rounded border border-[var(--line)] bg-white px-2 text-sm"
+          className={FILTRI_PAGE_SELECT_CLASS}
         >
           <option value="">Tutti</option>
           {mandanti.map((m) => (
@@ -82,7 +95,7 @@ export function IncassiTipologiaFiltri({
         <select
           value={peri}
           onChange={(e) => setPeri(e.target.value)}
-          className="h-9 min-w-[160px] rounded border border-[var(--line)] bg-white px-2 text-sm"
+          className={FILTRI_PAGE_SELECT_CLASS}
         >
           <option value="">Tutti</option>
           {perimetriOpts.map((p) => (
@@ -92,18 +105,25 @@ export function IncassiTipologiaFiltri({
           ))}
         </select>
       </label>
-      <button
-        type="submit"
-        className="h-9 rounded border border-[var(--line)] bg-[var(--navy)] px-4 text-sm font-medium text-white hover:opacity-90"
-      >
+      <label className="text-xs">
+        <span className="mb-1 block font-semibold text-[var(--muted)]">Mese</span>
+        <select
+          value={meseSel}
+          onChange={(e) => setMeseSel(e.target.value)}
+          className={FILTRI_PAGE_SELECT_CLASS}
+        >
+          {meseOpts.map((o) => (
+            <option key={o.value || "corrente"} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
         Filtra
       </button>
-      {mandante || peri ? (
-        <button
-          type="button"
-          onClick={reset}
-          className="h-9 rounded border border-[var(--line)] bg-white px-3 text-sm hover:bg-[#eef4f8]"
-        >
+      {mandante || peri || meseSel ? (
+        <button type="button" onClick={reset} className={FILTRI_RESET_BUTTON_CLASS}>
           Reset
         </button>
       ) : null}

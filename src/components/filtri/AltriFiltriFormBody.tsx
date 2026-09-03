@@ -1,11 +1,28 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CODICI_SCARICO, CODICE_SCARICO_LABELS } from "@/lib/scarico";
+import { useMemo } from "react";
 import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import { CodScaricoFiltroControls } from "@/components/filtri/CodScaricoFiltroControls";
+import { OperatoreFiltroControls } from "@/components/filtri/OperatoreFiltroControls";
+import { AggiuntivoFiltroControls } from "@/components/filtri/AggiuntivoFiltroControls";
+import { joinCodScaricoList } from "@/lib/filtriCodScarico";
+import { joinOperatoreList } from "@/lib/filtriOperatore";
+import {
+  codiciScaricoFiltroDisponibili,
+  type MandantePerimetriRef,
+} from "@/lib/filtriCodScaricoPerimetro";
+import {
+  lottoFiltroOptions,
+  perimetroFiltroOptions,
+} from "@/lib/filtriPerimetroLottoUi";
+import { TextFiltroControls } from "@/components/filtri/TextFiltroControls";
+import { FILTRI_FIELD_CLASS } from "@/components/filtri/filtriFieldStyles";
+import { SelectFiltroControls } from "@/components/filtri/SelectFiltroControls";
+import { TEXT_FILTER_DEFAULT } from "@/lib/filtriTestoOp";
+import type { SelectFilterField, SelectFilterOpKey, TextFilterField, TextFilterOpKey } from "@/lib/filtriTestoOp";
 
-const fieldClass =
-  "h-9 w-full rounded border border-[var(--line)] px-2 text-sm text-[var(--navy)]";
+const fieldClass = FILTRI_FIELD_CLASS;
 const labelClass = "mb-0.5 block text-[11px] font-semibold text-[var(--danger)]";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -88,73 +105,182 @@ function DaA({
   );
 }
 
+function TextFiltroField({
+  label,
+  field,
+  opKey,
+  value,
+  onChange,
+  placeholder,
+  inputType = "text",
+}: {
+  label: string;
+  field: TextFilterField;
+  opKey: TextFilterOpKey;
+  value: AltriFiltri;
+  onChange: (next: AltriFiltri) => void;
+  placeholder?: string;
+  inputType?: "text" | "search" | "tel";
+}) {
+  return (
+    <Field label={label}>
+      <TextFiltroControls
+        value={value[field] || ""}
+        op={value[opKey]}
+        fieldClass={fieldClass}
+        placeholder={placeholder}
+        inputType={inputType}
+        onValueChange={(v) => {
+          const next = { ...value };
+          if (v) {
+            next[field] = v;
+            if (!next[opKey]) next[opKey] = TEXT_FILTER_DEFAULT;
+          } else {
+            delete next[field];
+            delete next[opKey];
+          }
+          onChange(next);
+        }}
+        onOpChange={(op) => onChange({ ...value, [opKey]: op })}
+      />
+    </Field>
+  );
+}
+
+function SelectFiltroField({
+  label,
+  field,
+  opKey,
+  value,
+  onChange,
+  ariaLabel,
+  children,
+}: {
+  label: string;
+  field: SelectFilterField;
+  opKey: SelectFilterOpKey;
+  value: AltriFiltri;
+  onChange: (next: AltriFiltri) => void;
+  ariaLabel: string;
+  children: ReactNode;
+}) {
+  return (
+    <Field label={label}>
+      <SelectFiltroControls
+        op={value[opKey]}
+        value={value[field] || ""}
+        fieldClass={fieldClass}
+        ariaLabel={ariaLabel}
+        onOpChange={(op) => onChange({ ...value, [opKey]: op })}
+        onValueChange={(v) => {
+          const next = { ...value };
+          if (v) {
+            next[field] = v as never;
+            if (!next[opKey]) next[opKey] = TEXT_FILTER_DEFAULT;
+          } else {
+            delete next[field];
+            delete next[opKey];
+          }
+          onChange(next);
+        }}
+      >
+        {children}
+      </SelectFiltroControls>
+    </Field>
+  );
+}
+
 export function AltriFiltriFormBody({
   value,
   onChange,
   operatori,
   mandanti,
   lotti,
+  lottiPerMandato,
+  mandantiPerimetri,
 }: {
   value: AltriFiltri;
   onChange: (next: AltriFiltri) => void;
-  operatori?: Array<{ id: string; name: string }>;
+  operatori?: Array<{ id: string; name: string; acronimo?: string | null }>;
   mandanti?: Array<{ id: string; codice: string; ragioneSociale: string }>;
   lotti?: string[];
+  lottiPerMandato?: Record<string, string[]>;
+  mandantiPerimetri?: MandantePerimetriRef[];
 }) {
+  const perimetriOpts = useMemo(
+    () => perimetroFiltroOptions(mandantiPerimetri, value.mandato),
+    [mandantiPerimetri, value.mandato]
+  );
+  const lottiOpts = useMemo(
+    () => lottoFiltroOptions(lotti, lottiPerMandato, value.mandato),
+    [lotti, lottiPerMandato, value.mandato]
+  );
+  const codiciScaricoOpts = useMemo(
+    () => codiciScaricoFiltroDisponibili(mandantiPerimetri, value.mandato, value.perimetro),
+    [mandantiPerimetri, value.mandato, value.perimetro]
+  );
+
   return (
     <div className="space-y-5">
       <Sezione title="Filtri anagrafica" tone="anagrafica">
-        <Field label="Debitore">
-          <input
-            value={value.debitore || ""}
-            onChange={(e) => onChange(patch(value, "debitore", e.target.value))}
-            placeholder="Nome / cognome"
-            className={fieldClass}
-          />
-        </Field>
-        <Field label="Città">
-          <input
-            value={value.citta || ""}
-            onChange={(e) => onChange(patch(value, "citta", e.target.value))}
-            className={fieldClass}
-          />
-        </Field>
-        <Field label="Prov.">
-          <input
-            value={value.prov || ""}
-            onChange={(e) => onChange(patch(value, "prov", e.target.value))}
-            className={fieldClass}
-          />
-        </Field>
-        <Field label="Telefono">
-          <input
-            value={value.telefono || ""}
-            onChange={(e) => onChange(patch(value, "telefono", e.target.value))}
-            className={fieldClass}
-          />
-        </Field>
+        <TextFiltroField
+          label="Debitore"
+          field="debitore"
+          opKey="debitoreOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Nome / cognome"
+        />
+        <TextFiltroField
+          label="Città"
+          field="citta"
+          opKey="cittaOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Città debitore"
+        />
+        <TextFiltroField
+          label="Prov."
+          field="prov"
+          opKey="provOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Provincia"
+        />
+        <TextFiltroField
+          label="Telefono"
+          field="telefono"
+          opKey="telefonoOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Telefono"
+          inputType="tel"
+        />
         <DaA label="CAP da / a" keyDa="capDa" keyA="capA" value={value} onChange={onChange} type="text" />
-        <Field label="C.F. / P.IVA">
-          <input
-            value={value.cfPiva || ""}
-            onChange={(e) => onChange(patch(value, "cfPiva", e.target.value))}
-            className={fieldClass}
-          />
-        </Field>
-        <Field label="Garante">
-          <input
-            value={value.garante || ""}
-            onChange={(e) => onChange(patch(value, "garante", e.target.value))}
-            className={fieldClass}
-          />
-        </Field>
-        <Field label="Note">
-          <input
-            value={value.note || ""}
-            onChange={(e) => onChange(patch(value, "note", e.target.value))}
-            className={fieldClass}
-          />
-        </Field>
+        <TextFiltroField
+          label="C.F. / P.IVA"
+          field="cfPiva"
+          opKey="cfPivaOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Codice fiscale"
+        />
+        <TextFiltroField
+          label="Garante"
+          field="garante"
+          opKey="garanteOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Nome / CF garante"
+        />
+        <TextFiltroField
+          label="Note"
+          field="note"
+          opKey="noteOp"
+          value={value}
+          onChange={onChange}
+          placeholder="Testo in note / attività"
+        />
       </Sezione>
 
       <Sezione title="Filtri contabili" tone="contabili">
@@ -210,32 +336,40 @@ export function AltriFiltriFormBody({
       </Sezione>
 
       <Sezione title="Filtri codici e date" tone="codici">
-        <Field label="Operatore di affido">
-          <select
-            value={value.operatore || ""}
-            onChange={(e) => onChange(patch(value, "operatore", e.target.value))}
-            className={fieldClass}
-          >
-            <option value="">Tutti</option>
-            {(operatori || []).map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+        <Field label="Cod. operatore">
+          <OperatoreFiltroControls
+            operatore={value.operatore}
+            operatoreOp={value.operatoreOp}
+            fieldClass={fieldClass}
+            operatori={operatori || []}
+            disabled={!operatori?.length}
+            onOperatoreOpChange={(op) => onChange({ ...value, operatoreOp: op })}
+            onOperatoreChange={(ids) => {
+              const next = { ...value };
+              if (ids.length) {
+                next.operatore = joinOperatoreList(ids);
+                if (!next.operatoreOp) next.operatoreOp = "eq";
+              } else {
+                delete next.operatore;
+                delete next.operatoreOp;
+              }
+              onChange(next);
+            }}
+          />
         </Field>
-        <Field label="Sit. affido">
-          <select
-            value={value.sitAffido || ""}
-            onChange={(e) => onChange(patch(value, "sitAffido", e.target.value))}
-            className={fieldClass}
-          >
-            <option value="">Tutte</option>
-            <option value="affidata">Affidata</option>
-            <option value="non_affidata">Non affidata</option>
-            <option value="temporanea">Affido temporaneo</option>
-          </select>
-        </Field>
+        <SelectFiltroField
+          label="Sit. affido"
+          field="sitAffido"
+          opKey="sitAffidoOp"
+          value={value}
+          onChange={onChange}
+          ariaLabel="Sit. affido"
+        >
+          <option value="">Tutte</option>
+          <option value="affidata">Affidata</option>
+          <option value="non_affidata">Non affidata</option>
+          <option value="temporanea">Affido temporaneo</option>
+        </SelectFiltroField>
         <Field label="Affido provvisorio">
           <select
             value={value.affidoProvvisorio || ""}
@@ -246,52 +380,116 @@ export function AltriFiltriFormBody({
             <option value="1">Sì (solo temporanei)</option>
           </select>
         </Field>
-        <Field label="Mandato">
-          <select
-            value={value.mandato || ""}
-            onChange={(e) => onChange(patch(value, "mandato", e.target.value))}
-            className={fieldClass}
-          >
-            <option value="">Tutti</option>
-            {(mandanti || []).map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.codice} — {m.ragioneSociale}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Perimetro / Lotto">
-          <select
-            value={value.lotto || ""}
-            onChange={(e) => onChange(patch(value, "lotto", e.target.value))}
-            className={fieldClass}
-          >
-            <option value="">Tutti</option>
-            {(lotti || []).map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <SelectFiltroField
+          label="Mandato"
+          field="mandato"
+          opKey="mandatoOp"
+          value={value}
+          onChange={onChange}
+          ariaLabel="Mandato"
+        >
+          <option value="">Tutti</option>
+          {(mandanti || []).map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.codice} — {m.ragioneSociale}
+            </option>
+          ))}
+        </SelectFiltroField>
+        <SelectFiltroField
+          label="Perimetro"
+          field="perimetro"
+          opKey="perimetroOp"
+          value={value}
+          onChange={onChange}
+          ariaLabel="Perimetro"
+        >
+          <option value="">Tutti</option>
+          {perimetriOpts.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+          {value.perimetro &&
+          !perimetriOpts.some((p) => p.value === value.perimetro) ? (
+            <option value={value.perimetro}>{value.perimetro} (chiuso)</option>
+          ) : null}
+        </SelectFiltroField>
+        <SelectFiltroField
+          label="Lotto"
+          field="lotto"
+          opKey="lottoOp"
+          value={value}
+          onChange={onChange}
+          ariaLabel="Lotto"
+        >
+          <option value="">Tutti</option>
+          {lottiOpts.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+          {value.lotto && !lottiOpts.includes(value.lotto) ? (
+            <option value={value.lotto}>{value.lotto} (chiuso)</option>
+          ) : null}
+        </SelectFiltroField>
         <DaA label="Data affido da / a" keyDa="affidoDa" keyA="affidoA" value={value} onChange={onChange} />
         <DaA label="Scad. mandato da / a" keyDa="scadenzaDa" keyA="scadenzaA" value={value} onChange={onChange} />
         <Field label="Cod. scarico">
-          <select
-            value={value.codScarico || ""}
-            onChange={(e) => onChange(patch(value, "codScarico", e.target.value))}
-            className={fieldClass}
-          >
-            <option value="">Tutti</option>
-            {CODICI_SCARICO.map((c) => (
-              <option key={c} value={c}>
-                {c} — {CODICE_SCARICO_LABELS[c]}
-              </option>
-            ))}
-          </select>
+          <CodScaricoFiltroControls
+            codScarico={value.codScarico}
+            codScaricoOp={value.codScaricoOp}
+            fieldClass={fieldClass}
+            mandatoId={value.mandato}
+            codiciDisponibili={codiciScaricoOpts}
+            onCodScaricoOpChange={(op) =>
+              onChange({ ...value, codScaricoOp: op })
+            }
+            onCodScaricoChange={(codes) => {
+              const next = { ...value };
+              if (codes.length) {
+                next.codScarico = joinCodScaricoList(codes);
+                if (!next.codScaricoOp) next.codScaricoOp = "eq";
+              } else {
+                delete next.codScarico;
+                delete next.codScaricoOp;
+              }
+              onChange(next);
+            }}
+          />
         </Field>
         <DaA label="N. pratica da / a" keyDa="nPraticaDa" keyA="nPraticaA" value={value} onChange={onChange} type="text" />
         <DaA label="Scarico memo da / a" keyDa="memoDa" keyA="memoA" value={value} onChange={onChange} />
+        <Field label="Aggiuntivo">
+          <AggiuntivoFiltroControls
+            campo={value.aggiuntivoCampo}
+            valore={value.aggiuntivoValore}
+            op={value.aggiuntivoOp || TEXT_FILTER_DEFAULT}
+            fieldClass={fieldClass}
+            onOpChange={(op) => onChange({ ...value, aggiuntivoOp: op })}
+            onCampoChange={(campo) => {
+              const next = { ...value };
+              if (campo) {
+                next.aggiuntivoCampo = campo;
+                if (!next.aggiuntivoOp) next.aggiuntivoOp = TEXT_FILTER_DEFAULT;
+              } else {
+                delete next.aggiuntivoCampo;
+                delete next.aggiuntivoValore;
+                delete next.aggiuntivoOp;
+              }
+              onChange(next);
+            }}
+            onValoreChange={(valore) => {
+              const next = { ...value };
+              if (valore.trim()) {
+                next.aggiuntivoValore = valore;
+                if (!next.aggiuntivoOp) next.aggiuntivoOp = TEXT_FILTER_DEFAULT;
+              } else {
+                delete next.aggiuntivoValore;
+              }
+              onChange(next);
+            }}
+          />
+        </Field>
       </Sezione>
     </div>
   );

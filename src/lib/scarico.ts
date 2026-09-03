@@ -1,5 +1,14 @@
 export const CODICI_SCARICO = ["PTC", "PPC", "MOV", "LPP", "LPT"] as const;
 
+/** Codici promessa con data, importo e modalità di pagamento (solo LPI/LPP/LPT). */
+export const CODICI_SCARICO_DETTAGLIO_PAGAMENTO = ["LPI", "LPP", "LPT"] as const;
+
+export function isCodiceScaricoConDettagliPagamento(codice: string): boolean {
+  const key = codice.trim().toUpperCase();
+  if (!key) return false;
+  return (CODICI_SCARICO_DETTAGLIO_PAGAMENTO as readonly string[]).includes(key);
+}
+
 export type CodiceScarico = (typeof CODICI_SCARICO)[number];
 
 const STATO_SCARICO: Record<string, CodiceScarico> = {

@@ -77,6 +77,8 @@ const BTN_ESC = `${BTN_BASE} cursor-pointer rounded border border-[var(--line)] 
 const BTN_TOOL =
   "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded border border-[#1a4f7a] bg-[#e8f1f8] px-2.5 text-[10px] font-bold tracking-wide text-[#123a5c] hover:bg-[#d4e6f4] disabled:cursor-not-allowed disabled:opacity-45";
 
+const TOOL_SEP = "mx-3 h-6 w-px shrink-0 self-center bg-[#a8b4c0]";
+
 const ICON = "h-3.5 w-3.5 shrink-0";
 
 const CONTABILE = [
@@ -138,6 +140,7 @@ export function PraticaFunzioniBar({
   memoAt,
   promessaAt,
   promessaImporto,
+  promessaMetodo,
   residuo = 0,
   nextPraticaHref,
   showRecordingControl,
@@ -155,6 +158,7 @@ export function PraticaFunzioniBar({
   memoAt?: string | null;
   promessaAt?: string | null;
   promessaImporto?: number | null;
+  promessaMetodo?: string | null;
   residuo?: number;
   nextPraticaHref?: string | null;
   showRecordingControl?: boolean;
@@ -351,7 +355,7 @@ export function PraticaFunzioniBar({
   return (
     <>
       <div
-        className={`flex flex-wrap gap-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1 ${
+        className={`flex flex-wrap items-center gap-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1 ${
           flashF9
             ? "f9-bar-flashing overflow-visible"
             : "overflow-x-auto"
@@ -456,8 +460,9 @@ export function PraticaFunzioniBar({
           </Link>
         </Hint>
 
+        <span className={TOOL_SEP} aria-hidden />
         <span
-          className="ml-3 inline-flex flex-wrap items-center gap-1 border-l border-[#a8b4c0] pl-3"
+          className="inline-flex flex-wrap items-center gap-1"
           aria-label="Strumenti pratica"
         >
           <Hint label="Piano di rientro">
@@ -488,7 +493,10 @@ export function PraticaFunzioniBar({
               Calcolatrice
             </button>
           </Hint>
-          {showIncassoPopup ? (
+        </span>
+        {showIncassoPopup ? (
+          <>
+            <span className={TOOL_SEP} aria-hidden />
             <Hint label="Registra incasso">
               <button
                 type="button"
@@ -498,8 +506,8 @@ export function PraticaFunzioniBar({
                 Inserisci incasso
               </button>
             </Hint>
-          ) : null}
-        </span>
+          </>
+        ) : null}
 
         {showRecordingControl ? (
           <RegistrazioneTelefonataControl praticaId={praticaId} mode={recordingMode} />
@@ -551,6 +559,7 @@ export function PraticaFunzioniBar({
             codiciScaricoOperatore={codiciScaricoOperatore}
             promessaAt={promessaAt}
             promessaImporto={promessaImporto}
+            promessaMetodo={promessaMetodo}
             bozzaNota={notaBozza?.testo}
             bozzaKey={notaBozza?.key}
             inModal

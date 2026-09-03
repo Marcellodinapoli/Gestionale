@@ -44,6 +44,11 @@ import { can } from "@/lib/permissions";
 import { isAffidoTemporaneo } from "@/lib/affido";
 import { codiceScaricoPratica } from "@/lib/scarico";
 import { countRateScadute } from "@/lib/rate";
+import {
+  canUseOperatoreFiltro,
+  defaultOperatoreFiltroId,
+  memberIdsOperatoreFiltro,
+} from "@/lib/filtriOperatore";
 
 /** Stato predefinito all’apertura dell’elenco pratiche. */
 const STATO_DEFAULT = "IN_LAVORAZIONE";
@@ -67,13 +72,17 @@ export default async function PratichePage({
   const praticaModel = praticaDbFromUser(user);
   const sp = await searchParams;
 
-  // Default: pratiche in lavorazione (stato assente in URL → applica filtro)
-  if (!("stato" in sp)) {
+  const needsStatoDefault = !("stato" in sp);
+  const needsOperatoreDefault =
+    Boolean(defaultOperatoreFiltroId(user.role, user.id)) && !("operatore" in sp);
+
+  if (needsStatoDefault || needsOperatoreDefault) {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
       if (v != null && v !== "") params.set(k, v);
     }
-    params.set("stato", STATO_DEFAULT);
+    if (needsStatoDefault) params.set("stato", STATO_DEFAULT);
+    if (needsOperatoreDefault) params.set("operatore", user.id);
     redirect(`/pratiche?${params.toString()}`);
   }
 
@@ -83,9 +92,7 @@ export default async function PratichePage({
   const periCtx = await resolveGruppoPerimetroContext(user);
   const baseScope = await praticaScopeWhere(user);
 
-  const canFilterOp = ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE", "SUPERVISOR"].includes(
-    user.role
-  );
+  const canUseOperatoreFiltroUi = canUseOperatoreFiltro(user.role);
   const needTemporanea =
     altri?.sitAffido === "temporanea" || altri?.affidoProvvisorio === "1";
   const needImportoTot = Boolean(altri?.importoTotDa || altri?.importoTotA);
@@ -98,32 +105,36 @@ export default async function PratichePage({
     userId: user.id,
   };
 
+  const operatoriScopeIds = memberIdsOperatoreFiltro(
+    user.role,
+    user.id,
+    periCtx.memberIds
+  );
+
   const [operatoriListRaw, mandantiListRaw, temporaneaIdsRaw, lottiRows, importoTotIdsRaw, totIncassatoIdsRaw] =
     await Promise.all([
-      canFilterOp
+      canUseOperatoreFiltroUi
         ? usersDbFromUser(user).findMany({
             where: {
               tenantId: user.tenantId,
               role: { in: ["OPERATOR", "SUPERVISOR"] },
               active: true,
-              ...(user.role === "SUPERVISOR" && periCtx.memberIds.length
-                ? { id: { in: periCtx.memberIds } }
-                : {}),
+              ...(operatoriScopeIds ? { id: { in: operatoriScopeIds } } : {}),
             },
             orderBy: { name: "asc" },
-            select: { id: true, name: true },
+            select: { id: true, name: true, acronimo: true },
           })
         : Promise.resolve([]),
       mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
-        select: { id: true, codice: true, ragioneSociale: true },
+        select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
       }),
       needTemporanea
         ? idsAffidoTemporaneo(praticaCtx)
         : Promise.resolve([] as string[]),
       praticaModel.groupBy({
-        by: ["numeroMandante"],
+        by: ["mandanteId", "numeroMandante"],
         where: {
           AND: [
             baseScope,
@@ -159,25 +170,37 @@ export default async function PratichePage({
       ? await filtraIdsPraticaScope(user, totIncassatoIdsRaw)
       : undefined;
 
-  const lottiInLavorazione = [
-    ...new Set(
-      lottiRows
-        .map((r) => r.numeroMandante?.trim())
-        .filter((v): v is string => Boolean(v))
-    ),
-  ].sort((a, b) => a.localeCompare(b, "it"));
+  const lottiPerMandato: Record<string, string[]> = {};
+  const lottiInLavorazioneSet = new Set<string>();
+  for (const row of lottiRows) {
+    const lotto = row.numeroMandante?.trim();
+    if (!lotto) continue;
+    lottiInLavorazioneSet.add(lotto);
+    const list = lottiPerMandato[row.mandanteId] ?? [];
+    if (!list.includes(lotto)) list.push(lotto);
+    lottiPerMandato[row.mandanteId] = list;
+  }
+  for (const id of Object.keys(lottiPerMandato)) {
+    lottiPerMandato[id]!.sort((a, b) => a.localeCompare(b, "it"));
+  }
+  const lottiInLavorazione = [...lottiInLavorazioneSet].sort((a, b) =>
+    a.localeCompare(b, "it")
+  );
+
+  const mandantiPerimetri = mandantiList.map((m) => ({
+    id: m.id,
+    perimetri: m.perimetri,
+  }));
 
   const altriWhere =
     altri && hasAltriFiltri(altri)
-      ? altriFiltriWhere(
-          canFilterOp ? altri : { ...altri, operatore: undefined },
-          {
-            canFilterOperatore: canFilterOp,
-            temporaneaIds: temporaneaIds ?? undefined,
-            importoTotIds: importoTotIds ?? undefined,
-            totIncassatoIds: totIncassatoIds ?? undefined,
-          }
-        )
+      ? altriFiltriWhere(altri, {
+          canFilterOperatore: canUseOperatoreFiltroUi,
+          temporaneaIds: temporaneaIds ?? undefined,
+          importoTotIds: importoTotIds ?? undefined,
+          totIncassatoIds: totIncassatoIds ?? undefined,
+          mandantiPerimetri,
+        })
       : {};
 
   const where = {
@@ -328,7 +351,6 @@ export default async function PratichePage({
       <PraticheFiltriBar
         q={sp.q}
         stato={sp.stato}
-        esito={sp.esito}
         lavorate={codaNav.filtro?.lavorate}
         lavorateData={codaNav.filtro?.lavorateData}
         lavorateDa={codaNav.filtro?.lavorateDa}
@@ -341,19 +363,11 @@ export default async function PratichePage({
         operatori={operatoriList}
         mandanti={mandantiList}
         lotti={lottiInLavorazione}
+        lottiPerMandato={lottiPerMandato}
+        mandantiPerimetri={mandantiPerimetri}
         altri={altri}
+        apriPraticheHref={apriPraticheHref}
       />
-      {apriPraticheHref ? (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Link
-            href={apriPraticheHref}
-            prefetch
-            className="inline-flex h-10 items-center rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white shadow-sm hover:opacity-90"
-          >
-            Apri pratiche
-          </Link>
-        </div>
-      ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <PraticheListaConNotaMassiva
           pratiche={praticheRows}

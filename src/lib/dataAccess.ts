@@ -12,12 +12,13 @@
 
 import { getDatabaseProvider } from "@/lib/data/config";
 
-export type OperationalBackend = "firestore" | "connector";
+export type OperationalBackend = "firestore" | "connector" | "sqlite";
 export type FormazioneBackend = "firebase";
 
 export function getOperationalBackend(): OperationalBackend {
   const provider = getDatabaseProvider();
   if (provider === "connector") return "connector";
+  if (provider === "sqlite") return "sqlite";
   return "firestore";
 }
 
@@ -26,18 +27,27 @@ export function getFormazioneBackend(): FormazioneBackend {
 }
 
 export function assertOperationalBackendReady() {
-  if (getOperationalBackend() === "connector") {
+  const backend = getOperationalBackend();
+  if (backend === "connector") {
     const url = process.env.CONNECTOR_BASE_URL || "http://localhost:8443";
     if (!url) {
       throw new Error("CONNECTOR_BASE_URL non configurato");
     }
   }
+  if (backend === "sqlite") {
+    if (!process.env.DATABASE_URL?.trim()) {
+      throw new Error("DATABASE_URL non configurato per sqlite locale");
+    }
+  }
 }
 
-export type RuntimeDataPlane = "connector" | "firestore";
+export type RuntimeDataPlane = "connector" | "firestore" | "sqlite";
 
 export function getRuntimeDataPlane(): RuntimeDataPlane {
-  return getOperationalBackend() === "connector" ? "connector" : "firestore";
+  const backend = getOperationalBackend();
+  if (backend === "connector") return "connector";
+  if (backend === "sqlite") return "sqlite";
+  return "firestore";
 }
 
 export function describeDataArchitecture() {

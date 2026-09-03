@@ -2,14 +2,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ============================================================
-// NON È UN DATABASE.
-// Catalogo modelli → tipi TypeScript per l’adapter Firestore.
-// Runtime: solo Firebase. Non usare migrate / db push.
+// Catalogo modelli → tipi TypeScript + schema SQLite locale opzionale (dev).
+// Runtime produzione: Firebase o Connector. Dev locale: DATABASE_PROVIDER=sqlite.
 // ============================================================
 datasource db {
   provider = "sqlite"
-  url      = "file:./.types-only.db"
+  url      = env("DATABASE_URL")
 }
 
 model Tenant {
@@ -27,6 +25,7 @@ model Tenant {
   configs   ConfigurazioneSistema[]
   auditLogs AuditLog[]
   importBatch ImportBatch[]
+  dialerCampagne DialerCampagna[]
 }
 
 model Sede {
@@ -96,6 +95,10 @@ model User {
   sede          Sede?       @relation(fields: [sedeId], references: [id], onDelete: SetNull)
   praticaLocks  PraticaLock[]
   passwordHistory PasswordHistory[]
+  dialerCampagneCreate DialerCampagna[] @relation("DialerCampagnaCreatore")
+  dialerCampagneSupervise DialerCampagna[] @relation("DialerCampagnaSupervisor")
+  dialerSessioni DialerCampagnaOperatore[]
+  dialerEventi  DialerChiamataEvento[]
   lastLoginAt   DateTime?
   lastLogoutAt  DateTime?
   createdAt     DateTime   @default(now())
@@ -242,6 +245,7 @@ model Pratica {
   memoAt          DateTime?
   promessaAt      DateTime?
   promessaImporto Float?
+  promessaMetodo  String?
   ultimaLavorazioneAt DateTime?
   note            String?
   importBatchId   String?
@@ -259,6 +263,8 @@ model Pratica {
   messaggiAgenda  MessaggioAgenda[]
   messaggiInterni MessaggioInterno[]
   lock            PraticaLock?
+  dialerCampagnaItems DialerCampagnaPratica[]
+  dialerEventi    DialerChiamataEvento[]
 
   @@unique([tenantId, numero])
   @@index([tenantId])
@@ -494,4 +500,105 @@ model ConfigurazioneSistema {
 
   @@unique([tenantId, chiave])
   @@index([tenantId])
+}
+
+// ============================================================
+// Predictive Dialer (modulo isolato)
+// ============================================================
+
+model DialerCampagna {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nome          String
+  descrizione   String   @default("")
+  codiciScarico String   @default("[]")
+  postCallSec   Int      @default(60)
+  lockTimeoutSec Int     @default(120)
+  stato         String   @default("BOZZA")
+  pacingRatio   Float?
+  externalId    String?
+  createdById   String
+  createdBy     User     @relation("DialerCampagnaCreatore", fields: [createdById], references: [id])
+  supervisorId  String?
+  supervisor    User?    @relation("DialerCampagnaSupervisor", fields: [supervisorId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  activatedAt   DateTime?
+  operatori     DialerCampagnaOperatore[]
+  pratiche      DialerCampagnaPratica[]
+  eventi        DialerChiamataEvento[]
+
+  @@index([tenantId])
+  @@index([tenantId, stato])
+}
+
+model DialerCampagnaOperatore {
+  id                  String   @id @default(cuid())
+  campagnaId          String
+  campagna            DialerCampagna @relation(fields: [campagnaId], references: [id], onDelete: Cascade)
+  operatoreId         String
+  operatore           User     @relation(fields: [operatoreId], references: [id])
+  invitatoAt          DateTime @default(now())
+  accettatoAt         DateTime?
+  sessioneStato       String   @default("offline")
+  pausaInizioAt       DateTime?
+  uscitaAt            DateTime?
+  chiamateCount       Int      @default(0)
+  durataTotaleSec     Int      @default(0)
+  praticaCorrenteId   String?
+  callIdCorrente      String?
+  postCallFineAt      DateTime?
+  lastHeartbeatAt     DateTime?
+
+  @@unique([campagnaId, operatoreId])
+  @@index([operatoreId])
+}
+
+model DialerCampagnaPratica {
+  id                  String   @id @default(cuid())
+  campagnaId          String
+  campagna            DialerCampagna @relation(fields: [campagnaId], references: [id], onDelete: Cascade)
+  praticaId           String
+  pratica             Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  stato               String   @default("disponibile")
+  tentativi           Int      @default(0)
+  ultimoEsito         String?
+  ultimaChiamataAt    DateTime?
+  prossimoTentativoAt DateTime?
+  numeroTelefonicoUtilizzato String @default("")
+  lockedByOperatoreId String?
+  lockedByCallId      String?
+  lockedAt            DateTime?
+
+  @@unique([campagnaId, praticaId])
+  @@index([campagnaId, stato, lockedAt])
+  @@index([campagnaId, stato])
+}
+
+model DialerChiamataEvento {
+  id             String   @id @default(cuid())
+  campagnaId     String
+  campagna       DialerCampagna @relation(fields: [campagnaId], references: [id], onDelete: Cascade)
+  operatoreId    String?
+  operatore      User?    @relation(fields: [operatoreId], references: [id])
+  praticaId      String?
+  pratica        Pratica? @relation(fields: [praticaId], references: [id], onDelete: SetNull)
+  numero         String   @default("")
+  tipo           String
+  esito          String?
+  durataSec      Int      @default(0)
+  callId         String   @default("")
+  externalCallId String?
+  providerEventId String?
+  dedupKey       String   @default("")
+  applied        Boolean  @default(true)
+  skipReason     String?
+  metadata       String   @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@unique([campagnaId, dedupKey])
+  @@index([campagnaId, createdAt])
+  @@index([campagnaId, callId])
+  @@index([operatoreId])
 }

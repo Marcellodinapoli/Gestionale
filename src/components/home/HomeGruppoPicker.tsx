@@ -1,6 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_BAR_CONTAINER_CLASS,
+  FILTRI_PAGE_SELECT_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 
 export function HomeGruppoPicker({
   supervisori,
@@ -17,7 +22,7 @@ export function HomeGruppoPicker({
 
   return (
     <form
-      className="flex flex-wrap items-end gap-2 rounded-xl border border-[var(--line)] bg-[#f8fafc] px-3 py-3"
+      className={`flex flex-wrap items-end gap-2 rounded-xl px-3 py-3 ${FILTRI_BAR_CONTAINER_CLASS}`}
       onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -36,7 +41,7 @@ export function HomeGruppoPicker({
         <select
           name="gruppo"
           defaultValue={gruppoId}
-          className="h-9 min-w-[12rem] rounded-lg border border-[var(--line)] bg-white px-2 text-sm"
+          className={`min-w-[12rem] ${FILTRI_PAGE_SELECT_CLASS}`}
         >
           {supervisori.map((s) => (
             <option key={s.id} value={s.id}>
@@ -46,10 +51,7 @@ export function HomeGruppoPicker({
         </select>
       </label>
       {lavorateData ? <input type="hidden" name="lavorateData" value={lavorateData} /> : null}
-      <button
-        type="submit"
-        className="h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-medium hover:bg-slate-50"
-      >
+      <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
         Mostra
       </button>
     </form>

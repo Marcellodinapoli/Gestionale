@@ -25,7 +25,9 @@ import { getPraticaWorkContext } from "@/lib/praticaLock";
 import {
   codiciScaricoOperatoriEffettivi,
   codiciScaricoOperatoriPerPratica,
+  smsPreimpostatiPerPratica,
 } from "@/lib/mandantePerimetri";
+import { smsPreimpostatiEffettivi } from "@/lib/smsPreimpostati";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
 import { PraticaSchedaOperatore } from "@/components/pratica/PraticaSchedaOperatore";
 import { PraticaLockWatcher } from "@/components/pratica/PraticaLockWatcher";
@@ -106,7 +108,7 @@ export default async function PraticaDetailPage({
             recapiti: { orderBy: [{ tipo: "asc" }, { ordine: "asc" }] },
           },
         },
-        mandante: { select: { codice: true, ragioneSociale: true, perimetri: true } },
+        mandante: { select: { codice: true, ragioneSociale: true, perimetri: true, smsPreimpostati: true } },
         assegnatario: { select: { name: true } },
         rate: { orderBy: { numeroRata: "asc" } },
         garanti: {
@@ -136,6 +138,13 @@ export default async function PraticaDetailPage({
     codiciScaricoOperatoriPerPratica(
       pratica.mandante.perimetri,
       pratica.numeroMandante
+    )
+  );
+  const smsPresets = smsPreimpostatiEffettivi(
+    smsPreimpostatiPerPratica(
+      pratica.mandante.perimetri,
+      pratica.numeroMandante,
+      pratica.mandante.smsPreimpostati
     )
   );
 
@@ -188,6 +197,7 @@ export default async function PraticaDetailPage({
           <PraticaSchedaOperatore
             pratica={{ ...pratica, pagato }}
             codiciScaricoOperatore={codiciScaricoOperatore}
+            smsPresets={smsPresets}
             canEditNotes={canWork}
             canEditStato={canWork && can(user, "pratiche:update:stato")}
             canRegistraIncasso={canWork && can(user, "incassi:create")}

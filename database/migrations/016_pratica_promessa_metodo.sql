@@ -1,0 +1,1 @@
+ALTER TABLE "Pratica" ADD COLUMN IF NOT EXISTS "promessaMetodo" TEXT;

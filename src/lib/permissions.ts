@@ -51,7 +51,10 @@ export type Permission =
   | "operatori:manage"
   | "pratiche:nota-massiva"
   | "lavorazione:view"
-  | "formazione:view";
+  | "formazione:view"
+  | "dialer:operate"
+  | "dialer:manage"
+  | "dialer:admin";
 
 const MAP: Record<Permission, Role[]> = {
   "users:manage": ["ADMIN"],
@@ -75,6 +78,9 @@ const MAP: Record<Permission, Role[]> = {
   "operatori:manage": ["ADMIN", "AMMINISTRAZIONE"],
   "lavorazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
   "formazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
+  "dialer:operate": ["ADMIN", "SUPERVISOR", "OPERATOR"],
+  "dialer:manage": ["ADMIN", "SUPERVISOR"],
+  "dialer:admin": ["ADMIN"],
 };
 
 export function isManutenzione(user: { role: string } | null | undefined) {

@@ -159,6 +159,17 @@ export function codiciScaricoOperatoriPerPratica(
   return hit?.codiciScaricoOperatori ?? [];
 }
 
+/** SMS preimpostati sul perimetro pratica, con fallback legacy mandante. */
+export function smsPreimpostatiPerPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined,
+  legacySmsRaw?: string | null
+): SmsPresetPerimetro[] {
+  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
+  if (hit?.smsPreimpostati.length) return hit.smsPreimpostati;
+  return parseSmsMandante(legacySmsRaw);
+}
+
 /** Elenco operatori effettivo: configurato sul perimetro o default standard. */
 export function codiciScaricoOperatoriEffettivi(
   codici: CodiceScaricoPerimetro[]

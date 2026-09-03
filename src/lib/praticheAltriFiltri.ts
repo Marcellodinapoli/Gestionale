@@ -16,6 +16,21 @@ export {
   type SitAffidoFiltro,
 } from "@/lib/praticheAltriFiltriUi";
 import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import { parseCodScaricoOp, parseCodScaricoList } from "@/lib/filtriCodScarico";
+import { parseOperatoreOp, parseOperatoreList } from "@/lib/filtriOperatore";
+import { parseTextFilterOp } from "@/lib/filtriTestoOp";
+import { prismaContainsClause } from "@/lib/filtriTestoWhere";
+import { parsePerimetri, perimetroPerNome } from "@/lib/mandantePerimetri";
+import { aggiuntivoFiltroWhere } from "@/lib/filtriAggiuntivoWhere";
+import { hasAggiuntivoFiltro } from "@/lib/filtriAggiuntivoUi";
+import type { MandantePerimetriRef } from "@/lib/filtriCodScaricoPerimetro";
+
+function applyEqNe(
+  cond: Prisma.PraticaWhereInput,
+  op?: string | null
+): Prisma.PraticaWhereInput {
+  return parseTextFilterOp(op) === "ne" ? { NOT: cond } : cond;
+}
 
 function trimOrUndef(v?: string | null) {
   const t = v?.trim();
@@ -93,6 +108,44 @@ export async function idsTotIncassato(
   return idsTotIncassatoForTenant(ctx, from ?? undefined, to ?? undefined);
 }
 
+function chiaviPerimetroFiltro(
+  perimetriRaw: string | null | undefined,
+  selected: string
+): string[] {
+  const key = selected.trim();
+  if (!key) return [];
+  const elenco = parsePerimetri(perimetriRaw);
+  const hit =
+    perimetroPerNome(elenco, key) ??
+    elenco.find((p) => p.descrizione.trim() === key) ??
+    elenco.find((p) => p.nomeInterno.trim() === key) ??
+    null;
+  if (!hit) return [key];
+  return [
+    ...new Set(
+      [key, hit.nomeMandante.trim(), hit.descrizione.trim(), hit.nomeInterno.trim()].filter(
+        Boolean
+      )
+    ),
+  ];
+}
+
+function chiaviPerimetroFiltroTenant(
+  mandanti: MandantePerimetriRef[] | undefined,
+  selected: string,
+  mandatoId?: string | null
+): string[] {
+  const list = mandatoId
+    ? (mandanti || []).filter((m) => m.id === mandatoId)
+    : mandanti || [];
+  const keys = new Set<string>();
+  for (const m of list) {
+    for (const k of chiaviPerimetroFiltro(m.perimetri, selected)) keys.add(k);
+  }
+  if (!keys.size) keys.add(selected.trim());
+  return [...keys];
+}
+
 export function altriFiltriWhere(
   f: AltriFiltri,
   opts?: {
@@ -100,33 +153,47 @@ export function altriFiltriWhere(
     temporaneaIds?: string[];
     importoTotIds?: string[] | null;
     totIncassatoIds?: string[] | null;
+    mandantiPerimetri?: MandantePerimetriRef[];
   }
 ): Prisma.PraticaWhereInput {
   const and: Prisma.PraticaWhereInput[] = [];
 
   if (f.debitore) {
-    and.push({
-      OR: [
-        { debitore: { nome: { contains: f.debitore } } },
-        { debitore: { cognome: { contains: f.debitore } } },
-      ],
-    });
+    const val = f.debitore;
+    const op = parseTextFilterOp(f.debitoreOp);
+    const matchNome = { debitore: { nome: prismaContainsClause(val, op) } };
+    const matchCognome = { debitore: { cognome: prismaContainsClause(val, op) } };
+    if (op === "ne") {
+      and.push({ NOT: { OR: [matchNome, matchCognome] } });
+    } else {
+      and.push({ OR: [matchNome, matchCognome] });
+    }
   }
 
   const cap = stringRange(f.capDa, f.capA);
   if (cap) and.push({ debitore: { cap } });
 
-  if (f.citta) and.push({ debitore: { citta: { contains: f.citta } } });
-  if (f.prov) and.push({ debitore: { provincia: { contains: f.prov } } });
+  if (f.citta) {
+    and.push({
+      debitore: { citta: prismaContainsClause(f.citta, f.cittaOp) },
+    });
+  }
+  if (f.prov) {
+    and.push({
+      debitore: { provincia: prismaContainsClause(f.prov, f.provOp) },
+    });
+  }
 
   if (f.telefono) {
-    and.push({
-      OR: [
-        { debitore: { telefono: { contains: f.telefono } } },
-        { debitore: { recapiti: { some: { valore: { contains: f.telefono } } } } },
-        { garanti: { some: { telefono: { contains: f.telefono } } } },
-      ],
-    });
+    const val = f.telefono;
+    const op = parseTextFilterOp(f.telefonoOp);
+    const paths = [
+      { debitore: { telefono: prismaContainsClause(val, op) } },
+      { debitore: { recapiti: { some: { valore: prismaContainsClause(val, op) } } } },
+      { garanti: { some: { telefono: prismaContainsClause(val, op) } } },
+    ];
+    if (op === "ne") and.push({ NOT: { OR: paths } });
+    else and.push({ OR: paths });
   }
 
   const affido = dateRange(f.affidoDa, f.affidoA);
@@ -135,29 +202,74 @@ export function altriFiltriWhere(
   const scadenza = dateRange(f.scadenzaDa, f.scadenzaA);
   if (scadenza) and.push({ scadenza });
 
-  if (f.mandato) and.push({ mandanteId: f.mandato });
-  if (f.lotto) and.push({ numeroMandante: f.lotto });
-
-  if (f.operatore && opts?.canFilterOperatore !== false) {
-    and.push({
-      OR: [{ assegnatarioId: f.operatore }, { operatoreTitolareId: f.operatore }],
-    });
+  if (f.mandato) {
+    and.push(applyEqNe({ mandanteId: f.mandato }, f.mandatoOp));
+  }
+  if (f.perimetro) {
+    const keys = chiaviPerimetroFiltroTenant(
+      opts?.mandantiPerimetri,
+      f.perimetro,
+      f.mandato
+    );
+    const paths: Prisma.PraticaWhereInput[] = [];
+    for (const k of keys) {
+      paths.push({ importBatch: { is: { perimetro: k } } });
+      paths.push({ numeroMandante: k });
+    }
+    and.push(applyEqNe({ OR: paths }, f.perimetroOp));
+  }
+  if (f.lotto) {
+    and.push(applyEqNe({ numeroMandante: f.lotto }, f.lottoOp));
   }
 
-  if (f.codScarico) and.push({ codiceScarico: f.codScarico });
+  if (f.operatore && opts?.canFilterOperatore !== false) {
+    const ids = parseOperatoreList(f.operatore);
+    if (ids.length) {
+      const op = parseOperatoreOp(f.operatoreOp);
+      const matchAny = {
+        OR: [{ assegnatarioId: { in: ids } }, { operatoreTitolareId: { in: ids } }],
+      };
+      if (op === "ne") {
+        and.push({ NOT: matchAny });
+      } else {
+        and.push(matchAny);
+      }
+    }
+  }
+
+  if (f.codScarico) {
+    const codes = parseCodScaricoList(f.codScarico);
+    if (codes.length) {
+      const op = parseCodScaricoOp(f.codScaricoOp);
+      if (op === "ne") {
+        and.push({ codiceScarico: { notIn: codes } });
+      } else if (codes.length === 1) {
+        and.push({ codiceScarico: codes[0]! });
+      } else {
+        and.push({ codiceScarico: { in: codes } });
+      }
+    }
+  }
 
   const wantTemporanea =
     f.sitAffido === "temporanea" || f.affidoProvvisorio === "1";
 
   if (f.sitAffido === "affidata" && !wantTemporanea) {
-    and.push({ assegnatarioId: { not: null } });
+    and.push(applyEqNe({ assegnatarioId: { not: null } }, f.sitAffidoOp));
   } else if (f.sitAffido === "non_affidata") {
-    and.push({ assegnatarioId: null });
+    and.push(applyEqNe({ assegnatarioId: null }, f.sitAffidoOp));
   }
 
   if (wantTemporanea) {
     const ids = opts?.temporaneaIds ?? [];
-    and.push({ id: { in: ids.length ? ids : ["__nessuna-temporanea__"] } });
+    const temporaneaCond: Prisma.PraticaWhereInput = {
+      id: { in: ids.length ? ids : ["__nessuna-temporanea__"] },
+    };
+    if (f.sitAffido === "temporanea") {
+      and.push(applyEqNe(temporaneaCond, f.sitAffidoOp));
+    } else {
+      and.push(temporaneaCond);
+    }
   }
 
   const rata = numRange(f.importoRataDa, f.importoRataA);
@@ -191,31 +303,37 @@ export function altriFiltriWhere(
   }
 
   if (f.cfPiva) {
-    and.push({
-      OR: [
-        { debitore: { codiceFiscale: { contains: f.cfPiva } } },
-        { garanti: { some: { codiceFiscale: { contains: f.cfPiva } } } },
-      ],
-    });
+    const val = f.cfPiva;
+    const op = parseTextFilterOp(f.cfPivaOp);
+    const paths = [
+      { debitore: { codiceFiscale: prismaContainsClause(val, op) } },
+      { garanti: { some: { codiceFiscale: prismaContainsClause(val, op) } } },
+    ];
+    if (op === "ne") and.push({ NOT: { OR: paths } });
+    else and.push({ OR: paths });
   }
 
   if (f.garante) {
-    and.push({
-      OR: [
-        { garanti: { some: { nome: { contains: f.garante } } } },
-        { garanti: { some: { cognome: { contains: f.garante } } } },
-        { garanti: { some: { codiceFiscale: { contains: f.garante } } } },
-      ],
-    });
+    const val = f.garante;
+    const op = parseTextFilterOp(f.garanteOp);
+    const paths = [
+      { garanti: { some: { nome: prismaContainsClause(val, op) } } },
+      { garanti: { some: { cognome: prismaContainsClause(val, op) } } },
+      { garanti: { some: { codiceFiscale: prismaContainsClause(val, op) } } },
+    ];
+    if (op === "ne") and.push({ NOT: { OR: paths } });
+    else and.push({ OR: paths });
   }
 
   if (f.note) {
-    and.push({
-      OR: [
-        { note: { contains: f.note } },
-        { attivita: { some: { nota: { contains: f.note } } } },
-      ],
-    });
+    const val = f.note;
+    const op = parseTextFilterOp(f.noteOp);
+    const paths = [
+      { note: prismaContainsClause(val, op) },
+      { attivita: { some: { nota: prismaContainsClause(val, op) } } },
+    ];
+    if (op === "ne") and.push({ NOT: { OR: paths } });
+    else and.push({ OR: paths });
   }
 
   const nPratica = stringRange(f.nPraticaDa, f.nPraticaA);
@@ -231,7 +349,14 @@ export function altriFiltriWhere(
   const memo = dateRange(f.memoDa, f.memoA);
   if (memo) and.push({ memoAt: memo });
 
-  // aggiuntivo: elenco non ancora popolato
+  const aggiuntivo = aggiuntivoFiltroWhere(
+    f.aggiuntivoCampo,
+    f.aggiuntivoValore,
+    f.aggiuntivoOp
+  );
+  if (aggiuntivo && hasAggiuntivoFiltro(f.aggiuntivoCampo, f.aggiuntivoValore)) {
+    and.push(aggiuntivo);
+  }
 
   if (!and.length) return {};
   return and.length === 1 ? and[0]! : { AND: and };

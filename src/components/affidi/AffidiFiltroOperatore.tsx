@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { buildAffidiHref, type AffidiNavParams } from "@/components/affidi/AffidiCaricoOperatori";
+import { FILTRI_PAGE_SELECT_CLASS } from "@/components/filtri/filtriFieldStyles";
 
 export function AffidiFiltroOperatore({
   operatori,
@@ -12,7 +13,7 @@ export function AffidiFiltroOperatore({
   operatori: Array<{ id: string; name: string }>;
   selezionatoId?: string;
   coda?: string;
-  nav?: Pick<AffidiNavParams, "mandato" | "perimetro">;
+  nav?: Pick<AffidiNavParams, "mandato" | "perimetro" | "caricoMandato" | "caricoPerimetro" | "caricoMese">;
 }) {
   const router = useRouter();
 
@@ -31,7 +32,7 @@ export function AffidiFiltroOperatore({
             })
           );
         }}
-        className="h-9 rounded-lg border border-[var(--line)] px-2 text-sm"
+        className={FILTRI_PAGE_SELECT_CLASS}
       >
         <option value="">Tutti gli operatori</option>
         {operatori.map((o) => (

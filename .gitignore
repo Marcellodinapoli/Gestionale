@@ -43,6 +43,11 @@ serviceAccountKey.json
 
 # Types-only stub created by prisma generate (never app DB)
 /src/lib/firebase/.types-only.db
+/src/lib/firebase/.local-dev.db
+/src/lib/firebase/.local-dev.db-journal
+
+# Dev SQLite locale temporaneo (non committare)
+/.local-dev/
 /uploads
 
 # vercel

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { buildHomeKpiContext } from "@/lib/homeKpi/buildContext";
 import { loadHomeKpiAuto } from "@/lib/homeKpi/loadHomeKpi";
 import { usersDbFromUser } from "@/lib/usersRepo";
@@ -20,7 +21,6 @@ import {
   praticaScopeForGruppoContext,
 } from "@/lib/gruppoPerimetroScope";
 import { PageHeader } from "@/components/ui";
-import { esitoContattoLabel } from "@/lib/contatto";
 import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
 import { getGruppoLavoro, getGruppoLavoroForSupervisor } from "@/lib/gruppoLavoro";
@@ -36,7 +36,7 @@ import { CodiciMandantePerimetroTable } from "@/components/home/CodiciMandantePe
 import { InLavorazionePerimetroCard } from "@/components/home/InLavorazionePerimetroCard";
 import { DaAffidarePerimetroCard } from "@/components/home/DaAffidarePerimetroCard";
 import { IncassiTipologiaFiltri } from "@/components/home/IncassiTipologiaFiltri";
-import Link from "next/link";
+import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 import type { RiepilogoMandanteDto } from "@/lib/data/contracts/dashboard";
 
 function RiepilogoMandantiTable({
@@ -48,6 +48,7 @@ function RiepilogoMandantiTable({
 }) {
   const totAffidato = righe.reduce((s, r) => s + r.affidato, 0);
   const totIncassato = righe.reduce((s, r) => s + r.incassato, 0);
+  const totRicavoLordo = righe.reduce((s, r) => s + r.ricavoLordo, 0);
   const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
 
   return (
@@ -66,6 +67,7 @@ function RiepilogoMandantiTable({
                 <>
                   <th className="text-right">Affidato</th>
                   <th className="text-right">Incassato</th>
+                  <th className="text-right">Ricavo lordo</th>
                   <th className="text-right">% Recupero</th>
                 </>
               ) : null}
@@ -85,6 +87,9 @@ function RiepilogoMandantiTable({
                   <>
                     <td className="text-right">{euro(r.affidato)}</td>
                     <td className="text-right font-semibold">{euro(r.incassato)}</td>
+                    <td className="text-right font-semibold text-emerald-700">
+                      {euro(r.ricavoLordo)}
+                    </td>
                     <td className="text-right">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -110,6 +115,7 @@ function RiepilogoMandantiTable({
                 <td className="text-right">{righe.reduce((s, r) => s + r.pratiche, 0)}</td>
                 <td className="text-right">{euro(totAffidato)}</td>
                 <td className="text-right">{euro(totIncassato)}</td>
+                <td className="text-right text-emerald-700">{euro(totRicavoLordo)}</td>
                 <td className="text-right">
                   <span className="inline-flex rounded-full bg-[var(--navy)] px-2 py-0.5 text-xs text-white">
                     {totPerc.toFixed(1)}%
@@ -131,6 +137,7 @@ export default async function HomePage({
     lavorateData?: string;
     incMandante?: string;
     incPerimetro?: string;
+    incMese?: string;
     gruppo?: string;
     sede?: string;
   }>;
@@ -141,6 +148,7 @@ export default async function HomePage({
     lavorateData: lavorateDataRaw,
     incMandante,
     incPerimetro,
+    incMese,
     gruppo: gruppoRaw,
     sede: sedeRaw,
   } = sp;
@@ -245,6 +253,7 @@ export default async function HomePage({
             lavorateData: lavorateDataRaw,
             incMandante,
             incPerimetro,
+            incMese,
             gruppo: gruppoRaw,
           }}
         />
@@ -292,6 +301,7 @@ export default async function HomePage({
     const mandantiRiepilogo = admin.mandantiRiepilogo;
     const totAffidato = mandantiRiepilogo.reduce((s, r) => s + r.affidato, 0);
     const totIncassato = mandantiRiepilogo.reduce((s, r) => s + r.incassato, 0);
+    const totRicavoLordo = mandantiRiepilogo.reduce((s, r) => s + r.ricavoLordo, 0);
     const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
 
     const mandantiFiltriUi = admin.mandantiFiltriUi;
@@ -327,11 +337,8 @@ export default async function HomePage({
     const maxMese = Math.max(...incassiPerMandanteMese.map((m) => m.totale), 1);
     const colori = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#be185d", "#65a30d"];
     const mandantiAttivi = admin.mandantiAttivi;
-    const produttivita = admin.produttivita;
-    const caricoGruppi = admin.caricoGruppi;
-    const esitiContatto = admin.esitiContatto;
-    const totEsiti = esitiContatto.reduce((s, e) => s + e.count, 0);
-    const { scaduteAdmin: scadute, inScadenza7gg, nonAssegnate } = admin;
+    const { label: meseIncassiLabel } = rangeMeseIncassi(incMese);
+    const meseColonnaLabel = incMese ? meseIncassiLabel : "Mese corrente";
 
     const sedeNomeAttiva = sedeScopeId
       ? admin.sediOpts.find((s) => s.id === sedeScopeId)?.nome
@@ -356,17 +363,25 @@ export default async function HomePage({
             lavorateData: lavorateDataRaw,
             incMandante,
             incPerimetro,
+            incMese,
             gruppo: gruppoRaw,
           }}
         />
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 lg:gap-3">
+          <DashboardKpi title="Mandanti" value={mandantiAttivi.length} href="/mandanti" />
+          <DashboardKpi
+            title="Pratiche"
+            value={mandantiRiepilogo.reduce((s, r) => s + r.pratiche, 0)}
+            href="/pratiche"
+          />
           <DashboardKpi title="Totale affidato" value={euro(totAffidato)} />
           <DashboardKpi title="Totale incassato" value={euro(totIncassato)} />
           <DashboardKpi
             title="% Recupero"
             value={`${totPerc.toFixed(1)}%`}
           />
+          <DashboardKpi title="Ricavo lordo" value={euro(totRicavoLordo)} href="/provigioni" />
           <DashboardKpi title="Operatori attivi" value={admin.operatoriCount} href="/operatori" />
         </div>
 
@@ -381,6 +396,7 @@ export default async function HomePage({
                 mandanti={mandantiFiltriUi}
                 mandanteId={mandanteFiltroOk}
                 perimetro={perimetroFiltroOk}
+                mese={incMese}
                 sedeId={sedeScopeId}
               />
             </Suspense>
@@ -420,7 +436,7 @@ export default async function HomePage({
                         <th className="text-right">Pezzi</th>
                         <th className="text-right">Importo totale</th>
                         <th className="text-right">% sul totale</th>
-                        <th className="text-right">Mese corrente</th>
+                        <th className="text-right capitalize">{meseColonnaLabel}</th>
                         <th className="text-right">Pezzi mese</th>
                       </tr>
                     </thead>
@@ -508,133 +524,6 @@ export default async function HomePage({
         </div>
 
         <RiepilogoMandantiTable righe={mandantiRiepilogo} />
-
-        {/* Allerte */}
-        <div>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Allerte
-          </h2>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:gap-3">
-            <DashboardKpi
-              title="Scadute"
-              value={scadute}
-              hint="Pratiche oltre la scadenza"
-            />
-            <DashboardKpi
-              title="In scadenza 7 gg"
-              value={inScadenza7gg}
-              hint="Scadono entro una settimana"
-            />
-            <DashboardKpi
-              title="Non assegnate"
-              value={nonAssegnate}
-              hint="Pratiche aperte senza operatore"
-            />
-          </div>
-        </div>
-
-        {/* Produttività operatori oggi */}
-        <div>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Produttività operatori — oggi
-          </h2>
-          <div className="rounded-xl border border-[var(--line)] bg-white p-4">
-            {produttivita.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">Nessun operatore attivo.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {(() => {
-                  const maxAtt = Math.max(...produttivita.map((p) => p.attivita), 1);
-                  return produttivita.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="w-32 truncate text-xs font-medium">{p.name}</span>
-                      <div className="flex-1 rounded-full bg-slate-100" style={{ height: 14 }}>
-                        <div
-                          className="h-full rounded-full bg-[var(--accent)]"
-                          style={{ width: `${(p.attivita / maxAtt) * 100}%`, minWidth: p.attivita > 0 ? 8 : 0 }}
-                        />
-                      </div>
-                      <span className="w-8 text-right text-xs font-semibold">{p.attivita}</span>
-                    </div>
-                  ));
-                })()}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Carico per gruppo */}
-        <div>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Distribuzione carico per gruppo
-          </h2>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {caricoGruppi.map((g, i) => (
-              <div key={i} className="rounded-xl border border-[var(--line)] bg-white p-3">
-                <p className="text-xs font-bold text-[var(--navy)]">{g.nome}</p>
-                <p className="mt-1 text-[10px] text-[var(--muted)]">{g.membri} membri</p>
-                <div className="mt-2 flex gap-4">
-                  <div>
-                    <p className="text-lg font-semibold text-amber-600">{g.aperte}</p>
-                    <p className="text-[9px] text-[var(--muted)]">Aperte</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-semibold">{g.totali}</p>
-                    <p className="text-[9px] text-[var(--muted)]">Totali</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-semibold text-[var(--accent)]">
-                      {g.totali > 0 ? `${((g.totali - g.aperte) / g.totali * 100).toFixed(0)}%` : "—"}
-                    </p>
-                    <p className="text-[9px] text-[var(--muted)]">Chiuse</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Esiti contatto */}
-        <div>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Esiti contatto
-          </h2>
-          <div className="rounded-xl border border-[var(--line)] bg-white p-4">
-            {esitiContatto.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">Nessun esito registrato.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {[...esitiContatto]
-                  .sort((a, b) => b.count - a.count)
-                  .map((e, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="w-36 truncate text-xs font-medium">
-                        {esitoContattoLabel(e.esitoContatto || "")}
-                      </span>
-                      <div className="flex-1 rounded-full bg-slate-100" style={{ height: 14 }}>
-                        <div
-                          className="h-full rounded-full bg-[#1a365d]"
-                          style={{
-                            width: `${totEsiti ? (e.count / totEsiti) * 100 : 0}%`,
-                            minWidth: 8,
-                          }}
-                        />
-                      </div>
-                      <span className="w-12 text-right text-[10px] text-[var(--muted)]">
-                        {e.count} ({totEsiti ? ((e.count / totEsiti) * 100).toFixed(0) : 0}%)
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:gap-3">
-          <DashboardKpi title="Mandanti" value={mandantiAttivi.length} href="/mandanti" />
-          <DashboardKpi title="Pratiche" value={mandantiRiepilogo.reduce((s, r) => s + r.pratiche, 0)} href="/pratiche" />
-          <DashboardKpi title="Configurazione" value="⚙" href="/configurazione" />
-        </div>
       </div>
     );
   }

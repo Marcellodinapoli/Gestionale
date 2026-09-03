@@ -28,6 +28,11 @@ import { ProvvigioniTableAdmin } from "@/components/provvigioni/ProvvigioniTable
 import { ProvvigioniListaPerimetro } from "@/components/provvigioni/ProvvigioniListaPerimetro";
 import { ProvvigioniRiepilogoOperatori } from "@/components/provvigioni/ProvvigioniRiepilogoOperatori";
 import { ProvvigioniFiltriAmministrazione } from "@/components/provvigioni/ProvvigioniFiltriAmministrazione";
+import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_PAGE_INPUT_CLASS,
+  FILTRI_PAGE_SELECT_LG_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 import { MissingSedeBanner, RicaviAltreSediNascostiBanner } from "@/components/sedi/MissingSedeBanner";
 import { SedeRendimentoFilter } from "@/components/sedi/SedeRendimentoFilter";
 import {
@@ -508,7 +513,7 @@ export default async function ProvigioniPage({
             type="month"
             name="mese"
             defaultValue={meseValue}
-            className="h-10 rounded-lg border border-[var(--line)] px-3 text-sm"
+            className={`px-3 ${FILTRI_PAGE_INPUT_CLASS} h-10`}
           />
         </label>
         {user.role === "SUPERVISOR" && operatoriGruppo.length > 0 ? (
@@ -517,7 +522,7 @@ export default async function ProvigioniPage({
             <select
               name="operatore"
               defaultValue={operatoreId || ""}
-              className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm"
+              className={FILTRI_PAGE_SELECT_LG_CLASS}
             >
               <option value="">Tutti il team</option>
               {operatoriGruppo.map((o) => (
@@ -546,7 +551,7 @@ export default async function ProvigioniPage({
               <select
                 name="mandante"
                 defaultValue={mandanteId || ""}
-                className="h-10 min-w-[180px] rounded-lg border border-[var(--line)] px-3 text-sm"
+                className={`min-w-[180px] ${FILTRI_PAGE_SELECT_LG_CLASS}`}
               >
                 <option value="">Tutte</option>
                 {mandanti.map((m) => (
@@ -562,7 +567,7 @@ export default async function ProvigioniPage({
                 name="perimetro"
                 defaultValue={mandanteId && perimetroValido ? perimetroValido : ""}
                 disabled={!mandanteId || Boolean(gruppoId)}
-                className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm disabled:opacity-50"
+                className={`${FILTRI_PAGE_SELECT_LG_CLASS} disabled:opacity-50`}
               >
                 <option value="">Tutti</option>
                 {perimetriRefs
@@ -579,7 +584,7 @@ export default async function ProvigioniPage({
               <select
                 name="operatore"
                 defaultValue={operatoreId || ""}
-                className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm"
+                className={FILTRI_PAGE_SELECT_LG_CLASS}
               >
                 <option value="">Tutti</option>
                 {operatori.map((o) => (
@@ -594,7 +599,7 @@ export default async function ProvigioniPage({
               <select
                 name="gruppo"
                 defaultValue={gruppoId || ""}
-                className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm"
+                className={FILTRI_PAGE_SELECT_LG_CLASS}
               >
                 <option value="">Tutti</option>
                 {supervisori.map((s) => (
@@ -606,7 +611,7 @@ export default async function ProvigioniPage({
             </label>
           </>
         ) : null}
-        <button className="h-10 rounded-lg border border-[var(--line)] bg-white px-4 text-sm">
+        <button type="submit" className={`h-10 ${FILTRI_APPLY_BUTTON_CLASS}`}>
           Filtra
         </button>
       </form>

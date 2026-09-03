@@ -18,6 +18,7 @@ import {
   etichettaCodaAffidi,
   filtraPraticheAffido,
   parseCodaAffidi,
+  type AffidiNavParams,
 } from "@/components/affidi/AffidiCaricoOperatori";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -25,13 +26,31 @@ import { GruppoInlineEditor } from "@/components/affidi/GruppoInlineEditor";
 import { AffidiIndietroLink } from "@/components/affidi/AffidiIndietroLink";
 import { AffidiScrollAffida } from "@/components/affidi/AffidiScrollAffida";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
-import { parseGruppoMandanti, etichettaGruppoMandanti } from "@/lib/gruppoMandanti";
 import {
   elencoPerimetriGruppoConfig,
   elencoPerimetriTuttiMandanti,
   filtraPratichePerPerimetro,
   parsePerimetroAffidi,
 } from "@/lib/affidiPerimetro";
+import { loadAffidiMonitoraggio, praticaMonitorWhere } from "@/lib/affidi/loadAffidiMonitoraggio";
+import {
+  riepilogoCodiciScaricoDettaglio,
+  scarichiOperatoreDaRiepilogo,
+} from "@/lib/homeKpi/codiciScaricoAdmin";
+import {
+  etichettaFiltriMonitorAffidi,
+  filtraPraticheAffidiMonitor,
+  mandantiConPerimetriAffidi,
+  risolviFiltriMonitorAffidi,
+} from "@/lib/affidi/affidiMonitorPerimetri";
+import { incassatoMesePerOperatore } from "@/lib/affidi/incassatoMeseOperatore";
+import { guadagnoMesePerOperatore } from "@/lib/affidi/guadagnoMeseOperatore";
+import { AffidiMonitoraggioPanel } from "@/components/affidi/AffidiMonitoraggioPanel";
+import { AffidiCaricoFiltri } from "@/components/affidi/AffidiCaricoFiltri";
+import { AffidiIncassiOperatori } from "@/components/affidi/AffidiIncassiOperatori";
+import { righeIncassoDaCarico } from "@/lib/affidi/righeIncassoOperatore";
+import { parseIncMeseParam, rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
+import { prisma } from "@/lib/prisma";
 
 function mapPraticaAffidabile(
   p: {
@@ -78,6 +97,9 @@ export default async function AffidiPage({
     coda?: string;
     mandato?: string;
     perimetro?: string;
+    caricoMandato?: string;
+    caricoPerimetro?: string;
+    caricoMese?: string;
   }>;
 }) {
   const user = await requirePermission("pratiche:assign");
@@ -86,13 +108,18 @@ export default async function AffidiPage({
     coda: codaRaw,
     mandato: mandatoRaw,
     perimetro: perimetroRaw,
+    caricoMandato: caricoMandatoRaw,
+    caricoPerimetro: caricoPerimetroRaw,
+    caricoMese: caricoMeseRaw,
   } = await searchParams;
 
   const gruppo = await getGruppoLavoro(user);
   const vuoto = isManutenzione(user);
   const isSupervisor = user.role === "SUPERVISOR";
   const isBackOffice = user.role === "BACK_OFFICE";
+  const isAdmin = user.role === "ADMIN";
   const isVistaGruppo = isSupervisor || isBackOffice;
+  const mostraMonitor = isAdmin || isBackOffice;
 
   const mandantiDb = vuoto
     ? []
@@ -108,6 +135,26 @@ export default async function AffidiPage({
     ragioneSociale: m.ragioneSociale,
     perimetri: parsePerimetriList(m.perimetri),
   }));
+
+  const lottiPerMandante = vuoto
+    ? new Map<string, Set<string>>()
+    : await (async () => {
+        const rows = await prisma.pratica.groupBy({
+          by: ["mandanteId", "numeroMandante"],
+          where: { tenantId: user.tenantId, numeroMandante: { not: null } },
+        });
+        const map = new Map<string, Set<string>>();
+        for (const row of rows) {
+          const lotto = row.numeroMandante?.trim();
+          if (!lotto) continue;
+          const set = map.get(row.mandanteId) ?? new Set<string>();
+          set.add(lotto);
+          map.set(row.mandanteId, set);
+        }
+        return map;
+      })();
+
+  const mandantiMonitor = mandantiConPerimetriAffidi(mandantiDb, lottiPerMandante);
 
   const [operatori, tuttiOperatori, periCtx] = await Promise.all([
     vuoto
@@ -201,6 +248,127 @@ export default async function AffidiPage({
         )
       : undefined;
 
+  const { mandanteOk: mandatoMonitorOk, perimetroOk: perimetroMonitorOk } = risolviFiltriMonitorAffidi(
+    mandantiMonitor,
+    mandatoRaw,
+    refPerimetro?.perimetro ?? parsePerimetroAffidi(perimetroRaw)
+  );
+  const { mandanteOk: mandatoCaricoOk, perimetroOk: perimetroCaricoOk } = risolviFiltriMonitorAffidi(
+    mandantiMonitor,
+    caricoMandatoRaw,
+    parsePerimetroAffidi(caricoPerimetroRaw)
+  );
+  const monitorExtraParams: Pick<
+    AffidiNavParams,
+    "operatore" | "coda" | "sezione" | "caricoMandato" | "caricoPerimetro" | "caricoMese"
+  > = {
+    operatore: selezionatoId,
+    coda: codaRaw as AffidiNavParams["coda"],
+    caricoMandato: mandatoCaricoOk,
+    caricoPerimetro: perimetroCaricoOk,
+    caricoMese: caricoMeseRaw,
+  };
+  const caricoExtraParams: Pick<AffidiNavParams, "mandato" | "perimetro" | "coda" | "sezione"> = {
+    mandato: mandatoMonitorOk,
+    perimetro: perimetroMonitorOk,
+    coda: codaRaw as AffidiNavParams["coda"],
+  };
+  const filtroMonitorLabel = etichettaFiltriMonitorAffidi(
+    mandantiMonitor,
+    mandatoMonitorOk,
+    perimetroMonitorOk
+  );
+  const filtroCaricoLabel = etichettaFiltriMonitorAffidi(
+    mandantiMonitor,
+    mandatoCaricoOk,
+    perimetroCaricoOk
+  );
+  const { label: meseCaricoLabel } = rangeMeseIncassi(caricoMeseRaw);
+  const annoCarico = parseIncMeseParam(caricoMeseRaw).year;
+  const praticaWhereMonitor = praticaMonitorWhere(
+    user.tenantId,
+    mandatoMonitorOk,
+    perimetroMonitorOk
+  );
+  const praticaWhereCarico = praticaMonitorWhere(
+    user.tenantId,
+    mandatoCaricoOk,
+    perimetroCaricoOk
+  );
+  const affidateMonitor = mostraMonitor
+    ? filtraPraticheAffidiMonitor(affidate, mandatoMonitorOk, perimetroMonitorOk)
+    : affidate;
+  const affidateCarico = mostraMonitor
+    ? filtraPraticheAffidiMonitor(affidate, mandatoCaricoOk, perimetroCaricoOk)
+    : affidate;
+  const operatorIdsCarico = membriCarico.map((m) => m.id);
+  const [scarichiDettaglio, incassatoMese, guadagnoMese] =
+    (isAdmin || isBackOffice) && !vuoto
+      ? await Promise.all([
+          riepilogoCodiciScaricoDettaglio(user, {
+            praticaWhere: praticaWhereCarico,
+            incMese: caricoMeseRaw,
+            operatorIds: operatorIdsCarico,
+          }),
+          incassatoMesePerOperatore(user, {
+            praticaWhere: praticaWhereCarico,
+            incMese: caricoMeseRaw,
+            operatorIds: operatorIdsCarico,
+          }),
+          guadagnoMesePerOperatore(user, {
+            praticaWhere: praticaWhereCarico,
+            incMese: caricoMeseRaw,
+            operatorIds: operatorIdsCarico,
+          }),
+        ])
+      : [null, null, null];
+  const scarichiGruppo = scarichiDettaglio
+    ? scarichiOperatoreDaRiepilogo(scarichiDettaglio.riepilogo)
+    : undefined;
+  const navCarico: Pick<
+    AffidiNavParams,
+    "mandato" | "perimetro" | "caricoMandato" | "caricoPerimetro" | "caricoMese" | "operatore" | "coda"
+  > = {
+    mandato: mandatoMonitorOk,
+    perimetro: perimetroMonitorOk,
+    caricoMandato: mandatoCaricoOk,
+    caricoPerimetro: perimetroCaricoOk,
+    caricoMese: caricoMeseRaw,
+    operatore: selezionatoId,
+    coda: codaRaw as AffidiNavParams["coda"],
+  };
+  const monitor =
+    mostraMonitor && !vuoto
+      ? await loadAffidiMonitoraggio(user, {
+          mandanteId: mandatoMonitorOk,
+          perimetro: perimetroMonitorOk,
+        })
+      : null;
+  const monitorPanel =
+    monitor && mostraMonitor ? (
+      <AffidiMonitoraggioPanel
+        mandanti={mandantiMonitor}
+        monitor={monitor}
+        mandatoId={mandatoMonitorOk}
+        perimetro={perimetroMonitorOk}
+        extraParams={monitorExtraParams}
+      />
+    ) : null;
+  const caricoFiltriPanel =
+    (isAdmin || isBackOffice) && !vuoto ? (
+      <Card title="Filtri · incassi e pratiche per operatore">
+        <AffidiCaricoFiltri
+          mandanti={mandantiMonitor}
+          operatori={membriCarico}
+          caricoMandato={mandatoCaricoOk}
+          caricoPerimetro={perimetroCaricoOk}
+          caricoMese={caricoMeseRaw}
+          operatoreId={selezionatoId}
+          extraParams={caricoExtraParams}
+        />
+      </Card>
+    ) : null;
+
   const filtraPerMandante = <T extends { mandanteId: string }>(rows: T[]) =>
     isBackOffice && mandatoRaw && !refPerimetro
       ? rows.filter((r) => r.mandanteId === mandatoRaw)
@@ -225,12 +393,48 @@ export default async function AffidiPage({
     ? filtraPratichePerPerimetro(praticheAffidabili, refPerimetro)
     : filtraPerMandante(praticheAffidabili);
   const caricoPerimetro = refPerimetro
-    ? buildCaricoOperatori(membriCarico, affidatePerimetro)
-    : buildCaricoOperatori(membriCarico, filtraPerMandante(affidate));
+    ? buildCaricoOperatori(
+        membriCarico,
+        affidatePerimetro,
+        new Date(),
+        scarichiDettaglio?.perOperatore,
+        incassatoMese?.perOperatore,
+        guadagnoMese?.perOperatore
+      )
+    : buildCaricoOperatori(
+        membriCarico,
+        mostraMonitor
+          ? affidateCarico
+          : filtraPerMandante(affidate),
+        new Date(),
+        scarichiDettaglio?.perOperatore,
+        incassatoMese?.perOperatore,
+        guadagnoMese?.perOperatore
+      );
+  const caricoConScarichi =
+    scarichiDettaglio || incassatoMese
+      ? buildCaricoOperatori(
+          membriCarico,
+          affidateCarico,
+          new Date(),
+          scarichiDettaglio?.perOperatore,
+          incassatoMese?.perOperatore,
+          guadagnoMese?.perOperatore
+        )
+      : carico;
 
-  const mostraElenco = Boolean(selezionatoId || coda) && (Boolean(refPerimetro) || isBackOffice);
+  const mostraElenco =
+    Boolean(selezionatoId || coda) &&
+    (Boolean(refPerimetro) || isBackOffice || isAdmin);
   const praticheSelezionato = mostraElenco
-    ? filtraPraticheAffido(affidatePerimetro, { operatoreId: selezionatoId, coda })
+    ? filtraPraticheAffido(
+        refPerimetro
+          ? affidatePerimetro
+          : mostraMonitor
+            ? affidateCarico
+            : filtraPerMandante(affidate),
+        { operatoreId: selezionatoId, coda }
+      )
     : [];
   const titoloElenco = [
     refPerimetro
@@ -265,26 +469,11 @@ export default async function AffidiPage({
   const praticheAffidabiliOverview = refPerimetro
     ? praticheAffidabiliPerimetro
     : filtraPerMandante(praticheAffidabili);
+  const praticheAffidabiliMonitor = mostraMonitor
+    ? filtraPraticheAffidiMonitor(praticheAffidabili, mandatoMonitorOk, perimetroMonitorOk)
+    : praticheAffidabili;
+  const daAssegnareMonitor = praticheAffidabiliMonitor.filter((p) => p.assegnatarioId == null);
   const daAssegnareOverview = refPerimetro ? daAssegnarePerimetro : filtraPerMandante(daAssegnare);
-
-  const gruppiLavoro =
-    !isVistaGruppo
-      ? await usersDbFromUser(user).findMany({
-          where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
-          select: {
-            id: true,
-            name: true,
-            gruppoNome: true,
-            gruppoMandanti: true,
-            operators: {
-              where: { tenantId: user.tenantId, active: true, role: "OPERATOR" },
-              select: { id: true, name: true },
-              orderBy: { name: "asc" },
-            },
-          },
-          orderBy: { name: "asc" },
-        })
-      : [];
 
   const altriGruppi = isSupervisor
     ? await usersDbFromUser(user).findMany({
@@ -318,6 +507,8 @@ export default async function AffidiPage({
           <AffidiIndietroLink />
           <AffidiScrollAffida />
         </Suspense>
+
+        {caricoFiltriPanel}
 
         {isBackOffice ? (
           <Card title="Filtri">
@@ -396,22 +587,59 @@ export default async function AffidiPage({
               )}
             </Card>
 
-            <Card title={`Carico operatori · ${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro}`}>
+            <Card title={`Pratiche per operatore · ${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro}`}>
               {!caricoPerimetro.length ? (
                 <p className="text-sm text-[var(--muted)]">Nessun operatore.</p>
               ) : (
                 <>
-                  <AffidiFiltroOperatore
-                    operatori={membriCarico}
-                    selezionatoId={selezionatoId}
-                    coda={codaRaw}
-                    nav={navPerimetro}
-                  />
+                  {incassatoMese ? (
+                    <div className="mb-5">
+                      <p className="mb-2 text-xs text-[var(--muted)]">
+                        Incassi · {filtroCaricoLabel} · Mese: {meseCaricoLabel}
+                      </p>
+                      <AffidiIncassiOperatori
+                        righe={righeIncassoDaCarico(caricoPerimetro)}
+                        selezionatoId={selezionatoId}
+                        nav={{
+                          ...navCarico,
+                          mandato: refPerimetro.mandanteId,
+                          perimetro: refPerimetro.perimetro,
+                        }}
+                        meseLabel={meseCaricoLabel}
+                        totaleGruppo={incassatoMese.totale}
+                        totaleGuadagno={guadagnoMese?.totale ?? 0}
+                        annoCarico={annoCarico}
+                        caricoMandato={mandatoCaricoOk}
+                        caricoPerimetro={perimetroCaricoOk}
+                        filtroCaricoLabel={filtroCaricoLabel}
+                      />
+                    </div>
+                  ) : isSupervisor ? (
+                    <AffidiFiltroOperatore
+                      operatori={membriCarico}
+                      selezionatoId={selezionatoId}
+                      coda={codaRaw}
+                      nav={{
+                        mandato: refPerimetro.mandanteId,
+                        perimetro: refPerimetro.perimetro,
+                      }}
+                    />
+                  ) : null}
+                  <p className="mb-2 text-xs text-[var(--muted)]">
+                    Pratiche in carico
+                    {scarichiGruppo ? ` · Codici scarico · Mese: ${meseCaricoLabel}` : ""}
+                  </p>
                   <AffidiCaricoOperatori
                     carico={caricoPerimetro}
                     selezionatoId={selezionatoId}
                     coda={coda}
-                    nav={navPerimetro}
+                    nav={{
+                      ...navCarico,
+                      mandato: refPerimetro.mandanteId,
+                      perimetro: refPerimetro.perimetro,
+                    }}
+                    meseLabel={meseCaricoLabel}
+                    scarichiGruppo={scarichiGruppo}
                   />
                   {mostraElenco ? (
                     <p className="mt-2 text-xs text-[var(--muted)]">
@@ -442,18 +670,37 @@ export default async function AffidiPage({
         ) : (
           <>
             {!refPerimetro && isBackOffice && (selezionatoId || coda) ? (
-              <Card title="Carico operatori">
-                <AffidiFiltroOperatore
-                  operatori={operatori}
-                  selezionatoId={selezionatoId}
-                  coda={codaRaw}
-                  nav={mandatoRaw ? { mandato: mandatoRaw } : undefined}
-                />
+              <Card title="Pratiche per operatore">
+                {incassatoMese ? (
+                  <div className="mb-5">
+                    <p className="mb-2 text-xs text-[var(--muted)]">
+                      Incassi · {filtroCaricoLabel} · Mese: {meseCaricoLabel}
+                    </p>
+                    <AffidiIncassiOperatori
+                      righe={righeIncassoDaCarico(caricoPerimetro)}
+                      selezionatoId={selezionatoId}
+                      nav={navCarico}
+                      meseLabel={meseCaricoLabel}
+                      totaleGruppo={incassatoMese.totale}
+                      totaleGuadagno={guadagnoMese?.totale ?? 0}
+                      annoCarico={annoCarico}
+                      caricoMandato={mandatoCaricoOk}
+                      caricoPerimetro={perimetroCaricoOk}
+                      filtroCaricoLabel={filtroCaricoLabel}
+                    />
+                  </div>
+                ) : null}
+                <p className="mb-2 text-xs text-[var(--muted)]">
+                  Pratiche in carico
+                  {scarichiGruppo ? ` · Codici scarico · Mese: ${meseCaricoLabel}` : ""}
+                </p>
                 <AffidiCaricoOperatori
                   carico={caricoPerimetro}
                   selezionatoId={selezionatoId}
                   coda={coda}
-                  nav={mandatoRaw ? { mandato: mandatoRaw } : undefined}
+                  nav={navCarico}
+                  meseLabel={meseCaricoLabel}
+                  scarichiGruppo={scarichiGruppo}
                 />
               </Card>
             ) : null}
@@ -504,6 +751,8 @@ export default async function AffidiPage({
             </Card>
           </>
         )}
+
+        {monitorPanel}
       </div>
     );
   }
@@ -512,78 +761,68 @@ export default async function AffidiPage({
     <div className="h-full min-h-0 space-y-4 overflow-y-auto pb-4">
       <PageHeader title="Affidi" subtitle={subtitle} />
 
-      {gruppiLavoro.length > 0 ? (
-        <Card title="Gruppi di lavoro">
-          <div className="space-y-3">
-            {gruppiLavoro.map((sup) => (
-              <div
-                key={sup.id}
-                className="rounded-lg border border-[var(--line)] bg-white p-3"
-              >
-                <div className="flex items-baseline gap-2">
-                  {sup.gruppoNome ? (
-                    <p className="text-sm font-semibold text-[var(--navy)]">{sup.gruppoNome}</p>
-                  ) : (
-                    <p className="text-sm italic text-[var(--muted)]">Nome non assegnato</p>
-                  )}
-                  <span className="text-[10px] text-[var(--muted)]">Supervisor: {sup.name}</span>
-                </div>
-                {sup.operators.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {sup.operators.map((op) => (
-                      <span
-                        key={op.id}
-                        className="rounded-full border border-[var(--line)] bg-[#eef4f8] px-2.5 py-0.5 text-xs"
-                      >
-                        {op.name}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-1 text-[10px] text-[var(--muted)]">Nessun operatore nel gruppo</p>
-                )}
-                {(() => {
-                  const labels = etichettaGruppoMandanti(
-                    parseGruppoMandanti(sup.gruppoMandanti),
-                    mandantiOptions
-                  );
-                  return labels.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {labels.map((label) => (
-                        <span
-                          key={label}
-                          className="rounded-full border border-[#c5d4e3] bg-white px-2 py-px text-[10px] text-[var(--navy)]"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-            ))}
-          </div>
+      {caricoFiltriPanel}
+
+      {incassatoMese ? (
+        <Card title="Incassi per operatore">
+          {!caricoConScarichi.length ? (
+            <p className="text-sm text-[var(--muted)]">Nessun operatore nel gruppo.</p>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-[var(--muted)]">
+                {filtroCaricoLabel} · Mese: {meseCaricoLabel}
+                {" · "}
+                <span className="text-[var(--muted)]">Clicca su un operatore per il dettaglio mensile del {annoCarico}.</span>
+              </p>
+              <AffidiIncassiOperatori
+                righe={righeIncassoDaCarico(caricoConScarichi)}
+                selezionatoId={selezionatoId}
+                nav={navCarico}
+                meseLabel={meseCaricoLabel}
+                totaleGruppo={incassatoMese.totale}
+                totaleGuadagno={guadagnoMese?.totale ?? 0}
+                annoCarico={annoCarico}
+                caricoMandato={mandatoCaricoOk}
+                caricoPerimetro={perimetroCaricoOk}
+                filtroCaricoLabel={filtroCaricoLabel}
+              />
+            </>
+          )}
         </Card>
       ) : null}
 
-      <Card title="Carico operatori · code in lavorazione">
-        {!carico.length ? (
+      <Card title="Pratiche per operatore">
+        {!caricoConScarichi.length ? (
           <p className="text-sm text-[var(--muted)]">Nessun operatore nel gruppo.</p>
         ) : (
           <>
-            <AffidiFiltroOperatore
-              operatori={membriCarico}
-              selezionatoId={selezionatoId}
-              coda={codaRaw}
-            />
+            {scarichiGruppo ? (
+              <p className="mb-3 text-xs text-[var(--muted)]">
+                {filtroCaricoLabel} · Codici scarico · Mese: {meseCaricoLabel}
+              </p>
+            ) : (
+              <p className="mb-3 text-xs text-[var(--muted)]">{filtroCaricoLabel}</p>
+            )}
             <AffidiCaricoOperatori
-              carico={carico}
+              carico={caricoConScarichi}
               selezionatoId={selezionatoId}
               coda={coda}
+              nav={navCarico}
+              meseLabel={meseCaricoLabel}
+              scarichiGruppo={scarichiGruppo}
             />
             {mostraElenco ? (
               <p className="mt-2 text-xs text-[var(--muted)]">
-                <Link href="/affidi" className="underline">
+                <Link
+                  href={buildAffidiHref({
+                    mandato: mandatoMonitorOk,
+                    perimetro: perimetroMonitorOk,
+                    caricoMandato: mandatoCaricoOk,
+                    caricoPerimetro: perimetroCaricoOk,
+                    caricoMese: caricoMeseRaw,
+                  })}
+                  className="underline"
+                >
                   Chiudi dettaglio
                 </Link>
               </p>
@@ -607,19 +846,24 @@ export default async function AffidiPage({
         </Card>
       ) : null}
 
+      {monitorPanel}
+
       <Card title="Affida / riaffida pratiche">
-        {!praticheAffidabili.length ? (
-          <p className="text-sm text-[var(--muted)]">Nessuna pratica nel perimetro.</p>
+        {filtroMonitorLabel !== "Tutti i mandati e perimetri" ? (
+          <p className="mb-2 text-xs text-[var(--muted)]">{filtroMonitorLabel}</p>
+        ) : null}
+        {!praticheAffidabiliMonitor.length ? (
+          <p className="text-sm text-[var(--muted)]">Nessuna pratica con i filtri selezionati.</p>
         ) : (
           <>
             <p className="mb-3 text-xs text-[var(--muted)]">
-              {daAssegnare.length} non assegnate ·{" "}
-              {praticheAffidabili.length - daAssegnare.length} già affidate (definitivo o
+              {daAssegnareMonitor.length} non assegnate ·{" "}
+              {praticheAffidabiliMonitor.length - daAssegnareMonitor.length} già affidate (definitivo o
               temporaneo). Puoi riaffidare anche quelle già in carico.
             </p>
             <AffidiDaAffidareTable
               operatori={operatori}
-              pratiche={ordinaPraticheAffidabili(praticheAffidabili).map(mapPraticaAffidabile)}
+              pratiche={ordinaPraticheAffidabili(praticheAffidabiliMonitor).map(mapPraticaAffidabile)}
             />
           </>
         )}

@@ -28,6 +28,9 @@ export type HomeKpiContext = {
   lavorateDate: string;
   incMandante?: string;
   incPerimetro?: string;
+  /** YYYY-MM — mese per colonne incassi; default mese corrente */
+  incMese?: string;
+  includeProduttivita?: boolean;
   scope: HomeScopeFilter;
   /** Incassi oggi: tutti tenant vs solo operatore */
   incassiScope: "none" | "tenant" | "user";
@@ -49,6 +52,7 @@ export type RiepilogoMandanteDto = {
   pratiche: number;
   affidato: number;
   incassato: number;
+  ricavoLordo: number;
   percentuale: number;
 };
 
@@ -90,10 +94,13 @@ export type HomeKpiAdmin = {
     perimetri: string[];
   }>;
   tipologieIncasso: TipologiaIncassoDto[];
-  produttivita: Array<{ name: string; attivita: number }>;
+  /** Caricata solo con includeProduttivita nel contesto richiesta. */
+  produttivita?: Array<{ name: string; oggi: number; mese: number }>;
   caricoGruppi: CaricoGruppoDto[];
+  codiciScaricoRiepilogo: Array<{ codice: string; oggi: number; mese: number }>;
   esitiContatto: Array<{ esitoContatto: string; count: number }>;
-  scaduteAdmin: number;
+  nuove: number;
+  inLavorazione: number;
   inScadenza7gg: number;
   nonAssegnate: number;
   incassiPerMandanteMese: Array<{

@@ -26,6 +26,10 @@ export const OPS_MODEL_COLLECTION: Record<string, string> = {
   AuditLog: "auditLogs",
   PasswordHistory: "passwordHistory",
   ImportBatch: "importBatch",
+  DialerCampagna: "dialerCampagne",
+  DialerCampagnaOperatore: "dialerCampagnaOperatori",
+  DialerCampagnaPratica: "dialerCampagnaPratiche",
+  DialerChiamataEvento: "dialerChiamataEventi",
 };
 
 export const PRISMA_DELEGATE_TO_MODEL: Record<string, string> = {
@@ -54,6 +58,10 @@ export const PRISMA_DELEGATE_TO_MODEL: Record<string, string> = {
   auditLog: "AuditLog",
   passwordHistory: "PasswordHistory",
   importBatch: "ImportBatch",
+  dialerCampagna: "DialerCampagna",
+  dialerCampagnaOperatore: "DialerCampagnaOperatore",
+  dialerCampagnaPratica: "DialerCampagnaPratica",
+  dialerChiamataEvento: "DialerChiamataEvento",
 };
 
 /** Relazioni usate in include/where nested */
@@ -134,6 +142,27 @@ export const MODEL_RELATIONS: Record<
     user: { model: "User", local: "userId", foreign: "id" },
   },
   RegistrazioneChiamata: {
+    operatore: { model: "User", local: "operatoreId", foreign: "id" },
+    pratica: { model: "Pratica", local: "praticaId", foreign: "id" },
+  },
+  DialerCampagna: {
+    tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
+    createdBy: { model: "User", local: "createdById", foreign: "id" },
+    supervisor: { model: "User", local: "supervisorId", foreign: "id" },
+    operatori: { model: "DialerCampagnaOperatore", local: "id", foreign: "campagnaId", many: true },
+    pratiche: { model: "DialerCampagnaPratica", local: "id", foreign: "campagnaId", many: true },
+    eventi: { model: "DialerChiamataEvento", local: "id", foreign: "campagnaId", many: true },
+  },
+  DialerCampagnaOperatore: {
+    campagna: { model: "DialerCampagna", local: "campagnaId", foreign: "id" },
+    operatore: { model: "User", local: "operatoreId", foreign: "id" },
+  },
+  DialerCampagnaPratica: {
+    campagna: { model: "DialerCampagna", local: "campagnaId", foreign: "id" },
+    pratica: { model: "Pratica", local: "praticaId", foreign: "id" },
+  },
+  DialerChiamataEvento: {
+    campagna: { model: "DialerCampagna", local: "campagnaId", foreign: "id" },
     operatore: { model: "User", local: "operatoreId", foreign: "id" },
     pratica: { model: "Pratica", local: "praticaId", foreign: "id" },
   },

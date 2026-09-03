@@ -23,6 +23,7 @@ import {
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCodaNav";
 import { codiceScaricoPratica } from "@/lib/scarico";
 import type { CodiceScaricoPerimetro } from "@/lib/mandantePerimetri";
+import type { SmsPreset } from "@/lib/smsPreimpostati";
 import type { RecordingMode } from "@/lib/recordingMode";
 import type { PraticheStessoDebitoreClientPayload } from "@/lib/praticheStessoDebitoreClient";
 
@@ -68,6 +69,7 @@ type PraticaData = {
   memoAt: Date | null;
   promessaAt: Date | null;
   promessaImporto: number | null;
+  promessaMetodo: string | null;
   debitore: AnagraficaPersona & {
     codiceFiscale: string | null;
     ndg?: string | null;
@@ -151,6 +153,7 @@ function HeaderRigaDati({
 export function PraticaSchedaOperatore({
   pratica,
   codiciScaricoOperatore = [],
+  smsPresets = [],
   canEditNotes,
   canEditStato,
   canRegistraIncasso,
@@ -167,6 +170,7 @@ export function PraticaSchedaOperatore({
 }: {
   pratica: PraticaData;
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
+  smsPresets?: SmsPreset[];
   canEditNotes: boolean;
   canEditStato: boolean;
   canRegistraIncasso?: boolean;
@@ -320,6 +324,9 @@ export function PraticaSchedaOperatore({
                 codiceFiscale={pratica.debitore.codiceFiscale}
                 operatoreName={currentUserName}
                 prefissoChiamata={prefissoChiamata}
+                smsPresets={smsPresets}
+                importoNetto={nettoDaPagare}
+                importoConcordatoIniziale={pratica.promessaImporto}
               />
             </div>
           </div>
@@ -330,6 +337,9 @@ export function PraticaSchedaOperatore({
             canEdit={canEditNotes}
             operatoreName={currentUserName}
             prefissoChiamata={prefissoChiamata}
+            smsPresets={smsPresets}
+            importoNetto={nettoDaPagare}
+            importoConcordatoIniziale={pratica.promessaImporto}
           />
 
           <ContabilePreviewLazy
@@ -419,6 +429,7 @@ export function PraticaSchedaOperatore({
           memoAt={datetimeLocalValue(pratica.memoAt)}
           promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
           promessaImporto={pratica.promessaImporto}
+          promessaMetodo={pratica.promessaMetodo}
           residuo={pratica.residuo}
           initialCollegate={collegatePayload}
           suppressF9Flash={Boolean(nav.filtroCollegata)}

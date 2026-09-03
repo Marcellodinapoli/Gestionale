@@ -15,6 +15,7 @@ export class ConnectorDashboardRepository implements DashboardRepository {
           lavorateDate: ctx.lavorateDate,
           incMandante: ctx.incMandante,
           incPerimetro: ctx.incPerimetro,
+          incMese: ctx.incMese,
           scope: ctx.scope,
           incassiScope: ctx.incassiScope,
           includeAdmin: ctx.includeAdmin,
@@ -23,7 +24,7 @@ export class ConnectorDashboardRepository implements DashboardRepository {
           gruppoMandanti: ctx.gruppoMandanti,
           memberIds: ctx.memberIds,
           sedeRicaviId: ctx.sedeRicaviId,
-          mostraRicavi: ctx.mostraRicavi,
+          includeProduttivita: ctx.includeProduttivita,
         },
       }
     );

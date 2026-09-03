@@ -2,6 +2,10 @@ import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
 import { requirePermission } from "@/lib/guard";
 import { Card, PageHeader } from "@/components/ui";
+import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_PAGE_SELECT_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 import { PostazioniTable } from "@/components/postazioni/PostazioniTable";
 import { NuovaPostazioneButton } from "@/components/postazioni/NuovaPostazioneButton";
 
@@ -66,7 +70,7 @@ export default async function PostazioniPage({
             <select
               name="sede"
               defaultValue={sedeFiltro || ""}
-              className="mt-1 h-9 rounded-lg border border-[var(--line)] px-2 text-sm"
+              className={`mt-1 ${FILTRI_PAGE_SELECT_CLASS}`}
             >
               <option value="">Tutte</option>
               {sedi.map((s) => (
@@ -76,7 +80,7 @@ export default async function PostazioniPage({
               ))}
             </select>
           </label>
-          <button className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm hover:bg-slate-50">
+          <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
             Applica
           </button>
         </form>

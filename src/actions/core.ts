@@ -59,7 +59,8 @@ import {
   processPraticheImportChunk,
   importPraticheChunkSize,
 } from "@/lib/importPraticheBatch";
-import { statoDaCodiceScarico } from "@/lib/scarico";
+import { isMetodoIncassoValido } from "@/lib/metodoIncasso";
+import { isCodiceScaricoConDettagliPagamento, statoDaCodiceScarico } from "@/lib/scarico";
 import { RUOLI_LAVORAZIONE } from "@/lib/praticaOrdine";
 import { isPraticaChiusa } from "@/lib/praticaCollegata";
 
@@ -557,9 +558,11 @@ async function applyScaricoPromessaPratica(
   praticaId: string,
   input: {
     codiceScarico: string | null;
+    hasDettagliPagamento: boolean;
     isPromessa: boolean;
     promessaAt?: Date;
     promessaImporto: number | null;
+    promessaMetodo: string | null;
   },
   opts?: { ultimaLavorazione?: boolean }
 ) {
@@ -580,11 +583,12 @@ async function applyScaricoPromessaPratica(
       codiceScarico: input.codiceScarico,
       ...(codiceScaricoCambiato ? { codiceScaricoAt: now } : {}),
       ...(statoDaCodice ? { stato: statoDaCodice } : {}),
-      ...(isCodicePromessaOperatore(input.codiceScarico || "")
-        ? { esitoContatto: "PROMESSA" }
+      ...(input.isPromessa ? { esitoContatto: "PROMESSA" } : {}),
+      ...(input.hasDettagliPagamento && input.promessaAt
+        ? { promessaAt: input.promessaAt }
         : {}),
-      ...(input.promessaAt ? { promessaAt: input.promessaAt } : {}),
-      promessaImporto: input.isPromessa ? input.promessaImporto : null,
+      promessaImporto: input.hasDettagliPagamento ? input.promessaImporto : null,
+      promessaMetodo: input.hasDettagliPagamento ? input.promessaMetodo : null,
       updatedAt: now,
       ...(opts?.ultimaLavorazione ? { ultimaLavorazioneAt: now } : {}),
     },
@@ -608,27 +612,40 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   const codiceScarico = codScaricoRaw || null;
   await assertCodiceScaricoOperatoreValido(praticaId, codiceScarico);
 
+  const hasDettagliPagamento = Boolean(
+    codiceScarico && isCodiceScaricoConDettagliPagamento(codiceScarico)
+  );
   const isPromessa = Boolean(codiceScarico && isCodicePromessaOperatore(codiceScarico));
-  const promessaAt = isPromessa
+  const promessaAt = hasDettagliPagamento
     ? parseDateOnly(String(formData.get("promessaAt") || ""))
     : undefined;
-  if (isPromessa && !promessaAt) {
+  if (hasDettagliPagamento && !promessaAt) {
     fail("Inserisci la data della promessa di pagamento");
   }
   const promessaImportoRaw = String(formData.get("promessaImporto") || "").trim();
   let promessaImporto: number | null = null;
-  if (isPromessa && promessaImportoRaw) {
+  if (hasDettagliPagamento && promessaImportoRaw) {
     promessaImporto = Number(promessaImportoRaw.replace(",", "."));
     if (Number.isNaN(promessaImporto)) {
       fail("Importo promessa non valido");
     }
   }
+  const promessaMetodoRaw = String(formData.get("promessaMetodo") || "").trim();
+  let promessaMetodo: string | null = null;
+  if (hasDettagliPagamento && promessaMetodoRaw) {
+    if (!isMetodoIncassoValido(promessaMetodoRaw)) {
+      fail("Modalità di pagamento non valida");
+    }
+    promessaMetodo = promessaMetodoRaw;
+  }
 
   const scaricoInput = {
     codiceScarico,
+    hasDettagliPagamento,
     isPromessa,
     promessaAt: promessaAt ?? undefined,
     promessaImporto,
+    promessaMetodo,
   };
   const lavorazione = isRuoloLavorazione(user.role);
 

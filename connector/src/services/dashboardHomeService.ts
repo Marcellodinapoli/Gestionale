@@ -15,6 +15,7 @@ export type HomeKpiRequest = {
   lavorateDate: string;
   incMandante?: string;
   incPerimetro?: string;
+  incMese?: string;
   scope: HomeScopeFilter;
   incassiScope: "none" | "tenant" | "user";
   includeAdmin: boolean;
@@ -24,6 +25,7 @@ export type HomeKpiRequest = {
   memberIds?: string[];
   sedeRicaviId?: string | null;
   mostraRicavi?: boolean;
+  includeProduttivita?: boolean;
 };
 
 function startOfDayIso(iso: string) {
@@ -36,6 +38,84 @@ function nextDayIso(iso: string) {
   const d = startOfDayIso(iso);
   d.setUTCDate(d.getUTCDate() + 1);
   return d;
+}
+
+const MESE_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+function rangeMeseIncassiSql(incMese?: string) {
+  const oggi = startOfDayIso(new Date().toISOString().slice(0, 10));
+  let year = oggi.getUTCFullYear();
+  let month = oggi.getUTCMonth();
+  const match = incMese?.trim().match(MESE_RE);
+  if (match) {
+    year = Number(match[1]);
+    month = Number(match[2]) - 1;
+  }
+  const inizioMese = new Date(Date.UTC(year, month, 1));
+  const fineMese = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
+  return { inizioMese, fineMese };
+}
+
+const CODICI_SCARICO = ["PTC", "PPC", "MOV", "LPP", "LPT"] as const;
+type CodiceScaricoSql = (typeof CODICI_SCARICO)[number];
+
+const STATO_SCARICO: Record<string, CodiceScaricoSql> = {
+  INCASSO: "PTC",
+  PROMESSA: "PPC",
+  INESIGIBILE: "MOV",
+  PIANO: "LPP",
+  RESA: "LPT",
+};
+
+function codiceDaAuditSql(
+  action: string,
+  dettaglio: string | null | undefined,
+  statoCorrente?: string
+): CodiceScaricoSql | null {
+  if (action === "piano") return "LPP";
+  if (action === "incasso") return statoCorrente === "INCASSO" ? "PTC" : null;
+  if (action === "stato_update") return STATO_SCARICO[(dettaglio || "").trim()] ?? null;
+  if (action === "scarico_update") {
+    const codice = (dettaglio || "").trim().split(/\s+/)[0];
+    return CODICI_SCARICO.includes(codice as CodiceScaricoSql) ? (codice as CodiceScaricoSql) : null;
+  }
+  if (action === "contatto_update") {
+    const tokens = (dettaglio || "").trim().split(/\s+/);
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      const t = tokens[i];
+      if (CODICI_SCARICO.includes(t as CodiceScaricoSql)) return t as CodiceScaricoSql;
+    }
+  }
+  return null;
+}
+
+function aggregaCodiciScaricoAdminSql(
+  logs: Array<{
+    entityId: string | null;
+    action: string;
+    dettaglio: string | null;
+    createdAt: Date;
+    stato?: string;
+  }>,
+  gteOggi: Date,
+  ltOggi: Date
+) {
+  const perCodice = new Map<CodiceScaricoSql, { oggi: Set<string>; mese: Set<string> }>();
+  for (const c of CODICI_SCARICO) perCodice.set(c, { oggi: new Set(), mese: new Set() });
+  for (const log of logs) {
+    const praticaId = log.entityId;
+    if (!praticaId) continue;
+    const codice = codiceDaAuditSql(log.action, log.dettaglio, log.stato);
+    if (!codice) continue;
+    const bucket = perCodice.get(codice)!;
+    bucket.mese.add(praticaId);
+    if (log.createdAt >= gteOggi && log.createdAt < ltOggi) bucket.oggi.add(praticaId);
+  }
+  return CODICI_SCARICO.map((codice) => ({
+    codice,
+    oggi: perCodice.get(codice)!.oggi.size,
+    mese: perCodice.get(codice)!.mese.size,
+  }));
 }
 
 function parsePerimetriNames(json: string | null | undefined): string[] {
@@ -374,7 +454,7 @@ async function loadAdminSection(
   const sedeId = req.sedeScopeId || undefined;
   const tenantId = req.tenantId;
   const oggi = startOfDayIso(new Date().toISOString().slice(0, 10));
-  const inizioMese = new Date(Date.UTC(oggi.getUTCFullYear(), oggi.getUTCMonth(), 1));
+  const { inizioMese, fineMese } = rangeMeseIncassiSql(req.incMese);
   const tra7gg = new Date(oggi);
   tra7gg.setUTCDate(tra7gg.getUTCDate() + 7);
 
@@ -395,11 +475,25 @@ async function loadAdminSection(
   const riepReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
   if (sedeId) riepReq.input("sedeId", sql.UniqueIdentifier, sedeId);
   tick();
+  const ricavoLordoExpr = sedeId
+    ? `(SELECT ISNULL(SUM(pv.Importo), 0)
+        FROM dbo.Provvigioni pv
+        INNER JOIN dbo.Pratiche px ON px.Id = pv.PraticaId
+        LEFT JOIN dbo.Users uap ON uap.Id = px.AssegnatarioId
+        LEFT JOIN dbo.Users utp ON utp.Id = px.OperatoreTitolareId
+        WHERE px.MandanteId = m.Id AND px.TenantId = @tenantId
+          AND (uap.SedeId = @sedeId OR utp.SedeId = @sedeId))`
+    : `(SELECT ISNULL(SUM(pv.Importo), 0)
+        FROM dbo.Provvigioni pv
+        INNER JOIN dbo.Pratiche px ON px.Id = pv.PraticaId
+        WHERE px.MandanteId = m.Id AND px.TenantId = @tenantId)`;
+
   const riepRes = await riepReq.query(`
     SELECT m.Id, m.Codice, m.RagioneSociale,
       COUNT(p.Id) AS pratiche,
       ISNULL(SUM(p.ImportoTotale), 0) AS affidato,
-      ISNULL(SUM(p.TotIncassato), 0) AS incassato
+      ISNULL(SUM(p.TotIncassato), 0) AS incassato,
+      ${ricavoLordoExpr} AS ricavoLordo
     FROM dbo.Mandanti m
     LEFT JOIN dbo.Pratiche p ON p.MandanteId = m.Id AND p.TenantId = @tenantId
     ${sedeJoin}
@@ -409,7 +503,15 @@ async function loadAdminSection(
   `);
 
   const mandantiRiepilogo = riepRes.recordset.map(
-    (r: { Id: string; Codice: string; RagioneSociale: string; pratiche: number; affidato: unknown; incassato: unknown }) => {
+    (r: {
+      Id: string;
+      Codice: string;
+      RagioneSociale: string;
+      pratiche: number;
+      affidato: unknown;
+      incassato: unknown;
+      ricavoLordo: unknown;
+    }) => {
       const affidato = Number(r.affidato);
       const incassato = Number(r.incassato);
       return {
@@ -419,6 +521,7 @@ async function loadAdminSection(
         pratiche: Number(r.pratiche),
         affidato,
         incassato,
+        ricavoLordo: Number(r.ricavoLordo),
         percentuale: affidato > 0 ? (incassato / affidato) * 100 : 0,
       };
     }
@@ -455,12 +558,13 @@ async function loadAdminSection(
     incClauses.push("(ua.SedeId = @sedeId OR ut.SedeId = @sedeId)");
   }
   incFilterReq.input("inizioMese", sql.DateTime2, inizioMese);
+  incFilterReq.input("fineMese", sql.DateTime2, fineMese);
   const incRes = await incFilterReq.query(`
     SELECT i.Metodo AS metodo,
       SUM(i.Importo) AS importo,
       COUNT(*) AS pezzi,
-      SUM(CASE WHEN i.Data >= @inizioMese THEN i.Importo ELSE 0 END) AS meseImporto,
-      SUM(CASE WHEN i.Data >= @inizioMese THEN 1 ELSE 0 END) AS mesePezzi
+      SUM(CASE WHEN i.Data >= @inizioMese AND i.Data <= @fineMese THEN i.Importo ELSE 0 END) AS meseImporto,
+      SUM(CASE WHEN i.Data >= @inizioMese AND i.Data <= @fineMese THEN 1 ELSE 0 END) AS mesePezzi
     FROM dbo.Incassi i
     ${incJoin}
     WHERE ${incClauses.join(" AND ")}
@@ -471,20 +575,55 @@ async function loadAdminSection(
   const inizioOggi = oggi;
   const fineOggi = new Date(oggi);
   fineOggi.setUTCHours(23, 59, 59, 999);
-  const prodReq = pool.request();
-  prodReq.input("tenantId", sql.UniqueIdentifier, tenantId);
-  prodReq.input("gte", sql.DateTime2, inizioOggi);
-  prodReq.input("lte", sql.DateTime2, fineOggi);
-  if (sedeId) prodReq.input("sedeId", sql.UniqueIdentifier, sedeId);
-  const prodRes = await prodReq.query(`
-    SELECT u.Id, u.Name, COUNT(a.Id) AS attivita
-    FROM dbo.Users u
-    LEFT JOIN dbo.Attivita a ON a.UserId = u.Id AND a.CreatedAt >= @gte AND a.CreatedAt <= @lte
-    WHERE u.TenantId = @tenantId AND u.Active = 1 AND u.Role IN (N'OPERATOR', N'OPERATORE', N'SUPERVISOR')
-    ${sedeId ? "AND u.SedeId = @sedeId" : ""}
-    GROUP BY u.Id, u.Name
-    ORDER BY u.Name
-  `);
+  const ltOggi = new Date(oggi);
+  ltOggi.setUTCDate(ltOggi.getUTCDate() + 1);
+
+  let produttivita: Array<{ name: string; oggi: number; mese: number }> | undefined;
+  if (req.includeProduttivita) {
+    const prodReq = pool.request();
+    prodReq.input("tenantId", sql.UniqueIdentifier, tenantId);
+    prodReq.input("gteOggi", sql.DateTime2, inizioOggi);
+    prodReq.input("lteOggi", sql.DateTime2, fineOggi);
+    prodReq.input("gteMese", sql.DateTime2, inizioMese);
+    prodReq.input("lteMese", sql.DateTime2, fineMese);
+    if (sedeId) prodReq.input("sedeId", sql.UniqueIdentifier, sedeId);
+    if (req.incMandante) {
+      prodReq.input("mandanteId", sql.UniqueIdentifier, req.incMandante);
+    }
+    if (req.incPerimetro) {
+      prodReq.input("numeroMandante", sql.NVarChar(100), req.incPerimetro);
+    }
+
+    const praticaJoinClauses = ["p.TenantId = @tenantId"];
+    if (req.incMandante) praticaJoinClauses.push("p.MandanteId = @mandanteId");
+    if (req.incPerimetro) praticaJoinClauses.push("p.NumeroMandante = @numeroMandante");
+    const praticaSedeJoin = sedeId
+      ? `LEFT JOIN dbo.Users uap ON uap.Id = p.AssegnatarioId LEFT JOIN dbo.Users utp ON utp.Id = p.OperatoreTitolareId`
+      : "";
+    const praticaSedeClause = sedeId
+      ? " AND (uap.SedeId = @sedeId OR utp.SedeId = @sedeId)"
+      : "";
+
+    const prodRes = await prodReq.query(`
+      SELECT u.Id, u.Name,
+        COUNT(CASE WHEN p.Id IS NOT NULL AND a.CreatedAt >= @gteOggi AND a.CreatedAt <= @lteOggi THEN a.Id END) AS oggi,
+        COUNT(CASE WHEN p.Id IS NOT NULL AND a.CreatedAt >= @gteMese AND a.CreatedAt <= @lteMese THEN a.Id END) AS mese
+      FROM dbo.Users u
+      LEFT JOIN dbo.Attivita a ON a.UserId = u.Id
+      LEFT JOIN dbo.Pratiche p ON p.Id = a.PraticaId AND ${praticaJoinClauses.join(" AND ")}
+      ${praticaSedeJoin}
+      WHERE u.TenantId = @tenantId AND u.Active = 1 AND u.Role IN (N'OPERATOR', N'OPERATORE', N'SUPERVISOR')
+      ${sedeId ? "AND u.SedeId = @sedeId" : ""}
+      ${praticaSedeClause}
+      GROUP BY u.Id, u.Name
+      ORDER BY u.Name
+    `);
+    produttivita = prodRes.recordset.map((r: { Name: string; oggi: number; mese: number }) => ({
+      name: r.Name,
+      oggi: Number(r.oggi),
+      mese: Number(r.mese),
+    }));
+  }
 
   tick();
   const alertReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
@@ -493,7 +632,8 @@ async function loadAdminSection(
   if (sedeId) alertReq.input("sedeId", sql.UniqueIdentifier, sedeId);
   const alertRes = await alertReq.query(`
     SELECT
-      SUM(CASE WHEN p.Scadenza < @oggi AND p.Stato NOT IN ${STATI_CHIUSI_SQL} THEN 1 ELSE 0 END) AS scaduteAdmin,
+      SUM(CASE WHEN p.Stato = N'NUOVA' THEN 1 ELSE 0 END) AS nuove,
+      SUM(CASE WHEN p.Stato = N'IN_LAVORAZIONE' THEN 1 ELSE 0 END) AS inLavorazione,
       SUM(CASE WHEN p.Scadenza >= @oggi AND p.Scadenza <= @tra7 AND p.Stato NOT IN ${STATI_CHIUSI_SQL} THEN 1 ELSE 0 END) AS inScadenza7gg,
       SUM(CASE WHEN p.AssegnatarioId IS NULL AND p.Stato NOT IN ${STATI_CHIUSI_SQL} THEN 1 ELSE 0 END) AS nonAssegnate
     FROM dbo.Pratiche p
@@ -572,6 +712,51 @@ async function loadAdminSection(
   `);
 
   tick();
+  const scaricoReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
+  scaricoReq.input("inizioMese", sql.DateTime2, inizioMese);
+  scaricoReq.input("fineMese", sql.DateTime2, fineMese);
+  scaricoReq.input("gteOggi", sql.DateTime2, inizioOggi);
+  scaricoReq.input("ltOggi", sql.DateTime2, fineOggi);
+  let scaricoJoin = "INNER JOIN dbo.Pratiche p ON p.Id = a.EntityId";
+  const scaricoClauses = [
+    "a.TenantId = @tenantId",
+    "a.Entity = N'pratica'",
+    "a.CreatedAt >= @inizioMese",
+    "a.CreatedAt <= @fineMese",
+    "a.Action IN (N'stato_update', N'piano', N'incasso', N'contatto_update', N'scarico_update')",
+  ];
+  if (req.incMandante) {
+    scaricoReq.input("mandanteId", sql.UniqueIdentifier, req.incMandante);
+    scaricoClauses.push("p.MandanteId = @mandanteId");
+  }
+  if (req.incPerimetro) {
+    scaricoReq.input("numeroMandante", sql.NVarChar(100), req.incPerimetro);
+    scaricoClauses.push("p.NumeroMandante = @numeroMandante");
+  }
+  if (sedeId) {
+    scaricoReq.input("sedeId", sql.UniqueIdentifier, sedeId);
+    scaricoJoin += ` LEFT JOIN dbo.Users ua ON ua.Id = p.AssegnatarioId LEFT JOIN dbo.Users ut ON ut.Id = p.OperatoreTitolareId`;
+    scaricoClauses.push("(ua.SedeId = @sedeId OR ut.SedeId = @sedeId)");
+  }
+  const scaricoRes = await scaricoReq.query(`
+    SELECT a.EntityId AS entityId, a.Action AS action, a.Dettaglio AS dettaglio, a.CreatedAt AS createdAt, p.Stato AS stato
+    FROM dbo.AuditLog a
+    ${scaricoJoin}
+    WHERE ${scaricoClauses.join(" AND ")}
+  `);
+  const codiciScaricoRiepilogo = aggregaCodiciScaricoAdminSql(
+    scaricoRes.recordset as Array<{
+      entityId: string | null;
+      action: string;
+      dettaglio: string | null;
+      createdAt: Date;
+      stato?: string;
+    }>,
+    inizioOggi,
+    ltOggi
+  );
+
+  tick();
   const esitiReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
   if (sedeId) esitiReq.input("sedeId", sql.UniqueIdentifier, sedeId);
   const esitiRes = await esitiReq.query(`
@@ -625,10 +810,7 @@ async function loadAdminSection(
         mesePezzi: Number(r.mesePezzi),
       })
     ),
-    produttivita: prodRes.recordset.map((r: { Name: string; attivita: number }) => ({
-      name: r.Name,
-      attivita: Number(r.attivita),
-    })),
+    produttivita,
     caricoGruppi: caricoRes.recordset.map(
       (r: { nome: string; aperte: number; totali: number; membri: number }) => ({
         nome: r.nome,
@@ -637,11 +819,13 @@ async function loadAdminSection(
         membri: Number(r.membri),
       })
     ),
+    codiciScaricoRiepilogo,
     esitiContatto: esitiRes.recordset.map((r: { esitoContatto: string; cnt: number }) => ({
       esitoContatto: r.esitoContatto,
       count: Number(r.cnt),
     })),
-    scaduteAdmin: Number(alertRes.recordset[0]?.scaduteAdmin ?? 0),
+    nuove: Number(alertRes.recordset[0]?.nuove ?? 0),
+    inLavorazione: Number(alertRes.recordset[0]?.inLavorazione ?? 0),
     inScadenza7gg: Number(alertRes.recordset[0]?.inScadenza7gg ?? 0),
     nonAssegnate: Number(alertRes.recordset[0]?.nonAssegnate ?? 0),
     incassiPerMandanteMese,

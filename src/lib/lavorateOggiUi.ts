@@ -20,28 +20,45 @@ export function intervalloGiornata(data: Date) {
   return { gte: startOfDay(data), lt: startOfNextDay(data) };
 }
 
-/** Fascia oraria lavorazione: mattina 09:00–13:30, pomeriggio 13:31–19:00. */
-export type LavorateFascia = "mattina" | "pomeriggio";
+/** Fascia oraria lavorazione: giornata 09:00–19:00 divisa in tre parti uguali (3h 20m). */
+export type LavorateFascia = "mattina" | "pranzo" | "pomeriggio";
+
+export const LAVORATE_FASCE: {
+  value: LavorateFascia;
+  label: string;
+  range: string;
+}[] = [
+  { value: "mattina", label: "Mattina", range: "09:00–12:20" },
+  { value: "pranzo", label: "Pranzo", range: "12:21–15:40" },
+  { value: "pomeriggio", label: "Pomeriggio", range: "15:41–19:00" },
+];
 
 export function parseLavorateFascia(value?: string | null): LavorateFascia | undefined {
-  if (value === "mattina" || value === "pomeriggio") return value;
+  if (value === "mattina" || value === "pranzo" || value === "pomeriggio") return value;
   return undefined;
+}
+
+export function labelLavorateFascia(fascia: LavorateFascia): string {
+  const hit = LAVORATE_FASCE.find((f) => f.value === fascia);
+  return hit ? `${hit.label.toLowerCase()} (${hit.range})` : fascia;
+}
+
+function boundary(day: Date, hours: number, minutes: number, seconds = 0) {
+  const d = new Date(day);
+  d.setHours(hours, minutes, seconds, 0);
+  return d;
 }
 
 export function intervalloFasciaOraria(data: Date, fascia: LavorateFascia) {
   const day = startOfDay(data);
-  if (fascia === "mattina") {
-    const gte = new Date(day);
-    gte.setHours(9, 0, 0, 0);
-    const lt = new Date(day);
-    lt.setHours(13, 30, 1, 0);
-    return { gte, lt };
+  switch (fascia) {
+    case "mattina":
+      return { gte: boundary(day, 9, 0), lt: boundary(day, 12, 20, 1) };
+    case "pranzo":
+      return { gte: boundary(day, 12, 21), lt: boundary(day, 15, 40, 1) };
+    case "pomeriggio":
+      return { gte: boundary(day, 15, 41), lt: boundary(day, 19, 0, 1) };
   }
-  const gte = new Date(day);
-  gte.setHours(13, 31, 0, 0);
-  const lt = new Date(day);
-  lt.setHours(19, 0, 1, 0);
-  return { gte, lt };
 }
 
 export function formatDataIso(d: Date) {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { PerimetroGruppoRef } from "@/lib/affidiPerimetro";
+import { FILTRI_PAGE_SELECT_LG_CLASS } from "@/components/filtri/filtriFieldStyles";
 
 export function ProvvigioniFiltriAmministrazione({
   mandanti,
@@ -28,7 +29,7 @@ export function ProvvigioniFiltriAmministrazione({
         <select
           name="mandante"
           defaultValue={mandanteId || ""}
-          className="h-10 min-w-[180px] rounded-lg border border-[var(--line)] px-3 text-sm"
+          className={`min-w-[180px] ${FILTRI_PAGE_SELECT_LG_CLASS}`}
         >
           <option value="">Tutti i mandati</option>
           {mandanti.map((m) => (
@@ -44,7 +45,7 @@ export function ProvvigioniFiltriAmministrazione({
           name="perimetro"
           defaultValue={mandanteId && perimetro ? perimetro : ""}
           disabled={!mandanteId}
-          className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm disabled:opacity-50"
+          className={FILTRI_PAGE_SELECT_LG_CLASS}
         >
           <option value="">Tutti i perimetri</option>
           {perimetriMandato.map((p) => (
@@ -59,7 +60,7 @@ export function ProvvigioniFiltriAmministrazione({
         <select
           name="operatore"
           defaultValue={operatoreId || ""}
-          className="h-10 min-w-[160px] rounded-lg border border-[var(--line)] px-3 text-sm"
+          className={FILTRI_PAGE_SELECT_LG_CLASS}
         >
           <option value="">Tutti</option>
           {operatori.map((o) => (

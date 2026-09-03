@@ -6,6 +6,10 @@ import { Plus, X } from "lucide-react";
 import { formatDataIso } from "@/lib/lavorateOggiUi";
 import { LavorazioneAggiornaButton } from "@/components/lavorazione/LavorazioneRefresh";
 import { Card } from "@/components/ui";
+import {
+  FILTRI_PAGE_INPUT_CLASS,
+  FILTRI_PAGE_SELECT_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 
 function buildHref(
   giorno: string,
@@ -78,7 +82,7 @@ export function LavorazionePianoNav({
                 const v = e.target.value;
                 if (v) router.push(buildHref(v, gruppoId));
               }}
-              className="h-9 rounded-lg border border-[var(--line)] bg-white px-2 text-sm"
+              className={FILTRI_PAGE_INPUT_CLASS}
             />
           </label>
 
@@ -90,7 +94,7 @@ export function LavorazionePianoNav({
               <select
                 value={dataPiano}
                 onChange={(e) => router.push(buildHref(e.target.value, gruppoId))}
-                className="h-9 min-w-[12rem] rounded-lg border border-[var(--line)] bg-white px-2 text-sm"
+                className={`min-w-[12rem] ${FILTRI_PAGE_SELECT_CLASS}`}
               >
                 {dateUniche.map((d) => (
                   <option key={d} value={d}>

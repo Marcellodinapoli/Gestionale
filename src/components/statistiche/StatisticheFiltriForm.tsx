@@ -4,6 +4,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { LottoPerimetroFiltro } from "@/lib/statisticheGruppoUi";
+import {
+  FILTRI_APPLY_BUTTON_CLASS,
+  FILTRI_BAR_CONTAINER_CLASS,
+  FILTRI_LOTTO_BOX_CLASS,
+  FILTRI_PAGE_INPUT_CLASS,
+  FILTRI_PAGE_SELECT_CLASS,
+} from "@/components/filtri/filtriFieldStyles";
 
 export function StatisticheFiltriForm({
   mandanti,
@@ -45,7 +52,7 @@ export function StatisticheFiltriForm({
 
   return (
     <form
-      className="mb-3 space-y-2 rounded-lg border border-[var(--line)] bg-white p-3"
+      className={`mb-3 space-y-2 ${FILTRI_BAR_CONTAINER_CLASS} bg-white`}
       onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -69,7 +76,7 @@ export function StatisticheFiltriForm({
             type="date"
             name="affidoDa"
             defaultValue={affidoDa}
-            className="h-9 rounded border border-[var(--line)] px-2 text-sm"
+            className={FILTRI_PAGE_INPUT_CLASS}
           />
         </label>
         <label className="text-xs">
@@ -78,7 +85,7 @@ export function StatisticheFiltriForm({
             type="date"
             name="affidoA"
             defaultValue={affidoA}
-            className="h-9 rounded border border-[var(--line)] px-2 text-sm"
+            className={FILTRI_PAGE_INPUT_CLASS}
           />
         </label>
         <label className="text-xs">
@@ -86,7 +93,7 @@ export function StatisticheFiltriForm({
           <select
             name="mandanteId"
             defaultValue={mandanteId || ""}
-            className="h-9 min-w-[140px] rounded border border-[var(--line)] px-2 text-sm"
+            className={`min-w-[140px] ${FILTRI_PAGE_SELECT_CLASS}`}
           >
             <option value="">Tutti</option>
             {mandanti.map((m) => (
@@ -102,7 +109,7 @@ export function StatisticheFiltriForm({
             <select
               name="gruppo"
               defaultValue={gruppoId || ""}
-              className="h-9 min-w-[160px] rounded border border-[var(--line)] px-2 text-sm"
+              className={`min-w-[160px] ${FILTRI_PAGE_SELECT_CLASS}`}
             >
               <option value="">{consentiTuttiGruppi ? "Tutti i gruppi" : "Seleziona gruppo"}</option>
               {supervisori.map((s) => (
@@ -113,10 +120,7 @@ export function StatisticheFiltriForm({
             </select>
           </label>
         )}
-        <button
-          type="submit"
-          className="h-9 rounded border border-[var(--line)] bg-[#eef2f6] px-4 text-sm font-medium hover:bg-[#dce4ec]"
-        >
+        <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
           Aggiorna
         </button>
       </div>
@@ -143,7 +147,7 @@ export function StatisticheFiltriForm({
             </button>
           </div>
         </div>
-        <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded border border-[var(--line)] bg-[#f8fafc] p-2">
+        <div className={`flex max-h-28 flex-wrap gap-1.5 overflow-y-auto ${FILTRI_LOTTO_BOX_CLASS}`}>
           {lottiOpzioni.length ? (
             lottiOpzioni.map((opt) => {
               const on = lotti.includes(opt.value);

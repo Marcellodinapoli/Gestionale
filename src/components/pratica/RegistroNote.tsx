@@ -10,9 +10,10 @@ import {
 } from "@/actions/core";
 import {
   codiciScaricoOperatoriEffettivi,
-  isCodicePromessaOperatore,
   type CodiceScaricoPerimetro,
 } from "@/lib/mandantePerimetri";
+import { isCodiceScaricoConDettagliPagamento } from "@/lib/scarico";
+import { METODI_INCASSO } from "@/lib/metodoIncasso";
 
 export type AttivitaRow = {
   id: string;
@@ -182,6 +183,7 @@ export function InserisciNotaServizio({
   codiciScaricoOperatore = [],
   promessaAt,
   promessaImporto,
+  promessaMetodo,
   bozzaNota,
   bozzaKey,
   inModal,
@@ -192,6 +194,7 @@ export function InserisciNotaServizio({
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
   promessaAt?: string | null;
   promessaImporto?: number | null;
+  promessaMetodo?: string | null;
   bozzaNota?: string | null;
   bozzaKey?: number;
   inModal?: boolean;
@@ -206,6 +209,7 @@ export function InserisciNotaServizio({
   const [importoPromessa, setImportoPromessa] = useState(
     promessaImporto != null && promessaImporto > 0 ? String(promessaImporto) : ""
   );
+  const [metodoPagamento, setMetodoPagamento] = useState(promessaMetodo || "");
   const [saving, setSaving] = useState(false);
   const notaRef = useRef<HTMLTextAreaElement>(null);
   const bozzaApplicata = useRef<number | undefined>(undefined);
@@ -216,7 +220,8 @@ export function InserisciNotaServizio({
     setImportoPromessa(
       promessaImporto != null && promessaImporto > 0 ? String(promessaImporto) : ""
     );
-  }, [codiceScarico, promessaAt, promessaImporto]);
+    setMetodoPagamento(promessaMetodo || "");
+  }, [codiceScarico, promessaAt, promessaImporto, promessaMetodo]);
 
   useEffect(() => {
     if (!bozzaNota || bozzaKey == null) return;
@@ -246,9 +251,14 @@ export function InserisciNotaServizio({
       fd.set("praticaId", praticaId);
       fd.set("nota", nota.trim());
       fd.set("codScarico", codice);
-      if (isCodicePromessaOperatore(codice) && promessa) fd.set("promessaAt", promessa);
-      if (isCodicePromessaOperatore(codice) && importoPromessa.trim()) {
+      if (isCodiceScaricoConDettagliPagamento(codice) && promessa) {
+        fd.set("promessaAt", promessa);
+      }
+      if (isCodiceScaricoConDettagliPagamento(codice) && importoPromessa.trim()) {
         fd.set("promessaImporto", importoPromessa.trim());
+      }
+      if (isCodiceScaricoConDettagliPagamento(codice) && metodoPagamento) {
+        fd.set("promessaMetodo", metodoPagamento);
       }
       await salvaNotaServizioPraticaAction(fd);
 
@@ -300,7 +310,7 @@ export function InserisciNotaServizio({
                 ))}
               </select>
             </label>
-            {isCodicePromessaOperatore(codice) ? (
+            {isCodiceScaricoConDettagliPagamento(codice) ? (
               <>
                 <label className="w-full min-w-[120px] shrink-0 text-xs sm:w-[138px]">
                   <span className="font-semibold text-[var(--muted)]">Data promessa</span>
@@ -325,6 +335,22 @@ export function InserisciNotaServizio({
                     placeholder="0,00"
                     className="mt-0.5 h-8 w-full rounded border border-[var(--line)] px-1 text-[13px]"
                   />
+                </label>
+                <label className="w-full min-w-[140px] shrink-0 text-xs sm:w-[180px]">
+                  <span className="font-semibold text-[var(--muted)]">Modalità di pagamento</span>
+                  <select
+                    name="promessaMetodo"
+                    value={metodoPagamento}
+                    onChange={(e) => setMetodoPagamento(e.target.value)}
+                    className="mt-0.5 h-8 w-full rounded border border-[var(--line)] px-1 text-[13px]"
+                  >
+                    <option value="">—</option>
+                    {METODI_INCASSO.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </>
             ) : null}

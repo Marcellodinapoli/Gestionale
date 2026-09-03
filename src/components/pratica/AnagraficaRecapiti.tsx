@@ -24,6 +24,7 @@ import { formatNotaAzioneContatto } from "@/lib/noteFormat";
 import { apriNotaBozza } from "@/lib/notaBozza";
 import { avviaSessioneChiamata } from "@/lib/callSession";
 import { SmsPresetsMenu } from "@/components/pratica/SmsPresetsMenu";
+import type { SmsPreset } from "@/lib/smsPreimpostati";
 import {
   STATI_TELEFONO_OPTIONS,
   statoTelefonoClassi,
@@ -52,6 +53,9 @@ export function AnagraficaRecapiti({
   codiceFiscale,
   operatoreName,
   prefissoChiamata,
+  smsPresets = [],
+  importoNetto = 0,
+  importoConcordatoIniziale,
 }: {
   praticaId: string;
   garanteId?: string;
@@ -64,6 +68,9 @@ export function AnagraficaRecapiti({
   codiceFiscale?: string | null;
   operatoreName?: string | null;
   prefissoChiamata?: string | null;
+  smsPresets?: SmsPreset[];
+  importoNetto?: number;
+  importoConcordatoIniziale?: number | null;
 }) {
   const router = useRouter();
   const chiamaNumero = useChiamaNumero();
@@ -529,6 +536,9 @@ export function AnagraficaRecapiti({
       numero={smsMenu.numero}
       x={smsMenu.x}
       y={smsMenu.y}
+      presets={smsPresets}
+      importoNetto={importoNetto}
+      importoConcordatoIniziale={importoConcordatoIniziale}
       onClose={() => setSmsMenu(null)}
       onPick={(testo) => {
         apriSms(smsMenu.numero, testo);

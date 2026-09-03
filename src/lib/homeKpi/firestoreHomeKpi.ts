@@ -5,7 +5,6 @@ import { mandantiDb, mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { incassiDbFromUser } from "@/lib/incassiRepo";
-import { attivitaDbFromUser } from "@/lib/attivitaRepo";
 import { provvigioniDbFromUser } from "@/lib/provvigioniRepo";
 import { can, isManutenzione, type SessionUser } from "@/lib/permissions";
 import { nessunDatoWhere } from "@/lib/domain";
@@ -30,6 +29,7 @@ import type { HomeKpiBundle, HomeKpiContext } from "@/lib/data/contracts/dashboa
 import { amministrazioneRicaviFlags } from "@/lib/homeKpi/buildContext";
 import { parsePerimetri } from "@/lib/mandantePerimetri";
 import { prismaCount } from "@/lib/prismaCount";
+import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 
 export type FirestoreHomeDeps = {
   user: SessionUser;
@@ -53,7 +53,7 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
       : {}),
   };
   const mandantiModel = mandantiDb({ tenantId, tenantSlug: tenantId });
-  const [mandanti, pratiche] = await Promise.all([
+  const [mandanti, pratiche, provvigioni] = await Promise.all([
     mandantiModel.findMany({
       where: { tenantId },
       select: { id: true, codice: true, ragioneSociale: true },
@@ -69,17 +69,40 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
         incassi: { select: { importo: true } },
       },
     }),
+    prisma.provvigione.findMany({
+      where: {
+        pratica: praticheWhere,
+      },
+      select: {
+        importo: true,
+        pratica: { select: { mandanteId: true } },
+      },
+    }),
   ]);
-  const byMandante = new Map<string, { n: number; affidato: number; incassato: number }>();
+  const byMandante = new Map<
+    string,
+    { n: number; affidato: number; incassato: number; ricavoLordo: number }
+  >();
   for (const p of pratiche) {
-    const cur = byMandante.get(p.mandanteId) || { n: 0, affidato: 0, incassato: 0 };
+    const cur = byMandante.get(p.mandanteId) || {
+      n: 0,
+      affidato: 0,
+      incassato: 0,
+      ricavoLordo: 0,
+    };
     cur.n += 1;
     cur.affidato += (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0);
     cur.incassato += p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
     byMandante.set(p.mandanteId, cur);
   }
+  for (const pv of provvigioni) {
+    const mid = pv.pratica.mandanteId;
+    const cur = byMandante.get(mid) || { n: 0, affidato: 0, incassato: 0, ricavoLordo: 0 };
+    cur.ricavoLordo += pv.importo || 0;
+    byMandante.set(mid, cur);
+  }
   return mandanti.map((m) => {
-    const agg = byMandante.get(m.id) || { n: 0, affidato: 0, incassato: 0 };
+    const agg = byMandante.get(m.id) || { n: 0, affidato: 0, incassato: 0, ricavoLordo: 0 };
     return {
       id: m.id,
       codice: m.codice,
@@ -87,6 +110,7 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
       pratiche: agg.n,
       affidato: agg.affidato,
       incassato: agg.incassato,
+      ricavoLordo: agg.ricavoLordo,
       percentuale: agg.affidato > 0 ? (agg.incassato / agg.affidato) * 100 : 0,
     };
   });
@@ -245,7 +269,7 @@ export async function loadFirestoreHomeKpi(
   if (ctx.includeAdmin) {
     const oggi = new Date();
     oggi.setHours(0, 0, 0, 0);
-    const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
+    const { inizio: inizioMese, fine: fineMese } = rangeMeseIncassi(ctx.incMese);
     const sedePraticaWhere: Prisma.PraticaWhereInput | undefined = sedeScopeId
       ? {
           OR: [
@@ -329,7 +353,7 @@ export async function loadFirestoreHomeKpi(
       }),
       incassiDbFromUser(user).groupBy({
         by: ["metodo"],
-        where: { pratica: praticaIncassoFilter, data: { gte: inizioMese } },
+        where: { pratica: praticaIncassoFilter, data: { gte: inizioMese, lte: fineMese } },
         _sum: { importo: true },
         _count: true,
       }),
@@ -345,70 +369,19 @@ export async function loadFirestoreHomeKpi(
       }))
       .sort((a, b) => b.importo - a.importo);
 
-    const inizioOggi = new Date(oggi);
-    const fineOggi = new Date(oggi);
-    fineOggi.setHours(23, 59, 59, 999);
-    const attivitaPerOperatore = await attivitaDbFromUser(user).groupBy({
-      by: ["userId"],
-      where: { createdAt: { gte: inizioOggi, lte: fineOggi } },
-      _count: true,
-    });
-    const operatoriAttivi = await usersDbFromUser(user).findMany({
-      where: {
-        tenantId: user.tenantId,
-        role: { in: ["OPERATOR", "SUPERVISOR"] },
-        active: true,
-        ...sedeUserFilter,
-      },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
-    const produttivita = operatoriAttivi.map((o) => ({
-      name: o.name,
-      attivita: prismaCount(attivitaPerOperatore.find((a) => a.userId === o.id)?._count),
-    }));
-
-    const tra7gg = new Date(oggi);
-    tra7gg.setDate(tra7gg.getDate() + 7);
-    const [scaduteAdmin, inScadenza7gg, nonAssegnate] = await Promise.all([
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          scadenza: { lt: oggi },
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-          ...(sedePraticaWhere || {}),
-        },
-      }),
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          scadenza: { gte: oggi, lte: tra7gg },
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-          ...(sedePraticaWhere || {}),
-        },
-      }),
-      prisma.pratica.count({
-        where: {
-          tenantId: user.tenantId,
-          assegnatarioId: null,
-          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-          ...(sedePraticaWhere || {}),
-        },
-      }),
-    ]);
-
     bundle.admin = {
       sediOpts,
       operatoriCount: operatoriCountAdmin,
       mandantiRiepilogo,
       mandantiFiltriUi,
       tipologieIncasso,
-      produttivita,
       caricoGruppi: [],
+      codiciScaricoRiepilogo: [],
       esitiContatto: [],
-      scaduteAdmin,
-      inScadenza7gg,
-      nonAssegnate,
+      nuove: 0,
+      inLavorazione: 0,
+      inScadenza7gg: 0,
+      nonAssegnate: 0,
       incassiPerMandanteMese: [],
       mandantiAttivi: mandantiFiltro.map((m) => ({ id: m.id, codice: m.codice })),
     };

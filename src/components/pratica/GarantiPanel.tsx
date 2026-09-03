@@ -3,6 +3,7 @@
 
 
 import { AnagraficaRecapiti } from "@/components/pratica/AnagraficaRecapiti";
+import type { SmsPreset } from "@/lib/smsPreimpostati";
 
 import {
 
@@ -50,12 +51,18 @@ export function GarantiPanel({
   canEdit,
   operatoreName,
   prefissoChiamata,
+  smsPresets = [],
+  importoNetto = 0,
+  importoConcordatoIniziale,
 }: {
   praticaId: string;
   garanti: Garante[];
   canEdit: boolean;
   operatoreName?: string | null;
   prefissoChiamata?: string | null;
+  smsPresets?: SmsPreset[];
+  importoNetto?: number;
+  importoConcordatoIniziale?: number | null;
 }) {
 
   return (
@@ -133,6 +140,9 @@ export function GarantiPanel({
                     codiceFiscale={g.codiceFiscale}
                     operatoreName={operatoreName}
                     prefissoChiamata={prefissoChiamata}
+                    smsPresets={smsPresets}
+                    importoNetto={importoNetto}
+                    importoConcordatoIniziale={importoConcordatoIniziale}
                   />
 
                 </div>
