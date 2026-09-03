@@ -189,13 +189,5 @@ export const ROLE_LABELS: Record<Role, string> = {
   MANUTENZIONE: "Manutenzione",
 };
 
-export const STATO_LABELS: Record<string, string> = {
-  NUOVA: "Nuova",
-  AFFIDATA: "Affidata",
-  IN_LAVORAZIONE: "In lavorazione",
-  PROMESSA: "Promessa",
-  PIANO: "Piano di rientro",
-  INCASSO: "Incassata",
-  INESIGIBILE: "Inesigibile",
-  RESA: "Resa mandante",
-};
+/** Re-export catalogo recovery (valori invariati). */
+export { STATO_LABELS } from "@/lib/platform/catalogs/recovery";

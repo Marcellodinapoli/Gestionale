@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
-import { requireUser } from "@/lib/guard";
+import { requireModule, requireUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import {
   canAccessPratica,
@@ -20,6 +20,7 @@ export default async function IncassiRegistratiPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ embed?: string }>;
 }) {
+  await requireModule("incassi");
   const user = await requireUser();
   const praticaModel = praticaDbFromUser(user);
   const { id } = await params;

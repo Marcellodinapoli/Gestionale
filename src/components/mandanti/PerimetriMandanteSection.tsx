@@ -17,8 +17,13 @@ import {
   type CodiceScaricoPerimetro,
   type LatoEconomico,
   type MandantePerimetro,
+  type PdrBand,
+  type PdrConfigPerimetro,
   type ScaglioneBase,
   type SmsPresetPerimetro,
+  type StralcioConfigPerimetro,
+  emptyPdrConfig,
+  emptyStralcioConfig,
 } from "@/lib/mandantePerimetri";
 
 const inputCls = "h-9 w-full rounded border border-[var(--line)] px-2 text-sm";
@@ -41,6 +46,27 @@ type LatoForm = {
   incentivi: IncentivoForm[];
 };
 
+type PdrBandForm = {
+  from: string;
+  to: string;
+  installments: string;
+};
+
+type PdrForm = {
+  bands: PdrBandForm[];
+  minInstallmentAmount: string;
+  maxAgePdr: string;
+  effettiCambiari: boolean;
+  bollettiniPostali: boolean;
+};
+
+type StralcioForm = {
+  percMin: string;
+  percMax: string;
+  percProposta: string;
+  note: string;
+};
+
 type PerimetroForm = {
   id: string;
   /** Acronimo interno (schede cliente). */
@@ -52,6 +78,8 @@ type PerimetroForm = {
   codiciScarico: CodiceScaricoPerimetro[];
   codiciScaricoOperatori: CodiceScaricoPerimetro[];
   smsPreimpostati: SmsPresetPerimetro[];
+  pdr: PdrForm;
+  stralcio: StralcioForm;
   /** Firma codici scarico all'ultimo salvataggio riuscito del perimetro */
   codiciScaricoSavedSig: string;
 };
@@ -186,6 +214,78 @@ function erroreCampiPerimetro(
   return null;
 }
 
+function pdrToForm(pdr: PdrConfigPerimetro): PdrForm {
+  const bands =
+    pdr.bands.length > 0
+      ? pdr.bands.map((b) => ({
+          from: String(b.from),
+          to: String(b.to),
+          installments: String(b.installments),
+        }))
+      : [{ from: "", to: "", installments: "" }];
+  return {
+    bands,
+    minInstallmentAmount:
+      pdr.minInstallmentAmount != null ? String(pdr.minInstallmentAmount) : "",
+    maxAgePdr: pdr.maxAgePdr != null ? String(pdr.maxAgePdr) : "",
+    effettiCambiari: pdr.effettiCambiari,
+    bollettiniPostali: pdr.bollettiniPostali,
+  };
+}
+
+function formToPdr(form: PdrForm): PdrConfigPerimetro {
+  const bands: PdrBand[] = [];
+  for (const row of form.bands) {
+    const from = parseOptionalFloat(row.from);
+    const to = parseOptionalFloat(row.to);
+    const installments = parseOptionalFloat(row.installments);
+    if (from == null || to == null || installments == null || installments <= 0) {
+      continue;
+    }
+    bands.push({ from, to, installments: Math.floor(installments) });
+  }
+  return {
+    bands,
+    minInstallmentAmount: parseOptionalFloat(form.minInstallmentAmount),
+    maxAgePdr: (() => {
+      const n = parseOptionalFloat(form.maxAgePdr);
+      return n != null ? Math.floor(n) : null;
+    })(),
+    effettiCambiari: form.effettiCambiari,
+    bollettiniPostali: form.bollettiniPostali,
+  };
+}
+
+function stralcioToForm(s: StralcioConfigPerimetro): StralcioForm {
+  return {
+    percMin: s.percMin != null ? String(s.percMin) : "",
+    percMax: s.percMax != null ? String(s.percMax) : "",
+    percProposta: s.percProposta != null ? String(s.percProposta) : "",
+    note: s.note ?? "",
+  };
+}
+
+function formToStralcio(form: StralcioForm): StralcioConfigPerimetro {
+  let percMin = parseOptionalFloat(form.percMin);
+  let percMax = parseOptionalFloat(form.percMax);
+  const percProposta = parseOptionalFloat(form.percProposta);
+  const clamp = (n: number | null) =>
+    n == null ? null : Math.min(100, Math.max(0, n));
+  percMin = clamp(percMin);
+  percMax = clamp(percMax);
+  if (percMin != null && percMax != null && percMin > percMax) {
+    const t = percMin;
+    percMin = percMax;
+    percMax = t;
+  }
+  return {
+    percMin,
+    percMax,
+    percProposta: clamp(percProposta),
+    note: form.note.trim(),
+  };
+}
+
 function perimetroToForm(p: MandantePerimetro): PerimetroForm {
   const sig = p.codiciScarico.length > 0 ? codiciSig(p.codiciScarico) : "";
   const descrizione = (p.descrizione || p.nomeMandante || "").trim();
@@ -199,6 +299,8 @@ function perimetroToForm(p: MandantePerimetro): PerimetroForm {
     codiciScarico: [...p.codiciScarico],
     codiciScaricoOperatori: [...p.codiciScaricoOperatori],
     smsPreimpostati: [...p.smsPreimpostati],
+    pdr: pdrToForm(p.pdr ?? emptyPdrConfig()),
+    stralcio: stralcioToForm(p.stralcio ?? emptyStralcioConfig()),
     codiciScaricoSavedSig: sig,
   };
 }
@@ -221,6 +323,8 @@ export function formPerimetriToData(items: PerimetroForm[]): MandantePerimetro[]
         codiciScarico: p.codiciScarico,
         codiciScaricoOperatori: p.codiciScaricoOperatori,
         smsPreimpostati: p.smsPreimpostati,
+        pdr: formToPdr(p.pdr),
+        stralcio: formToStralcio(p.stralcio),
       } satisfies MandantePerimetro;
     })
     .filter((p): p is MandantePerimetro => p != null);
@@ -769,6 +873,278 @@ function CodiciScaricoPerimetroEditor({
   );
 }
 
+function isPdrRowComplete(row: PdrBandForm) {
+  const from = parseOptionalFloat(row.from);
+  const to = parseOptionalFloat(row.to);
+  const installments = parseOptionalFloat(row.installments);
+  return from != null && to != null && installments != null && installments > 0;
+}
+
+function isPdrRowStarted(row: PdrBandForm) {
+  return Boolean(row.from.trim() || row.to.trim() || row.installments.trim());
+}
+
+function PdrPerimetroEditor({
+  value,
+  onChange,
+}: {
+  value: PdrForm;
+  onChange: (next: PdrForm) => void;
+}) {
+  function updateBand(index: number, patch: Partial<PdrBandForm>) {
+    const bands = value.bands.map((b, i) => (i === index ? { ...b, ...patch } : b));
+    if (patch.to != null && index < bands.length - 1) {
+      const to = parseOptionalFloat(patch.to);
+      if (to != null) {
+        bands[index + 1] = {
+          ...bands[index + 1]!,
+          from: String(to + 1),
+        };
+      }
+    }
+    onChange({ ...value, bands });
+  }
+
+  function addBand() {
+    const last = value.bands[value.bands.length - 1];
+    if (!last || !isPdrRowComplete(last)) return;
+    const to = parseOptionalFloat(last.to);
+    if (to == null) return;
+    onChange({
+      ...value,
+      bands: [...value.bands, { from: String(to + 1), to: "", installments: "" }],
+    });
+  }
+
+  function removeBand(index: number) {
+    if (index <= 0 || value.bands.length <= 1) return;
+    onChange({
+      ...value,
+      bands: value.bands.filter((_, i) => i !== index),
+    });
+  }
+
+  const firstStarted = value.bands[0] ? isPdrRowStarted(value.bands[0]) : false;
+
+  return (
+    <div className="rounded border border-[var(--line)] bg-white p-3">
+      <p className="text-xs font-bold uppercase text-[#1a365d]">
+        Dati per il PDR (piano di rientro)
+      </p>
+      <p className="mb-3 text-[10px] text-[var(--muted)]">
+        Fasce importo netto → rate massime (come CreditCalc). Se non compilate, in
+        pratica non sarà possibile creare un piano di rientro.
+      </p>
+      <div className="space-y-2">
+        {value.bands.map((row, index) => (
+          <div key={index} className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[100px] flex-1 text-[10px]">
+              <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+                Da valore min.
+              </span>
+              <input
+                type="number"
+                min={0}
+                step="1"
+                value={row.from}
+                readOnly={index > 0}
+                onChange={(e) => updateBand(index, { from: e.target.value })}
+                className={`${smallInputCls} ${index > 0 ? "bg-[#f4f7fa]" : ""}`}
+              />
+            </label>
+            <label className="min-w-[100px] flex-1 text-[10px]">
+              <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+                A valore max.
+              </span>
+              <input
+                type="number"
+                min={0}
+                step="1"
+                value={row.to}
+                onChange={(e) => updateBand(index, { to: e.target.value })}
+                className={smallInputCls}
+              />
+            </label>
+            <label className="min-w-[90px] flex-1 text-[10px]">
+              <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+                Rate previste
+              </span>
+              <input
+                type="number"
+                min={1}
+                step="1"
+                value={row.installments}
+                onChange={(e) => updateBand(index, { installments: e.target.value })}
+                className={smallInputCls}
+              />
+            </label>
+            {index > 0 ? (
+              <button
+                type="button"
+                onClick={() => removeBand(index)}
+                className="mb-0.5 rounded p-1 text-[var(--muted)] hover:bg-[#fee2e2] hover:text-[var(--danger)]"
+                title="Rimuovi fascia"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addBand}
+        disabled={!isPdrRowComplete(value.bands[value.bands.length - 1] ?? { from: "", to: "", installments: "" })}
+        className="mt-2 flex h-8 items-center gap-1 rounded bg-[var(--navy)] px-3 text-xs text-white disabled:opacity-50"
+      >
+        <Plus className="h-3 w-3" /> Aggiungi fascia PDR
+      </button>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            Importo minimo rata/effetto {firstStarted ? "*" : ""}
+          </span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={value.minInstallmentAmount}
+            onChange={(e) =>
+              onChange({ ...value, minInstallmentAmount: e.target.value })
+            }
+            className={smallInputCls}
+            placeholder="es. 50"
+          />
+        </label>
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            Età massima PDR
+          </span>
+          <input
+            type="number"
+            min={0}
+            step="1"
+            value={value.maxAgePdr}
+            onChange={(e) => onChange({ ...value, maxAgePdr: e.target.value })}
+            className={smallInputCls}
+            placeholder="es. 75"
+          />
+        </label>
+      </div>
+      <p className="mb-1 mt-3 text-[10px] font-semibold uppercase text-[var(--muted)]">
+        {firstStarted ? "* " : ""}Modalità di pagamento per il rateizzo
+      </p>
+      <div className="flex flex-wrap gap-3 text-xs">
+        <label className="inline-flex items-center gap-1.5 text-[var(--muted)]">
+          <input type="checkbox" checked disabled className="rounded" />
+          Contanti
+        </label>
+        <label className="inline-flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={value.effettiCambiari}
+            onChange={(e) =>
+              onChange({ ...value, effettiCambiari: e.target.checked })
+            }
+            className="rounded"
+          />
+          Effetti cambiari
+        </label>
+        <label className="inline-flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={value.bollettiniPostali}
+            onChange={(e) =>
+              onChange({ ...value, bollettiniPostali: e.target.checked })
+            }
+            className="rounded"
+          />
+          Bollettini postali
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function StralcioPerimetroEditor({
+  value,
+  onChange,
+}: {
+  value: StralcioForm;
+  onChange: (next: StralcioForm) => void;
+}) {
+  return (
+    <div className="rounded border border-[var(--line)] bg-white p-3">
+      <p className="text-xs font-bold uppercase text-[#1a365d]">
+        Dati per il saldo a stralcio
+      </p>
+      <p className="mb-3 text-[10px] text-[var(--muted)]">
+        Percentuale di stralcio sul debito (come CreditCalc). Se lasciate vuote,
+        l&apos;operatore negozia liberamente in pratica.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            % stralcio minima
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="1"
+            value={value.percMin}
+            onChange={(e) => onChange({ ...value, percMin: e.target.value })}
+            className={smallInputCls}
+            placeholder="es. 10"
+          />
+        </label>
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            % stralcio massima
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="1"
+            value={value.percMax}
+            onChange={(e) => onChange({ ...value, percMax: e.target.value })}
+            className={smallInputCls}
+            placeholder="es. 40"
+          />
+        </label>
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            % stralcio proposta
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="1"
+            value={value.percProposta}
+            onChange={(e) => onChange({ ...value, percProposta: e.target.value })}
+            className={smallInputCls}
+            placeholder="es. 25"
+          />
+        </label>
+      </div>
+      <label className="mt-2 block text-[10px]">
+        <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+          Note / istruzioni mandante
+        </span>
+        <textarea
+          value={value.note}
+          onChange={(e) => onChange({ ...value, note: e.target.value })}
+          rows={2}
+          className="w-full rounded border border-[var(--line)] px-2 py-1.5 text-xs"
+          placeholder="es. oltre il 30% richiede autorizzazione mandante"
+        />
+      </label>
+    </div>
+  );
+}
+
 function SmsPerimetroEditor({
   sms,
   onChange,
@@ -1129,6 +1505,14 @@ export function PerimetriMandanteSection({
                     onChange={(codiciScaricoOperatori) =>
                       updatePerimetro(p.id, { codiciScaricoOperatori })
                     }
+                  />
+                  <PdrPerimetroEditor
+                    value={p.pdr}
+                    onChange={(pdr) => updatePerimetro(p.id, { pdr })}
+                  />
+                  <StralcioPerimetroEditor
+                    value={p.stralcio}
+                    onChange={(stralcio) => updatePerimetro(p.id, { stralcio })}
                   />
                   {p.codiciScarico.length > 0 && !perimetroProvvigioniUnlocked(p) ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">

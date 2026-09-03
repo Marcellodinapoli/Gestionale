@@ -1,31 +1,24 @@
-export const CODICI_SCARICO = ["PTC", "PPC", "MOV", "LPP", "LPT"] as const;
+import {
+  CODICE_SCARICO_LABELS,
+  CODICI_SCARICO,
+  CODICI_SCARICO_DETTAGLIO_PAGAMENTO,
+  STATO_SCARICO,
+  type CodiceScarico,
+} from "@/lib/platform/catalogs/recovery";
+
+export {
+  CODICE_SCARICO_LABELS,
+  CODICI_SCARICO,
+  CODICI_SCARICO_DETTAGLIO_PAGAMENTO,
+  type CodiceScarico,
+};
 
 /** Codici promessa con data, importo e modalità di pagamento (solo LPI/LPP/LPT). */
-export const CODICI_SCARICO_DETTAGLIO_PAGAMENTO = ["LPI", "LPP", "LPT"] as const;
-
 export function isCodiceScaricoConDettagliPagamento(codice: string): boolean {
   const key = codice.trim().toUpperCase();
   if (!key) return false;
   return (CODICI_SCARICO_DETTAGLIO_PAGAMENTO as readonly string[]).includes(key);
 }
-
-export type CodiceScarico = (typeof CODICI_SCARICO)[number];
-
-const STATO_SCARICO: Record<string, CodiceScarico> = {
-  INCASSO: "PTC",
-  PROMESSA: "PPC",
-  INESIGIBILE: "MOV",
-  PIANO: "LPP",
-  RESA: "LPT",
-};
-
-export const CODICE_SCARICO_LABELS: Record<CodiceScarico, string> = {
-  PTC: "Pagato / chiuso",
-  PPC: "Promessa pagamento",
-  MOV: "Inesigibile",
-  LPP: "Piano di rientro",
-  LPT: "Resa mandante",
-};
 
 export function codiceScaricoDaStato(stato: string): CodiceScarico | null {
   return STATO_SCARICO[stato] ?? null;

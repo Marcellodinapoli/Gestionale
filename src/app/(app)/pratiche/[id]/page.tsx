@@ -25,6 +25,9 @@ import { getPraticaWorkContext } from "@/lib/praticaLock";
 import {
   codiciScaricoOperatoriEffettivi,
   codiciScaricoOperatoriPerPratica,
+  hasPdrFasceConfigurate,
+  pdrConfigPerPratica,
+  stralcioConfigPerPratica,
   smsPreimpostatiPerPratica,
 } from "@/lib/mandantePerimetri";
 import { smsPreimpostatiEffettivi } from "@/lib/smsPreimpostati";
@@ -147,6 +150,15 @@ export default async function PraticaDetailPage({
       pratica.mandante.smsPreimpostati
     )
   );
+  const pdrConfig = pdrConfigPerPratica(
+    pratica.mandante.perimetri,
+    pratica.numeroMandante
+  );
+  const pdrDisponibile = hasPdrFasceConfigurate(pdrConfig);
+  const stralcioConfig = stralcioConfigPerPratica(
+    pratica.mandante.perimetri,
+    pratica.numeroMandante
+  );
 
   const { canWork, lockedByName } = workCtx;
 
@@ -198,6 +210,9 @@ export default async function PraticaDetailPage({
             pratica={{ ...pratica, pagato }}
             codiciScaricoOperatore={codiciScaricoOperatore}
             smsPresets={smsPresets}
+            pdrDisponibile={pdrDisponibile}
+            pdrConfig={pdrConfig}
+            stralcioConfig={stralcioConfig}
             canEditNotes={canWork}
             canEditStato={canWork && can(user, "pratiche:update:stato")}
             canRegistraIncasso={canWork && can(user, "incassi:create")}

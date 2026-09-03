@@ -60,6 +60,82 @@ export function labelSogliaIncentivo(_tipo: string) {
   return "Soglia minima incasso (€)";
 }
 
+/** Fascia PDR: range importo netto → max rate. */
+export type PdrBand = {
+  from: number;
+  to: number;
+  installments: number;
+};
+
+export type PdrConfigPerimetro = {
+  bands: PdrBand[];
+  minInstallmentAmount: number | null;
+  maxAgePdr: number | null;
+  effettiCambiari: boolean;
+  bollettiniPostali: boolean;
+};
+
+export function emptyPdrConfig(): PdrConfigPerimetro {
+  return {
+    bands: [],
+    minInstallmentAmount: null,
+    maxAgePdr: null,
+    effettiCambiari: false,
+    bollettiniPostali: false,
+  };
+}
+
+/** True se la sezione PDR ha almeno una fascia completa. */
+export function hasPdrFasceConfigurate(
+  pdr: PdrConfigPerimetro | null | undefined
+): boolean {
+  if (!pdr?.bands?.length) return false;
+  return pdr.bands.some(
+    (b) =>
+      Number.isFinite(b.from) &&
+      Number.isFinite(b.to) &&
+      b.to >= b.from &&
+      Number.isFinite(b.installments) &&
+      b.installments > 0
+  );
+}
+
+/**
+ * Saldo a stralcio: % di stralcio sul debito (come CreditCalc).
+ * Se tutte null/vuote → operatore libero di negoziare.
+ */
+export type StralcioConfigPerimetro = {
+  /** % minima di stralcio sul debito (es. 10). */
+  percMin: number | null;
+  /** % massima di stralcio sul debito (es. 40). */
+  percMax: number | null;
+  /** % stralcio proposta di default (es. 25). */
+  percProposta: number | null;
+  note: string;
+};
+
+export function emptyStralcioConfig(): StralcioConfigPerimetro {
+  return {
+    percMin: null,
+    percMax: null,
+    percProposta: null,
+    note: "",
+  };
+}
+
+/** True se la mandante ha imposto almeno un vincolo/proposta %. */
+export function hasStralcioVincoli(
+  s: StralcioConfigPerimetro | null | undefined
+): boolean {
+  if (!s) return false;
+  return (
+    (s.percMin != null && Number.isFinite(s.percMin)) ||
+    (s.percMax != null && Number.isFinite(s.percMax)) ||
+    (s.percProposta != null && Number.isFinite(s.percProposta)) ||
+    Boolean(s.note?.trim())
+  );
+}
+
 export type MandantePerimetro = {
   id: string;
   /** Acronimo interno agenzia (schede cliente / elenchi). */
@@ -80,6 +156,10 @@ export type MandantePerimetro = {
   /** Codici scarico selezionabili dagli operatori in lavorazione. */
   codiciScaricoOperatori: CodiceScaricoPerimetro[];
   smsPreimpostati: SmsPresetPerimetro[];
+  /** Condizioni piano di rientro (fasce PDR come CreditCalc). */
+  pdr: PdrConfigPerimetro;
+  /** Condizioni saldo a stralcio (percentuali mandante). */
+  stralcio: StralcioConfigPerimetro;
 };
 
 export type PerimetroListItem = {
@@ -426,6 +506,8 @@ export function emptyPerimetro(
     codiciScarico: [],
     codiciScaricoOperatori: [],
     smsPreimpostati: [],
+    pdr: emptyPdrConfig(),
+    stralcio: emptyStralcioConfig(),
   };
 }
 
@@ -467,6 +549,86 @@ function normalizeSmsPresets(raw: unknown): SmsPresetPerimetro[] {
       };
     })
     .filter((x): x is SmsPresetPerimetro => x != null);
+}
+
+function normalizePdrConfig(raw: unknown): PdrConfigPerimetro {
+  const empty = emptyPdrConfig();
+  if (!raw || typeof raw !== "object") return empty;
+  const o = raw as Record<string, unknown>;
+  const bandsRaw = Array.isArray(o.bands) ? o.bands : Array.isArray(o.pdrBands) ? o.pdrBands : [];
+  const bands: PdrBand[] = [];
+  for (const item of bandsRaw) {
+    if (!item || typeof item !== "object") continue;
+    const b = item as Record<string, unknown>;
+    const from = Number(String(b.from ?? "").replace(",", "."));
+    const to = Number(String(b.to ?? "").replace(",", "."));
+    const installments = Number(String(b.installments ?? "").replace(",", "."));
+    if (Number.isNaN(from) || Number.isNaN(to) || Number.isNaN(installments)) continue;
+    if (installments <= 0) continue;
+    bands.push({ from, to, installments: Math.floor(installments) });
+  }
+  const minRaw = o.minInstallmentAmount;
+  const ageRaw = o.maxAgePdr ?? o.maxAge;
+  const minInstallmentAmount =
+    minRaw != null && minRaw !== "" && !Number.isNaN(Number(minRaw))
+      ? Number(minRaw)
+      : null;
+  const maxAgePdr =
+    ageRaw != null && ageRaw !== "" && !Number.isNaN(Number(ageRaw))
+      ? Math.floor(Number(ageRaw))
+      : null;
+  return {
+    bands,
+    minInstallmentAmount,
+    maxAgePdr,
+    effettiCambiari: Boolean(o.effettiCambiari),
+    bollettiniPostali: Boolean(o.bollettiniPostali),
+  };
+}
+
+function normalizePerc(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(String(raw).replace(",", "."));
+  if (Number.isNaN(n) || n < 0 || n > 100) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function normalizeStralcioConfig(raw: unknown): StralcioConfigPerimetro {
+  const empty = emptyStralcioConfig();
+  if (!raw || typeof raw !== "object") return empty;
+  const o = raw as Record<string, unknown>;
+  let percMin = normalizePerc(o.percMin ?? o.minPerc);
+  let percMax = normalizePerc(o.percMax ?? o.maxPerc);
+  const percProposta = normalizePerc(o.percProposta ?? o.propostaPerc ?? o.perc);
+  if (percMin != null && percMax != null && percMin > percMax) {
+    const t = percMin;
+    percMin = percMax;
+    percMax = t;
+  }
+  return {
+    percMin,
+    percMax,
+    percProposta,
+    note: String(o.note || "").trim(),
+  };
+}
+
+/** Config PDR del perimetro pratica (per numeroMandante / lotto). */
+export function pdrConfigPerPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined
+): PdrConfigPerimetro {
+  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
+  return hit?.pdr ?? emptyPdrConfig();
+}
+
+/** Config stralcio del perimetro pratica. */
+export function stralcioConfigPerPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined
+): StralcioConfigPerimetro {
+  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
+  return hit?.stralcio ?? emptyStralcioConfig();
 }
 
 function parseCodiciScaricoMandante(raw: string | null | undefined): CodiceScaricoPerimetro[] {
@@ -602,6 +764,16 @@ export function parsePerimetri(raw: string | null | undefined): MandantePerimetr
           codiciScarico: normalizeCodiciScarico(o.codiciScarico),
           codiciScaricoOperatori: normalizeCodiciScarico(o.codiciScaricoOperatori),
           smsPreimpostati: normalizeSmsPresets(o.smsPreimpostati),
+          pdr: normalizePdrConfig(
+            o.pdr ?? {
+              bands: o.pdrBands,
+              minInstallmentAmount: o.minInstallmentAmount,
+              maxAgePdr: o.maxAgePdr ?? o.maxAge,
+              effettiCambiari: o.effettiCambiari,
+              bollettiniPostali: o.bollettiniPostali,
+            }
+          ),
+          stralcio: normalizeStralcioConfig(o.stralcio),
         } satisfies MandantePerimetro;
       })
       .filter((p): p is MandantePerimetro => p != null);
@@ -648,6 +820,8 @@ export function loadPerimetriForEditor(mandante: {
         codiciScarico: legacyCodici,
         codiciScaricoOperatori: [],
         smsPreimpostati: legacySms,
+        pdr: emptyPdrConfig(),
+        stralcio: emptyStralcioConfig(),
       },
     ];
   }
@@ -660,6 +834,8 @@ export function loadPerimetriForEditor(mandante: {
         ricevuta: latoIsEmpty(first.ricevuta) ? legacyRicevuta : first.ricevuta,
         codiciScarico: first.codiciScarico.length ? first.codiciScarico : legacyCodici,
         smsPreimpostati: first.smsPreimpostati.length ? first.smsPreimpostati : legacySms,
+        pdr: first.pdr ?? emptyPdrConfig(),
+        stralcio: first.stralcio ?? emptyStralcioConfig(),
       },
       ...items.slice(1),
     ];

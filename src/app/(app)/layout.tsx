@@ -26,8 +26,10 @@ export default async function AppLayout({
   }
   const { getDialClientConfig } = await import("@/lib/telephony");
   const dialConfig = await getDialClientConfig(user.tenantId, user.tenantSlug);
+  const { getTenantPlatformConfig } = await import("@/lib/platform/tenantProfile");
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
   return (
-    <AppShell user={user}>
+    <AppShell user={user} platform={platform}>
       <NavPrefetch />
       <SoftRefresh intervalMs={180_000} />
       <TelephonyDialProvider

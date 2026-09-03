@@ -46,6 +46,7 @@ import {
   PraticaHeaderSlotProvider,
 } from "@/components/layout/PraticaHeaderSlot";
 import { ROLE_LABELS, can, canManageSedi, isFormazioneOnly, type SessionUser } from "@/lib/permissions";
+import { hasModule, type ModuleId, type TenantPlatformConfig } from "@/lib/platform/modules";
 import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
 import { navigateBack } from "@/lib/navBack";
 import { labelForNavBackHref, navBackDisplayLabel } from "@/lib/navBackLabel";
@@ -60,74 +61,97 @@ type NavLink = {
   href: string;
   label: string;
   icon: LucideIcon;
+  moduleId: ModuleId;
   show: (u: SessionUser) => boolean;
 };
 
 const MAIN_LINKS: NavLink[] = [
-  { href: "/", label: "Home", icon: Home, show: (u) => !isFormazioneOnly(u) },
+  { href: "/", label: "Home", icon: Home, moduleId: "core", show: (u) => !isFormazioneOnly(u) },
   {
     href: "/pratiche",
     label: "Pratiche",
     icon: Briefcase,
+    moduleId: "recovery",
     show: (u) => !isFormazioneOnly(u),
   },
   {
     href: "/affidi",
     label: "Affidi",
     icon: Users,
+    moduleId: "affidi",
     show: (u) => !isFormazioneOnly(u) && can(u, "pratiche:assign"),
   },
   {
     href: "/agenda",
     label: "Agenda",
     icon: CalendarDays,
+    moduleId: "core",
     show: (u) => !isFormazioneOnly(u) && can(u, "agenda:view"),
   },
   {
     href: "/messaggi",
     label: "Messaggi",
     icon: MessageSquare,
+    moduleId: "core",
     show: (u) => !isFormazioneOnly(u) && can(u, "agenda:view"),
   },
   {
     href: "/statistiche",
     label: "Statistiche",
     icon: PieChart,
+    moduleId: "recovery",
     show: (u) => !isFormazioneOnly(u) && can(u, "statistiche:view"),
   },
   {
     href: "/provigioni",
     label: "Provvigioni",
     icon: Wallet,
+    moduleId: "recovery",
     show: (u) => !isFormazioneOnly(u) && can(u, "provigioni:view"),
   },
   {
     href: "/report",
     label: "Registrazioni",
     icon: Headphones,
+    moduleId: "recovery",
     show: (u) => !isFormazioneOnly(u) && can(u, "report:view"),
   },
   {
     href: "/rubrica",
     label: "Rubrica",
     icon: BookUser,
+    moduleId: "core",
     show: (u) => !isFormazioneOnly(u),
   },
   {
     href: "/lavorazione",
     label: "Lavorazione",
     icon: ClipboardList,
+    moduleId: "lavorazione",
     show: (u) => !isFormazioneOnly(u) && can(u, "lavorazione:view"),
   },
   {
     href: "/predictive-dialer",
     label: "Dialer",
     icon: PhoneForwarded,
+    moduleId: "dialer",
     show: (u) => !isFormazioneOnly(u) && can(u, "dialer:operate"),
   },
-  { href: "/account", label: "Account", icon: UserCircle, show: () => true },
-  { href: "/formazione/progressi", label: "Formazione", icon: GraduationCap, show: (u) => can(u, "formazione:view") },
-  { href: "/strumenti/ricerca-normativa", label: "Strumenti AI", icon: Wrench, show: (u) => !isFormazioneOnly(u) && can(u, "formazione:view") },
+  { href: "/account", label: "Account", icon: UserCircle, moduleId: "core", show: () => true },
+  {
+    href: "/formazione/progressi",
+    label: "Formazione",
+    icon: GraduationCap,
+    moduleId: "core",
+    show: (u) => can(u, "formazione:view"),
+  },
+  {
+    href: "/strumenti/ricerca-normativa",
+    label: "Strumenti AI",
+    icon: Wrench,
+    moduleId: "core",
+    show: (u) => !isFormazioneOnly(u) && can(u, "formazione:view"),
+  },
 ];
 
 const ADMIN_LINKS: NavLink[] = [
@@ -135,48 +159,56 @@ const ADMIN_LINKS: NavLink[] = [
     href: "/import",
     label: "Import",
     icon: FileSpreadsheet,
+    moduleId: "recovery",
     show: (u) => can(u, "import:run"),
   },
   {
     href: "/mandanti",
     label: "Mandanti",
     icon: Building2,
+    moduleId: "recovery",
     show: (u) => can(u, "mandanti:manage"),
   },
   {
     href: "/telefonia",
     label: "Telefonia",
     icon: Phone,
+    moduleId: "core",
     show: (u) => can(u, "telephony:manage"),
   },
   {
     href: "/operatori",
     label: "Operatori",
     icon: UserCog,
+    moduleId: "core",
     show: (u) => can(u, "operatori:manage"),
   },
   {
     href: "/sedi",
     label: "Sedi",
     icon: MapPin,
+    moduleId: "core",
     show: (u) => canManageSedi(u),
   },
   {
     href: "/postazioni",
     label: "Postazioni",
     icon: Monitor,
+    moduleId: "core",
     show: (u) => can(u, "operatori:manage"),
   },
   {
     href: "/configurazione",
     label: "Configurazione",
     icon: Settings,
+    moduleId: "core",
     show: (u) => can(u, "users:manage"),
   },
   {
     href: "/log",
     label: "Log audit",
     icon: ScrollText,
+    moduleId: "core",
     show: (u) => can(u, "audit:view"),
   },
 ];
@@ -622,9 +654,12 @@ function AffidiBackSync({
 
 export function AppShell({
   user,
+  platform,
   children,
 }: {
   user: SessionUser;
+  /** Profilo moduli tenant; se omesso = default recovery (menu invariato). */
+  platform?: Pick<TenantPlatformConfig, "enabledModules"> | null;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -684,8 +719,12 @@ export function AppShell({
     );
   }
 
-  const mainLinks = MAIN_LINKS.filter((l) => l.show(user));
-  const adminLinks = ADMIN_LINKS.filter((l) => l.show(user));
+  const mainLinks = MAIN_LINKS.filter(
+    (l) => l.show(user) && hasModule(platform?.enabledModules, l.moduleId)
+  );
+  const adminLinks = ADMIN_LINKS.filter(
+    (l) => l.show(user) && hasModule(platform?.enabledModules, l.moduleId)
+  );
   const roleLabel = ROLE_LABELS[user.role] || user.role;
   const ruoloVisibile = !user.name.toLowerCase().includes(roleLabel.toLowerCase());
 

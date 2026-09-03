@@ -42,7 +42,12 @@ import { canShowIncassoPopup } from "@/lib/permissions";
 import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
 import type { RecordingMode } from "@/lib/recordingMode";
-import type { CodiceScaricoPerimetro } from "@/lib/mandantePerimetri";
+import type {
+  CodiceScaricoPerimetro,
+  PdrConfigPerimetro,
+  StralcioConfigPerimetro,
+} from "@/lib/mandantePerimetri";
+import { emptyPdrConfig, emptyStralcioConfig } from "@/lib/mandantePerimetri";
 
 type Voce = {
   id: string;
@@ -60,7 +65,8 @@ type PopupKey =
   | "piano"
   | "stralcio"
   | "calcolatrice"
-  | "incasso";
+  | "incasso"
+  | "pdrAssente";
 
 const BTN_BASE =
   "inline-flex h-7 w-14 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap px-0.5 text-center text-[10px] font-semibold leading-none";
@@ -142,6 +148,9 @@ export function PraticaFunzioniBar({
   promessaImporto,
   promessaMetodo,
   residuo = 0,
+  pdrDisponibile = false,
+  pdrConfig,
+  stralcioConfig,
   nextPraticaHref,
   showRecordingControl,
   recordingMode = "manual",
@@ -160,6 +169,11 @@ export function PraticaFunzioniBar({
   promessaImporto?: number | null;
   promessaMetodo?: string | null;
   residuo?: number;
+  /** Se false, piano di rientro comunica che non è previsto sul perimetro. */
+  pdrDisponibile?: boolean;
+  pdrConfig?: PdrConfigPerimetro;
+  /** Condizioni stralcio mandante (opzionale). */
+  stralcioConfig?: StralcioConfigPerimetro;
   nextPraticaHref?: string | null;
   showRecordingControl?: boolean;
   recordingMode?: RecordingMode;
@@ -469,7 +483,7 @@ export function PraticaFunzioniBar({
             <button
               type="button"
               className={BTN_TOOL}
-              onClick={() => setPopup("piano")}
+              onClick={() => setPopup(pdrDisponibile ? "piano" : "pdrAssente")}
               disabled={azioniBloccate}
             >
               Piano di rientro
@@ -596,13 +610,40 @@ export function PraticaFunzioniBar({
         open={popup === "stralcio"}
         title="Saldo a stralcio"
         onClose={() => setPopup(null)}
+        wide
       >
-        <SaldoStralcioPopup residuo={residuo} />
+        <SaldoStralcioPopup
+          praticaId={praticaId}
+          residuo={residuo}
+          stralcio={stralcioConfig ?? emptyStralcioConfig()}
+          pdr={pdrConfig ?? emptyPdrConfig()}
+          onDone={() => setPopup(null)}
+        />
+      </Modal>
+
+      <Modal
+        open={popup === "pdrAssente"}
+        title="Piano non disponibile"
+        onClose={() => setPopup(null)}
+      >
+        <div className="space-y-3 px-3 py-3 text-sm">
+          <p className="text-[var(--muted)]">
+            Non sono previste possibilità di crearne uno: sul perimetro di questa
+            mandante non risultano fasce PDR configurate per il piano di rientro.
+          </p>
+          <button
+            type="button"
+            onClick={() => setPopup(null)}
+            className="h-8 rounded border border-[var(--line)] px-3 text-xs hover:bg-[#eef4f8]"
+          >
+            Chiudi
+          </button>
+        </div>
       </Modal>
 
       <Modal
         open={popup === "calcolatrice"}
-        title="Calcolatrice"
+        title="calcolatrice"
         onClose={() => setPopup(null)}
       >
         <CalcolatricePopup />

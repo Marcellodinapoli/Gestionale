@@ -22,7 +22,11 @@ import {
 } from "@/lib/praticaCollegata";
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCodaNav";
 import { codiceScaricoPratica } from "@/lib/scarico";
-import type { CodiceScaricoPerimetro } from "@/lib/mandantePerimetri";
+import type {
+  CodiceScaricoPerimetro,
+  PdrConfigPerimetro,
+  StralcioConfigPerimetro,
+} from "@/lib/mandantePerimetri";
 import type { SmsPreset } from "@/lib/smsPreimpostati";
 import type { RecordingMode } from "@/lib/recordingMode";
 import type { PraticheStessoDebitoreClientPayload } from "@/lib/praticheStessoDebitoreClient";
@@ -154,6 +158,9 @@ export function PraticaSchedaOperatore({
   pratica,
   codiciScaricoOperatore = [],
   smsPresets = [],
+  pdrDisponibile = false,
+  pdrConfig,
+  stralcioConfig,
   canEditNotes,
   canEditStato,
   canRegistraIncasso,
@@ -171,6 +178,11 @@ export function PraticaSchedaOperatore({
   pratica: PraticaData;
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
   smsPresets?: SmsPreset[];
+  /** Fasce PDR configurate sul perimetro mandante. */
+  pdrDisponibile?: boolean;
+  pdrConfig?: PdrConfigPerimetro;
+  /** Percentuali stralcio dal perimetro (vuote = negoziazione libera). */
+  stralcioConfig?: StralcioConfigPerimetro;
   canEditNotes: boolean;
   canEditStato: boolean;
   canRegistraIncasso?: boolean;
@@ -431,6 +443,9 @@ export function PraticaSchedaOperatore({
           promessaImporto={pratica.promessaImporto}
           promessaMetodo={pratica.promessaMetodo}
           residuo={pratica.residuo}
+          pdrDisponibile={pdrDisponibile}
+          pdrConfig={pdrConfig}
+          stralcioConfig={stralcioConfig}
           initialCollegate={collegatePayload}
           suppressF9Flash={Boolean(nav.filtroCollegata)}
           showRecordingControl={

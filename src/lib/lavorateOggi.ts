@@ -314,6 +314,7 @@ function labelDaAudit(
   statoCorrente?: string
 ): string | null {
   if (action === "piano") return "Piano di rientro";
+  if (action === "stralcio") return "Saldo a stralcio";
   if (action === "incasso") {
     if (statoCorrente === "INCASSO") return "Incassata";
     return null;

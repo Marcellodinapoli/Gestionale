@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, isCurrentUserPasswordExpired } from "@/lib/auth";
 import { assertCan, can, isManutenzione, type Permission, type SessionUser } from "@/lib/permissions";
+import type { ModuleId } from "@/lib/platform/modules";
+import { getTenantPlatformConfig, tenantHasModule } from "@/lib/platform/tenantProfile";
 import { redirect } from "next/navigation";
 
 type RequireUserOptions = {
@@ -40,6 +42,19 @@ export async function requireApiUser(): Promise<SessionUser | NextResponse> {
 export async function requirePermission(permission: Permission) {
   const user = await requireUser();
   if (!can(user, permission)) {
+    redirect("/");
+  }
+  return user;
+}
+
+/**
+ * Blocca l'accesso se il modulo non è abilitato per il tenant.
+ * Default tenant senza config KV = moduli recovery → nessun cambio di comportamento.
+ */
+export async function requireModule(moduleId: ModuleId) {
+  const user = await requireUser();
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  if (!tenantHasModule(platform, moduleId)) {
     redirect("/");
   }
   return user;

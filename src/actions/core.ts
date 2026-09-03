@@ -1532,6 +1532,75 @@ export async function createPianoAction(formData: FormData) {
   revalidatePath(`/pratiche/${praticaId}`);
 }
 
+/** Piano da saldo e stralcio (residuo negoziato, 1–10 rate come CreditCalc). */
+export async function createStralcioPianoAction(formData: FormData) {
+  const user = await requireWritablePermission("incassi:create");
+  const praticaId = String(formData.get("praticaId") || "");
+  await assertPraticaEditable(user, praticaId);
+  const nRate = Number(formData.get("nRate") || 0);
+  const start = String(formData.get("primaScadenza") || "");
+  const importoResiduo = Number(
+    String(formData.get("importoResiduo") || "").replace(",", ".")
+  );
+  const metodoPagamento = String(formData.get("metodoPagamento") || "").trim();
+  const percentualeStralcio = String(formData.get("percentualeStralcio") || "").trim();
+  const pratica = await (await praticaModel()).findUnique({ where: { id: praticaId } });
+  if (!pratica) fail("Pratica non trovata");
+  if (nRate < 1 || nRate > 10 || !start) {
+    fail("Indica da 1 a 10 rate e la data della prima rata");
+  }
+  if (!Number.isFinite(importoResiduo) || importoResiduo <= 0) {
+    fail("Residuo da pagare non valido");
+  }
+  if (!metodoPagamento) fail("Seleziona la modalità di pagamento");
+
+  const totalCents = Math.round(importoResiduo * 100);
+  const baseCents = Math.floor(totalCents / nRate);
+  const remainder = totalCents - baseCents * (nRate - 1);
+  const startDate = new Date(`${start}T12:00:00`);
+  if (Number.isNaN(startDate.getTime())) fail("Data prima rata non valida");
+
+  function addMonthsSameCalendarDay(base: Date, months: number) {
+    const day = base.getDate();
+    const d = new Date(base.getFullYear(), base.getMonth() + months, 1, 12, 0, 0);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, last));
+    return d;
+  }
+
+  await (await pianoRataModel()).deleteMany({ where: { praticaId } });
+  const rateData = Array.from({ length: nRate }, (_, i) => {
+    const cents = i === nRate - 1 ? remainder : baseCents;
+    return {
+      praticaId,
+      numeroRata: i + 1,
+      importo: cents / 100,
+      scadenza: addMonthsSameCalendarDay(startDate, i),
+    };
+  });
+  await createManyPianoRate(
+    {
+      tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
+    },
+    rateData
+  );
+  await (await praticaModel()).update({
+    where: { id: praticaId },
+    data: { stato: "PIANO" },
+  });
+  await writeAudit({
+    userId: user.id,
+    action: "stralcio",
+    entity: "pratica",
+    entityId: praticaId,
+    dettaglio: `residuo ${importoResiduo} · ${nRate} rate · ${metodoPagamento}${
+      percentualeStralcio ? ` · stralcio ${percentualeStralcio}%` : ""
+    }`,
+  });
+  revalidatePath(`/pratiche/${praticaId}`);
+}
+
 export async function addDocumentoAction(formData: FormData) {
   const user = await requireWritableUser();
   if (!can(user, "pratiche:create") && !can(user, "pratiche:work")) {

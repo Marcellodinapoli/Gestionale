@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Op = "+" | "-" | "×" | "÷" | null;
 
@@ -41,6 +41,16 @@ export function CalcolatricePopup() {
     setFresh(true);
   }
 
+  function backspace() {
+    if (fresh) return;
+    if (display.length <= 1) {
+      setDisplay("0");
+      setFresh(true);
+      return;
+    }
+    setDisplay(display.slice(0, -1));
+  }
+
   function compute(a: number, b: number, operation: NonNullable<Op>) {
     switch (operation) {
       case "+":
@@ -77,66 +87,172 @@ export function CalcolatricePopup() {
     setFresh(true);
   }
 
-  const btn =
-    "h-9 rounded text-sm font-semibold border border-[var(--line)] bg-[#f0f4f8] text-[var(--navy)] hover:bg-white";
-  const btnOp =
-    "h-9 rounded text-sm font-semibold bg-[#1a4f7a] text-white hover:bg-[#163f61]";
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const key = e.key;
+      if (/^[0-9]$/.test(key)) {
+        e.preventDefault();
+        inputDigit(key);
+        return;
+      }
+      if (key === "," || key === ".") {
+        e.preventDefault();
+        inputDot();
+        return;
+      }
+      if (key === "+") {
+        e.preventDefault();
+        applyOp("+");
+        return;
+      }
+      if (key === "-") {
+        e.preventDefault();
+        applyOp("-");
+        return;
+      }
+      if (key === "*" || key === "x" || key === "X") {
+        e.preventDefault();
+        applyOp("×");
+        return;
+      }
+      if (key === "/") {
+        e.preventDefault();
+        applyOp("÷");
+        return;
+      }
+      if (key === "Enter" || key === "=") {
+        e.preventDefault();
+        equals();
+        return;
+      }
+      if (key === "Backspace") {
+        e.preventDefault();
+        backspace();
+        return;
+      }
+      if (key === "c" || key === "C" || key === "Delete") {
+        e.preventDefault();
+        clearAll();
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [display, acc, op, fresh]);
+
+
+  const num =
+    "flex h-11 items-center justify-center rounded-md bg-[#e8ecf0] text-base font-semibold text-[#2a2f36] shadow-sm hover:bg-[#dde3ea] active:bg-[#d0d7e0]";
+  const act =
+    "flex h-11 items-center justify-center rounded-md bg-[#1a3355] text-base font-semibold text-white shadow-sm hover:bg-[#152a47] active:bg-[#101f36]";
+  const actActive =
+    "flex h-11 items-center justify-center rounded-md bg-[#3d6fa8] text-base font-semibold text-white shadow-sm ring-2 ring-white/50";
+
+  function opBtn(symbol: NonNullable<Op>, label?: string) {
+    const active = op === symbol;
+    return (
+      <button
+        type="button"
+        className={active ? actActive : act}
+        onClick={() => applyOp(symbol)}
+      >
+        {label ?? symbol}
+      </button>
+    );
+  }
+
+  const opLabel = op === "-" ? "−" : op;
+  const exprLeft =
+    acc !== null && op ? formatDisplay(acc).replace(".", ",") : null;
 
   return (
-    <div className="mx-auto w-[220px] space-y-2 px-3 py-3">
-      <div className="rounded border border-[var(--line)] bg-[#132033] px-3 py-2 text-right font-mono text-xl tabular-nums text-white">
-        {display.replace(".", ",")}
+    <div className="mx-auto w-[248px] space-y-2.5 px-3 py-3">
+      <div className="rounded-md bg-[#1a3355] px-3 py-2 text-right text-white">
+        <div className="min-h-[1.1rem] font-mono text-xs tabular-nums tracking-wide text-white/70">
+          {exprLeft != null ? (
+            <>
+              {exprLeft} {opLabel}
+              {!fresh ? ` ${display.replace(".", ",")}` : ""}
+            </>
+          ) : (
+            "\u00a0"
+          )}
+        </div>
+        <div className="font-mono text-2xl tabular-nums tracking-wide">
+          {display.replace(".", ",")}
+        </div>
       </div>
-      <div className="grid grid-cols-4 gap-1.5">
-        <button type="button" className={btnOp} onClick={clearAll}>
+      <div className="grid grid-cols-4 gap-2">
+        <button type="button" className={act} onClick={clearAll}>
           C
         </button>
-        <button type="button" className={btnOp} onClick={() => applyOp("÷")}>
-          ÷
-        </button>
-        <button type="button" className={btnOp} onClick={() => applyOp("×")}>
-          ×
-        </button>
-        <button type="button" className={btnOp} onClick={() => applyOp("-")}>
-          −
-        </button>
-        <button type="button" className={btn} onClick={() => inputDigit("7")}>
+        {opBtn("÷")}
+        {opBtn("×")}
+        {opBtn("-", "−")}
+
+        <button type="button" className={num} onClick={() => inputDigit("7")}>
           7
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("8")}>
+        <button type="button" className={num} onClick={() => inputDigit("8")}>
           8
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("9")}>
+        <button type="button" className={num} onClick={() => inputDigit("9")}>
           9
         </button>
-        <button type="button" className={btnOp} onClick={() => applyOp("+")}>
+        <button
+          type="button"
+          className={`${op === "+" ? actActive : act} row-span-2 h-auto min-h-[5.75rem]`}
+          onClick={() => applyOp("+")}
+        >
           +
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("4")}>
+
+        <button type="button" className={num} onClick={() => inputDigit("4")}>
           4
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("5")}>
+        <button type="button" className={num} onClick={() => inputDigit("5")}>
           5
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("6")}>
+        <button type="button" className={num} onClick={() => inputDigit("6")}>
           6
         </button>
-        <button type="button" className={`${btnOp} row-span-2 h-auto`} onClick={equals}>
-          =
-        </button>
-        <button type="button" className={btn} onClick={() => inputDigit("1")}>
+
+        <button type="button" className={num} onClick={() => inputDigit("1")}>
           1
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("2")}>
+        <button type="button" className={num} onClick={() => inputDigit("2")}>
           2
         </button>
-        <button type="button" className={btn} onClick={() => inputDigit("3")}>
+        <button type="button" className={num} onClick={() => inputDigit("3")}>
           3
         </button>
-        <button type="button" className={`${btn} col-span-2`} onClick={() => inputDigit("0")}>
+        <button
+          type="button"
+          className={`${act} row-span-2 h-auto min-h-[5.75rem]`}
+          onClick={equals}
+        >
+          =
+        </button>
+
+        <button
+          type="button"
+          className={`${num} col-span-2`}
+          onClick={() => inputDigit("0")}
+        >
           0
         </button>
-        <button type="button" className={btn} onClick={inputDot}>
+        <button type="button" className={num} onClick={inputDot}>
           ,
         </button>
       </div>
