@@ -32,6 +32,7 @@ import { createGarantiRouter } from "./routes/garanti.js";
 import { createUsersRouter } from "./routes/users.js";
 import { createConfigurazioneRouter } from "./routes/configurazione.js";
 import { createPostazioniRouter } from "./routes/postazioni.js";
+import { createCreditCalcRouter } from "./routes/creditCalc.js";
 
 function loadEnvFile() {
   const candidates = [
@@ -91,6 +92,7 @@ app.use("/api/v1/tenants/:tenantId/fatture", createFattureRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/documenti", createDocumentiRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/piano-rate", createPianoRateRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/garanti", createGarantiRouter(cfg));
+app.use("/api/v1/tenants/:tenantId/creditcalc", createCreditCalcRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/pratiche", createLockRouter(cfg));
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

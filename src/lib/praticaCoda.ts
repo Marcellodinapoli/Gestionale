@@ -29,6 +29,7 @@ import {
   type AltriFiltri,
 } from "@/lib/praticheAltriFiltriUi";
 import type { CodaFiltro as CodaFiltroBase } from "@/lib/praticaCodaNav";
+import { whereStatoFiltroPratiche } from "@/lib/statoOperativoPratica";
 
 export {
   buildPraticaCodaHref,
@@ -131,14 +132,18 @@ export function parseCodaNav(sp: SpLike): CodaNav {
 
 export function codaFiltroWhere(filtro: CodaFiltro): Prisma.PraticaWhereInput {
   const extra: Prisma.PraticaWhereInput = {};
-  if (filtro.stato) extra.stato = filtro.stato;
+  const andExtra: Prisma.PraticaWhereInput[] = [];
+
+  // Stato operativo in AND dedicato: evita conflitto con OR della ricerca testuale.
+  if (filtro.stato) {
+    andExtra.push(whereStatoFiltroPratiche(filtro.stato) as Prisma.PraticaWhereInput);
+  }
   if (filtro.esito) extra.esitoContatto = filtro.esito;
   if (filtro.lavorate) extra.attivita = { some: {} };
 
   const fascia = filtro.lavorateFascia;
   const da = parseDataIso(filtro.lavorateDa);
   const a = parseDataIso(filtro.lavorateA);
-  const andExtra: Prisma.PraticaWhereInput[] = [];
 
   if (da || a) {
     const stessoGiorno = da && a && formatDataIso(da) === formatDataIso(a);

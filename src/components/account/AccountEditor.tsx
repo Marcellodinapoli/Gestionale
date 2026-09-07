@@ -3,12 +3,13 @@
 import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Monitor, Phone } from "lucide-react";
+import { Lock, Monitor, Phone, QrCode } from "lucide-react";
 import { updateAccountTelefoniaAction } from "@/actions/account";
 import { CambioPasswordForm } from "@/components/account/CambioPasswordForm";
 import { AccountPostazioneForm } from "@/components/account/AccountPostazioneForm";
 import { FormazioneAccountMenu } from "@/components/formazione/FormazioneAccountMenu";
 import { StrumentiAccountMenu } from "@/components/strumenti/StrumentiAccountMenu";
+import { CollegaCreditCalcButton } from "@/components/creditcalc/CollegaCreditCalcButton";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 
 const inputCls =
@@ -91,6 +92,8 @@ export function AccountEditor({
       occupante: string | null;
     }>;
     giorniAllaScadenza: number;
+    /** Operatore consulente esterno con CreditCalc abilitato dall’admin. */
+    creditCalcEnabled?: boolean;
   };
   showFormazione?: boolean;
   showStrumenti?: boolean;
@@ -278,6 +281,22 @@ export function AccountEditor({
           <CambioPasswordForm compact />
           </div>
         </Sezione>
+
+        {user.creditCalcEnabled ? (
+          <Sezione
+            icon={QrCode}
+            titolo="CreditCalc"
+            sottotitolo="Collega l’app mobile al tuo utente gestionale"
+          >
+            <div className="flex flex-1 flex-col gap-3">
+              <p className="text-sm leading-relaxed text-[var(--muted)]">
+                Genera un QR temporaneo e scansionarlo da CreditCalc → Impostazioni →
+                Collegamenti. Solo tu puoi collegare l’app al tuo profilo.
+              </p>
+              <CollegaCreditCalcButton label="Genera QR collegamento" />
+            </div>
+          </Sezione>
+        ) : null}
       </div>
     </div>
   );

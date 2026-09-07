@@ -160,12 +160,17 @@ export async function listProvvigioni(
       extraJoin += " INNER JOIN dbo.Pratiche p ON p.Id = pv.PraticaId ";
     }
     extraJoin += " INNER JOIN dbo.Debitori d ON d.Id = p.DebitoreId ";
+    extraJoin += " LEFT JOIN dbo.Mandanti man ON man.Id = p.MandanteId ";
     extraSelect += ", p.Numero AS Pratica_Numero, p.NumeroMandante AS Pratica_NumeroMandante";
+    extraSelect += ", p.Stato AS Pratica_Stato, p.CodiceScarico AS Pratica_CodiceScarico";
+    extraSelect += ", p.MandanteId AS Pratica_MandanteId";
     extraSelect += ", d.Nome AS Debitore_Nome, d.Cognome AS Debitore_Cognome";
+    extraSelect += ", man.Codice AS Mandante_Codice, man.PerimetriJson AS Mandante_Perimetri";
   }
   if (req.includeIncasso) {
     extraJoin += " INNER JOIN dbo.Incassi inc ON inc.Id = pv.IncassoId ";
     extraSelect += ", inc.Data AS Incasso_Data, inc.Importo AS Incasso_Importo, inc.Metodo AS Incasso_Metodo";
+    extraSelect += ", inc.Fattura AS Incasso_Fattura, inc.Modo AS Incasso_Modo";
   }
 
   const listReq = pool.request();
@@ -191,7 +196,15 @@ export async function listProvvigioni(
       out.pratica = {
         Numero: row.Pratica_Numero,
         NumeroMandante: row.Pratica_NumeroMandante,
+        Stato: row.Pratica_Stato,
+        CodiceScarico: row.Pratica_CodiceScarico,
+        MandanteId: row.Pratica_MandanteId,
         debitore: { Nome: row.Debitore_Nome, Cognome: row.Debitore_Cognome },
+        mandante: {
+          Codice: row.Mandante_Codice,
+          Perimetri: row.Mandante_Perimetri,
+          PerimetriJson: row.Mandante_Perimetri,
+        },
       };
     }
     if (req.includeIncasso) {
@@ -199,6 +212,8 @@ export async function listProvvigioni(
         Data: row.Incasso_Data,
         Importo: row.Incasso_Importo,
         Metodo: row.Incasso_Metodo,
+        Fattura: row.Incasso_Fattura,
+        Modo: row.Incasso_Modo,
       };
     }
     return out;

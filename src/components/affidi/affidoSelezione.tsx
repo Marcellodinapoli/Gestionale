@@ -30,28 +30,38 @@ function codiceOp(o: OperatoreAffido) {
   return (o.acronimo?.trim() || operatorSigla(o.name)).toUpperCase();
 }
 
-export function useSelezionePratiche(ids: string[]) {
+export function useSelezionePratiche(
+  ids: string[],
+  opts?: {
+    /**
+     * Ambito completo della selezione (es. tutte le pagine filtrate).
+     * Se assente, coincide con `ids` (pagina corrente).
+     */
+    scopeIds?: string[];
+  }
+) {
+  const scopeIds = opts?.scopeIds?.length ? opts.scopeIds : ids;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const allRef = useRef<HTMLInputElement>(null);
-  const allChecked = ids.length > 0 && selected.size === ids.length;
+  const allChecked = scopeIds.length > 0 && selected.size === scopeIds.length;
   const someChecked = selected.size > 0 && !allChecked;
-  const idKey = ids.join("\0");
+  const scopeKey = scopeIds.join("\0");
 
   useEffect(() => {
     if (allRef.current) allRef.current.indeterminate = someChecked;
   }, [someChecked]);
 
   useEffect(() => {
-    const valid = new Set(idKey ? idKey.split("\0") : []);
+    const valid = new Set(scopeKey ? scopeKey.split("\0") : []);
     setSelected((prev) => {
       const next = new Set([...prev].filter((id) => valid.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [idKey]);
+  }, [scopeKey]);
 
   function toggleAll() {
     if (allChecked) setSelected(new Set());
-    else setSelected(new Set(idKey ? idKey.split("\0") : []));
+    else setSelected(new Set(scopeKey ? scopeKey.split("\0") : []));
   }
 
   function toggleOne(id: string) {
@@ -63,7 +73,14 @@ export function useSelezionePratiche(ids: string[]) {
     });
   }
 
-  return { selected, allRef, allChecked, toggleAll, toggleOne };
+  return {
+    selected,
+    allRef,
+    allChecked,
+    toggleAll,
+    toggleOne,
+    scopeTotal: scopeIds.length,
+  };
 }
 
 function SelectOperatore({

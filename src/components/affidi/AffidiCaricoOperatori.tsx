@@ -8,11 +8,16 @@ import {
 import type { CodiciScaricoOperatore } from "@/lib/homeKpi/codiciScaricoAdmin";
 
 export const CODE_LAVORAZIONE = [
-  { key: "AFFIDATA", label: "Affidate" },
   { key: "IN_LAVORAZIONE", label: "In lavorazione" },
-  { key: "PROMESSA", label: "Promessa" },
-  { key: "PIANO", label: "Piano" },
 ] as const;
+
+/** Stati DB ancora considerati «in carico» (legacy PROMESSA/PIANO + affido). */
+const STATI_IN_CARICO = new Set([
+  "IN_LAVORAZIONE",
+  "AFFIDATA",
+  "PROMESSA",
+  "PIANO",
+]);
 
 const COL_CARICO = "IN_LAVORAZIONE" as const;
 
@@ -87,6 +92,8 @@ export function filtraPraticheAffido(
     rows = rows.filter(
       (p) => !isPraticaChiusa(p.stato) && p.scadenza && p.scadenza <= oggi
     );
+  } else if (opts.coda === COL_CARICO) {
+    rows = rows.filter((p) => STATI_IN_CARICO.has(p.stato));
   } else if (opts.coda) {
     rows = rows.filter((p) => p.stato === opts.coda);
   }
@@ -126,6 +133,7 @@ export type PraticaAffido = {
   residuo: number;
   scadenza: Date | null;
   codiceScarico: string | null;
+  codiceScaricoBk?: string | null;
   mandanteId: string;
   numeroMandante: string | null;
   debitore: { nome: string; cognome: string };
@@ -188,7 +196,8 @@ export function buildCaricoOperatori(
     const aperte = sue.filter((p) => !isPraticaChiusa(p.stato));
     const perStato: Record<string, number> = {};
     for (const p of sue) {
-      perStato[p.stato] = (perStato[p.stato] || 0) + 1;
+      const key = STATI_IN_CARICO.has(p.stato) ? COL_CARICO : p.stato;
+      perStato[key] = (perStato[key] || 0) + 1;
     }
     return {
       id: op.id,

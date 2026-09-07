@@ -66,19 +66,73 @@ export function dataOraIt(value?: Date | string | null) {
   }).format(new Date(value));
 }
 
+/**
+ * Riparto automatico del totale pagato:
+ * 1) una sola rata (`importoRata`, non × rate insolute) → capitale
+ * 2) spese
+ * 3) spese di recupero
+ * 4) eccesso → capitale
+ * 5) eventuale residuo → mora (interessi)
+ * Senza importo rata: spese → spese recupero → capitale → mora.
+ */
 export function ripartiIncasso(
   importo: number,
-  pratica: { capitale: number; interessi: number; spese: number },
-  giaPagato: { capitale: number; interessi: number; spese: number }
+  pratica: {
+    capitale: number;
+    interessi: number;
+    spese: number;
+    speseRecupero?: number | null;
+    importoRata?: number | null;
+  },
+  giaPagato: {
+    capitale: number;
+    interessi: number;
+    spese: number;
+    speseRec?: number;
+  }
 ) {
   const speseRes = Math.max(0, pratica.spese - giaPagato.spese);
+  const speseRecRes = Math.max(
+    0,
+    (pratica.speseRecupero ?? 0) - (giaPagato.speseRec ?? 0)
+  );
   const intRes = Math.max(0, pratica.interessi - giaPagato.interessi);
   const capRes = Math.max(0, pratica.capitale - giaPagato.capitale);
+  const rataTarget = Math.max(0, Number(pratica.importoRata) || 0);
+
   let rest = Math.max(0, importo);
-  const spese = Math.min(rest, speseRes);
+  let capitale = 0;
+  let spese = 0;
+  let speseRec = 0;
+  let interessi = 0;
+
+  if (rataTarget > 0) {
+    const quotaRata = Math.min(rest, rataTarget, capRes);
+    capitale += quotaRata;
+    rest -= quotaRata;
+  }
+
+  spese = Math.min(rest, speseRes);
   rest -= spese;
-  const interessi = Math.min(rest, intRes);
-  rest -= interessi;
-  const capitale = Math.min(rest, capRes);
-  return { capitale, interessi, spese, usato: capitale + interessi + spese };
+
+  speseRec = Math.min(rest, speseRecRes);
+  rest -= speseRec;
+
+  const eccessoCap = Math.min(rest, Math.max(0, capRes - capitale));
+  capitale += eccessoCap;
+  rest -= eccessoCap;
+
+  interessi = Math.min(rest, intRes);
+
+  return {
+    capitale,
+    interessi,
+    spese,
+    speseRec,
+    usato: capitale + interessi + spese + speseRec,
+  };
+}
+
+export function roundMoney(value: number) {
+  return Math.round((value || 0) * 100) / 100;
 }

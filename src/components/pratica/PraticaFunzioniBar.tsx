@@ -21,13 +21,16 @@ import { InviaMessaggioCollega } from "@/components/pratica/InviaMessaggioColleg
 import { CercaPraticaPopup } from "@/components/pratica/CercaPraticaPopup";
 import { AgendaMemoPopup } from "@/components/pratica/AgendaMemoPopup";
 import { CalcolatricePopup } from "@/components/pratica/CalcolatricePopup";
-import { IncassoPopup } from "@/components/pratica/IncassoPopup";
+import {
+  IncassoPopup,
+  type IncassoRipartoPratica,
+} from "@/components/pratica/IncassoPopup";
 import { PianoRientroPopup } from "@/components/pratica/PianoRientroPopup";
 import { SaldoStralcioPopup } from "@/components/pratica/SaldoStralcioPopup";
 import { InserisciNotaServizio } from "@/components/pratica/RegistroNote";
 import {
   buildPraticaCollegataElencoHref,
-  isPraticaChiusa,
+  isPraticaF9Aperta,
   type FiltroCollegata,
 } from "@/lib/praticaCollegata";
 import {
@@ -39,7 +42,7 @@ import {
 } from "@/lib/praticheStessoDebitoreClient";
 import { useEscBack } from "@/lib/useEscBack";
 import { canShowIncassoPopup } from "@/lib/permissions";
-import { NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
+import { APRI_NOTA_F5_EVENT, NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
 import type { RecordingMode } from "@/lib/recordingMode";
 import type {
@@ -54,7 +57,11 @@ type Voce = {
   numero: string;
   nome: string;
   stato: string;
+  assegnatarioId?: string | null;
+  codiceScaricoBk?: string | null;
+  mandante: string;
   mandanteNome: string;
+  scadenza?: string | null;
 };
 
 type PopupKey =
@@ -142,7 +149,11 @@ export function PraticaFunzioniBar({
   canEditNotes,
   praticaLocked = false,
   codiceScarico,
+  codiceScaricoBk,
   codiciScaricoOperatore = [],
+  codiciScaricoBkOff = [],
+  canEditBkOff = false,
+  canClearScarico = false,
   memoAt,
   promessaAt,
   promessaImporto,
@@ -157,13 +168,19 @@ export function PraticaFunzioniBar({
   initialCollegate = null,
   suppressF9Flash = false,
   currentUserRole,
+  incassoRiparto,
 }: {
   praticaId: string;
   attivo?: "fatture" | "estratto" | "incassi";
   canEditNotes?: boolean;
   praticaLocked?: boolean;
   codiceScarico?: string | null;
+  codiceScaricoBk?: string | null;
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
+  codiciScaricoBkOff?: CodiceScaricoPerimetro[];
+  canEditBkOff?: boolean;
+  /** Svuota codice scarico operatore / bk (non op/supervisor). */
+  canClearScarico?: boolean;
   memoAt?: string | null;
   promessaAt?: string | null;
   promessaImporto?: number | null;
@@ -182,6 +199,8 @@ export function PraticaFunzioniBar({
   /** Niente lampeggio F9 (click tra pratiche collegate). */
   suppressF9Flash?: boolean;
   currentUserRole?: string;
+  /** Residui pratica per riparto modificabile in Inserisci incasso. */
+  incassoRiparto?: IncassoRipartoPratica;
 }) {
   const router = useRouter();
   const [popup, setPopup] = useState<PopupKey | null>(null);
@@ -268,8 +287,10 @@ export function PraticaFunzioniBar({
   }, [praticaId, initialCollegate, suppressF9Flash]);
 
   const haCollegateInLavorazione = altre.length > 0;
+  /** F10: altre mandanti / scadute / chiuse (non solo chiuse DB). */
   const haIntestateChiuse =
-    (corrente && isPraticaChiusa(corrente.stato)) || altreChiuse.length > 0;
+    altreChiuse.length > 0 ||
+    Boolean(corrente && !isPraticaF9Aperta(corrente));
   const azioniBloccate = praticaLocked || !canEditNotes;
   const showIncassoPopup = canShowIncassoPopup(currentUserRole);
 
@@ -284,8 +305,17 @@ export function PraticaFunzioniBar({
       setNotaBozza({ testo: `${testo} `, key: Date.now() });
       setPopup("nota");
     }
+    function onApriF5() {
+      if (azioniBloccate) return;
+      setNotaBozza(null);
+      setPopup("nota");
+    }
     window.addEventListener(NOTA_BOZZA_EVENT, onBozza);
-    return () => window.removeEventListener(NOTA_BOZZA_EVENT, onBozza);
+    window.addEventListener(APRI_NOTA_F5_EVENT, onApriF5);
+    return () => {
+      window.removeEventListener(NOTA_BOZZA_EVENT, onBozza);
+      window.removeEventListener(APRI_NOTA_F5_EVENT, onApriF5);
+    };
   }, [azioniBloccate]);
 
   function apriElencoCollegate(filtro: FiltroCollegata) {
@@ -439,7 +469,7 @@ export function PraticaFunzioniBar({
             </Hint>
           );
         })}
-        <Hint label="Collegate in lavorazione">
+        <Hint label="In lavorazione e nuove (stessa mandante)">
           <span className={flashF9 ? "f9-collegate-flash-wrap" : "inline-flex"}>
             <button
               type="button"
@@ -458,7 +488,7 @@ export function PraticaFunzioniBar({
             </button>
           </span>
         </Hint>
-        <Hint label="Collegate generiche">
+        <Hint label="Altre collegate (altre mandanti, scadute, chiuse)">
           <button
             type="button"
             className={haIntestateChiuse ? BTN_INT_CHIUSE : BTN}
@@ -570,7 +600,11 @@ export function PraticaFunzioniBar({
           <InserisciNotaServizio
             praticaId={praticaId}
             codiceScarico={codiceScarico}
+            codiceScaricoBk={codiceScaricoBk}
             codiciScaricoOperatore={codiciScaricoOperatore}
+            codiciScaricoBkOff={codiciScaricoBkOff}
+            canEditBkOff={canEditBkOff}
+            canClearScarico={canClearScarico}
             promessaAt={promessaAt}
             promessaImporto={promessaImporto}
             promessaMetodo={promessaMetodo}
@@ -654,7 +688,19 @@ export function PraticaFunzioniBar({
         title="Inserisci incasso"
         onClose={() => setPopup(null)}
       >
-        <IncassoPopup praticaId={praticaId} onDone={() => setPopup(null)} />
+        <IncassoPopup
+          praticaId={praticaId}
+          riparto={
+            incassoRiparto ?? {
+              capitale: 0,
+              interessi: 0,
+              spese: 0,
+              speseRecupero: 0,
+              importoRata: null,
+            }
+          }
+          onDone={() => setPopup(null)}
+        />
       </Modal>
     </>
   );

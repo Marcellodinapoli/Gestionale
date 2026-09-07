@@ -94,6 +94,20 @@ export function MandanteSchedaEditor({
     setSaving(true);
     setMsg(null);
     try {
+      if (canManagePerimetri) {
+        for (const p of perimetriRef.current) {
+          const a = p.nomeInterno.trim();
+          const d = p.descrizione.trim();
+          if (!a || !d) {
+            setMsg("Ogni perimetro deve avere acronimo e descrizione");
+            return;
+          }
+          if (a.toLowerCase() === d.toLowerCase()) {
+            setMsg("Acronimo e descrizione devono essere diversi su ogni perimetro");
+            return;
+          }
+        }
+      }
       const fd = new FormData();
       if (isNew) {
         if (!canCreatePerimetro) {

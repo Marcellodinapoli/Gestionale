@@ -27,7 +27,10 @@ export type RigaProvvigioneImportoFisso = {
   stato: string;
   statoLabel: string;
   perimetro: string;
+  perimetroLabel?: string;
   codiceScarico: string;
+  modo?: string;
+  fattura?: string;
 };
 
 export function buildRigheImportoFisso(
@@ -54,7 +57,10 @@ export function buildRigheImportoFisso(
       stato: "MATURATA",
       statoLabel: provvigioneStatoLabel("MATURATA"),
       perimetro: "Compenso fisso",
+      perimetroLabel: "Compenso fisso",
       codiceScarico: "—",
+      modo: "ve",
+      fattura: "—",
     }));
 }
 

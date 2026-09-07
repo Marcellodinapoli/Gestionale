@@ -32,6 +32,8 @@ const USER_COLS = `
   u.Role, u.Acronimo, u.FormazioneOnly, u.Interno, u.PrefissoChiamata,
   u.Active, u.SupervisorId, u.GruppoNome, u.GruppoMandantiJson,
   u.PostazioneId, u.PostazioneFissa, u.SedeId, u.CondizioneEconomica, u.ImportoFisso,
+  ISNULL(u.ConsulenteEsterno, 0) AS ConsulenteEsterno,
+  ISNULL(u.CreditCalcEnabled, 0) AS CreditCalcEnabled,
   u.LastLoginAt, u.LastLogoutAt, u.CreatedAt
 `;
 
@@ -50,6 +52,8 @@ function mapRow(r: Record<string, unknown>, include?: UserInclude) {
     role: String(r.Role),
     acronimo: r.Acronimo != null ? String(r.Acronimo) : null,
     formazioneOnly: Boolean(r.FormazioneOnly),
+    consulenteEsterno: Boolean(r.ConsulenteEsterno),
+    creditCalcEnabled: Boolean(r.CreditCalcEnabled),
     interno: r.Interno != null ? String(r.Interno) : null,
     prefissoChiamata: r.PrefissoChiamata != null ? String(r.PrefissoChiamata) : null,
     active: Boolean(r.Active),
@@ -299,6 +303,8 @@ export async function createUser(
     .input("role", sql.NVarChar(50), String(data.role))
     .input("acronimo", sql.NVarChar(20), data.acronimo ?? null)
     .input("formazioneOnly", sql.Bit, data.formazioneOnly ? 1 : 0)
+    .input("consulenteEsterno", sql.Bit, data.consulenteEsterno ? 1 : 0)
+    .input("creditCalcEnabled", sql.Bit, data.creditCalcEnabled ? 1 : 0)
     .input("interno", sql.NVarChar(30), data.interno ?? null)
     .input("prefissoChiamata", sql.NVarChar(20), data.prefissoChiamata ?? null)
     .input("active", sql.Bit, data.active !== false ? 1 : 0)
@@ -314,7 +320,8 @@ export async function createUser(
       INSERT INTO dbo.Users (
         TenantId, Email, Name, Cognome, CodiceFiscale, AnnoNascita, Residenza,
         PasswordHash, PasswordChangedAt, Role, Acronimo,
-        FormazioneOnly, Interno, PrefissoChiamata, Active, SupervisorId, GruppoNome,
+        FormazioneOnly, ConsulenteEsterno, CreditCalcEnabled,
+        Interno, PrefissoChiamata, Active, SupervisorId, GruppoNome,
         GruppoMandantiJson, PostazioneId, PostazioneFissa, SedeId,
         CondizioneEconomica, ImportoFisso, CreatedAt
       )
@@ -322,7 +329,8 @@ export async function createUser(
       VALUES (
         @tenantId, @email, @name, @cognome, @codiceFiscale, @annoNascita, @residenza,
         @passwordHash, @passwordChangedAt, @role, @acronimo,
-        @formazioneOnly, @interno, @prefissoChiamata, @active, @supervisorId, @gruppoNome,
+        @formazioneOnly, @consulenteEsterno, @creditCalcEnabled,
+        @interno, @prefissoChiamata, @active, @supervisorId, @gruppoNome,
         @gruppoMandanti, @postazioneId, @postazioneFissa, @sedeId,
         @condizioneEconomica, @importoFisso, SYSUTCDATETIME()
       )
@@ -349,6 +357,8 @@ export async function updateUser(
     role: "Role",
     acronimo: "Acronimo",
     formazioneOnly: "FormazioneOnly",
+    consulenteEsterno: "ConsulenteEsterno",
+    creditCalcEnabled: "CreditCalcEnabled",
     interno: "Interno",
     prefissoChiamata: "PrefissoChiamata",
     active: "Active",
@@ -378,7 +388,13 @@ export async function updateUser(
       sets.push(`${col} = NULL`);
       continue;
     }
-    if (k === "formazioneOnly" || k === "active" || k === "postazioneFissa") {
+    if (
+      k === "formazioneOnly" ||
+      k === "consulenteEsterno" ||
+      k === "creditCalcEnabled" ||
+      k === "active" ||
+      k === "postazioneFissa"
+    ) {
       req.input(p, sql.Bit, v ? 1 : 0);
     } else if (k === "annoNascita") {
       req.input(p, sql.SmallInt, v === null ? null : Number(v));

@@ -2,6 +2,8 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type {
+  AggiornaIncassoInput,
+  EliminaIncassoInput,
   IncassoAggregateRequest,
   IncassoCreateInput,
   IncassoFilter,
@@ -70,6 +72,55 @@ export class PrismaIncassiRepository implements IncassiRepository {
         data: input.praticaUpdate,
       });
       return incasso as Record<string, unknown>;
+    });
+  }
+
+  async aggiorna(
+    _tenantSlug: string,
+    _tenantId: string,
+    id: string,
+    input: AggiornaIncassoInput
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.incasso.findUnique({ where: { id } });
+      if (!existing) throw new Error("Incasso non trovato");
+      const incasso = await tx.incasso.update({
+        where: { id },
+        data: input.incasso as unknown as Prisma.IncassoUpdateInput,
+      });
+      await tx.provvigione.deleteMany({ where: { incassoId: id } });
+      if (input.provvigione) {
+        await tx.provvigione.create({
+          data: {
+            ...input.provvigione,
+            incassoId: id,
+          } as unknown as Prisma.ProvvigioneCreateInput,
+        });
+      }
+      await tx.pratica.update({
+        where: { id: existing.praticaId },
+        data: input.praticaUpdate,
+      });
+      return incasso as Record<string, unknown>;
+    });
+  }
+
+  async elimina(
+    _tenantSlug: string,
+    _tenantId: string,
+    id: string,
+    input: EliminaIncassoInput
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.incasso.findUnique({ where: { id } });
+      if (!existing) throw new Error("Incasso non trovato");
+      await tx.provvigione.deleteMany({ where: { incassoId: id } });
+      await tx.incasso.delete({ where: { id } });
+      await tx.pratica.update({
+        where: { id: existing.praticaId },
+        data: input.praticaUpdate,
+      });
+      return { ok: true };
     });
   }
 }

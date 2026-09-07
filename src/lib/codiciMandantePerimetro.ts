@@ -5,7 +5,7 @@ import { praticaDb, praticaDbFromUser } from "@/lib/praticheRepo";
 import { praticaWhere } from "@/lib/domain";
 import type { SessionUser } from "@/lib/permissions";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
-import { parsePerimetriList } from "@/lib/mandantePerimetri";
+import { acronimoPerimetroLotto, parsePerimetriList } from "@/lib/mandantePerimetri";
 import {
   gruppoMandantiPraticaWhere,
   type GruppoMandanteAssegnazione,
@@ -111,14 +111,19 @@ export async function codiciPerMandantePerimetro(
   const pratiche = await praticaModel.findMany({
     where,
     include: {
-      mandante: { select: { codice: true, ragioneSociale: true } },
+      mandante: { select: { codice: true, ragioneSociale: true, perimetri: true } },
+      importBatch: { select: { perimetro: true } },
     },
   });
 
   const byKey = new Map<string, RigaCodiciMandantePerimetro>();
 
   for (const p of pratiche) {
-    const perimetro = p.numeroMandante?.trim() || "—";
+    const perimetro = acronimoPerimetroLotto(
+      p.mandante?.perimetri,
+      p.numeroMandante || "",
+      p.importBatch?.perimetro
+    );
     const key = `${p.mandanteId}|${perimetro}`;
     let row = byKey.get(key);
     if (!row) {
@@ -162,13 +167,18 @@ export async function inLavorazionePerPerimetro(
   const pratiche = await praticaModel.findMany({
     where,
     include: {
-      mandante: { select: { codice: true } },
+      mandante: { select: { codice: true, perimetri: true } },
+      importBatch: { select: { perimetro: true } },
     },
   });
 
   const byKey = new Map<string, RigaInLavorazionePerimetro>();
   for (const p of pratiche) {
-    const perimetro = p.numeroMandante?.trim() || "—";
+    const perimetro = acronimoPerimetroLotto(
+      p.mandante?.perimetri,
+      p.numeroMandante || "",
+      p.importBatch?.perimetro
+    );
     const key = `${p.mandanteId}|${perimetro}`;
     const row = byKey.get(key);
     if (row) row.count += 1;
@@ -209,13 +219,18 @@ export async function daAffidarePerPerimetroGruppo(
       ...scope,
     },
     include: {
-      mandante: { select: { codice: true } },
+      mandante: { select: { codice: true, perimetri: true } },
+      importBatch: { select: { perimetro: true } },
     },
   });
 
   const byKey = new Map<string, RigaDaAffidarePerimetro>();
   for (const p of pratiche) {
-    const perimetro = p.numeroMandante?.trim() || "—";
+    const perimetro = acronimoPerimetroLotto(
+      p.mandante?.perimetri,
+      p.numeroMandante || "",
+      p.importBatch?.perimetro
+    );
     const key = `${p.mandanteId}|${perimetro}`;
     const row = byKey.get(key);
     if (row) row.count += 1;

@@ -63,6 +63,8 @@ export function buildPraticheQuery(params: {
     "operatoreOp",
     "codScarico",
     "codScaricoOp",
+    "codScaricoBk",
+    "codScaricoBkOp",
     "sitAffido",
     "sitAffidoOp",
     "affidoProvvisorio",

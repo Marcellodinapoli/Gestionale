@@ -65,6 +65,9 @@ model User {
   acronimo      String?
   // Accesso limitato alla sola sezione Formazione
   formazioneOnly Boolean   @default(false)
+  // Consulente esterno: profilo per CreditCalc (abilitato solo da Admin/Amm.)
+  consulenteEsterno Boolean @default(false)
+  creditCalcEnabled Boolean @default(false)
   interno       String?
   prefissoChiamata String?
   condizioneEconomica String @default("SOLO_PROVV")
@@ -238,6 +241,10 @@ model Pratica {
   nettoDaPagare   Float?
   codiceScarico   String?
   codiceScaricoAt DateTime?
+  /** Codice scarico back office (visibile a tutti, editabile da non op/supervisor). */
+  codiceScaricoBk String?
+  /** Data/ora in cui il codice scarico bk off è stato impostato o modificato. */
+  codiceScaricoBkAt DateTime?
   dataAffido      DateTime?
   scadenza        DateTime?
   esitoContatto   String?
@@ -403,6 +410,8 @@ model Incasso {
   metodo      String   @default("bonifico")
   modo        String   @default("VE")
   causale     String   @default("")
+  /** Numero fattura oppure "np" (non provvigioneabile). */
+  fattura     String   @default("")
   data        DateTime @default(now())
   dataScadenza DateTime?
   createdAt   DateTime @default(now())

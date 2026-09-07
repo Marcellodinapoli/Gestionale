@@ -107,7 +107,7 @@ export async function listAttivita(cfg: ConnectorConfig["db"], req: AttivitaList
   const listReq = pool.request();
   let { where, join } = bindAttivitaFilter(listReq, req.tenantId, req.filter);
   if (req.includeUser && !join.includes("dbo.Users")) {
-    join += ` INNER JOIN dbo.Users u ON u.Id = a.UserId `;
+    join += ` LEFT JOIN dbo.Users u ON u.Id = a.UserId `;
   }
   listReq.input("skip", sql.Int, skip);
   listReq.input("take", sql.Int, take);
@@ -127,10 +127,13 @@ export async function listAttivita(cfg: ConnectorConfig["db"], req: AttivitaList
   `);
 
   const items = result.recordset.map((row: Record<string, unknown>) => {
-    if (req.includeUser && row.User_Id != null) {
+    if (req.includeUser) {
       return {
         ...row,
-        user: { Id: row.User_Id, Name: row.User_Name },
+        user: {
+          Id: row.User_Id ?? null,
+          Name: row.User_Name ?? "Operatore",
+        },
       };
     }
     return row;

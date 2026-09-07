@@ -311,13 +311,13 @@ export function formPerimetriToData(items: PerimetroForm[]): MandantePerimetro[]
       const nomeInterno = p.nomeInterno.trim();
       const descrizione = p.descrizione.trim();
       const nomeMandante = (p.nomeMandante.trim() || descrizione).trim();
-      if (!nomeInterno || !descrizione) return null;
-      if (normKey(nomeInterno) === normKey(descrizione)) return null;
+      // Non scartare perimetri in bozza: altrimenti delete/edit locali non arrivano al salvataggio.
+      if (!nomeInterno && !descrizione) return null;
       return {
         id: p.id,
-        nomeInterno,
-        descrizione,
-        nomeMandante,
+        nomeInterno: nomeInterno || descrizione || "—",
+        descrizione: descrizione || nomeInterno || "—",
+        nomeMandante: nomeMandante || nomeInterno || descrizione || "—",
         ricevuta: formToLato(p.ricevuta),
         pagata: formToLato(p.pagata),
         codiciScarico: p.codiciScarico,
@@ -769,6 +769,16 @@ function CodiciScaricoPerimetroEditor({
     setNuovaDesc("");
   }
 
+  function removeCodice(idx: number) {
+    setEditingIdx((cur) => {
+      if (cur == null) return null;
+      if (cur === idx) return null;
+      if (cur > idx) return cur - 1;
+      return cur;
+    });
+    onChange(codici.filter((_, i) => i !== idx));
+  }
+
   return (
     <div className="rounded border border-[var(--line)] bg-white p-3">
       <p className="text-xs font-bold uppercase text-[#1a365d]">{title}</p>
@@ -777,7 +787,7 @@ function CodiciScaricoPerimetroEditor({
         <div className="mb-2 space-y-1">
           {codici.map((c, idx) => (
             <div
-              key={c.codice}
+              key={`codice-${idx}-${c.codice}`}
               className="flex items-center gap-2 rounded border border-[var(--line)] bg-[#fafbfc] px-2 py-1.5"
             >
               {editingIdx === idx ? (
@@ -794,23 +804,40 @@ function CodiciScaricoPerimetroEditor({
                   />
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       const codice = editCodice.trim().toUpperCase();
                       const descrizione = editDesc.trim();
                       if (!codice || !descrizione) return;
+                      if (
+                        codici.some(
+                          (x, i) => i !== idx && x.codice === codice
+                        )
+                      ) {
+                        return;
+                      }
                       onChange(
-                        codici.map((x, i) => (i === idx ? { codice, descrizione } : x))
+                        codici.map((x, i) =>
+                          i === idx ? { codice, descrizione } : x
+                        )
                       );
                       setEditingIdx(null);
                     }}
                     className="shrink-0 rounded p-1 text-emerald-600 hover:bg-emerald-50"
+                    title="Conferma"
                   >
                     <Check className="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setEditingIdx(null)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingIdx(null);
+                    }}
                     className="shrink-0 rounded p-1 text-[var(--muted)]"
+                    title="Annulla"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -823,19 +850,27 @@ function CodiciScaricoPerimetroEditor({
                   <span className="min-w-0 flex-1 text-xs">{c.descrizione}</span>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setEditingIdx(idx);
                       setEditCodice(c.codice);
                       setEditDesc(c.descrizione);
                     }}
                     className="shrink-0 rounded p-1 text-[var(--muted)] hover:bg-[#eef4f8]"
+                    title="Modifica"
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => onChange(codici.filter((_, i) => i !== idx))}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeCodice(idx);
+                    }}
                     className="shrink-0 rounded p-1 text-[var(--muted)] hover:bg-[#fee2e2] hover:text-[var(--danger)]"
+                    title="Elimina codice"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -862,7 +897,11 @@ function CodiciScaricoPerimetroEditor({
         />
         <button
           type="button"
-          onClick={addCodice}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            addCodice();
+          }}
           disabled={!nuovoCodice.trim() || !nuovaDesc.trim()}
           className="flex h-8 items-center gap-1 rounded bg-[var(--navy)] px-3 text-xs text-white disabled:opacity-50"
         >
@@ -1491,11 +1530,17 @@ export function PerimetriMandanteSection({
                     subtitle="Codici usati dal back office per provvigioni base, scaglioni e statistiche."
                     codici={p.codiciScarico}
                     onChange={(codiciScarico) =>
-                      updatePerimetro(p.id, {
-                        codiciScarico,
-                        ricevuta: cleanLatoCodici(p.ricevuta, codiciScarico),
-                        pagata: cleanLatoCodici(p.pagata, codiciScarico),
-                      })
+                      commit((prev) =>
+                        prev.map((row) => {
+                          if (row.id !== p.id) return row;
+                          return {
+                            ...row,
+                            codiciScarico,
+                            ricevuta: cleanLatoCodici(row.ricevuta, codiciScarico),
+                            pagata: cleanLatoCodici(row.pagata, codiciScarico),
+                          };
+                        })
+                      )
                     }
                   />
                   <CodiciScaricoPerimetroEditor
@@ -1503,7 +1548,11 @@ export function PerimetriMandanteSection({
                     subtitle="Codici selezionabili dagli operatori in lavorazione sulle pratiche di questo perimetro."
                     codici={p.codiciScaricoOperatori}
                     onChange={(codiciScaricoOperatori) =>
-                      updatePerimetro(p.id, { codiciScaricoOperatori })
+                      commit((prev) =>
+                        prev.map((row) =>
+                          row.id === p.id ? { ...row, codiciScaricoOperatori } : row
+                        )
+                      )
                     }
                   />
                   <PdrPerimetroEditor

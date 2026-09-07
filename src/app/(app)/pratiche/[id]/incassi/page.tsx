@@ -33,6 +33,7 @@ export default async function IncassiRegistratiPage({
       include: {
         debitore: true,
         incassi: { include: { user: true }, orderBy: { data: "desc" } },
+        fatture: { orderBy: { dataScadenza: "asc" } },
       },
     }),
     getPraticaWorkContext(user, id),
@@ -40,6 +41,7 @@ export default async function IncassiRegistratiPage({
   if (!pratica) notFound();
   const { canWork } = work;
   const canEdit = canWork && can(user, "incassi:create");
+  const canEditIncassi = canWork && can(user, "incassi:update");
 
   return (
     <div className="h-full min-h-0">
@@ -55,10 +57,28 @@ export default async function IncassiRegistratiPage({
         memoAt={datetimeLocalValue(pratica.memoAt)}
         promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
       >
-        <IncassiPreview incassi={pratica.incassi} />
+        <IncassiPreview
+          praticaId={pratica.id}
+          canEdit={canEditIncassi}
+          fattureInsolute={pratica.fatture.map((f) => ({
+            id: f.id,
+            numero: f.numero,
+            importo: f.importo,
+            pagato: f.pagato,
+          }))}
+          incassi={pratica.incassi}
+        />
 
         {canEdit ? (
-          <IncassoForm praticaId={pratica.id} />
+          <IncassoForm
+            praticaId={pratica.id}
+            fattureInsolute={pratica.fatture.map((f) => ({
+              id: f.id,
+              numero: f.numero,
+              importo: f.importo,
+              pagato: f.pagato,
+            }))}
+          />
         ) : (
           <p className="mt-3 text-xs text-[var(--muted)]">
             Solo back office e admin possono registrare gli incassi.

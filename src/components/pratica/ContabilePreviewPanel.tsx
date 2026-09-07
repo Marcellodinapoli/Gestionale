@@ -18,6 +18,7 @@ const ZOOM_STEP = 0.1;
 type Props = {
   praticaId: string;
   canEditFatture?: boolean;
+  canEditIncassi?: boolean;
   debitore: {
     ndg?: string | null;
     codiceFiscale?: string | null;
@@ -45,6 +46,7 @@ type Props = {
     importo: number;
     modo: string | null;
     causale: string | null;
+    fattura?: string | null;
     metodo: string;
     user?: { name: string } | null;
   }>;
@@ -55,6 +57,7 @@ type Props = {
 export function ContabilePreviewPanel({
   praticaId,
   canEditFatture,
+  canEditIncassi,
   debitore,
   numero,
   creditore,
@@ -149,7 +152,18 @@ export function ContabilePreviewPanel({
               definito={definito}
             />
           ) : vista === "incassi" ? (
-            <IncassiPreview compact incassi={incassiRegistrati} />
+            <IncassiPreview
+              compact
+              praticaId={praticaId}
+              canEdit={canEditIncassi}
+              fattureInsolute={fatture.map((f) => ({
+                id: f.id,
+                numero: f.numero,
+                importo: f.importo,
+                pagato: f.pagato,
+              }))}
+              incassi={incassiRegistrati}
+            />
           ) : (
             <FattureInsolutePreview
               compact

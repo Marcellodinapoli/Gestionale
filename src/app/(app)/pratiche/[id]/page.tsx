@@ -23,10 +23,13 @@ import {
 import { getRecordingMode } from "@/lib/recordingConfig";
 import { getPraticaWorkContext } from "@/lib/praticaLock";
 import {
+  codiciScaricoBkOffPerPratica,
   codiciScaricoOperatoriEffettivi,
   codiciScaricoOperatoriPerPratica,
+  etichettaPerimetro,
   hasPdrFasceConfigurate,
   pdrConfigPerPratica,
+  resolvePerimetroPratica,
   stralcioConfigPerPratica,
   smsPreimpostatiPerPratica,
 } from "@/lib/mandantePerimetri";
@@ -113,6 +116,7 @@ export default async function PraticaDetailPage({
         },
         mandante: { select: { codice: true, ragioneSociale: true, perimetri: true, smsPreimpostati: true } },
         assegnatario: { select: { name: true } },
+        importBatch: { select: { perimetro: true } },
         rate: { orderBy: { numeroRata: "asc" } },
         garanti: {
           orderBy: { ordine: "asc" },
@@ -137,11 +141,28 @@ export default async function PraticaDetailPage({
   if (!pratica) notFound();
 
   const pagato = Math.max(0, incassiSum._sum.importo || 0);
+  const perimetroAlt =
+    (pratica as { importBatch?: { perimetro?: string | null } | null }).importBatch
+      ?.perimetro ?? null;
+  const perimetroHit = resolvePerimetroPratica(
+    pratica.mandante.perimetri,
+    pratica.numeroMandante,
+    perimetroAlt
+  );
+  const perimetroLabel = perimetroHit
+    ? etichettaPerimetro(perimetroHit)
+    : (perimetroAlt || pratica.numeroMandante || "").trim() || null;
   const codiciScaricoOperatore = codiciScaricoOperatoriEffettivi(
     codiciScaricoOperatoriPerPratica(
       pratica.mandante.perimetri,
-      pratica.numeroMandante
+      pratica.numeroMandante,
+      perimetroAlt
     )
+  );
+  const codiciScaricoBkOff = codiciScaricoBkOffPerPratica(
+    pratica.mandante.perimetri,
+    pratica.numeroMandante,
+    perimetroAlt
   );
   const smsPresets = smsPreimpostatiEffettivi(
     smsPreimpostatiPerPratica(
@@ -208,14 +229,17 @@ export default async function PraticaDetailPage({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <PraticaSchedaOperatore
             pratica={{ ...pratica, pagato }}
+            perimetroLabel={perimetroLabel}
             codiciScaricoOperatore={codiciScaricoOperatore}
+            codiciScaricoBkOff={codiciScaricoBkOff}
             smsPresets={smsPresets}
             pdrDisponibile={pdrDisponibile}
             pdrConfig={pdrConfig}
             stralcioConfig={stralcioConfig}
             canEditNotes={canWork}
-            canEditStato={canWork && can(user, "pratiche:update:stato")}
+            canEditStato={false}
             canRegistraIncasso={canWork && can(user, "incassi:create")}
+            canEditIncassi={canWork && can(user, "incassi:update")}
             lockedByName={lockedByName}
             nav={nav}
             currentUserName={user.name}

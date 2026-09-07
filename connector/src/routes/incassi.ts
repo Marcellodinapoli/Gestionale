@@ -3,7 +3,9 @@ import type { ConnectorConfig } from "../config.js";
 import { createTenantResolver } from "../middleware/tenant.js";
 import {
   aggregateIncassi,
+  aggiornaIncasso,
   countIncassi,
+  eliminaIncasso,
   getIncassoById,
   groupByMetodoIncassi,
   listIncassi,
@@ -60,6 +62,34 @@ export function createIncassiRouter(cfg: ConnectorConfig) {
     try {
       const item = await registraIncasso(cfg.db, req.tenant!.tenantId, req.body);
       res.status(201).json({ item });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.patch("/:id", resolveTenant, async (req, res, next) => {
+    try {
+      const item = await aggiornaIncasso(
+        cfg.db,
+        req.tenant!.tenantId,
+        String(req.params.id),
+        req.body
+      );
+      res.json({ item });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete("/:id", resolveTenant, async (req, res, next) => {
+    try {
+      const result = await eliminaIncasso(
+        cfg.db,
+        req.tenant!.tenantId,
+        String(req.params.id),
+        req.body?.praticaUpdate ?? { residuo: 0, stato: "IN_LAVORAZIONE" }
+      );
+      res.json(result);
     } catch (err) {
       next(err);
     }

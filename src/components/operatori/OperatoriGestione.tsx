@@ -28,6 +28,8 @@ type Utente = {
   roleLabel: string;
   acronimo: string | null;
   formazioneOnly: boolean;
+  consulenteEsterno: boolean;
+  creditCalcEnabled: boolean;
   lastLoginAt: string | null;
   lastLogoutAt: string | null;
   postazione: string | null;
@@ -83,6 +85,7 @@ export function OperatoriGestione({
             <th>Ruolo</th>
             <th>Condizione econ.</th>
             <th>Accesso</th>
+            <th>CreditCalc</th>
             <th>Sede</th>
             <th>Team</th>
             <th>Acronimo</th>
@@ -177,6 +180,8 @@ function RigaOperatore({
     role: utente.role,
     acronimo: utente.acronimo,
     formazioneOnly: utente.formazioneOnly,
+    consulenteEsterno: utente.consulenteEsterno,
+    creditCalcEnabled: utente.creditCalcEnabled,
     sedeId: utente.sedeId,
     supervisorId: utente.supervisorId,
     codiceFiscale: utente.codiceFiscale,
@@ -253,6 +258,20 @@ function RigaOperatore({
             <option value="completo">Completo</option>
             <option value="formazione">Solo formazione</option>
           </select>
+        )}
+      </td>
+      <td className="text-xs">
+        {utente.role === "OPERATOR" && utente.consulenteEsterno ? (
+          <span>
+            Esterno
+            {utente.creditCalcEnabled ? (
+              <span className="mt-0.5 block font-medium text-emerald-700">CreditCalc ON</span>
+            ) : (
+              <span className="mt-0.5 block text-[var(--muted)]">CreditCalc off</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-[var(--muted)]">—</span>
         )}
       </td>
       <td>
@@ -375,14 +394,16 @@ function RigaOperatore({
         )}
       </td>
       <td>
-        <button
-          type="button"
-          onClick={() => setEditOpen(true)}
-          className="flex items-center gap-1 rounded border border-[var(--line)] bg-white px-2 py-1 text-[10px] font-semibold text-[var(--navy)] hover:bg-slate-50"
-          title={`Modifica ${utente.name}`}
-        >
-          <Pencil className="h-3 w-3" /> Modifica
-        </button>
+        <div className="flex flex-col items-start gap-1">
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="flex items-center gap-1 rounded border border-[var(--line)] bg-white px-2 py-1 text-[10px] font-semibold text-[var(--navy)] hover:bg-slate-50"
+            title={`Modifica ${utente.name}`}
+          >
+            <Pencil className="h-3 w-3" /> Modifica
+          </button>
+        </div>
       </td>
       <td>
         <button

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
 import { canAccessPratica } from "@/lib/domain";
 import {
+  acquirePraticaLock,
   getPraticaLockStatus,
   releasePraticaLock,
   renewPraticaLock,
@@ -37,7 +38,11 @@ export async function POST(_req: Request, ctx: RouteCtx) {
   }
 
   const scope = lockScopeFromUser(user);
-  const lock = await renewPraticaLock(id, user.id, scope);
+  // renew riacquisisce se il lock è scaduto; se fallisce (corsa), prova acquire esplicito
+  let lock = await renewPraticaLock(id, user.id, scope);
+  if (!lock.owned && !lock.lockedBy) {
+    lock = await acquirePraticaLock(id, user.id, scope);
+  }
   return NextResponse.json({
     owned: lock.owned,
     lockedByName: lock.lockedBy?.name ?? null,

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { Search, Monitor, Phone, Mail, MapPin, CircleDot, PhoneCall } from "lucide-react";
-import { ROLE_LABELS, type Role } from "@/lib/permissions";
 
 type RubricaUtente = {
   id: string;
@@ -126,7 +125,7 @@ export function RubricaGriglia({ utenti }: { utenti: RubricaUtente[] }) {
                     </div>
                   ) : (
                     <p className="mt-2 text-[10px] italic text-[var(--muted)]">
-                      Non connesso
+                      Senza postazione
                     </p>
                   )}
                 </div>

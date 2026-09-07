@@ -122,10 +122,20 @@ export async function assertPraticaLockHeld(user: SessionUser, praticaId: string
   const scope = lockScopeFromUser(user);
   const existing = await getPraticaLockStatus(praticaId, user.id, scope);
 
-  if (!existing.owned) {
-    const name = existing.lockedBy?.name ?? "un altro operatore";
-    throw new Error(`Pratica in uso da ${name}`);
+  if (existing.owned) {
+    await renewPraticaLock(praticaId, user.id, scope);
+    return;
   }
 
-  await renewPraticaLock(praticaId, user.id, scope);
+  // Lock assente/scaduto (TTL 45s senza heartbeat): se nessuno la tiene, riacquisisci.
+  // Evita il falso "in uso da un altro operatore" quando la pratica è libera.
+  if (existing.lockedBy) {
+    throw new Error(`Pratica in uso da ${existing.lockedBy.name}`);
+  }
+
+  const acquired = await acquirePraticaLock(praticaId, user.id, scope);
+  if (!acquired.owned) {
+    const name = acquired.lockedBy?.name ?? "un altro operatore";
+    throw new Error(`Pratica in uso da ${name}`);
+  }
 }

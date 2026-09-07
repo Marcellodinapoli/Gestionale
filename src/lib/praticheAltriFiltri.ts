@@ -16,7 +16,7 @@ export {
   type SitAffidoFiltro,
 } from "@/lib/praticheAltriFiltriUi";
 import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
-import { parseCodScaricoOp, parseCodScaricoList } from "@/lib/filtriCodScarico";
+import { parseCodScaricoOp, parseCodScaricoList, codiceScaricoFiltroWhere } from "@/lib/filtriCodScarico";
 import { parseOperatoreOp, parseOperatoreList } from "@/lib/filtriOperatore";
 import { parseTextFilterOp } from "@/lib/filtriTestoOp";
 import { prismaContainsClause } from "@/lib/filtriTestoWhere";
@@ -161,8 +161,9 @@ export function altriFiltriWhere(
   if (f.debitore) {
     const val = f.debitore;
     const op = parseTextFilterOp(f.debitoreOp);
-    const matchNome = { debitore: { nome: prismaContainsClause(val, op) } };
-    const matchCognome = { debitore: { cognome: prismaContainsClause(val, op) } };
+    // Match positivo, poi NOT per ≠ (evita doppia negazione su contains).
+    const matchNome = { debitore: { nome: prismaContainsClause(val, "eq") } };
+    const matchCognome = { debitore: { cognome: prismaContainsClause(val, "eq") } };
     if (op === "ne") {
       and.push({ NOT: { OR: [matchNome, matchCognome] } });
     } else {
@@ -174,23 +175,29 @@ export function altriFiltriWhere(
   if (cap) and.push({ debitore: { cap } });
 
   if (f.citta) {
-    and.push({
-      debitore: { citta: prismaContainsClause(f.citta, f.cittaOp) },
-    });
+    and.push(
+      applyEqNe(
+        { debitore: { citta: prismaContainsClause(f.citta, "eq") } },
+        f.cittaOp
+      )
+    );
   }
   if (f.prov) {
-    and.push({
-      debitore: { provincia: prismaContainsClause(f.prov, f.provOp) },
-    });
+    and.push(
+      applyEqNe(
+        { debitore: { provincia: prismaContainsClause(f.prov, "eq") } },
+        f.provOp
+      )
+    );
   }
 
   if (f.telefono) {
     const val = f.telefono;
     const op = parseTextFilterOp(f.telefonoOp);
     const paths = [
-      { debitore: { telefono: prismaContainsClause(val, op) } },
-      { debitore: { recapiti: { some: { valore: prismaContainsClause(val, op) } } } },
-      { garanti: { some: { telefono: prismaContainsClause(val, op) } } },
+      { debitore: { telefono: prismaContainsClause(val, "eq") } },
+      { debitore: { recapiti: { some: { valore: prismaContainsClause(val, "eq") } } } },
+      { garanti: { some: { telefono: prismaContainsClause(val, "eq") } } },
     ];
     if (op === "ne") and.push({ NOT: { OR: paths } });
     else and.push({ OR: paths });
@@ -239,16 +246,22 @@ export function altriFiltriWhere(
 
   if (f.codScarico) {
     const codes = parseCodScaricoList(f.codScarico);
-    if (codes.length) {
-      const op = parseCodScaricoOp(f.codScaricoOp);
-      if (op === "ne") {
-        and.push({ codiceScarico: { notIn: codes } });
-      } else if (codes.length === 1) {
-        and.push({ codiceScarico: codes[0]! });
-      } else {
-        and.push({ codiceScarico: { in: codes } });
-      }
-    }
+    const w = codiceScaricoFiltroWhere(
+      "codiceScarico",
+      codes,
+      parseCodScaricoOp(f.codScaricoOp)
+    );
+    if (w) and.push(w as Prisma.PraticaWhereInput);
+  }
+
+  if (f.codScaricoBk) {
+    const codes = parseCodScaricoList(f.codScaricoBk);
+    const w = codiceScaricoFiltroWhere(
+      "codiceScaricoBk",
+      codes,
+      parseCodScaricoOp(f.codScaricoBkOp)
+    );
+    if (w) and.push(w as Prisma.PraticaWhereInput);
   }
 
   const wantTemporanea =
@@ -306,8 +319,8 @@ export function altriFiltriWhere(
     const val = f.cfPiva;
     const op = parseTextFilterOp(f.cfPivaOp);
     const paths = [
-      { debitore: { codiceFiscale: prismaContainsClause(val, op) } },
-      { garanti: { some: { codiceFiscale: prismaContainsClause(val, op) } } },
+      { debitore: { codiceFiscale: prismaContainsClause(val, "eq") } },
+      { garanti: { some: { codiceFiscale: prismaContainsClause(val, "eq") } } },
     ];
     if (op === "ne") and.push({ NOT: { OR: paths } });
     else and.push({ OR: paths });
@@ -317,9 +330,9 @@ export function altriFiltriWhere(
     const val = f.garante;
     const op = parseTextFilterOp(f.garanteOp);
     const paths = [
-      { garanti: { some: { nome: prismaContainsClause(val, op) } } },
-      { garanti: { some: { cognome: prismaContainsClause(val, op) } } },
-      { garanti: { some: { codiceFiscale: prismaContainsClause(val, op) } } },
+      { garanti: { some: { nome: prismaContainsClause(val, "eq") } } },
+      { garanti: { some: { cognome: prismaContainsClause(val, "eq") } } },
+      { garanti: { some: { codiceFiscale: prismaContainsClause(val, "eq") } } },
     ];
     if (op === "ne") and.push({ NOT: { OR: paths } });
     else and.push({ OR: paths });
@@ -329,8 +342,8 @@ export function altriFiltriWhere(
     const val = f.note;
     const op = parseTextFilterOp(f.noteOp);
     const paths = [
-      { note: prismaContainsClause(val, op) },
-      { attivita: { some: { nota: prismaContainsClause(val, op) } } },
+      { note: prismaContainsClause(val, "eq") },
+      { attivita: { some: { nota: prismaContainsClause(val, "eq") } } },
     ];
     if (op === "ne") and.push({ NOT: { OR: paths } });
     else and.push({ OR: paths });

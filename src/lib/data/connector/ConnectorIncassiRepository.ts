@@ -7,6 +7,8 @@ import type {
   IncassoGroupByMetodoRequest,
   IncassoListRequest,
   IncassiRepository,
+  AggiornaIncassoInput,
+  EliminaIncassoInput,
   RegistraIncassoInput,
 } from "../contracts/incassi";
 
@@ -96,6 +98,31 @@ export class ConnectorIncassiRepository implements IncassiRepository {
       { method: "POST", body: input }
     );
     return mapIncassoRow(res.item);
+  }
+
+  async aggiorna(
+    tenantSlug: string,
+    _tenantId: string,
+    id: string,
+    input: AggiornaIncassoInput
+  ) {
+    const res = await connectorFetch<{ item: Record<string, unknown> }>(
+      `${this.base(tenantSlug)}/${encodeURIComponent(id)}`,
+      { method: "PATCH", body: input }
+    );
+    return mapIncassoRow(res.item);
+  }
+
+  async elimina(
+    tenantSlug: string,
+    _tenantId: string,
+    id: string,
+    input: EliminaIncassoInput
+  ) {
+    return connectorFetch<{ ok: boolean }>(
+      `${this.base(tenantSlug)}/${encodeURIComponent(id)}`,
+      { method: "DELETE", body: input }
+    );
   }
 }
 

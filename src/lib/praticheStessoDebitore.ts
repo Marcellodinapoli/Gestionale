@@ -1,10 +1,12 @@
-import { prisma } from "@/lib/prisma";
 import { praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
 import {
   normalizeCf,
   praticaIdsCollegatePerCf,
 } from "@/lib/domain";
-import { isPraticaChiusa } from "@/lib/praticaCollegata";
+import {
+  isPraticaF9Collegata,
+  isPraticaF10Collegata,
+} from "@/lib/praticaCollegata";
 import { parsePerimetri } from "@/lib/mandantePerimetri";
 import { ttlGet, ttlSet } from "@/lib/firebase/ttlCache";
 
@@ -18,10 +20,15 @@ export function payloadForPratica(
   const hit = all.find((v) => v.id === praticaId);
   if (!hit) return payload;
   const others = all.filter((v) => v.id !== praticaId);
+  const ref = { mandante: hit.mandante };
   return {
     corrente: hit,
-    altre: others.filter((v) => !isPraticaChiusa(v.stato)),
-    altreChiuse: others.filter((v) => isPraticaChiusa(v.stato)),
+    altre: others.filter((v) =>
+      isPraticaF9Collegata({ ...v, mandante: v.mandante }, ref)
+    ),
+    altreChiuse: others.filter((v) =>
+      isPraticaF10Collegata({ ...v, mandante: v.mandante }, ref)
+    ),
   };
 }
 
@@ -31,7 +38,9 @@ export type PraticaCollegataVoce = {
   nome: string;
   cf: string | null;
   stato: string;
+  assegnatarioId: string | null;
   codiceScarico: string | null;
+  codiceScaricoBk: string | null;
   mandante: string;
   mandanteNome: string;
   /** Acronimo interno del perimetro (nomeInterno). */
@@ -69,17 +78,29 @@ function acronimoPerimetro(
   return acronimo || key;
 }
 
+/** Connector/JSON può restituire Date o stringa ISO. */
+function toIsoDate(value: Date | string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function mapVoce(
   p: {
     id: string;
     numero: string;
     stato: string;
+    assegnatarioId?: string | null;
     codiceScarico?: string | null;
+    codiceScaricoBk?: string | null;
     residuo: number;
     nettoDaPagare?: number | null;
     rateArretrate?: number | null;
-    scadenza: Date | null;
-    updatedAt: Date;
+    scadenza: Date | string | null;
+    updatedAt: Date | string;
     debitore: { cognome: string; nome: string; codiceFiscale?: string | null };
     mandante: {
       codice: string;
@@ -100,7 +121,9 @@ function mapVoce(
     nome: `${p.debitore.cognome} ${p.debitore.nome}`.trim(),
     cf,
     stato: p.stato,
+    assegnatarioId: p.assegnatarioId ?? null,
     codiceScarico: p.codiceScarico?.trim() || null,
+    codiceScaricoBk: p.codiceScaricoBk?.trim() || null,
     mandante: p.mandante.codice,
     mandanteNome: p.mandante.ragioneSociale,
     perimetro: acronimoPerimetro(
@@ -113,11 +136,13 @@ function mapVoce(
       p.rateArretrate != null && Number.isFinite(p.rateArretrate)
         ? p.rateArretrate
         : null,
-    scadenza: p.scadenza?.toISOString() || null,
-    updatedAt: p.updatedAt.toISOString(),
+    scadenza: toIsoDate(p.scadenza),
+    updatedAt: toIsoDate(p.updatedAt) || new Date(0).toISOString(),
     accessibile: true,
   };
 }
+
+const CACHE_NS = "praticheCollegateV5";
 
 /** Carica F9/F10 in un passaggio (niente doppio find della pratica corrente). */
 export async function loadPraticheStessoDebitorePayload(
@@ -134,7 +159,7 @@ export async function loadPraticheStessoDebitorePayload(
   const praticaModel = praticaDb(ctx);
   const cached = ttlGet<PraticheStessoDebitorePayload>(
     tenantId,
-    "praticheCollegateV2",
+    CACHE_NS,
     praticaId
   );
   if (cached) return payloadForPratica(cached, praticaId);
@@ -178,22 +203,48 @@ export async function loadPraticheStessoDebitorePayload(
       })
     : [];
 
-  const payload: PraticheStessoDebitorePayload = {
-    corrente: mapVoce(pratica, cf),
-    altre: rows
-      .filter(
-        (p) => p.mandanteId === pratica.mandanteId && !isPraticaChiusa(p.stato)
-      )
-      .map((p) => mapVoce(p, cf)),
-    altreChiuse: rows
-      .filter((p) => isPraticaChiusa(p.stato))
-      .map((p) => mapVoce(p, cf)),
+  const correnteRef = {
+    mandanteId: pratica.mandanteId,
+    mandante: pratica.mandante.codice,
   };
 
-  ttlSet(tenantId, "praticheCollegateV2", payload, 60_000, praticaId);
+  const altreRows = rows.filter((p) =>
+    isPraticaF9Collegata(
+      {
+        stato: p.stato,
+        assegnatarioId: p.assegnatarioId,
+        scadenza: p.scadenza,
+        codiceScaricoBk: p.codiceScaricoBk,
+        mandanteId: p.mandanteId,
+        mandante: p.mandante.codice,
+      },
+      correnteRef
+    )
+  );
+  const f10Rows = rows.filter((p) =>
+    isPraticaF10Collegata(
+      {
+        stato: p.stato,
+        assegnatarioId: p.assegnatarioId,
+        scadenza: p.scadenza,
+        codiceScaricoBk: p.codiceScaricoBk,
+        mandanteId: p.mandanteId,
+        mandante: p.mandante.codice,
+      },
+      correnteRef
+    )
+  );
+
+  const payload: PraticheStessoDebitorePayload = {
+    corrente: mapVoce(pratica, cf),
+    altre: altreRows.map((p) => mapVoce(p, cf)),
+    altreChiuse: f10Rows.map((p) => mapVoce(p, cf)),
+  };
+
+  ttlSet(tenantId, CACHE_NS, payload, 60_000, praticaId);
   // Stesso cluster: cache anche per gli altri id (click tra collegate).
   for (const v of [...payload.altre, ...payload.altreChiuse]) {
-    ttlSet(tenantId, "praticheCollegateV2", payload, 60_000, v.id);
+    ttlSet(tenantId, CACHE_NS, payload, 60_000, v.id);
   }
   return payload;
 }
@@ -203,14 +254,25 @@ export function collegataIdsFromPayload(
   payload: PraticheStessoDebitorePayload,
   filtro: "aperta" | "chiusa"
 ): string[] {
+  const ref = { mandante: payload.corrente.mandante };
   const voci =
     filtro === "chiusa"
       ? [
-          ...(isPraticaChiusa(payload.corrente.stato) ? [payload.corrente] : []),
+          ...(isPraticaF10Collegata(
+            { ...payload.corrente, mandante: payload.corrente.mandante },
+            ref
+          )
+            ? [payload.corrente]
+            : []),
           ...payload.altreChiuse,
         ]
       : [
-          ...(!isPraticaChiusa(payload.corrente.stato) ? [payload.corrente] : []),
+          ...(isPraticaF9Collegata(
+            { ...payload.corrente, mandante: payload.corrente.mandante },
+            ref
+          )
+            ? [payload.corrente]
+            : []),
           ...payload.altre,
         ];
   const seen = new Set<string>();

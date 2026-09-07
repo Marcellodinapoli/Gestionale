@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { AffidaForm } from "@/components/affidi/AffidaForm";
 import { StatoBadge } from "@/components/ui";
 import {
@@ -11,6 +12,8 @@ import {
   useSelezionePratiche,
 } from "@/components/affidi/affidoSelezione";
 import { etichettaTipoAffido, isAffidoTemporaneo, sortKeyTipoAffido } from "@/lib/affido";
+import { rememberCurrentAsPraticheBack, PRATICHE_BACK_KEY } from "@/lib/praticheNavBack";
+import { statoOperativoPratica } from "@/lib/statoOperativoPratica";
 
 function euro(value: number) {
   return new Intl.NumberFormat("it-IT", {
@@ -24,11 +27,13 @@ export type PraticaDaAffidare = {
   numero: string;
   stato: string;
   residuo: number;
+  scadenza?: string | Date | null;
   debitoreNome: string;
   assegnatarioId?: string | null;
   assegnatarioNome?: string | null;
   operatoreTitolareId?: string | null;
   operatoreTitolareNome?: string | null;
+  codiceScaricoBk?: string | null;
 };
 
 type SortCol = "numero" | "debitore" | "assegnatario" | "affido" | "residuo";
@@ -41,6 +46,17 @@ const SORT_COLS: { key: SortCol; label: string }[] = [
   { key: "affido", label: "Affido" },
   { key: "residuo", label: "Residuo" },
 ];
+
+const SORT_COL_KEYS = new Set<string>(SORT_COLS.map((c) => c.key));
+
+function parseAffidaSort(
+  col: string | null | undefined,
+  dir: string | null | undefined
+): { col: SortCol; dir: SortDir } | null {
+  if (!col || !SORT_COL_KEYS.has(col)) return null;
+  if (dir !== "asc" && dir !== "desc") return null;
+  return { col: col as SortCol, dir };
+}
 
 function comparePratiche(a: PraticaDaAffidare, b: PraticaDaAffidare, col: SortCol): number {
   switch (col) {
@@ -97,14 +113,27 @@ function SortHeader({
 export function AffidiDaAffidareTable({
   pratiche,
   operatori,
+  affidaSort,
+  affidaDir,
 }: {
   pratiche: PraticaDaAffidare[];
   operatori: Array<{ id: string; name: string }>;
+  /** Ordine colonna da URL (`affidaSort`), ripristinato al ritorno dalla pratica. */
+  affidaSort?: string | null;
+  affidaDir?: string | null;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const { selected, allRef, allChecked, toggleAll, toggleOne } =
     useSelezionePratiche(pratiche.map((p) => p.id));
   const praticheStato = buildPraticheStato(pratiche);
-  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null);
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(() =>
+    parseAffidaSort(affidaSort, affidaDir)
+  );
+
+  useEffect(() => {
+    setSort(parseAffidaSort(affidaSort, affidaDir));
+  }, [affidaSort, affidaDir]);
 
   const praticheOrdinate = useMemo(() => {
     if (!sort) return pratiche;
@@ -117,12 +146,23 @@ export function AffidiDaAffidareTable({
   }, [pratiche, sort]);
 
   function toggleSort(col: SortCol) {
-    setSort((prev) => {
-      if (prev?.col === col) {
-        return { col, dir: prev.dir === "asc" ? "desc" : "asc" };
-      }
-      return { col, dir: "asc" };
-    });
+    const nextDir: SortDir =
+      sort?.col === col ? (sort.dir === "asc" ? "desc" : "asc") : "asc";
+    const next = { col, dir: nextDir };
+    setSort(next);
+    const sp = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    sp.set("affidaSort", next.col);
+    sp.set("affidaDir", next.dir);
+    const qs = sp.toString();
+    const nextUrl = qs ? `${pathname}?${qs}` : pathname;
+    router.replace(nextUrl, { scroll: false });
+    try {
+      sessionStorage.setItem(PRATICHE_BACK_KEY, nextUrl);
+    } catch {
+      /* ignore */
+    }
   }
 
   return (
@@ -174,10 +214,21 @@ export function AffidiDaAffidareTable({
                     />
                   </td>
                   <td className="py-2">
-                    <Link className="text-[var(--accent)] underline" href={`/pratiche/${p.id}`}>
+                    <Link
+                      className="text-[var(--accent)] underline"
+                      href={`/pratiche/${p.id}`}
+                      onClick={() => rememberCurrentAsPraticheBack()}
+                    >
                       {p.numero}
                     </Link>{" "}
-                    <StatoBadge stato={p.stato} />
+                    <StatoBadge
+                      stato={statoOperativoPratica({
+                        stato: p.stato,
+                        assegnatarioId: p.assegnatarioId,
+                        scadenza: p.scadenza,
+                        codiceScaricoBk: p.codiceScaricoBk,
+                      })}
+                    />
                   </td>
                   <td>{p.debitoreNome}</td>
                   <td>{p.assegnatarioNome || "—"}</td>

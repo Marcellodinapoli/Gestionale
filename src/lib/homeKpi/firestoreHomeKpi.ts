@@ -149,13 +149,19 @@ export async function loadFirestoreHomeKpi(
   ] = await Promise.all([
     prisma.pratica.count({ where }),
     inLavorazionePerPerimetro(user, gruppoPerimetroOpts ?? undefined),
-    prisma.pratica.count({
-      where: {
-        ...where,
-        scadenza: { lte: new Date() },
-        stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-      },
-    }),
+    (() => {
+      const oggi = new Date();
+      oggi.setHours(0, 0, 0, 0);
+      const tra7gg = new Date(oggi);
+      tra7gg.setDate(tra7gg.getDate() + 7);
+      return prisma.pratica.count({
+        where: {
+          ...where,
+          scadenza: { gte: oggi, lte: tra7gg },
+          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
+        },
+      });
+    })(),
     incassiDbFromUser(user).aggregate({
       _sum: { importo: true },
       where: isManutenzione(user)

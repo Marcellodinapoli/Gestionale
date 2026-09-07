@@ -233,10 +233,38 @@ export function acronimoPerimetroLotto(
 /** Codici scarico operatori sul perimetro (per chiave import / lotto). */
 export function codiciScaricoOperatoriPerPratica(
   perimetriRaw: string | null | undefined,
-  numeroMandante: string | null | undefined
+  numeroMandante: string | null | undefined,
+  perimetroAlt?: string | null
 ): CodiceScaricoPerimetro[] {
-  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
-  return hit?.codiciScaricoOperatori ?? [];
+  return resolvePerimetroPratica(perimetriRaw, numeroMandante, perimetroAlt)
+    ?.codiciScaricoOperatori ?? [];
+}
+
+/** Codici scarico back office sul perimetro (per chiave import / lotto). */
+export function codiciScaricoBkOffPerPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined,
+  perimetroAlt?: string | null
+): CodiceScaricoPerimetro[] {
+  return resolvePerimetroPratica(perimetriRaw, numeroMandante, perimetroAlt)
+    ?.codiciScarico ?? [];
+}
+
+/** Risolve il perimetro pratica: lotto, chiave import, oppure unico perimetro del mandante. */
+export function resolvePerimetroPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined,
+  perimetroAlt?: string | null
+): MandantePerimetro | null {
+  const elenco = parsePerimetri(perimetriRaw);
+  if (!elenco.length) return null;
+  const hit =
+    perimetroPerNome(elenco, numeroMandante) ??
+    perimetroPerNome(elenco, perimetroAlt);
+  if (hit) return hit;
+  // Un solo perimetro configurato: usalo anche se il lotto non coincide col nome.
+  if (elenco.length === 1) return elenco[0]!;
+  return null;
 }
 
 /** SMS preimpostati sul perimetro pratica, con fallback legacy mandante. */
@@ -526,8 +554,11 @@ function normalizeCodiciScarico(raw: unknown): CodiceScaricoPerimetro[] {
       if (!item || typeof item !== "object") return null;
       const o = item as Record<string, unknown>;
       const codice = String(o.codice || "").trim().toUpperCase();
-      const descrizione = String(o.descrizione || "").trim();
-      if (!codice || !descrizione) return null;
+      if (!codice) return null;
+      const descrizione =
+        String(o.descrizione || "").trim() ||
+        CODICE_SCARICO_LABELS[codice as keyof typeof CODICE_SCARICO_LABELS] ||
+        codice;
       return { codice, descrizione };
     })
     .filter((x): x is CodiceScaricoPerimetro => x != null);
@@ -743,10 +774,15 @@ function normalizeLato(raw: unknown): LatoEconomico {
   };
 }
 
-export function parsePerimetri(raw: string | null | undefined): MandantePerimetro[] {
-  if (!raw) return [];
+export function parsePerimetri(raw: string | null | undefined | unknown): MandantePerimetro[] {
+  if (raw == null || raw === "") return [];
   try {
-    const arr = JSON.parse(raw);
+    const arr =
+      typeof raw === "string"
+        ? JSON.parse(raw)
+        : Array.isArray(raw)
+          ? raw
+          : null;
     if (!Array.isArray(arr)) return [];
     return arr
       .map((item) => {
@@ -854,10 +890,30 @@ export function perimetroPerNome(
 ): MandantePerimetro | null {
   const nome = numeroMandante?.trim();
   if (!nome) return null;
-  return (
+  const key = nome.toLowerCase();
+  const byExact =
     perimetri.find((p) => p.nomeMandante.trim() === nome) ??
     perimetri.find((p) => p.nomeInterno.trim() === nome) ??
-    null
+    perimetri.find((p) => p.descrizione.trim() === nome);
+  if (byExact) return byExact;
+
+  return (
+    perimetri.find((p) => {
+      const interno = p.nomeInterno.trim();
+      const descrizione = (p.descrizione || p.nomeMandante || "").trim();
+      const mandante = p.nomeMandante.trim();
+      const candidates = [
+        etichettaPerimetro(p),
+        interno && descrizione ? `${interno} — ${descrizione}` : "",
+        interno && mandante ? `${interno} — ${mandante}` : "",
+        interno,
+        descrizione,
+        mandante,
+      ]
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      return candidates.includes(key);
+    }) ?? null
   );
 }
 

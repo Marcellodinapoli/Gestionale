@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
-import { prisma } from "@/lib/prisma";
-import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
+import { isConnectorProvider } from "@/lib/data/factory";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
 import { euro } from "@/lib/domain";
-import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
+import { praticaCercaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { STATO_LABELS } from "@/lib/permissions";
+import {
+  STATO_OPERATIVO_LABELS,
+  statoOperativoPratica,
+  type StatoOperativo,
+} from "@/lib/statoOperativoPratica";
 import {
   buildPraticaCercaWhere,
   parseCampoRicercaPratica,
@@ -12,13 +17,31 @@ import {
 
 const LIMIT = 30;
 
+function labelStatoRicerca(p: {
+  stato: string;
+  assegnatarioId?: string | null;
+  scadenza?: Date | string | null;
+  codiceScaricoBk?: string | null;
+}) {
+  const op = statoOperativoPratica({
+    stato: p.stato,
+    assegnatarioId: p.assegnatarioId,
+    scadenza: p.scadenza,
+    codiceScaricoBk: p.codiceScaricoBk,
+  });
+  if (op in STATO_OPERATIVO_LABELS) {
+    return STATO_OPERATIVO_LABELS[op as StatoOperativo];
+  }
+  return STATO_LABELS[op] || STATO_LABELS[p.stato] || op;
+}
+
 export async function GET(req: Request) {
   const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
 
   const praticaModel = praticaDbFromUser(user);
 
-  const baseScope = await praticaScopeWhere(user);
+  const baseScope = await praticaCercaScopeWhere(user);
 
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() || "";
@@ -28,13 +51,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Campo ricerca non valido" }, { status: 400 });
   }
 
-  const filtro = buildPraticaCercaWhere(campo, q);
+  if (q.trim().length < 2) {
+    return NextResponse.json({ pratiche: [], total: 0, minChars: 2 });
+  }
+
+  const term = q.trim();
+  // Connector: sentinel dedicato (evita OR debitore/garante tradotto in AND).
+  // Prisma/SQLite: where Prisma classico.
+  const filtro = isConnectorProvider()
+    ? ({ cercaPratica: { campo, q: term } } as Record<string, unknown>)
+    : buildPraticaCercaWhere(campo, term);
   if (!filtro) {
     return NextResponse.json({ pratiche: [], total: 0, minChars: 2 });
   }
 
   const where = { AND: [baseScope, filtro] };
-  const term = q.trim();
 
   const [total, rows] = await Promise.all([
     praticaModel.count({ where }),
@@ -70,6 +101,13 @@ export async function GET(req: Request) {
         attMatch ||
         (campo === "note" && p.note && p.note.includes(term) ? p.note : null);
 
+      const statoOp = statoOperativoPratica({
+        stato: p.stato,
+        assegnatarioId: p.assegnatarioId,
+        scadenza: p.scadenza,
+        codiceScaricoBk: p.codiceScaricoBk,
+      });
+
       return {
         id: p.id,
         numero: p.numero,
@@ -77,8 +115,8 @@ export async function GET(req: Request) {
         telefono: p.debitore.telefono,
         mandante: p.mandante.codice,
         assegnatario: p.assegnatario?.name || null,
-        stato: p.stato,
-        statoLabel: STATO_LABELS[p.stato] || p.stato,
+        stato: statoOp,
+        statoLabel: labelStatoRicerca(p),
         residuo: p.residuo,
         residuoLabel: euro(p.residuo),
         notaAnteprima: notaAnteprima

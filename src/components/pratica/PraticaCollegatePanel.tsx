@@ -26,7 +26,9 @@ type Voce = {
   numero: string;
   nome: string;
   stato: string;
+  assegnatarioId?: string | null;
   codiceScarico?: string | null;
+  codiceScaricoBk?: string | null;
   mandante: string;
   mandanteNome: string;
   perimetro?: string | null;
@@ -114,8 +116,23 @@ export function PraticaCollegatePanel({
         : corrente
           ? [corrente, ...altre]
           : altre;
+    const ref = corrente
+      ? { mandante: corrente.mandante }
+      : undefined;
     return tutte
-      .filter((p) => praticaMatchFiltro(p.stato, filtro))
+      .filter((p) =>
+        praticaMatchFiltro(
+          {
+            stato: p.stato,
+            assegnatarioId: p.assegnatarioId,
+            scadenza: p.scadenza,
+            codiceScaricoBk: p.codiceScaricoBk,
+            mandante: p.mandante,
+          },
+          filtro,
+          ref
+        )
+      )
       .sort((a, b) => a.numero.localeCompare(b.numero));
   }, [corrente, altre, altreChiuse, filtro]);
 

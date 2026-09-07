@@ -30,6 +30,39 @@ export function statoDaCodiceScarico(codice: string): string | null {
   return entry?.[0] ?? null;
 }
 
+const STATI_CHIUSURA = new Set(["INCASSO", "INESIGIBILE", "RESA"]);
+
+/**
+ * Solo MOV/LPT (codice scarico **back office**) chiudono la pratica.
+ * Il codice operatore non aggiorna più Sit. affido.
+ */
+export function statoChiusuraDaCodiceScarico(codice: string): string | null {
+  const stato = statoDaCodiceScarico(codice);
+  return stato && STATI_CHIUSURA.has(stato) ? stato : null;
+}
+
+/**
+ * Sit. affido da codice bk off: MOV/LPT → chiusura; assente o altro → riapre.
+ * INCASSO resta gestito a parte (residuo azzerato).
+ */
+export function statoDaCodiceScaricoBk(
+  codiceBk: string | null | undefined,
+  opts?: { assegnatarioId?: string | null; statoCorrente?: string | null }
+): string {
+  const key = (codiceBk || "").trim().toUpperCase();
+  const chiusura = key ? statoChiusuraDaCodiceScarico(key) : null;
+  if (chiusura) return chiusura;
+  if (opts?.statoCorrente === "INCASSO") return "INCASSO";
+  if (opts?.assegnatarioId) return "IN_LAVORAZIONE";
+  return "NUOVA";
+}
+
+/** Dopo un codice non di chiusura: passa a IN_LAVORAZIONE (anche se era RESA/INESIGIBILE). */
+export function statoOperativoDopoScaricoAperto(statoCorrente: string): string {
+  if (statoCorrente === "INCASSO") return "INCASSO";
+  return "IN_LAVORAZIONE";
+}
+
 export function isCodiceScarico(value?: string | null): value is CodiceScarico {
   return Boolean(value && CODICI_SCARICO.includes(value as CodiceScarico));
 }
@@ -68,8 +101,13 @@ export function whereSenzaCodiceScaricoPratica() {
 }
 
 export function codiceScaricoPratica(stato: string, codiceScarico?: string | null) {
-  if (codiceScarico && CODICI_SCARICO.includes(codiceScarico as CodiceScarico)) {
-    return codiceScarico as CodiceScarico;
+  const raw = (codiceScarico || "").trim().toUpperCase();
+  if (raw) {
+    if (CODICI_SCARICO.includes(raw as CodiceScarico)) {
+      return raw as CodiceScarico;
+    }
+    // Codici custom di perimetro (es. LPI, DRI): mantieni il valore salvato.
+    return raw;
   }
   return STATO_SCARICO[stato] ?? null;
 }

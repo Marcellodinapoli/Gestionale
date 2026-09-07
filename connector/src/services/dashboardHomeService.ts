@@ -184,11 +184,16 @@ export async function getHomeKpiBundle(cfg: ConnectorConfig["db"], req: HomeKpiR
   // --- Shared: counts (1 query) ---
   const countReq = pool.request();
   const scopeSql = bindPraticaScope(countReq, { ...scope, tenantId: req.tenantId }, "p");
+  countReq.input("oggiScad", sql.DateTime2, oggiStart);
+  const tra7 = new Date(oggiStart);
+  tra7.setUTCDate(tra7.getUTCDate() + 7);
+  countReq.input("tra7Scad", sql.DateTime2, tra7.toISOString());
   sqlQueries++;
   const countRes = await countReq.query(`
     SELECT
       COUNT(*) AS totali,
-      SUM(CASE WHEN p.Scadenza IS NOT NULL AND p.Scadenza <= SYSUTCDATETIME()
+      SUM(CASE WHEN p.Scadenza IS NOT NULL
+        AND p.Scadenza >= @oggiScad AND p.Scadenza <= @tra7Scad
         AND p.Stato NOT IN ${STATI_CHIUSI_SQL} THEN 1 ELSE 0 END) AS scadute
     FROM dbo.Pratiche p
     ${scopeSql.join}
@@ -220,14 +225,22 @@ export async function getHomeKpiBundle(cfg: ConnectorConfig["db"], req: HomeKpiR
   sqlQueries++;
   const lavRes = await lavReq.query(`
     SELECT p.MandanteId AS mandanteId, m.Codice AS mandanteCodice,
-      ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—') AS perimetro,
+      ISNULL(
+        NULLIF(LTRIM(RTRIM(ib.Perimetro)), N''),
+        ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+      ) AS perimetro,
       COUNT(*) AS cnt
     FROM dbo.Pratiche p
     INNER JOIN dbo.Mandanti m ON m.Id = p.MandanteId
+    LEFT JOIN dbo.ImportBatch ib ON ib.Id = p.ImportBatchId
     ${lavScope.join}
     WHERE ${lavScope.where}
       AND p.Stato IN (N'AFFIDATA', N'IN_LAVORAZIONE', N'PROMESSA')
-    GROUP BY p.MandanteId, m.Codice, ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+    GROUP BY p.MandanteId, m.Codice,
+      ISNULL(
+        NULLIF(LTRIM(RTRIM(ib.Perimetro)), N''),
+        ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+      )
   `);
   const inLavoroPerPerimetro = lavRes.recordset.map(
     (r: { mandanteId: string; mandanteCodice: string; perimetro: string; cnt: number }) => ({
@@ -244,16 +257,23 @@ export async function getHomeKpiBundle(cfg: ConnectorConfig["db"], req: HomeKpiR
   sqlQueries++;
   const codRes = await codReq.query(`
     SELECT p.MandanteId AS mandanteId, m.Codice AS mandanteCodice, m.RagioneSociale AS mandanteNome,
-      ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—') AS perimetro,
+      ISNULL(
+        NULLIF(LTRIM(RTRIM(ib.Perimetro)), N''),
+        ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+      ) AS perimetro,
       ${codiceSlotExpr("p")} AS codiceSlot,
       SUM(CASE WHEN p.AssegnatarioId IS NOT NULL THEN 1 ELSE 0 END) AS affidate,
       COUNT(*) AS cnt
     FROM dbo.Pratiche p
     INNER JOIN dbo.Mandanti m ON m.Id = p.MandanteId
+    LEFT JOIN dbo.ImportBatch ib ON ib.Id = p.ImportBatchId
     ${codScope.join}
     WHERE ${codScope.where} AND p.Stato NOT IN ${STATI_CHIUSI_SQL}
     GROUP BY p.MandanteId, m.Codice, m.RagioneSociale,
-      ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—'),
+      ISNULL(
+        NULLIF(LTRIM(RTRIM(ib.Perimetro)), N''),
+        ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+      ),
       ${codiceSlotExpr("p")}
   `);
 
@@ -303,14 +323,22 @@ export async function getHomeKpiBundle(cfg: ConnectorConfig["db"], req: HomeKpiR
     sqlQueries++;
     const affRes = await affReq.query(`
       SELECT p.MandanteId AS mandanteId, m.Codice AS mandanteCodice,
-        ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—') AS perimetro,
+        ISNULL(
+          NULLIF(LTRIM(RTRIM(ib.Perimetro)), N''),
+          ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+        ) AS perimetro,
         COUNT(*) AS cnt
       FROM dbo.Pratiche p
       INNER JOIN dbo.Mandanti m ON m.Id = p.MandanteId
+      LEFT JOIN dbo.ImportBatch ib ON ib.Id = p.ImportBatchId
       WHERE p.TenantId = @tenantId AND p.AssegnatarioId IS NULL
         AND p.Stato NOT IN ${STATI_CHIUSI_SQL}
         AND (${orParts.join(" OR ")})
-      GROUP BY p.MandanteId, m.Codice, ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+      GROUP BY p.MandanteId, m.Codice,
+        ISNULL(
+          NULLIF(LTRIM(RTRIM(ib.Perimetro)), N''),
+          ISNULL(NULLIF(LTRIM(RTRIM(p.NumeroMandante)), N''), N'—')
+        )
     `);
     daAffidareGruppo = affRes.recordset.map(
       (r: { mandanteId: string; mandanteCodice: string; perimetro: string; cnt: number }) => ({
@@ -382,7 +410,7 @@ export async function getHomeKpiBundle(cfg: ConnectorConfig["db"], req: HomeKpiR
     try {
       const auditRes = await auditReq.query(`
         SELECT TOP 200 a.EntityId AS praticaId, p.Numero AS numero,
-          d.Cognome + N' ' + d.Nome AS debitore, a.Action AS action, a.Dettaglio AS dettaglio, a.UserId AS userId
+          d.Cognome + N' ' + d.Nome AS debitore, a.Action AS action, a.MetadataJson AS dettaglio, a.UserId AS userId
         FROM dbo.AuditLog a
         INNER JOIN dbo.Pratiche p ON p.Id = a.EntityId
         INNER JOIN dbo.Debitori d ON d.Id = p.DebitoreId
@@ -739,7 +767,7 @@ async function loadAdminSection(
     scaricoClauses.push("(ua.SedeId = @sedeId OR ut.SedeId = @sedeId)");
   }
   const scaricoRes = await scaricoReq.query(`
-    SELECT a.EntityId AS entityId, a.Action AS action, a.Dettaglio AS dettaglio, a.CreatedAt AS createdAt, p.Stato AS stato
+    SELECT a.EntityId AS entityId, a.Action AS action, a.MetadataJson AS dettaglio, a.CreatedAt AS createdAt, p.Stato AS stato
     FROM dbo.AuditLog a
     ${scaricoJoin}
     WHERE ${scaricoClauses.join(" AND ")}

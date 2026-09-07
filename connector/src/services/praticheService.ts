@@ -23,25 +23,50 @@ export type ListFilter = {
   esito?: string;
   mandanteId?: string;
   mandanteIds?: string[];
+  mandanteIdsNotIn?: string[];
   assegnatarioId?: string;
   assegnatarioIdsIn?: string[];
+  assegnatarioIdsNotIn?: string[];
   operatoreId?: string;
   numeroMandante?: string;
   numeroMandantiIn?: string[];
+  numeroMandantiNotIn?: string[];
   numeroMandanteNotNull?: boolean;
   perimetroOr?: Array<{ mandanteId: string; numeroMandanti?: string[] }>;
   debitoreContains?: string;
+  debitoreNotContains?: string;
   capGte?: string;
   capLte?: string;
   cittaContains?: string;
+  cittaNotContains?: string;
   provContains?: string;
+  provNotContains?: string;
   telefonoContains?: string;
+  telefonoNotContains?: string;
   cfPivaContains?: string;
+  cfPivaNotContains?: string;
   garanteContains?: string;
+  garanteNotContains?: string;
   noteContains?: string;
+  noteNotContains?: string;
   nPraticaGte?: string;
   nPraticaLte?: string;
   codScarico?: string;
+  codScaricoIn?: string[];
+  codScaricoNotIn?: string[];
+  codScaricoIsNull?: boolean;
+  codScaricoNotNull?: boolean;
+  codScaricoBk?: string;
+  codScaricoBkIn?: string[];
+  codScaricoBkNotIn?: string[];
+  codScaricoBkIsNull?: boolean;
+  codScaricoBkNotNull?: boolean;
+  operatoreIdsIn?: string[];
+  operatoreIdsNotIn?: string[];
+  perimetroKeys?: string[];
+  perimetroKeysNot?: string[];
+  /** F1: ignora filtro assegnatario nello scope. */
+  cercaAmpia?: boolean;
   affidoGte?: string;
   affidoLt?: string;
   affidoLte?: string;
@@ -65,6 +90,8 @@ export type ListFilter = {
   rateScadute?: boolean;
   searchCampo?: string;
   searchTerm?: string;
+  /** Match esatto su CF debitore o garante (F9/F10 collegate). */
+  codiciFiscaliIn?: string[];
 };
 
 export type ListRequest = {
@@ -83,9 +110,10 @@ const PRATICA_COLS = `
   p.MandanteId, p.DebitoreId, p.AssegnatarioId, p.OperatoreTitolareId,
   p.Stato, p.Capitale, p.Interessi, p.Spese, p.SpeseRecupero,
   p.ImportoTotale, p.TotIncassato, p.Residuo, p.ImportoRata, p.RateArretrate,
-  p.NettoDaPagare, p.NumeroRateScadute, p.CodiceScarico, p.CodiceScaricoAt,
+  p.NettoDaPagare, p.NumeroRateScadute, p.CodiceScarico, p.CodiceScaricoAt, p.CodiceScaricoBk,
+  p.CodiceScaricoBkAt,
   p.DataAffido, p.Scadenza, p.EsitoContatto, p.TipoContatto,
-  p.MemoAt, p.PromessaAt, p.PromessaImporto, p.UltimaLavorazioneAt,
+  p.MemoAt, p.PromessaAt, p.PromessaImporto, p.PromessaMetodo, p.UltimaLavorazioneAt,
   p.Note, p.ImportBatchId, p.CreatedAt, p.UpdatedAt
 `;
 
@@ -132,12 +160,20 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
     const params = filter.mandanteIds.map((id) => bind("mandId", sql.UniqueIdentifier, id));
     clauses.push(`p.MandanteId IN (${params.join(", ")})`);
   }
+  if (filter.mandanteIdsNotIn?.length) {
+    const params = filter.mandanteIdsNotIn.map((id) => bind("mandNin", sql.UniqueIdentifier, id));
+    clauses.push(`p.MandanteId NOT IN (${params.join(", ")})`);
+  }
   if (filter.assegnatarioId) {
     clauses.push(`p.AssegnatarioId = ${bind("ass", sql.UniqueIdentifier, filter.assegnatarioId)}`);
   }
   if (filter.assegnatarioIdsIn?.length) {
     const params = filter.assegnatarioIdsIn.map((id) => bind("assIn", sql.UniqueIdentifier, id));
     clauses.push(`p.AssegnatarioId IN (${params.join(", ")})`);
+  }
+  if (filter.assegnatarioIdsNotIn?.length) {
+    const params = filter.assegnatarioIdsNotIn.map((id) => bind("assNin", sql.UniqueIdentifier, id));
+    clauses.push(`(p.AssegnatarioId IS NULL OR p.AssegnatarioId NOT IN (${params.join(", ")}))`);
   }
   if (filter.operatoreId) {
     const op = bind("opId", sql.UniqueIdentifier, filter.operatoreId);
@@ -150,6 +186,10 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
     const params = filter.numeroMandantiIn.map((n) => bind("lottoIn", sql.NVarChar(100), n));
     clauses.push(`p.NumeroMandante IN (${params.join(", ")})`);
   }
+  if (filter.numeroMandantiNotIn?.length) {
+    const params = filter.numeroMandantiNotIn.map((n) => bind("lottoNin", sql.NVarChar(100), n));
+    clauses.push(`(p.NumeroMandante IS NULL OR p.NumeroMandante NOT IN (${params.join(", ")}))`);
+  }
   if (filter.numeroMandanteNotNull) {
     clauses.push(`p.NumeroMandante IS NOT NULL`);
   }
@@ -159,6 +199,88 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
   }
   if (filter.codScarico) {
     clauses.push(`p.CodiceScarico = ${bind("codSc", sql.NVarChar(20), filter.codScarico)}`);
+  }
+  if (filter.codScaricoIsNull && filter.codScaricoIn?.length) {
+    const params = filter.codScaricoIn.map((c) => bind("codScIn", sql.NVarChar(20), c));
+    clauses.push(
+      `(p.CodiceScarico IS NULL OR LTRIM(RTRIM(p.CodiceScarico)) = N'' OR p.CodiceScarico IN (${params.join(", ")}))`
+    );
+  } else if (filter.codScaricoIsNull) {
+    clauses.push(`(p.CodiceScarico IS NULL OR LTRIM(RTRIM(p.CodiceScarico)) = N'')`);
+  } else if (filter.codScaricoIn?.length) {
+    const params = filter.codScaricoIn.map((c) => bind("codScIn", sql.NVarChar(20), c));
+    clauses.push(`p.CodiceScarico IN (${params.join(", ")})`);
+  }
+  if (filter.codScaricoNotNull && filter.codScaricoNotIn?.length) {
+    const params = filter.codScaricoNotIn.map((c) => bind("codScNin", sql.NVarChar(20), c));
+    clauses.push(
+      `(p.CodiceScarico IS NOT NULL AND LTRIM(RTRIM(p.CodiceScarico)) <> N'' AND p.CodiceScarico NOT IN (${params.join(", ")}))`
+    );
+  } else if (filter.codScaricoNotNull) {
+    clauses.push(`(p.CodiceScarico IS NOT NULL AND LTRIM(RTRIM(p.CodiceScarico)) <> N'')`);
+  } else if (filter.codScaricoNotIn?.length) {
+    const params = filter.codScaricoNotIn.map((c) => bind("codScNin", sql.NVarChar(20), c));
+    clauses.push(`(p.CodiceScarico IS NULL OR p.CodiceScarico NOT IN (${params.join(", ")}))`);
+  }
+  if (filter.codScaricoBk) {
+    clauses.push(`p.CodiceScaricoBk = ${bind("codScBk", sql.NVarChar(20), filter.codScaricoBk)}`);
+  }
+  if (filter.codScaricoBkIsNull && filter.codScaricoBkIn?.length) {
+    const params = filter.codScaricoBkIn.map((c) => bind("codScBkIn", sql.NVarChar(20), c));
+    clauses.push(
+      `(p.CodiceScaricoBk IS NULL OR LTRIM(RTRIM(p.CodiceScaricoBk)) = N'' OR p.CodiceScaricoBk IN (${params.join(", ")}))`
+    );
+  } else if (filter.codScaricoBkIsNull) {
+    clauses.push(`(p.CodiceScaricoBk IS NULL OR LTRIM(RTRIM(p.CodiceScaricoBk)) = N'')`);
+  } else if (filter.codScaricoBkIn?.length) {
+    const params = filter.codScaricoBkIn.map((c) => bind("codScBkIn", sql.NVarChar(20), c));
+    clauses.push(`p.CodiceScaricoBk IN (${params.join(", ")})`);
+  }
+  if (filter.codScaricoBkNotNull && filter.codScaricoBkNotIn?.length) {
+    const params = filter.codScaricoBkNotIn.map((c) => bind("codScBkNin", sql.NVarChar(20), c));
+    clauses.push(
+      `(p.CodiceScaricoBk IS NOT NULL AND LTRIM(RTRIM(p.CodiceScaricoBk)) <> N'' AND p.CodiceScaricoBk NOT IN (${params.join(", ")}))`
+    );
+  } else if (filter.codScaricoBkNotNull) {
+    clauses.push(`(p.CodiceScaricoBk IS NOT NULL AND LTRIM(RTRIM(p.CodiceScaricoBk)) <> N'')`);
+  } else if (filter.codScaricoBkNotIn?.length) {
+    const params = filter.codScaricoBkNotIn.map((c) => bind("codScBkNin", sql.NVarChar(20), c));
+    clauses.push(`(p.CodiceScaricoBk IS NULL OR p.CodiceScaricoBk NOT IN (${params.join(", ")}))`);
+  }
+  if (filter.operatoreIdsIn?.length) {
+    const params = filter.operatoreIdsIn.map((id) => bind("opIn", sql.UniqueIdentifier, id));
+    const list = params.join(", ");
+    clauses.push(`(p.AssegnatarioId IN (${list}) OR p.OperatoreTitolareId IN (${list}))`);
+  }
+  if (filter.operatoreIdsNotIn?.length) {
+    const params = filter.operatoreIdsNotIn.map((id) => bind("opNin", sql.UniqueIdentifier, id));
+    const list = params.join(", ");
+    clauses.push(`(
+      (p.AssegnatarioId IS NULL OR p.AssegnatarioId NOT IN (${list}))
+      AND (p.OperatoreTitolareId IS NULL OR p.OperatoreTitolareId NOT IN (${list}))
+    )`);
+  }
+  if (filter.perimetroKeys?.length) {
+    const params = filter.perimetroKeys.map((k) => bind("periKey", sql.NVarChar(100), k));
+    const list = params.join(", ");
+    clauses.push(`(
+      p.NumeroMandante IN (${list})
+      OR EXISTS (
+        SELECT 1 FROM dbo.ImportBatch ib
+        WHERE ib.Id = p.ImportBatchId AND ib.Perimetro IN (${list})
+      )
+    )`);
+  }
+  if (filter.perimetroKeysNot?.length) {
+    const params = filter.perimetroKeysNot.map((k) => bind("periKeyN", sql.NVarChar(100), k));
+    const list = params.join(", ");
+    clauses.push(`NOT (
+      p.NumeroMandante IN (${list})
+      OR EXISTS (
+        SELECT 1 FROM dbo.ImportBatch ib
+        WHERE ib.Id = p.ImportBatchId AND ib.Perimetro IN (${list})
+      )
+    )`);
   }
   if (filter.hasAssegnatario === true) clauses.push(`p.AssegnatarioId IS NOT NULL`);
   if (filter.hasAssegnatario === false) clauses.push(`p.AssegnatarioId IS NULL`);
@@ -208,8 +330,38 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
   dateClause("p.MemoAt", "memo", filter.memoAtGte ?? filter.memoGte, filter.memoAtLt ?? filter.memoLt);
 
   if (filter.debitoreContains) {
-    const t = bind("deb", sql.NVarChar(100), `%${filter.debitoreContains}%`);
-    clauses.push(`EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND (d.Nome LIKE ${t} OR d.Cognome LIKE ${t}))`);
+    const tokens = filter.debitoreContains.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length) {
+      const debParts = tokens.map((tok, i) => {
+        const t = bind(`deb${i}`, sql.NVarChar(100), `%${tok}%`);
+        return `(d.Nome LIKE ${t} OR d.Cognome LIKE ${t})`;
+      });
+      const garParts = tokens.map((tok, i) => {
+        const t = bind(`debG${i}`, sql.NVarChar(100), `%${tok}%`);
+        return `(g.Nome LIKE ${t} OR g.Cognome LIKE ${t})`;
+      });
+      clauses.push(`(
+        EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND ${debParts.join(" AND ")})
+        OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND ${garParts.join(" AND ")})
+      )`);
+    }
+  }
+  if (filter.debitoreNotContains) {
+    const tokens = filter.debitoreNotContains.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length) {
+      const debParts = tokens.map((tok, i) => {
+        const t = bind(`debN${i}`, sql.NVarChar(100), `%${tok}%`);
+        return `(d.Nome LIKE ${t} OR d.Cognome LIKE ${t})`;
+      });
+      const garParts = tokens.map((tok, i) => {
+        const t = bind(`debNG${i}`, sql.NVarChar(100), `%${tok}%`);
+        return `(g.Nome LIKE ${t} OR g.Cognome LIKE ${t})`;
+      });
+      clauses.push(`NOT (
+        EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND ${debParts.join(" AND ")})
+        OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND ${garParts.join(" AND ")})
+      )`);
+    }
   }
   if (filter.capGte || filter.capLte) {
     if (filter.capGte) clauses.push(`EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Cap >= ${bind("capGte", sql.NVarChar(10), filter.capGte)})`);
@@ -219,13 +371,29 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
     const t = bind("citta", sql.NVarChar(100), `%${filter.cittaContains}%`);
     clauses.push(`EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Citta LIKE ${t})`);
   }
+  if (filter.cittaNotContains) {
+    const t = bind("cittaN", sql.NVarChar(100), `%${filter.cittaNotContains}%`);
+    clauses.push(`NOT EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Citta LIKE ${t})`);
+  }
   if (filter.provContains) {
     const t = bind("prov", sql.NVarChar(5), `%${filter.provContains}%`);
     clauses.push(`EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Provincia LIKE ${t})`);
   }
+  if (filter.provNotContains) {
+    const t = bind("provN", sql.NVarChar(5), `%${filter.provNotContains}%`);
+    clauses.push(`NOT EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Provincia LIKE ${t})`);
+  }
   if (filter.telefonoContains) {
     const t = bind("tel", sql.NVarChar(50), `%${filter.telefonoContains}%`);
     clauses.push(`(
+      EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Telefono LIKE ${t})
+      OR EXISTS (SELECT 1 FROM dbo.DebitoreRecapiti dr INNER JOIN dbo.Debitori d ON d.Id = dr.DebitoreId WHERE d.Id = p.DebitoreId AND dr.Valore LIKE ${t})
+      OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND g.Telefono LIKE ${t})
+    )`);
+  }
+  if (filter.telefonoNotContains) {
+    const t = bind("telN", sql.NVarChar(50), `%${filter.telefonoNotContains}%`);
+    clauses.push(`NOT (
       EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.Telefono LIKE ${t})
       OR EXISTS (SELECT 1 FROM dbo.DebitoreRecapiti dr INNER JOIN dbo.Debitori d ON d.Id = dr.DebitoreId WHERE d.Id = p.DebitoreId AND dr.Valore LIKE ${t})
       OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND g.Telefono LIKE ${t})
@@ -238,13 +406,38 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
       OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND g.CodiceFiscale LIKE ${t})
     )`);
   }
+  if (filter.codiciFiscaliIn?.length) {
+    const params = filter.codiciFiscaliIn.map((cf, i) =>
+      bind(`cfExact${i}`, sql.NVarChar(20), cf)
+    );
+    const list = params.join(", ");
+    clauses.push(`(
+      EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.CodiceFiscale IN (${list}))
+      OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND g.CodiceFiscale IN (${list}))
+    )`);
+  }
+  if (filter.cfPivaNotContains) {
+    const t = bind("cfN", sql.NVarChar(50), `%${filter.cfPivaNotContains}%`);
+    clauses.push(`NOT (
+      EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND d.CodiceFiscale LIKE ${t})
+      OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND g.CodiceFiscale LIKE ${t})
+    )`);
+  }
   if (filter.garanteContains) {
     const t = bind("gar", sql.NVarChar(100), `%${filter.garanteContains}%`);
     clauses.push(`EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND (g.Nome LIKE ${t} OR g.Cognome LIKE ${t} OR g.CodiceFiscale LIKE ${t}))`);
   }
+  if (filter.garanteNotContains) {
+    const t = bind("garN", sql.NVarChar(100), `%${filter.garanteNotContains}%`);
+    clauses.push(`NOT EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND (g.Nome LIKE ${t} OR g.Cognome LIKE ${t} OR g.CodiceFiscale LIKE ${t}))`);
+  }
   if (filter.noteContains) {
     const t = bind("note", sql.NVarChar(200), `%${filter.noteContains}%`);
     clauses.push(`(p.Note LIKE ${t} OR EXISTS (SELECT 1 FROM dbo.Attivita a WHERE a.PraticaId = p.Id AND a.Nota LIKE ${t}))`);
+  }
+  if (filter.noteNotContains) {
+    const t = bind("noteN", sql.NVarChar(200), `%${filter.noteNotContains}%`);
+    clauses.push(`NOT (p.Note LIKE ${t} OR EXISTS (SELECT 1 FROM dbo.Attivita a WHERE a.PraticaId = p.Id AND a.Nota LIKE ${t}))`);
   }
 
   if (filter.perimetroOr?.length) {
@@ -281,9 +474,25 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
             OR EXISTS (SELECT 1 FROM dbo.DebitoreRecapiti dr INNER JOIN dbo.Debitori d ON d.Id = dr.DebitoreId WHERE d.Id = p.DebitoreId AND dr.Valore LIKE ${t})
           )`);
           break;
-        case "nominativo":
-          clauses.push(`EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND (d.Nome LIKE ${t} OR d.Cognome LIKE ${t}))`);
+        case "nominativo": {
+          const tokens = term.split(/\s+/).filter(Boolean);
+          const tokenClause = (
+            alias: string,
+            prefix: string
+          ) =>
+            tokens
+              .map((tok, i) => {
+                const ti = bind(`${prefix}${i}`, sql.NVarChar(100), `%${tok}%`);
+                return `(${alias}.Nome LIKE ${ti} OR ${alias}.Cognome LIKE ${ti})`;
+              })
+              .join(" AND ");
+          if (!tokens.length) break;
+          clauses.push(`(
+            EXISTS (SELECT 1 FROM dbo.Debitori d WHERE d.Id = p.DebitoreId AND ${tokenClause("d", "searchNom")})
+            OR EXISTS (SELECT 1 FROM dbo.Garanti g WHERE g.PraticaId = p.Id AND ${tokenClause("g", "searchGar")})
+          )`);
           break;
+        }
         case "note":
           clauses.push(`(p.Note LIKE ${t} OR EXISTS (SELECT 1 FROM dbo.Attivita a WHERE a.PraticaId = p.Id AND a.Nota LIKE ${t}))`);
           break;
@@ -321,31 +530,41 @@ function buildOrderBy(sortField?: string, sortDir: "asc" | "desc" = "desc") {
   }
 }
 
+function scopeForList(scope: ScopeInput, filter?: ListFilter): ScopeInput {
+  // F1: tutte le pratiche del tenant (perimetro resta nei filtri), senza vincolo assegnatario.
+  if (filter?.cercaAmpia) {
+    return { ...scope, role: "ADMIN" };
+  }
+  return scope;
+}
+
 function buildWhere(cfg: ConnectorConfig["db"], scope: ScopeInput, filter?: ListFilter) {
   const pool = getPool(cfg);
   void pool;
   const req = new sql.Request();
   const idx = { n: 0 };
-  const clauses = [...applyScope(scope, req), ...bindFilter(req, filter, idx)];
+  const clauses = [...applyScope(scopeForList(scope, filter), req), ...bindFilter(req, filter, idx)];
   return { req, where: clauses.join(" AND ") || "1=1" };
 }
 
 export async function listPratiche(cfg: ConnectorConfig["db"], input: ListRequest) {
   const pool = await getPool(cfg);
   const page = Math.max(1, input.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 25));
+  // take esplicito (es. findMany Affidi) può superare il pageSize UI tipico.
+  const pageSize = Math.min(10_000, Math.max(1, input.pageSize ?? 25));
   const skip = input.skip ?? (page - 1) * pageSize;
-  const take = input.take ?? pageSize;
+  const take = Math.min(10_000, Math.max(1, input.take ?? pageSize));
 
   const idx = { n: 0 };
   const req = pool.request();
-  const scopeClauses = applyScope(input.scope, req);
+  const effectiveScope = scopeForList(input.scope, input.filter);
+  const scopeClauses = applyScope(effectiveScope, req);
   const filterClauses = bindFilter(req, input.filter, idx);
   const where = [...scopeClauses, ...filterClauses].join(" AND ");
   const orderBy = buildOrderBy(input.sortField, input.sortDir ?? "desc");
 
   const countReq = pool.request();
-  applyScope(input.scope, countReq);
+  applyScope(effectiveScope, countReq);
   bindFilter(countReq, input.filter, { n: 0 });
 
   const start = performance.now();
@@ -381,7 +600,8 @@ export async function listPratiche(cfg: ConnectorConfig["db"], input: ListReques
 export async function countPratiche(cfg: ConnectorConfig["db"], input: Omit<ListRequest, "page" | "pageSize" | "skip" | "take" | "sortField" | "sortDir">) {
   const pool = await getPool(cfg);
   const req = pool.request();
-  const where = [...applyScope(input.scope, req), ...bindFilter(req, input.filter, { n: 0 })].join(" AND ");
+  const effectiveScope = scopeForList(input.scope, input.filter);
+  const where = [...applyScope(effectiveScope, req), ...bindFilter(req, input.filter, { n: 0 })].join(" AND ");
   const res = await req.query(`SELECT COUNT(*) AS total FROM dbo.Pratiche p WHERE ${where}`);
   return res.recordset[0]?.total ?? 0;
 }
@@ -497,6 +717,24 @@ export async function getPraticaRelations(
         .input("batchId", sql.UniqueIdentifier, pr.ImportBatchId)
         .query(`SELECT Id, Perimetro, Lotto, AffidoIl FROM dbo.ImportBatch WHERE Id = @batchId`);
       out.importBatch = batch.recordset[0] ?? null;
+    }
+  }
+  if (include.includes("mandante")) {
+    const pr = await getPraticaById(cfg, tenantId, praticaId);
+    if (pr?.MandanteId) {
+      const mand = await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, pr.MandanteId)
+        .query(`
+          SELECT Id, Codice, RagioneSociale, PerimetriJson, SmsPreimpostatiJson, CodiciScaricoJson
+          FROM dbo.Mandanti
+          WHERE Id = @id
+        `);
+      const row = mand.recordset[0];
+      if (row) {
+        row.Perimetri = row.PerimetriJson ?? row.Perimetri;
+        out.mandante = row;
+      }
     }
   }
   return out;
@@ -617,8 +855,10 @@ export async function updatePratica(
 ) {
   const pool = await getPool(cfg);
   const allowed = new Set([
-    "UpdatedAt", "UltimaLavorazioneAt", "CodiceScarico", "CodiceScaricoAt",
+    "UpdatedAt", "UltimaLavorazioneAt", "CodiceScarico", "CodiceScaricoAt", "CodiceScaricoBk",
+    "CodiceScaricoBkAt",
     "Stato", "EsitoContatto", "TipoContatto", "MemoAt", "PromessaAt", "PromessaImporto",
+    "PromessaMetodo",
     "AssegnatarioId", "OperatoreTitolareId", "Residuo", "DebitoreId", "MandanteId",
     "Numero", "NumeroMandante", "Contratto", "Commessa", "DataAffido", "Scadenza",
     "Capitale", "Interessi", "Spese", "SpeseRecupero", "ImportoRata", "RateArretrate",
@@ -627,8 +867,10 @@ export async function updatePratica(
   const map: Record<string, string> = {
     updatedAt: "UpdatedAt", ultimaLavorazioneAt: "UltimaLavorazioneAt",
     codiceScarico: "CodiceScarico", codiceScaricoAt: "CodiceScaricoAt",
+    codiceScaricoBk: "CodiceScaricoBk", codiceScaricoBkAt: "CodiceScaricoBkAt",
     stato: "Stato", esitoContatto: "EsitoContatto", tipoContatto: "TipoContatto",
     memoAt: "MemoAt", promessaAt: "PromessaAt", promessaImporto: "PromessaImporto",
+    promessaMetodo: "PromessaMetodo",
     assegnatarioId: "AssegnatarioId", operatoreTitolareId: "OperatoreTitolareId",
     residuo: "Residuo", debitoreId: "DebitoreId", mandanteId: "MandanteId",
     numero: "Numero", numeroMandante: "NumeroMandante", contratto: "Contratto",
@@ -644,19 +886,23 @@ export async function updatePratica(
     .input("id", sql.UniqueIdentifier, id);
 
   const sets: string[] = ["UpdatedAt = SYSUTCDATETIME()"];
-  if (!data.updatedAt && data.updatedAt !== null) {
-    // always touch UpdatedAt
-  }
 
   for (const [key, val] of Object.entries(data)) {
     const col = map[key];
-    if (!col || !allowed.has(col)) continue;
+    // UpdatedAt è già impostato sopra: evita SET duplicato (SQL error 264 → 500).
+    if (!col || !allowed.has(col) || col === "UpdatedAt") continue;
     const param = `u_${col}`;
     if (val === null) {
       req.input(param, sql.NVarChar(1), null);
       sets.push(`${col} = NULL`);
-    } else if (val instanceof Date) {
-      req.input(param, sql.DateTime2(3), val);
+    } else if (
+      val instanceof Date ||
+      (typeof val === "string" &&
+        (col.endsWith("At") || col === "DataAffido" || col === "Scadenza") &&
+        !Number.isNaN(Date.parse(val)))
+    ) {
+      const d = val instanceof Date ? val : new Date(String(val));
+      req.input(param, sql.DateTime2(3), d);
       sets.push(`${col} = @${param}`);
     } else if (typeof val === "number") {
       req.input(param, sql.Decimal(18, 2), val);
@@ -730,12 +976,12 @@ export async function assignPratica(
     case "temporaneo":
       data.assegnatarioId = input.assegnatarioId ?? null;
       data.operatoreTitolareId = input.titolareId ?? null;
-      if (input.statoCorrente === "NUOVA") data.stato = "AFFIDATA";
+      if (input.statoCorrente === "NUOVA") data.stato = "IN_LAVORAZIONE";
       break;
     case "definitivo":
       data.assegnatarioId = input.assegnatarioId ?? null;
       data.operatoreTitolareId = input.assegnatarioId ?? null;
-      if (input.statoCorrente === "NUOVA") data.stato = "AFFIDATA";
+      if (input.statoCorrente === "NUOVA") data.stato = "IN_LAVORAZIONE";
       break;
   }
   return updatePratica(cfg, tenantId, id, data);

@@ -9,6 +9,8 @@ export type UserFilter = {
   supervisorId?: string | null;
   supervisorIdSet?: boolean;
   formazioneOnly?: boolean;
+  consulenteEsterno?: boolean;
+  creditCalcEnabled?: boolean;
   sedeId?: string | null;
   sedeIdSet?: boolean;
   postazioneId?: string | null;
@@ -58,6 +60,8 @@ export type UserCreateInput = {
   role: string;
   acronimo?: string | null;
   formazioneOnly?: boolean;
+  consulenteEsterno?: boolean;
+  creditCalcEnabled?: boolean;
   interno?: string | null;
   prefissoChiamata?: string | null;
   condizioneEconomica?: string | null;

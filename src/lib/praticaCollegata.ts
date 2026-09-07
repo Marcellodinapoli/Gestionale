@@ -1,14 +1,79 @@
+import { statoOperativoPratica } from "@/lib/statoOperativoPratica";
+
 export const STATI_PRATICA_CHIUSA = new Set(["INCASSO", "INESIGIBILE", "RESA"]);
 
 export type FiltroCollegata = "aperta" | "chiusa";
+
+export type PraticaFiltroCollegataInput = {
+  stato: string;
+  assegnatarioId?: string | null;
+  scadenza?: Date | string | null;
+  codiceScaricoBk?: string | null;
+  /** Codice mandante (per split F9/F10). */
+  mandante?: string | null;
+  mandanteId?: string | null;
+};
+
+export type MandanteRef = {
+  mandante?: string | null;
+  mandanteId?: string | null;
+};
 
 export function isPraticaChiusa(stato: string) {
   return STATI_PRATICA_CHIUSA.has(stato);
 }
 
-export function praticaMatchFiltro(stato: string, filtro: FiltroCollegata) {
-  const chiusa = isPraticaChiusa(stato);
-  return filtro === "chiusa" ? chiusa : !chiusa;
+/**
+ * F9: Nuove / In lavorazione (non scadute, non chiuse).
+ * Usare con filtro stessa mandante a parte.
+ */
+export function isPraticaF9Aperta(input: PraticaFiltroCollegataInput) {
+  const op = statoOperativoPratica(input);
+  return op === "NUOVA" || op === "IN_LAVORAZIONE";
+}
+
+function stessoMandante(a: MandanteRef, b: MandanteRef) {
+  if (a.mandanteId && b.mandanteId) return a.mandanteId === b.mandanteId;
+  if (a.mandante && b.mandante) return a.mandante === b.mandante;
+  return false;
+}
+
+/**
+ * F9: stessa mandante + Nuova/In lavorazione (non perimetro).
+ */
+export function isPraticaF9Collegata(
+  p: PraticaFiltroCollegataInput,
+  corrente: MandanteRef
+) {
+  return stessoMandante(p, corrente) && isPraticaF9Aperta(p);
+}
+
+/**
+ * F10: tutte le altre collegate (altre mandanti, scadute, chiuse, …).
+ */
+export function isPraticaF10Collegata(
+  p: PraticaFiltroCollegataInput,
+  corrente: MandanteRef
+) {
+  return !isPraticaF9Collegata(p, corrente);
+}
+
+export function praticaMatchFiltro(
+  input: PraticaFiltroCollegataInput | string,
+  filtro: FiltroCollegata,
+  /** Mandante della pratica da cui si apre F9/F10 (obbligatorio per lo split corretto). */
+  corrente?: MandanteRef
+) {
+  const p: PraticaFiltroCollegataInput =
+    typeof input === "string" ? { stato: input } : input;
+  if (corrente) {
+    return filtro === "chiusa"
+      ? isPraticaF10Collegata(p, corrente)
+      : isPraticaF9Collegata(p, corrente);
+  }
+  // Fallback senza contesto mandante (liste già ristrette a stessa mandante).
+  if (filtro === "chiusa") return !isPraticaF9Aperta(p);
+  return isPraticaF9Aperta(p);
 }
 
 export function parseFiltroCollegata(
@@ -51,5 +116,7 @@ export function parsePraticaOrigine(value?: string | null) {
 }
 
 export function etichettaFiltroCollegata(filtro: FiltroCollegata) {
-  return filtro === "chiusa" ? "Collegate generiche" : "In lavorazione";
+  return filtro === "chiusa"
+    ? "Altre collegate (mandanti / scadute / chiuse)"
+    : "In lavorazione e nuove (stessa mandante)";
 }

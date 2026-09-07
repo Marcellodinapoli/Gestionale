@@ -35,6 +35,8 @@ export type IncassoCreateInput = {
   metodo?: string;
   modo?: string;
   causale?: string;
+  /** Numero fattura o "np" (non provvigioneabile). */
+  fattura?: string;
   data?: string | Date;
   dataScadenza?: string | Date | null;
 };
@@ -51,6 +53,16 @@ export type ProvvigioneCreateInput = {
 export type RegistraIncassoInput = {
   incasso: IncassoCreateInput;
   provvigione?: Omit<ProvvigioneCreateInput, "incassoId"> | null;
+  praticaUpdate: { residuo: number; stato: string };
+};
+
+export type AggiornaIncassoInput = {
+  incasso: Omit<IncassoCreateInput, "praticaId" | "userId">;
+  provvigione?: Omit<ProvvigioneCreateInput, "incassoId"> | null;
+  praticaUpdate: { residuo: number; stato: string };
+};
+
+export type EliminaIncassoInput = {
   praticaUpdate: { residuo: number; stato: string };
 };
 
@@ -81,4 +93,16 @@ export interface IncassiRepository {
     tenantId: string,
     input: RegistraIncassoInput
   ): Promise<IncassoDto>;
+  aggiorna(
+    tenantSlug: string,
+    tenantId: string,
+    id: string,
+    input: AggiornaIncassoInput
+  ): Promise<IncassoDto>;
+  elimina(
+    tenantSlug: string,
+    tenantId: string,
+    id: string,
+    input: EliminaIncassoInput
+  ): Promise<{ ok: boolean }>;
 }

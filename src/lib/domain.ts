@@ -1,5 +1,4 @@
 import { debitoriDb } from "@/lib/debitoriRepo";
-import { garantiDb } from "@/lib/garantiRepo";
 import { appendAudit } from "@/lib/auditRepo";
 import { prisma } from "@/lib/prisma";
 import { praticaDb, praticaDbFromUser, type PraticaDbContext } from "@/lib/praticheRepo";
@@ -179,47 +178,23 @@ export async function praticaIdsCollegatePerCf(
 
   const variants = cfQueryVariants(rawCfs);
 
-  const [debitori, garanti] = await Promise.all([
-    debitoriDb({
-      tenantId: pratica.tenantId,
-      tenantSlug: opts?.tenantSlug ?? pratica.tenantId,
-    }).findMany({
-      where: {
-        tenantId: pratica.tenantId,
-        codiceFiscale: { in: variants },
-      },
-      select: { id: true, codiceFiscale: true },
-    }),
-    garantiDb({
-      tenantId: pratica.tenantId,
-      tenantSlug: opts?.tenantSlug ?? pratica.tenantId,
-    }).findMany({
-      where: { codiceFiscale: { in: variants } },
-      select: { praticaId: true, codiceFiscale: true },
-    }),
-  ]);
-
-  const debitoreIds = debitori
-    .filter((d) => cfs.has(normalizeCf(d.codiceFiscale)))
-    .map((d) => d.id);
-  const daGarante = garanti
-    .filter((g) => cfs.has(normalizeCf(g.codiceFiscale)))
-    .map((g) => g.praticaId);
-
-  const or: Prisma.PraticaWhereInput[] = [{ id: pratica.id }];
-  if (debitoreIds.length) or.push({ debitoreId: { in: debitoreIds } });
-  if (daGarante.length) or.push({ id: { in: daGarante } });
-
+  // Query diretta per CF (debitore o garante): sul connector l'OR debitoreId veniva ignorato.
   const rows = await db(pratica.tenantId, opts?.tenantSlug).findMany({
     where: {
       tenantId: pratica.tenantId,
       ...(stessoMandante ? { mandanteId: pratica.mandanteId } : {}),
-      OR: or,
+      OR: [
+        { debitore: { codiceFiscale: { in: variants } } },
+        { garanti: { some: { codiceFiscale: { in: variants } } } },
+      ],
     },
     select: { id: true },
     orderBy: { numero: "asc" },
   });
-  return rows.map((r) => r.id);
+
+  const ids = rows.map((r) => r.id);
+  if (!ids.includes(pratica.id)) ids.push(pratica.id);
+  return ids;
 }
 
 export async function praticheStessoDebitoreIds(
@@ -227,26 +202,61 @@ export async function praticheStessoDebitoreIds(
   filtro: FiltroCollegata,
   ctx?: Pick<PraticaDbContext, "tenantId" | "tenantSlug">
 ) {
+  // Sempre tutte le mandanti: F9/F10 si splittano dopo (F9 = stessa mandante aperte).
   const ids = await praticaIdsCollegatePerCf(praticaId, {
-    stessoMandante: filtro === "aperta",
+    stessoMandante: false,
     tenantId: ctx?.tenantId,
     tenantSlug: ctx?.tenantSlug,
   });
   if (!ids.length) return [];
 
-  const rows = await praticaDb({
+  const db = praticaDb({
     tenantId: ctx?.tenantId ?? "",
     tenantSlug: ctx?.tenantSlug ?? ctx?.tenantId ?? "",
     role: "ADMIN",
     userId: ctx?.tenantId ?? "",
-  }).findMany({
+  });
+
+  const source = await db.findUnique({
+    where: { id: praticaId },
+    select: { mandanteId: true, mandante: { select: { codice: true } } },
+  });
+  if (!source) return [];
+
+  const corrente = {
+    mandanteId: source.mandanteId,
+    mandante: source.mandante.codice,
+  };
+
+  const rows = await db.findMany({
     where: { id: { in: ids } },
-    select: { id: true, stato: true },
+    select: {
+      id: true,
+      stato: true,
+      assegnatarioId: true,
+      scadenza: true,
+      codiceScaricoBk: true,
+      mandanteId: true,
+      mandante: { select: { codice: true } },
+    },
     orderBy: { numero: "asc" },
   });
 
   return rows
-    .filter((p) => praticaMatchFiltro(p.stato, filtro))
+    .filter((p) =>
+      praticaMatchFiltro(
+        {
+          stato: p.stato,
+          assegnatarioId: p.assegnatarioId,
+          scadenza: p.scadenza,
+          codiceScaricoBk: p.codiceScaricoBk,
+          mandanteId: p.mandanteId,
+          mandante: p.mandante.codice,
+        },
+        filtro,
+        corrente
+      )
+    )
     .map((p) => p.id);
 }
 

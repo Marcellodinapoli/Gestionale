@@ -6,6 +6,17 @@ import type { LatoEconomico } from "@/lib/mandantePerimetri";
 /** Percentuale provvigione sull'importo incassato (default demo). */
 export const PROVVIGIONE_PERCENTUALE = 8;
 
+export {
+  FATTURA_NON_PROVVIGIONABILE,
+  isFatturaNonProvvigionabile,
+  isModoNonProvvigionabile,
+  normalizeFatturaIncasso,
+  normalizeModoIncasso,
+  MODO_INCASSO_NON_PROVV,
+  MODO_INCASSO_VERIFICATO,
+  MODI_INCASSO_PROVV,
+} from "@/lib/incassoFattura";
+
 export const PROVVIGIONE_STATO_LABELS: Record<string, string> = {
   MATURATA: "Maturata",
   LIQUIDATA: "Liquidata",

@@ -42,7 +42,10 @@ export async function loadAffidiMonitoraggio(
         where: { ...praticaWhere, stato: "NUOVA" },
       }),
       prisma.pratica.count({
-        where: { ...praticaWhere, stato: "IN_LAVORAZIONE" },
+        where: {
+          ...praticaWhere,
+          stato: { in: ["IN_LAVORAZIONE", "AFFIDATA", "PROMESSA", "PIANO"] },
+        },
       }),
       prisma.pratica.count({
         where: {

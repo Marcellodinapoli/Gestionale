@@ -34,7 +34,7 @@ export function InLavorazionePerimetroCard({
               <Link
                 href={buildPraticheQuery({
                   mandato: r.mandanteId,
-                  ...(r.perimetro !== "—" ? { lotto: r.perimetro } : {}),
+                  ...(r.perimetro !== "—" ? { perimetro: r.perimetro } : {}),
                 })}
                 className="flex items-baseline justify-between gap-2 text-sm leading-tight hover:text-[var(--accent)]"
               >

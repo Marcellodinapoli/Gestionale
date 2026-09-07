@@ -11,7 +11,12 @@ import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
 import { gruppoPerimetroScopeWhere } from "@/lib/codiciMandantePerimetro";
 import { elencoPerimetriTuttiMandanti, parsePerimetroAffidi } from "@/lib/affidiPerimetro";
-import { parsePerimetriList } from "@/lib/mandantePerimetri";
+import {
+  etichettaPerimetro,
+  numeroMandantePerimetro,
+  parsePerimetriList,
+  resolvePerimetroPratica,
+} from "@/lib/mandantePerimetri";
 import { buildSezioniProvvigioni } from "@/lib/provvigioniDisplay";
 import { metricheScaglioniPerPerimetro } from "@/lib/provvigioniScaglioniMetriche";
 import {
@@ -24,14 +29,18 @@ import {
   configProvvigioniPerimetriGruppo,
 } from "@/lib/provvigioniPerimetro";
 import { Card, PageHeader } from "@/components/ui";
+import Link from "next/link";
+import { X } from "lucide-react";
 import { ProvvigioniTableAdmin } from "@/components/provvigioni/ProvvigioniTableAdmin";
 import { ProvvigioniListaPerimetro } from "@/components/provvigioni/ProvvigioniListaPerimetro";
 import { ProvvigioniRiepilogoOperatori } from "@/components/provvigioni/ProvvigioniRiepilogoOperatori";
 import { ProvvigioniFiltriAmministrazione } from "@/components/provvigioni/ProvvigioniFiltriAmministrazione";
+import { ProvvigioniAggiornaButton } from "@/components/provvigioni/ProvvigioniAggiornaButton";
 import {
   FILTRI_APPLY_BUTTON_CLASS,
   FILTRI_PAGE_INPUT_CLASS,
   FILTRI_PAGE_SELECT_LG_CLASS,
+  FILTRI_RESET_BUTTON_CLASS,
 } from "@/components/filtri/filtriFieldStyles";
 import { MissingSedeBanner, RicaviAltreSediNascostiBanner } from "@/components/sedi/MissingSedeBanner";
 import { SedeRendimentoFilter } from "@/components/sedi/SedeRendimentoFilter";
@@ -42,6 +51,10 @@ import {
 } from "@/lib/sedeScope";
 import { prismaCount } from "@/lib/prismaCount";
 import { codiceScaricoPratica } from "@/lib/scarico";
+import {
+  isModoNonProvvigionabile,
+  normalizeModoIncasso,
+} from "@/lib/incassoFattura";
 
 function inizioMese(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
@@ -65,9 +78,22 @@ function mapRigaProvvigione(r: {
     stato: string;
     codiceScarico: string | null;
     debitore: { nome: string; cognome: string };
+    mandante?: { codice?: string | null; perimetri?: string | null } | null;
   };
-  incasso: { data: Date };
+  incasso: { data: Date; fattura?: string | null; modo?: string | null };
 }) {
+  const fattura = (r.incasso?.fattura || "").trim();
+  const modo = normalizeModoIncasso(r.incasso?.modo);
+  const nonProvv = isModoNonProvvigionabile(modo);
+  const lotto = r.pratica.numeroMandante?.trim() || "";
+  const hit = resolvePerimetroPratica(
+    r.pratica.mandante?.perimetri ?? null,
+    lotto || null
+  );
+  const perimetroKey = hit
+    ? numeroMandantePerimetro(hit) || lotto || "—"
+    : lotto || "—";
+  const perimetroLabel = hit ? etichettaPerimetro(hit) || perimetroKey : perimetroKey;
   return {
     id: r.id,
     praticaId: r.praticaId,
@@ -79,10 +105,13 @@ function mapRigaProvvigione(r: {
     percentuale: r.percentuale,
     importo: r.importo,
     stato: r.stato,
-    statoLabel: provvigioneStatoLabel(r.stato),
-    perimetro: r.pratica.numeroMandante?.trim() || "—",
+    statoLabel: nonProvv ? "Non provv." : provvigioneStatoLabel(r.stato),
+    perimetro: perimetroKey,
+    perimetroLabel,
     codiceScarico:
       codiceScaricoPratica(r.pratica.stato, r.pratica.codiceScarico) ?? "—",
+    modo,
+    fattura: fattura || "—",
   };
 }
 
@@ -310,9 +339,10 @@ export default async function ProvigioniPage({
               stato: true,
               codiceScarico: true,
               debitore: { select: { nome: true, cognome: true } },
+              mandante: { select: { codice: true, perimetri: true } },
             },
           },
-          incasso: { select: { data: true, importo: true, metodo: true } },
+          incasso: { select: { data: true, importo: true, metodo: true, fattura: true, modo: true } },
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -465,6 +495,15 @@ export default async function ProvigioniPage({
           )
       : [];
 
+  const hasFiltriAttivi = Boolean(
+    meseRaw ||
+      mandanteId ||
+      gruppoId ||
+      operatoreId ||
+      perimetroRaw ||
+      sedeRaw
+  );
+
   const subtitle =
     user.role === "OPERATOR"
       ? "Le tue provvigioni · perimetri del gruppo"
@@ -545,75 +584,30 @@ export default async function ProvigioniPage({
           />
         ) : null}
         {isAdmin ? (
-          <>
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Mandante</span>
-              <select
-                name="mandante"
-                defaultValue={mandanteId || ""}
-                className={`min-w-[180px] ${FILTRI_PAGE_SELECT_LG_CLASS}`}
-              >
-                <option value="">Tutte</option>
-                {mandanti.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.codice} · {m.ragioneSociale}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Perimetro</span>
-              <select
-                name="perimetro"
-                defaultValue={mandanteId && perimetroValido ? perimetroValido : ""}
-                disabled={!mandanteId || Boolean(gruppoId)}
-                className={`${FILTRI_PAGE_SELECT_LG_CLASS} disabled:opacity-50`}
-              >
-                <option value="">Tutti</option>
-                {perimetriRefs
-                  .filter((p) => p.mandanteId === mandanteId)
-                  .map((p) => (
-                    <option key={`${p.mandanteId}|${p.perimetro}`} value={p.perimetro}>
-                      {p.perimetroLabel}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Operatore</span>
-              <select
-                name="operatore"
-                defaultValue={operatoreId || ""}
-                className={FILTRI_PAGE_SELECT_LG_CLASS}
-              >
-                <option value="">Tutti</option>
-                {operatori.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Gruppo</span>
-              <select
-                name="gruppo"
-                defaultValue={gruppoId || ""}
-                className={FILTRI_PAGE_SELECT_LG_CLASS}
-              >
-                <option value="">Tutti</option>
-                {supervisori.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
+          <ProvvigioniFiltriAmministrazione
+            mandanti={mandanti}
+            perimetri={perimetriRefs}
+            operatori={operatori}
+            gruppi={supervisori}
+            mandanteId={mandanteId}
+            perimetro={perimetroValido}
+            operatoreId={operatoreId}
+            gruppoId={gruppoId}
+          />
         ) : null}
         <button type="submit" className={`h-10 ${FILTRI_APPLY_BUTTON_CLASS}`}>
           Filtra
         </button>
+        <ProvvigioniAggiornaButton />
+        {hasFiltriAttivi ? (
+          <Link
+            href="/provigioni"
+            className={`inline-flex h-10 items-center gap-1 ${FILTRI_RESET_BUTTON_CLASS}`}
+          >
+            <X className="h-4 w-4" />
+            Annulla filtro
+          </Link>
+        ) : null}
       </form>
 
       <div

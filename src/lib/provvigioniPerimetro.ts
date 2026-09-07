@@ -1,7 +1,7 @@
 import { mandantiDb } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
 import type { LatoEconomico } from "@/lib/mandantePerimetri";
-import { parsePerimetri, numeroMandantePerimetro } from "@/lib/mandantePerimetri";
+import { parsePerimetri, numeroMandantePerimetro, etichettaPerimetro } from "@/lib/mandantePerimetri";
 import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
 
 export {
@@ -22,7 +22,10 @@ export {
 } from "@/lib/provvigioniPerimetroUi";
 
 export type PerimetroProvvigioniConfig = {
+  /** Chiave logica (descrizione / nomeMandante) usata per matching e filtri. */
   nome: string;
+  /** Etichetta UI: acronimo · descrizione. */
+  etichetta: string;
   mandanteId: string;
   mandanteCodice: string;
   /** Regole pagate agli operatori su questo perimetro. */
@@ -58,6 +61,7 @@ export async function configProvvigioniPerimetriGruppo(
     for (const p of targets) {
       out.push({
         nome: numeroMandantePerimetro(p),
+        etichetta: etichettaPerimetro(p),
         mandanteId: m.id,
         mandanteCodice: m.codice,
         pagata: p.pagata,
@@ -93,6 +97,7 @@ export async function configProvvigioniMandanti(
       if (opts?.soloPerimetro && opts.soloPerimetro !== nome) continue;
       out.push({
         nome,
+        etichetta: etichettaPerimetro(p),
         mandanteId: m.id,
         mandanteCodice: m.codice,
         pagata: p.pagata,

@@ -13,9 +13,9 @@ import { fattureDbFromUser } from "@/lib/fattureRepo";
 import { documentiDbFromUser } from "@/lib/documentiRepo";
 import { createManyPianoRate, pianoRateDbFromUser } from "@/lib/pianoRateRepo";
 import { attivitaDbFromUser, toggleFissaAttivita } from "@/lib/attivitaRepo";
-import { registraIncassoWithSideEffects } from "@/lib/incassiRepo";
+import { aggiornaIncassoWithSideEffects, eliminaIncassoWithSideEffects, registraIncassoWithSideEffects } from "@/lib/incassiRepo";
 import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
-import { assertCan, can, canManageMandantePerimetri, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
+import { assertCan, can, canClearCodiceScarico, canEditCodiceScaricoBk, canManageMandantePerimetri, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
   canAccessPratica,
   parseDateOnly,
@@ -28,15 +28,24 @@ import { syncMessaggioAgenda, markMessaggiLetti } from "@/lib/memoAgenda";
 import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
 import { resolveTenantSlug } from "@/lib/praticheRepo";
 import { formatMessaggioCollegaNota } from "@/lib/noteFormat";
-import { calcolaProvvigione, resolveProvvigionePercentuale, resolveProvvigionePercentualeLato } from "@/lib/provvigioni";
 import {
+  calcolaProvvigione,
+  isModoNonProvvigionabile,
+  normalizeFatturaIncasso,
+  normalizeModoIncasso,
+  resolveProvvigionePercentuale,
+  resolveProvvigionePercentualeLato,
+} from "@/lib/provvigioni";
+import {
+  codiciScaricoBkOffPerPratica,
   codiciScaricoOperatoriEffettivi,
   codiciScaricoOperatoriPerPratica,
   isCodicePromessaOperatore,
   isCodiceScaricoOperatore,
-  parsePerimetri,
-  perimetroPerNome,
+  resolvePerimetroPratica,
 } from "@/lib/mandantePerimetri";
+import { CODICI_SCARICO } from "@/lib/scarico";
+import { isCodiceScaricoFiltroToken } from "@/lib/filtriCodScarico";
 import { requireWritablePermission, requireWritableUser } from "@/lib/guard";
 import { STATI_TELEFONO } from "@/lib/statoTelefono";
 import { assertPraticaLockHeld, assertPraticaNotLockedByOther, releaseAllUserLocks, lockScopeFromUser } from "@/lib/praticaLock";
@@ -60,7 +69,10 @@ import {
   importPraticheChunkSize,
 } from "@/lib/importPraticheBatch";
 import { isMetodoIncassoValido } from "@/lib/metodoIncasso";
-import { isCodiceScaricoConDettagliPagamento, statoDaCodiceScarico } from "@/lib/scarico";
+import {
+  isCodiceScaricoConDettagliPagamento,
+  statoDaCodiceScaricoBk,
+} from "@/lib/scarico";
 import { RUOLI_LAVORAZIONE } from "@/lib/praticaOrdine";
 import { isPraticaChiusa } from "@/lib/praticaCollegata";
 
@@ -78,17 +90,71 @@ async function assertCodiceScaricoOperatoreValido(
     select: {
       numeroMandante: true,
       mandante: { select: { perimetri: true } },
+      importBatch: { select: { perimetro: true } },
     },
   });
   if (!pratica) fail("Pratica non valida");
   const codici = codiciScaricoOperatoriEffettivi(
     codiciScaricoOperatoriPerPratica(
       pratica.mandante?.perimetri ?? null,
-      pratica.numeroMandante
+      pratica.numeroMandante,
+      pratica.importBatch?.perimetro
     )
   );
   if (!isCodiceScaricoOperatore(codice, codici)) {
     fail("Codice scarico non valido");
+  }
+}
+
+async function assertCodiceScaricoBkValido(praticaId: string, codice: string | null) {
+  if (!codice) return;
+  if (!isCodiceScaricoFiltroToken(codice)) fail("Codice bk off non valido");
+  const pratica = await (await praticaModel()).findUnique({
+    where: { id: praticaId },
+    select: {
+      numeroMandante: true,
+      mandante: { select: { perimetri: true } },
+      importBatch: { select: { perimetro: true } },
+    },
+  });
+  if (!pratica) fail("Pratica non valida");
+  const bk = codiciScaricoBkOffPerPratica(
+    pratica.mandante?.perimetri ?? null,
+    pratica.numeroMandante,
+    pratica.importBatch?.perimetro
+  );
+  const allowed = new Set([
+    ...bk.map((c) => c.codice.trim().toUpperCase()),
+    ...(bk.length ? [] : [...CODICI_SCARICO]),
+  ]);
+  if (allowed.size > 0 && !allowed.has(codice.trim().toUpperCase())) {
+    fail("Codice bk off non valido per questo perimetro");
+  }
+}
+
+/** Operatore/supervisor non possono svuotare un codice già impostato. */
+async function assertCanClearCodiceScaricoSeNecessario(
+  role: string,
+  praticaId: string,
+  nuovo: string | null,
+  campo: "codiceScarico" | "codiceScaricoBk"
+) {
+  if (nuovo) return;
+  if (canClearCodiceScarico(role)) return;
+  const pratica = await (await praticaModel()).findUnique({
+    where: { id: praticaId },
+    select: { codiceScarico: true, codiceScaricoBk: true },
+  });
+  const attuale =
+    campo === "codiceScaricoBk"
+      ? pratica?.codiceScaricoBk
+      : pratica?.codiceScarico;
+  if (attuale?.trim()) {
+    fail(
+      campo === "codiceScaricoBk"
+        ? "Non puoi cancellare il codice bk off"
+        : "Non puoi cancellare il codice scarico"
+    );
   }
 }
 
@@ -572,17 +638,14 @@ async function applyScaricoPromessaPratica(
   });
   const codiceScaricoCambiato =
     (praticaCorrente?.codiceScarico || null) !== (input.codiceScarico || null);
-  const statoDaCodice = input.codiceScarico
-    ? statoDaCodiceScarico(input.codiceScarico)
-    : null;
   const now = new Date();
 
+  // Il codice scarico operatore non modifica Sit. affido (chiusure = solo bk off).
   await (await praticaModel()).update({
     where: { id: praticaId },
     data: {
       codiceScarico: input.codiceScarico,
       ...(codiceScaricoCambiato ? { codiceScaricoAt: now } : {}),
-      ...(statoDaCodice ? { stato: statoDaCodice } : {}),
       ...(input.isPromessa ? { esitoContatto: "PROMESSA" } : {}),
       ...(input.hasDettagliPagamento && input.promessaAt
         ? { promessaAt: input.promessaAt }
@@ -591,6 +654,32 @@ async function applyScaricoPromessaPratica(
       promessaMetodo: input.hasDettagliPagamento ? input.promessaMetodo : null,
       updatedAt: now,
       ...(opts?.ultimaLavorazione ? { ultimaLavorazioneAt: now } : {}),
+    },
+  });
+}
+
+async function applyCodiceScaricoBkPratica(
+  praticaId: string,
+  codiceScaricoBk: string | null
+) {
+  const pratica = await (await praticaModel()).findUnique({
+    where: { id: praticaId },
+    select: { assegnatarioId: true, stato: true, codiceScaricoBk: true },
+  });
+  const stato = statoDaCodiceScaricoBk(codiceScaricoBk, {
+    assegnatarioId: pratica?.assegnatarioId,
+    statoCorrente: pratica?.stato,
+  });
+  const bkCambiato =
+    (pratica?.codiceScaricoBk || null) !== (codiceScaricoBk || null);
+  const now = new Date();
+  await (await praticaModel()).update({
+    where: { id: praticaId },
+    data: {
+      codiceScaricoBk,
+      ...(bkCambiato ? { codiceScaricoBkAt: now } : {}),
+      stato,
+      updatedAt: now,
     },
   });
 }
@@ -611,6 +700,29 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
   const codScaricoRaw = String(formData.get("codScarico") || "").trim();
   const codiceScarico = codScaricoRaw || null;
   await assertCodiceScaricoOperatoreValido(praticaId, codiceScarico);
+  await assertCanClearCodiceScaricoSeNecessario(
+    user.role,
+    praticaId,
+    codiceScarico,
+    "codiceScarico"
+  );
+
+  const canBk = canEditCodiceScaricoBk(user.role);
+  const aggiornaBk = canBk && formData.has("codScaricoBk");
+  const codiceScaricoBk = aggiornaBk
+    ? String(formData.get("codScaricoBk") || "")
+        .trim()
+        .toUpperCase() || null
+    : undefined;
+  if (aggiornaBk) {
+    await assertCodiceScaricoBkValido(praticaId, codiceScaricoBk ?? null);
+    await assertCanClearCodiceScaricoSeNecessario(
+      user.role,
+      praticaId,
+      codiceScaricoBk ?? null,
+      "codiceScaricoBk"
+    );
+  }
 
   const hasDettagliPagamento = Boolean(
     codiceScarico && isCodiceScaricoConDettagliPagamento(codiceScarico)
@@ -664,6 +776,10 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
     ultimaLavorazione: lavorazione && Boolean(nota),
   });
 
+  if (aggiornaBk) {
+    await applyCodiceScaricoBkPratica(praticaId, codiceScaricoBk ?? null);
+  }
+
   const collegateIds = (
     await praticheStessoDebitoreIds(praticaId, "aperta", {
       tenantId: user.tenantId,
@@ -702,6 +818,9 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
     await applyScaricoPromessaPratica(collegata.id, scaricoInput, {
       ultimaLavorazione: lavorazione,
     });
+    if (aggiornaBk) {
+      await applyCodiceScaricoBkPratica(collegata.id, codiceScaricoBk ?? null);
+    }
     collegateAggiornate += 1;
     revalidatePath(`/pratiche/${collegata.id}`);
   }
@@ -916,6 +1035,12 @@ export async function updateContattoPraticaAction(formData: FormData) {
   const codiceScarico = codScaricoRaw || null;
   if (aggiornaCodice) {
     await assertCodiceScaricoOperatoreValido(praticaId, codiceScarico);
+    await assertCanClearCodiceScaricoSeNecessario(
+      user.role,
+      praticaId,
+      codiceScarico,
+      "codiceScarico"
+    );
   }
 
   const isPromessa =
@@ -937,9 +1062,6 @@ export async function updateContattoPraticaAction(formData: FormData) {
     }
   }
 
-  const statoDaCodice =
-    aggiornaCodice && codiceScarico ? statoDaCodiceScarico(codiceScarico) : null;
-
   const praticaCorrente = aggiornaCodice
     ? await (await praticaModel()).findUnique({
         where: { id: praticaId },
@@ -960,7 +1082,7 @@ export async function updateContattoPraticaAction(formData: FormData) {
         ? {
             codiceScarico,
             ...(codiceScaricoCambiato ? { codiceScaricoAt: new Date() } : {}),
-            ...(statoDaCodice ? { stato: statoDaCodice } : {}),
+            // Sit. affido non dipende dal codice operatore (solo bk off / incasso).
             ...(codiceScarico && isCodicePromessaOperatore(codiceScarico)
               ? { esitoContatto: "PROMESSA" }
               : {}),
@@ -1289,37 +1411,11 @@ export async function deleteMessaggioInternoAction(formData: FormData) {
   if (msg.praticaId) revalidatePath(`/pratiche/${msg.praticaId}`);
 }
 
-export async function updatePraticaStatoAction(formData: FormData) {
-  const user = await requireWritablePermission("pratiche:update:stato");
-  const praticaId = String(formData.get("praticaId") || "");
-  const stato = String(formData.get("stato") || "");
-  if (!stato) fail("Stato obbligatorio");
-  await assertPraticaEditable(user, praticaId);
-  const promessaAt =
-    stato === "PROMESSA"
-      ? parseDateOnly(String(formData.get("promessaAt") || ""))
-      : undefined;
-  if (stato === "PROMESSA" && !promessaAt) {
-    fail("Inserisci la data della promessa di pagamento");
-  }
-
-  await (await praticaModel()).update({
-    where: { id: praticaId },
-    data: { stato, ...(promessaAt ? { promessaAt } : {}) },
-  });
-
-  await writeAudit({
-    userId: user.id,
-    action: "stato_update",
-    entity: "pratica",
-    entityId: praticaId,
-    dettaglio: stato,
-  });
-  revalidatePath(`/pratiche/${praticaId}`);
-  revalidatePath("/pratiche");
-  revalidatePath("/");
-  revalidatePath("/affidi");
-  revalidatePath("/report");
+export async function updatePraticaStatoAction(_formData: FormData) {
+  await requireWritablePermission("pratiche:update:stato");
+  fail(
+    "Lo stato pratica è automatico (nuova / in lavorazione / scaduta) e non è modificabile."
+  );
 }
 
 function parseImportoCsv(raw?: string) {
@@ -1337,15 +1433,47 @@ function parseDataCsv(raw?: string) {
   return new Date(Number(it[3]), Number(it[2]) - 1, Number(it[1]), 12, 0, 0);
 }
 
+function parseRipartoManuale(input: {
+  capitale?: number;
+  interessi?: number;
+  spese?: number;
+  speseRec?: number;
+}): { capitale: number; interessi: number; spese: number; speseRec: number; usato: number } | null {
+  if (
+    input.capitale == null &&
+    input.interessi == null &&
+    input.spese == null &&
+    input.speseRec == null
+  ) {
+    return null;
+  }
+  const capitale = Math.max(0, Number(input.capitale) || 0);
+  const interessi = Math.max(0, Number(input.interessi) || 0);
+  const spese = Math.max(0, Number(input.spese) || 0);
+  const speseRec = Math.max(0, Number(input.speseRec) || 0);
+  return {
+    capitale,
+    interessi,
+    spese,
+    speseRec,
+    usato: capitale + interessi + spese + speseRec,
+  };
+}
+
 async function registraIncassoSuPratica(input: {
   userId: string;
   praticaId: string;
   importo: number;
   metodo?: string;
   causale?: string;
+  fattura?: string;
   modo?: string;
   data?: Date;
   dataScadenza?: Date | null;
+  capitale?: number;
+  interessi?: number;
+  spese?: number;
+  speseRec?: number;
 }) {
   const { praticaId, userId } = input;
   if (input.importo <= 0) fail("Importo non valido");
@@ -1362,13 +1490,25 @@ async function registraIncassoSuPratica(input: {
       capitale: acc.capitale + i.capitale,
       interessi: acc.interessi + i.interessi,
       spese: acc.spese + i.spese,
+      speseRec: acc.speseRec + (i.speseRec ?? 0),
     }),
-    { capitale: 0, interessi: 0, spese: 0 }
+    { capitale: 0, interessi: 0, spese: 0, speseRec: 0 }
   );
-  const split = ripartiIncasso(input.importo, pratica, gia);
+  const manuale = parseRipartoManuale(input);
+  let split = manuale ?? ripartiIncasso(input.importo, pratica, gia);
+  if (manuale) {
+    if (Math.abs(manuale.usato - input.importo) > 0.02) {
+      fail("Il riparto (capitale/mora/spese) non coincide con l'importo totale");
+    }
+    split = manuale;
+  }
   const nuovoResiduo = Math.max(0, pratica.residuo - split.usato);
   const user = await getCurrentUser();
   if (!user) fail("Sessione richiesta");
+
+  const fattura = normalizeFatturaIncasso(input.fattura);
+  const modo = normalizeModoIncasso(input.modo);
+  const nonProvv = isModoNonProvvigionabile(modo);
 
   let provvigioneInput: {
     praticaId: string;
@@ -1378,22 +1518,33 @@ async function registraIncassoSuPratica(input: {
     importo: number;
   } | null = null;
   if (pratica.assegnatarioId) {
-    const metodo = input.metodo || "bonifico";
-    const perimetro = perimetroPerNome(
-      parsePerimetri(pratica.mandante.perimetri),
-      pratica.numeroMandante
-    );
-    const pct = perimetro
-      ? resolveProvvigionePercentualeLato(perimetro.pagata, metodo, pratica.codiceScarico)
-      : resolveProvvigionePercentuale(pratica.mandante, metodo);
-    const prov = calcolaProvvigione(split.usato, pct);
-    provvigioneInput = {
-      praticaId,
-      operatoreId: pratica.assegnatarioId,
-      baseImporto: prov.baseImporto,
-      percentuale: prov.percentuale,
-      importo: prov.importo,
-    };
+    if (nonProvv) {
+      // Riga in lista con importo 0: visibile come "np", esclusa dal calcolo.
+      provvigioneInput = {
+        praticaId,
+        operatoreId: pratica.assegnatarioId,
+        baseImporto: split.usato,
+        percentuale: 0,
+        importo: 0,
+      };
+    } else {
+      const metodo = input.metodo || "bonifico";
+      const perimetro = resolvePerimetroPratica(
+        pratica.mandante.perimetri,
+        pratica.numeroMandante
+      );
+      const pct = perimetro
+        ? resolveProvvigionePercentualeLato(perimetro.pagata, metodo, pratica.codiceScarico)
+        : resolveProvvigionePercentuale(pratica.mandante, metodo);
+      const prov = calcolaProvvigione(split.usato, pct);
+      provvigioneInput = {
+        praticaId,
+        operatoreId: pratica.assegnatarioId,
+        baseImporto: prov.baseImporto,
+        percentuale: prov.percentuale,
+        importo: prov.importo,
+      };
+    }
   }
 
   await registraIncassoWithSideEffects(
@@ -1406,47 +1557,250 @@ async function registraIncassoSuPratica(input: {
         capitale: split.capitale,
         interessi: split.interessi,
         spese: split.spese,
+        speseRec: split.speseRec ?? 0,
         metodo: input.metodo || "bonifico",
-        modo: input.modo || "VE",
+        modo,
         causale: input.causale || "",
+        fattura,
         data: input.data || new Date(),
         dataScadenza: input.dataScadenza ?? null,
       },
       provvigione: provvigioneInput,
       praticaUpdate: {
         residuo: nuovoResiduo,
-        stato: nuovoResiduo <= 0.009 ? "INCASSO" : pratica.stato,
+        stato: statoDopoResiduo(nuovoResiduo, pratica.stato),
       },
     }
   );
+
   await writeAudit({
     userId,
     action: "incasso",
     entity: "pratica",
     entityId: praticaId,
-    dettaglio: `${split.usato.toFixed(2)} €`,
+    dettaglio: `${split.usato.toFixed(2)} € · ${modo}${fattura ? ` · fattura ${fattura}` : ""}`,
   });
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath(`/pratiche/${praticaId}/incassi`);
   revalidatePath(`/pratiche/${praticaId}/estratto`);
   revalidatePath(`/pratiche/${praticaId}/fatture`);
+  revalidatePath("/provigioni");
   return split.usato;
+}
+
+function statoDopoResiduo(residuo: number, statoAttuale: string) {
+  if (residuo <= 0.009) return "INCASSO";
+  if (statoAttuale === "INCASSO") return "IN_LAVORAZIONE";
+  return statoAttuale;
+}
+
+function buildProvvigioneIncasso(input: {
+  praticaId: string;
+  assegnatarioId: string | null;
+  codiceScarico: string | null;
+  numeroMandante: string | null;
+  mandante: {
+    provvigionePerc?: number | null;
+    provvigioniMetodo?: string | null;
+    perimetri?: string | null;
+  };
+  metodo: string;
+  modo: string;
+  baseImporto: number;
+}) {
+  if (!input.assegnatarioId) return null;
+  if (isModoNonProvvigionabile(input.modo)) {
+    return {
+      praticaId: input.praticaId,
+      operatoreId: input.assegnatarioId,
+      baseImporto: input.baseImporto,
+      percentuale: 0,
+      importo: 0,
+    };
+  }
+  const perimetro = resolvePerimetroPratica(
+    input.mandante.perimetri,
+    input.numeroMandante
+  );
+  const pct = perimetro
+    ? resolveProvvigionePercentualeLato(
+        perimetro.pagata,
+        input.metodo,
+        input.codiceScarico
+      )
+    : resolveProvvigionePercentuale(input.mandante, input.metodo);
+  const prov = calcolaProvvigione(input.baseImporto, pct);
+  return {
+    praticaId: input.praticaId,
+    operatoreId: input.assegnatarioId,
+    baseImporto: prov.baseImporto,
+    percentuale: prov.percentuale,
+    importo: prov.importo,
+  };
 }
 
 export async function addIncassoAction(formData: FormData) {
   const user = await requireWritablePermission("incassi:create");
   const praticaId = String(formData.get("praticaId") || "");
   await assertPraticaEditable(user, praticaId);
+  const hasRiparto =
+    formData.has("capitale") ||
+    formData.has("interessi") ||
+    formData.has("spese") ||
+    formData.has("speseRec");
   await registraIncassoSuPratica({
     userId: user.id,
     praticaId,
     importo: Number(formData.get("importo") || 0),
     metodo: String(formData.get("metodo") || "bonifico"),
     causale: String(formData.get("causale") || "").trim(),
-    modo: String(formData.get("modo") || "VE").trim() || "VE",
+    fattura: String(formData.get("fattura") || "").trim(),
+    modo: String(formData.get("modo") || "ve").trim() || "ve",
     data: parseDateOnly(String(formData.get("data") || "")) || new Date(),
     dataScadenza: parseDateOnly(String(formData.get("dataScadenza") || "")),
+    ...(hasRiparto
+      ? {
+          capitale: Number(formData.get("capitale") || 0),
+          interessi: Number(formData.get("interessi") || 0),
+          spese: Number(formData.get("spese") || 0),
+          speseRec: Number(formData.get("speseRec") || 0),
+        }
+      : {}),
   });
+  revalidatePath("/provigioni");
+  revalidatePath("/");
+}
+
+export async function updateIncassoAction(formData: FormData) {
+  const user = await requireWritablePermission("incassi:update");
+  const praticaId = String(formData.get("praticaId") || "");
+  const incassoId = String(formData.get("incassoId") || "");
+  if (!incassoId) fail("Incasso non indicato");
+  await assertPraticaEditable(user, praticaId);
+
+  const importoRaw = Number(formData.get("importo") || 0);
+  if (importoRaw <= 0) fail("Importo non valido");
+
+  const pratica = await (await praticaModel()).findUnique({
+    where: { id: praticaId },
+    include: {
+      incassi: true,
+      mandante: { select: { provvigionePerc: true, provvigioniMetodo: true, perimetri: true } },
+    },
+  });
+  if (!pratica) fail("Pratica non trovata");
+  const existing = pratica.incassi.find((i) => i.id === incassoId);
+  if (!existing) fail("Incasso non trovato");
+
+  const altri = pratica.incassi.filter((i) => i.id !== incassoId);
+  const gia = altri.reduce(
+    (acc, i) => ({
+      capitale: acc.capitale + i.capitale,
+      interessi: acc.interessi + i.interessi,
+      spese: acc.spese + i.spese,
+    }),
+    { capitale: 0, interessi: 0, spese: 0 }
+  );
+  const split = ripartiIncasso(importoRaw, pratica, gia);
+  const nuovoResiduo = Math.max(0, pratica.residuo + existing.importo - split.usato);
+  const metodo = String(formData.get("metodo") || existing.metodo || "bonifico");
+  const fattura = normalizeFatturaIncasso(String(formData.get("fattura") || "").trim());
+  const modo = normalizeModoIncasso(String(formData.get("modo") || existing.modo || "ve"));
+  const causale = String(formData.get("causale") || "").trim();
+  const data =
+    parseDateOnly(String(formData.get("data") || "")) ||
+    (existing.data instanceof Date ? existing.data : new Date(existing.data));
+  const dataScadenza = parseDateOnly(String(formData.get("dataScadenza") || ""));
+
+  const provvigioneInput = buildProvvigioneIncasso({
+    praticaId,
+    assegnatarioId: pratica.assegnatarioId,
+    codiceScarico: pratica.codiceScarico,
+    numeroMandante: pratica.numeroMandante,
+    mandante: pratica.mandante,
+    metodo,
+    modo,
+    baseImporto: split.usato,
+  });
+
+  await aggiornaIncassoWithSideEffects(
+    { tenantId: pratica.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId },
+    incassoId,
+    {
+      incasso: {
+        importo: split.usato,
+        capitale: split.capitale,
+        interessi: split.interessi,
+        spese: split.spese,
+        metodo,
+        modo,
+        causale,
+        fattura,
+        data,
+        dataScadenza: dataScadenza ?? existing.dataScadenza ?? null,
+      },
+      provvigione: provvigioneInput,
+      praticaUpdate: {
+        residuo: nuovoResiduo,
+        stato: statoDopoResiduo(nuovoResiduo, pratica.stato),
+      },
+    }
+  );
+
+  await writeAudit({
+    userId: user.id,
+    action: "incasso.update",
+    entity: "pratica",
+    entityId: praticaId,
+    dettaglio: `${incassoId} → ${split.usato.toFixed(2)} € · ${modo}${fattura ? ` · fattura ${fattura}` : ""}`,
+  });
+  revalidatePath(`/pratiche/${praticaId}`);
+  revalidatePath(`/pratiche/${praticaId}/incassi`);
+  revalidatePath(`/pratiche/${praticaId}/estratto`);
+  revalidatePath(`/pratiche/${praticaId}/fatture`);
+  revalidatePath("/provigioni");
+  revalidatePath("/");
+}
+
+export async function deleteIncassoAction(formData: FormData) {
+  const user = await requireWritablePermission("incassi:update");
+  const praticaId = String(formData.get("praticaId") || "");
+  const incassoId = String(formData.get("incassoId") || "");
+  if (!incassoId) fail("Incasso non indicato");
+  await assertPraticaEditable(user, praticaId);
+
+  const pratica = await (await praticaModel()).findUnique({
+    where: { id: praticaId },
+    include: { incassi: true },
+  });
+  if (!pratica) fail("Pratica non trovata");
+  const existing = pratica.incassi.find((i) => i.id === incassoId);
+  if (!existing) fail("Incasso non trovato");
+
+  const nuovoResiduo = Math.max(0, pratica.residuo + existing.importo);
+
+  await eliminaIncassoWithSideEffects(
+    { tenantId: pratica.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId },
+    incassoId,
+    {
+      praticaUpdate: {
+        residuo: nuovoResiduo,
+        stato: statoDopoResiduo(nuovoResiduo, pratica.stato),
+      },
+    }
+  );
+
+  await writeAudit({
+    userId: user.id,
+    action: "incasso.delete",
+    entity: "pratica",
+    entityId: praticaId,
+    dettaglio: `${incassoId} · ${existing.importo.toFixed(2)} €`,
+  });
+  revalidatePath(`/pratiche/${praticaId}`);
+  revalidatePath(`/pratiche/${praticaId}/incassi`);
+  revalidatePath(`/pratiche/${praticaId}/estratto`);
+  revalidatePath(`/pratiche/${praticaId}/fatture`);
   revalidatePath("/provigioni");
   revalidatePath("/");
 }
@@ -1520,7 +1874,11 @@ export async function createPianoAction(formData: FormData) {
   );
   await (await praticaModel()).update({
     where: { id: praticaId },
-    data: { stato: "PIANO" },
+    data: {
+      codiceScarico: "LPP",
+      // LPP = codice scarico; il ciclo di vita resta in lavorazione
+      stato: pratica.stato === "NUOVA" ? "IN_LAVORAZIONE" : pratica.stato === "PIANO" ? "IN_LAVORAZIONE" : pratica.stato,
+    },
   });
   await writeAudit({
     userId: user.id,
@@ -1587,7 +1945,10 @@ export async function createStralcioPianoAction(formData: FormData) {
   );
   await (await praticaModel()).update({
     where: { id: praticaId },
-    data: { stato: "PIANO" },
+    data: {
+      codiceScarico: "LPP",
+      stato: pratica.stato === "NUOVA" || pratica.stato === "PIANO" ? "IN_LAVORAZIONE" : pratica.stato,
+    },
   });
   await writeAudit({
     userId: user.id,

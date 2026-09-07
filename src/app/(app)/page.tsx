@@ -592,7 +592,7 @@ export default async function HomePage({
           />
         ) : null}
         <DashboardKpi
-          title={can(user, "incassi:create") ? "Incassi oggi" : "Scadute"}
+          title={can(user, "incassi:create") ? "Incassi oggi" : "In scadenza 7 gg"}
           value={
             can(user, "incassi:create")
               ? euro(incassiOggi._sum.importo || 0)

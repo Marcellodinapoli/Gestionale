@@ -5,6 +5,8 @@ import { isConnectorProvider } from "@/lib/data/factory";
 import { createConnectorIncassiRepository } from "@/lib/data/connector/ConnectorIncassiRepository";
 import { prismaIncassiRepository } from "@/lib/data/prisma/PrismaIncassiRepository";
 import type {
+  AggiornaIncassoInput,
+  EliminaIncassoInput,
   IncassoFilter,
   IncassiRepository,
   RegistraIncassoInput,
@@ -73,6 +75,7 @@ export function incassiDb(ctx: IncassoDbContext): typeof prisma.incasso {
         metodo: data.metodo != null ? String(data.metodo) : undefined,
         modo: data.modo != null ? String(data.modo) : undefined,
         causale: data.causale != null ? String(data.causale) : undefined,
+        fattura: data.fattura != null ? String(data.fattura) : undefined,
         data: data.data as Date | string | undefined,
         dataScadenza: data.dataScadenza as Date | string | null | undefined,
       }) as never;
@@ -85,6 +88,22 @@ export async function registraIncassoWithSideEffects(
   input: RegistraIncassoInput
 ) {
   return repo(ctx).registra(ctx.tenantSlug, ctx.tenantId, input);
+}
+
+export async function aggiornaIncassoWithSideEffects(
+  ctx: IncassoDbContext,
+  id: string,
+  input: AggiornaIncassoInput
+) {
+  return repo(ctx).aggiorna(ctx.tenantSlug, ctx.tenantId, id, input);
+}
+
+export async function eliminaIncassoWithSideEffects(
+  ctx: IncassoDbContext,
+  id: string,
+  input: EliminaIncassoInput
+) {
+  return repo(ctx).elimina(ctx.tenantSlug, ctx.tenantId, id, input);
 }
 
 function hasPraticaInclude(include: unknown) {

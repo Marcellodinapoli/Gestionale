@@ -88,7 +88,7 @@ export function CodiciMandantePerimetroTable({
                   <Link
                     href={buildPraticheQuery({
                       mandato: r.mandanteId,
-                      ...(r.perimetro !== "—" ? { lotto: r.perimetro } : {}),
+                      ...(r.perimetro !== "—" ? { perimetro: r.perimetro } : {}),
                       sitAffido: "affidata",
                     })}
                     className="font-semibold text-[var(--navy)] hover:text-[var(--accent)]"
@@ -108,8 +108,8 @@ export function CodiciMandantePerimetroTable({
                       <Link
                         href={buildPraticheQuery({
                           mandato: r.mandanteId,
-                          ...(r.perimetro !== "—" ? { lotto: r.perimetro } : {}),
-                          ...(col.key === "ND" ? {} : { codScarico: col.key }),
+                          ...(r.perimetro !== "—" ? { perimetro: r.perimetro } : {}),
+                          ...(col.key === "ND" ? { codScarico: "NULL" } : { codScarico: col.key }),
                         })}
                         className="font-semibold text-[var(--navy)] hover:text-[var(--accent)]"
                         title={

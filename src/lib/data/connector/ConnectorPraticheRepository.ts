@@ -34,7 +34,28 @@ function mapListItem(row: Record<string, unknown>) {
       indirizzo: row.DebitoreIndirizzo ?? row.debitoreIndirizzo,
     };
   }
-  if (row.MandanteCodice != null || row.mandanteCodice != null) {
+  if (row.mandante && typeof row.mandante === "object") {
+    const rawMand = row.mandante as Record<string, unknown>;
+    const m = mapRow(rawMand);
+    if (rawMand.PerimetriJson != null && m.perimetri == null) m.perimetri = rawMand.PerimetriJson;
+    if (rawMand.Perimetri != null && m.perimetri == null) m.perimetri = rawMand.Perimetri;
+    if (rawMand.SmsPreimpostatiJson != null && m.smsPreimpostati == null) {
+      m.smsPreimpostati = rawMand.SmsPreimpostatiJson;
+    }
+    if (rawMand.CodiciScaricoJson != null && m.codiciScarico == null) {
+      m.codiciScarico = rawMand.CodiciScaricoJson;
+    }
+    if (!m.codice && (row.MandanteCodice != null || row.mandanteCodice != null)) {
+      m.codice = row.MandanteCodice ?? row.mandanteCodice;
+    }
+    if (
+      !m.ragioneSociale &&
+      (row.MandanteRagioneSociale != null || row.mandanteRagioneSociale != null)
+    ) {
+      m.ragioneSociale = row.MandanteRagioneSociale ?? row.mandanteRagioneSociale;
+    }
+    p.mandante = m;
+  } else if (row.MandanteCodice != null || row.mandanteCodice != null) {
     p.mandante = {
       codice: row.MandanteCodice ?? row.mandanteCodice,
       ragioneSociale: row.MandanteRagioneSociale ?? row.mandanteRagioneSociale,
@@ -45,17 +66,25 @@ function mapListItem(row: Record<string, unknown>) {
   }
   if (Array.isArray(row.rate)) p.rate = (row.rate as Record<string, unknown>[]).map(mapRow);
   if (Array.isArray(row.incassi)) {
-    p.incassi = (row.incassi as Record<string, unknown>[]).map((i) => ({
-      ...mapRow(i),
-      user: i.UserName ? { name: i.UserName } : undefined,
-    }));
+    p.incassi = (row.incassi as Record<string, unknown>[]).map((i) => {
+      const mapped = mapRow(i);
+      const name = i.UserName ?? i.userName ?? (mapped.userName as string | undefined);
+      return {
+        ...mapped,
+        user: name ? { name: String(name) } : { name: "Operatore" },
+      };
+    });
   }
   if (Array.isArray(row.garanti)) p.garanti = (row.garanti as Record<string, unknown>[]).map(mapRow);
   if (Array.isArray(row.attivita)) {
-    p.attivita = (row.attivita as Record<string, unknown>[]).map((a) => ({
-      ...mapRow(a),
-      user: a.UserName ? { name: a.UserName } : undefined,
-    }));
+    p.attivita = (row.attivita as Record<string, unknown>[]).map((a) => {
+      const mapped = mapRow(a);
+      const name = a.UserName ?? a.userName ?? (mapped.userName as string | undefined);
+      return {
+        ...mapped,
+        user: name ? { name: String(name) } : { name: "Operatore" },
+      };
+    });
   }
   if (Array.isArray(row.fatture)) p.fatture = (row.fatture as Record<string, unknown>[]).map(mapRow);
   if (Array.isArray(row.documenti)) p.documenti = (row.documenti as Record<string, unknown>[]).map(mapRow);

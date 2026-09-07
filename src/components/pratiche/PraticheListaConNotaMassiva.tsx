@@ -9,6 +9,7 @@ import {
   CheckboxSelezione,
   useSelezionePratiche,
 } from "@/components/affidi/affidoSelezione";
+import { useReportPraticheSelezione } from "@/components/pratiche/PraticheConteggi";
 
 export type PraticaListaRow = {
   id: string;
@@ -138,14 +139,22 @@ export function PraticheListaConNotaMassiva({
   pratiche,
   sortColumns,
   canNotaMassiva,
+  /** Tutti gli id del filtro corrente (tutte le pagine). Se assente = solo pagina. */
+  tutteIds,
+  /** Totale pratiche del filtro (per etichetta «N visibili»). */
+  totaleFiltro,
 }: {
   pratiche: PraticaListaRow[];
   sortColumns: SortCol[];
   canNotaMassiva: boolean;
+  tutteIds?: string[];
+  totaleFiltro?: number;
 }) {
   const router = useRouter();
-  const { selected, allRef, allChecked, toggleAll, toggleOne } =
-    useSelezionePratiche(pratiche.map((p) => p.id));
+  const pageIds = pratiche.map((p) => p.id);
+  const scopeIds = tutteIds?.length ? tutteIds : pageIds;
+  const { selected, allRef, allChecked, toggleAll, toggleOne, scopeTotal } =
+    useSelezionePratiche(pageIds, { scopeIds });
   const [nota, setNota] = useState("");
   const [importante, setImportante] = useState(false);
   const [fissa, setFissa] = useState(false);
@@ -154,6 +163,7 @@ export function PraticheListaConNotaMassiva({
   const selectedIds = [...selected];
   const colSpan = LIST_COLS.length + (canNotaMassiva ? 1 : 0);
   const sortByKey = new Map(sortColumns.map((c) => [c.key, c]));
+  useReportPraticheSelezione(selectedIds.length, scopeTotal);
 
   function inviaNotaMassiva() {
     const testo = nota.trim();
@@ -280,7 +290,8 @@ export function PraticheListaConNotaMassiva({
             }`}
           >
             <strong>Importante</strong> = sfondo giallo. <strong>Fissa</strong> = pin in alto
-            nella pratica (come Togli/Fissa in scheda).
+            nella pratica (come Togli/Fissa in scheda). La spunta in intestazione seleziona{" "}
+            <strong>tutte</strong> le pratiche del filtro (anche le altre pagine).
           </p>
           {msg ? (
             <p
@@ -311,7 +322,7 @@ export function PraticheListaConNotaMassiva({
                       inputRef={allRef}
                       checked={allChecked}
                       onChange={toggleAll}
-                      label="Seleziona tutte"
+                      label={`Seleziona tutte (${scopeTotal})`}
                     />
                   </th>
                 ) : null}

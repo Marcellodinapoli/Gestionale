@@ -41,6 +41,7 @@ export type Permission =
   | "pratiche:update:stato"
   | "pratiche:work"
   | "incassi:create"
+  | "incassi:update"
   | "import:run"
   | "report:view"
   | "statistiche:view"
@@ -68,6 +69,8 @@ const MAP: Record<Permission, Role[]> = {
   "pratiche:work": ["ADMIN", "SUPERVISOR", "OPERATOR"],
   "pratiche:nota-massiva": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "incassi:create": ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE"],
+  /** Modifica/elimina incassi già registrati: non operatore, supervisor, bk off. */
+  "incassi:update": ["ADMIN", "AMMINISTRAZIONE"],
   "import:run": ["ADMIN", "BACK_OFFICE"],
   "report:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE"],
   "statistiche:view": ["ADMIN", "OPERATOR", "SUPERVISOR", "AMMINISTRAZIONE"],
@@ -103,6 +106,24 @@ export function richiedeInternoPerChiamata(role: Role) {
 
 /** Popup incasso in barra strumenti pratica (esclusi operatore e supervisor). */
 export function canShowIncassoPopup(role: Role | string | null | undefined) {
+  return role !== "SUPERVISOR" && role !== "OPERATOR";
+}
+
+/** Modifica/elimina incassi registrati: esclusi operatore, supervisor e back office. */
+export function canEditIncassiRegistrati(role: Role | string | null | undefined) {
+  return role === "ADMIN" || role === "AMMINISTRAZIONE";
+}
+
+/** Codice scarico back office: editabile da tutti tranne operatore e supervisor. */
+export function canEditCodiceScaricoBk(role: Role | string | null | undefined) {
+  return role !== "SUPERVISOR" && role !== "OPERATOR";
+}
+
+/**
+ * Cancella (svuota) codice scarico operatore e/o bk off:
+ * consentito a tutti tranne operatore e supervisor.
+ */
+export function canClearCodiceScarico(role: Role | string | null | undefined) {
   return role !== "SUPERVISOR" && role !== "OPERATOR";
 }
 

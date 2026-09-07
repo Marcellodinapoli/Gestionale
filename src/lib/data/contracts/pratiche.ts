@@ -37,26 +37,65 @@ export type PraticaListFilter = {
   esito?: string;
   mandanteId?: string;
   mandanteIds?: string[];
+  /** Esclude questi mandanti (≠ mandato). */
+  mandanteIdsNotIn?: string[];
   assegnatarioId?: string;
   assegnatarioIdsIn?: string[];
+  assegnatarioIdsNotIn?: string[];
   operatoreId?: string;
   numeroMandante?: string;
   numeroMandantiIn?: string[];
+  /** Esclude questi lotti (≠ lotto). */
+  numeroMandantiNotIn?: string[];
   numeroMandanteNotNull?: boolean;
   /** OR perimetri gruppo: mandanteId + optional lotti */
   perimetroOr?: Array<{ mandanteId: string; numeroMandanti?: string[] }>;
   debitoreContains?: string;
+  debitoreNotContains?: string;
   capGte?: string;
   capLte?: string;
   cittaContains?: string;
+  cittaNotContains?: string;
   provContains?: string;
+  provNotContains?: string;
   telefonoContains?: string;
+  telefonoNotContains?: string;
   cfPivaContains?: string;
+  cfPivaNotContains?: string;
   garanteContains?: string;
+  garanteNotContains?: string;
   noteContains?: string;
+  noteNotContains?: string;
   nPraticaGte?: string;
   nPraticaLte?: string;
   codScarico?: string;
+  /** Più codici scarico (OR). */
+  codScaricoIn?: string[];
+  /** Esclude i codici elencati. */
+  codScaricoNotIn?: string[];
+  /** Solo pratiche senza codice scarico. */
+  codScaricoIsNull?: boolean;
+  /** Codice scarico valorizzato (≠ null). */
+  codScaricoNotNull?: boolean;
+  /** Codice scarico back office. */
+  codScaricoBk?: string;
+  codScaricoBkIn?: string[];
+  codScaricoBkNotIn?: string[];
+  codScaricoBkIsNull?: boolean;
+  codScaricoBkNotNull?: boolean;
+  /** Assegnatario o titolare (OR) — multi. */
+  operatoreIdsIn?: string[];
+  /** Esclude assegnatario/titolare (≠ codice operatore). */
+  operatoreIdsNotIn?: string[];
+  /** Chiavi perimetro (numeroMandante / ImportBatch.Perimetro). */
+  perimetroKeys?: string[];
+  /** Esclude chiavi perimetro (≠ perimetro). */
+  perimetroKeysNot?: string[];
+  /**
+   * F1 / ricerca ampia: solo scope tenant (no filtro assegnatario);
+   * perimetro resta via perimetroKeys se presente.
+   */
+  cercaAmpia?: boolean;
   affidoGte?: string;
   affidoLt?: string;
   affidoLte?: string;
@@ -82,6 +121,8 @@ export type PraticaListFilter = {
   /** Ricerca typeahead per campo */
   searchCampo?: string;
   searchTerm?: string;
+  /** Match esatto CF debitore o garante (collegate F9/F10). */
+  codiciFiscaliIn?: string[];
 };
 
 export type PraticaListRequest = {
@@ -111,12 +152,15 @@ export type PraticaUpdateInput = {
   ultimaLavorazioneAt?: Date | null;
   codiceScarico?: string | null;
   codiceScaricoAt?: Date | null;
+  codiceScaricoBk?: string | null;
+  codiceScaricoBkAt?: Date | null;
   stato?: string;
   esitoContatto?: string | null;
   tipoContatto?: string | null;
   memoAt?: Date | null;
   promessaAt?: Date | null;
   promessaImporto?: number | null;
+  promessaMetodo?: string | null;
   assegnatarioId?: string | null;
   operatoreTitolareId?: string | null;
   residuo?: number;

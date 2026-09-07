@@ -11,6 +11,7 @@ import {
 import { etichettaTipoAffido, isAffidoTemporaneo } from "@/lib/affido";
 import { isPraticaChiusa } from "@/lib/praticaCollegata";
 import { codiceScaricoPratica } from "@/lib/scarico";
+import { statoOperativoPratica } from "@/lib/statoOperativoPratica";
 import { StatoBadge } from "@/components/ui";
 
 function euro(value: number) {
@@ -118,7 +119,14 @@ export function AffidiPraticheOperatore({
                 </td>
                 <td>{p.mandante.codice}</td>
                 <td>
-                  <StatoBadge stato={p.stato} />
+                  <StatoBadge
+                    stato={statoOperativoPratica({
+                      stato: p.stato,
+                      assegnatarioId: p.assegnatarioId,
+                      scadenza: p.scadenza,
+                      codiceScaricoBk: p.codiceScaricoBk,
+                    })}
+                  />
                 </td>
                 <td className="font-mono text-xs">
                   {codiceScaricoPratica(p.stato, p.codiceScarico) || "—"}

@@ -28,11 +28,14 @@ export function NuovoOperatoreForm({
   const [condizioneEconomica, setCondizioneEconomica] = useState<"SOLO_PROVV" | "FISSO_PROVV">(
     "SOLO_PROVV"
   );
+  const [consulenteEsterno, setConsulenteEsterno] = useState(false);
+  const [creditCalcEnabled, setCreditCalcEnabled] = useState(false);
   const [codiceFiscale, setCodiceFiscale] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const soloFormazione = accesso === "formazione";
   const mostraCondizioneEconomica = !soloFormazione && role === "OPERATOR";
+  const mostraCreditCalc = !soloFormazione && role === "OPERATOR";
   const annoNascita = annoNascitaDaCodiceFiscale(codiceFiscale);
 
   const inputCls = "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
@@ -213,6 +216,53 @@ export function NuovoOperatoreForm({
           />
         </label>
       </div>
+
+      {mostraCreditCalc ? (
+        <div className="space-y-2 border-t border-[var(--line)] pt-3">
+          <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
+            CreditCalc / consulente esterno
+          </p>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="consulenteEsterno"
+              value="1"
+              checked={consulenteEsterno}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setConsulenteEsterno(on);
+                if (!on) setCreditCalcEnabled(false);
+              }}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-medium text-[var(--navy)]">Consulente esterno</span>
+              <span className="block text-xs text-[var(--muted)]">
+                Profilo distinto; in CreditCalc vedrà solo le pratiche in affido.
+              </span>
+            </span>
+          </label>
+          <label
+            className={`flex items-start gap-2 text-sm ${consulenteEsterno ? "" : "opacity-50"}`}
+          >
+            <input
+              type="checkbox"
+              name="creditCalcEnabled"
+              value="1"
+              checked={creditCalcEnabled}
+              disabled={!consulenteEsterno}
+              onChange={(e) => setCreditCalcEnabled(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-medium text-[var(--navy)]">Abilita accesso CreditCalc</span>
+              <span className="block text-xs text-[var(--muted)]">
+                Apertura pratiche mobile, note e codice scarico.
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
       <button

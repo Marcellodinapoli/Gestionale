@@ -40,6 +40,10 @@ import {
 } from "@/components/PaginazioneBar";
 import { PraticheFiltriBar } from "@/components/pratiche/PraticheFiltriBar";
 import { PraticheListaConNotaMassiva } from "@/components/pratiche/PraticheListaConNotaMassiva";
+import {
+  PraticheConteggiProvider,
+  PraticheConteggiSubtitle,
+} from "@/components/pratiche/PraticheConteggi";
 import { can } from "@/lib/permissions";
 import { isAffidoTemporaneo } from "@/lib/affido";
 import { codiceScaricoPratica } from "@/lib/scarico";
@@ -49,9 +53,16 @@ import {
   defaultOperatoreFiltroId,
   memberIdsOperatoreFiltro,
 } from "@/lib/filtriOperatore";
+import {
+  STATI_FILTRO_PRATICHE,
+  statoOperativoPratica,
+} from "@/lib/statoOperativoPratica";
 
 /** Stato predefinito all’apertura dell’elenco pratiche. */
 const STATO_DEFAULT = "IN_LAVORAZIONE";
+const STATI_FILTRO_OK = new Set(
+  STATI_FILTRO_PRATICHE.map((s) => s.value as string)
+);
 
 function buildSortHref(
   base: Record<string, string | boolean | number | undefined>,
@@ -72,16 +83,23 @@ export default async function PratichePage({
   const praticaModel = praticaDbFromUser(user);
   const sp = await searchParams;
 
-  const needsStatoDefault = !("stato" in sp);
+  const isOperatore = user.role === "OPERATOR";
+  const needsStatoDefault =
+    isOperatore
+      ? sp.stato !== STATO_DEFAULT
+      : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
   const needsOperatoreDefault =
     Boolean(defaultOperatoreFiltroId(user.role, user.id)) && !("operatore" in sp);
 
   if (needsStatoDefault || needsOperatoreDefault) {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
-      if (v != null && v !== "") params.set(k, v);
+      if (v != null && v !== "" && k !== "stato") params.set(k, v);
     }
-    if (needsStatoDefault) params.set("stato", STATO_DEFAULT);
+    params.set("stato", STATO_DEFAULT);
+    if (!isOperatore && !needsStatoDefault && sp.stato) {
+      params.set("stato", sp.stato);
+    }
     if (needsOperatoreDefault) params.set("operatore", user.id);
     redirect(`/pratiche?${params.toString()}`);
   }
@@ -111,7 +129,7 @@ export default async function PratichePage({
     periCtx.memberIds
   );
 
-  const [operatoriListRaw, mandantiListRaw, temporaneaIdsRaw, lottiRows, importoTotIdsRaw, totIncassatoIdsRaw] =
+  const [operatoriListRaw, meRaw, mandantiListRaw, temporaneaIdsRaw, lottiRows, importoTotIdsRaw, totIncassatoIdsRaw] =
     await Promise.all([
       canUseOperatoreFiltroUi
         ? usersDbFromUser(user).findMany({
@@ -125,6 +143,10 @@ export default async function PratichePage({
             select: { id: true, name: true, acronimo: true },
           })
         : Promise.resolve([]),
+      usersDbFromUser(user).findUnique({
+        where: { id: user.id },
+        select: { id: true, name: true, acronimo: true },
+      }),
       mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { codice: "asc" },
@@ -151,7 +173,24 @@ export default async function PratichePage({
         : Promise.resolve(null as string[] | null),
     ]);
 
-  const operatoriList = operatoriListRaw;
+  const operatoriList = (() => {
+    const byId = new Map<string, { id: string; name: string; acronimo: string | null }>();
+    for (const o of operatoriListRaw) {
+      byId.set(o.id, {
+        id: o.id,
+        name: o.name,
+        acronimo: o.acronimo ?? null,
+      });
+    }
+    if (meRaw && canUseOperatoreFiltroUi) {
+      byId.set(meRaw.id, {
+        id: meRaw.id,
+        name: meRaw.name,
+        acronimo: meRaw.acronimo ?? null,
+      });
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "it"));
+  })();
   const mandantiList =
     periCtx.nelGruppo && periCtx.gruppoMandanti.length
       ? mandantiListRaw.filter((m) =>
@@ -241,15 +280,26 @@ export default async function PratichePage({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const safeSkip = (safePage - 1) * pageSize;
+  const canNotaMassiva = can(user, "pratiche:nota-massiva");
 
-  const pratiche = await praticaModel.findMany({
-    where,
-    include,
-    orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
-    skip: safeSkip,
-    take: pageSize,
-  });
+  const [pratiche, tutteIdsRows] = await Promise.all([
+    praticaModel.findMany({
+      where,
+      include,
+      orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
+      skip: safeSkip,
+      take: pageSize,
+    }),
+    canNotaMassiva && total > 0
+      ? praticaModel.findMany({
+          where,
+          select: { id: true },
+          // Senza orderBy: più veloce; serve solo per la selezione massiva.
+        })
+      : Promise.resolve([] as Array<{ id: string }>),
+  ]);
 
+  const tutteIds = tutteIdsRows.map((r) => r.id);
   const codaNavPagina = { ...codaNav, listPage: safePage };
 
   const queryBase: Record<string, string | boolean | number | undefined> = {
@@ -276,8 +326,6 @@ export default async function PratichePage({
     ? buildPraticaCodaHref(pratiche[0].id, codaNavPagina, pageIds)
     : null;
 
-  const canNotaMassiva = can(user, "pratiche:nota-massiva");
-
   const sortColumns = SORT_COLUMNS.map((col) => {
     const active = codaNav.sort === col.key;
     return {
@@ -298,11 +346,16 @@ export default async function PratichePage({
     return {
       id: p.id,
       numero: p.numero,
-      stato: p.stato,
+      stato: statoOperativoPratica({
+        stato: p.stato,
+        assegnatarioId: p.assegnatarioId,
+        scadenza: p.scadenza,
+        codiceScaricoBk: p.codiceScaricoBk,
+      }),
       residuoLabel: euro(p.residuo),
       esitoLabel: esitoContattoLabel(p.esitoContatto),
       ultimaLavorazioneLabel: dataIt(p.ultimaLavorazioneAt ?? null),
-      debitoreNome: `${p.debitore.nome} ${p.debitore.cognome}`,
+      debitoreNome: `${p.debitore.cognome} ${p.debitore.nome}`.trim(),
       debitoreTelefono: p.debitore.telefono,
       debitoreCap: p.debitore.cap,
       debitoreCitta: p.debitore.citta,
@@ -319,12 +372,13 @@ export default async function PratichePage({
       rateScaduteLabel: nRateScadute > 0 ? String(nRateScadute) : "—",
       totIncassatoLabel: euro(totInc),
       importoTotaleLabel: euro(impTot),
-      garanteLabel: g ? `${g.nome} ${g.cognome}`.trim() : "—",
+      garanteLabel: g ? `${g.cognome} ${g.nome}`.trim() : "—",
       href: buildPraticaCodaHref(p.id, codaNavPagina, pageIds),
     };
   });
 
   return (
+    <PraticheConteggiProvider totale={total}>
     <div className="flex h-full min-h-0 flex-col pb-4">
       <PageHeader
         title="Pratiche"
@@ -335,7 +389,12 @@ export default async function PratichePage({
               ? `${total} posizioni nei perimetri del gruppo`
               : user.role === "SUPERVISOR"
                 ? `${total} nei perimetri del gruppo`
-                : `${total} visibili`
+                : (
+                    <PraticheConteggiSubtitle
+                      showSelezione={canNotaMassiva}
+                      fallback={`${total} visibili`}
+                    />
+                  )
         }
       />
       {periCtx.nessunPerimetroGruppo ? (
@@ -351,6 +410,8 @@ export default async function PratichePage({
       <PraticheFiltriBar
         q={sp.q}
         stato={sp.stato}
+        nascondiFiltroStato={user.role === "OPERATOR"}
+        operatoreDefaultId={defaultOperatoreFiltroId(user.role, user.id)}
         lavorate={codaNav.filtro?.lavorate}
         lavorateData={codaNav.filtro?.lavorateData}
         lavorateDa={codaNav.filtro?.lavorateDa}
@@ -373,6 +434,8 @@ export default async function PratichePage({
           pratiche={praticheRows}
           sortColumns={sortColumns}
           canNotaMassiva={canNotaMassiva}
+          tutteIds={canNotaMassiva ? tutteIds : undefined}
+          totaleFiltro={total}
         />
         {total > 0 ? (
           <PaginazioneBar
@@ -380,14 +443,14 @@ export default async function PratichePage({
             totalPages={totalPages}
             hrefForPage={(p) => buildPraticheQuery({ ...queryBase, page: p })}
             right={
-              <span className="text-xs text-[var(--muted)]">
-                {Math.min(safeSkip + 1, total)}–
-                {Math.min(safeSkip + PRATICHE_PAGE_SIZE, total)} di {total}
+              <span className="text-xs font-semibold tabular-nums text-[var(--navy)]">
+                {Math.min(safeSkip + PRATICHE_PAGE_SIZE, total)}/{total}
               </span>
             }
           />
         ) : null}
       </div>
     </div>
+    </PraticheConteggiProvider>
   );
 }

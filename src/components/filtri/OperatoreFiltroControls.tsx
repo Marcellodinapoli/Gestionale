@@ -40,12 +40,18 @@ export function OperatoreFiltroControls({
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>(() => parseOperatoreList(operatore));
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     setSelected(parseOperatoreList(operatore));
   }, [operatore]);
 
   useEffect(() => {
+    if (!hydrated) return;
     const allowed = new Set(operatori.map((o) => o.id));
     setSelected((prev) => {
       const filtered = prev.filter((id) => allowed.has(id));
@@ -55,7 +61,7 @@ export function OperatoreFiltroControls({
       }
       return prev;
     });
-  }, [operatori, onOperatoreChange]);
+  }, [hydrated, operatori, onOperatoreChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +73,10 @@ export function OperatoreFiltroControls({
   }, [open]);
 
   const joined = joinOperatoreList(selected);
-  const canSelect = !disabled && operatori.length > 0;
+  const canSelect = hydrated && !disabled && operatori.length > 0;
+  const selectedOpts = selected
+    .map((id) => operatori.find((o) => o.id === id))
+    .filter(Boolean) as OperatoreFiltroOption[];
 
   function applySelected(next: string[]) {
     setSelected(next);
@@ -81,11 +90,13 @@ export function OperatoreFiltroControls({
     applySelected([...set]);
   }
 
-  const riepilogo = selected.length
-    ? `${selected.length} operator${selected.length === 1 ? "e" : "i"} selezionat${selected.length === 1 ? "o" : "i"}`
-    : disabled
-      ? "Non disponibile per il tuo profilo"
-      : "Seleziona uno o più codici operatore";
+  const riepilogo = selectedOpts.length
+    ? selectedOpts.map((o) => codiceOperatoreFiltro(o)).join(", ")
+    : selected.length
+      ? `${selected.length} operator${selected.length === 1 ? "e" : "i"}`
+      : disabled
+        ? "Non disponibile per il tuo profilo"
+        : "Seleziona uno o più codici operatore";
 
   return (
     <div ref={rootRef} className="relative min-w-0">
@@ -115,10 +126,11 @@ export function OperatoreFiltroControls({
         <span className="text-[var(--muted)]">|</span>
         <button
           type="button"
-          disabled={!canSelect}
+          {...(!canSelect ? { disabled: true as const } : {})}
           onClick={() => canSelect && setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls={listId}
+          aria-disabled={!canSelect}
           className="flex min-w-0 flex-1 items-center gap-1 px-1 text-left text-xs text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className="min-w-0 flex-1 truncate">{riepilogo}</span>

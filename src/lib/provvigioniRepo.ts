@@ -89,10 +89,8 @@ function hasInclude(include: unknown, key: string) {
 }
 
 function hasPraticaDebitoreInclude(include: unknown) {
-  if (!include || typeof include !== "object") return false;
-  const pratica = (include as Record<string, unknown>).pratica;
-  if (!pratica || typeof pratica !== "object") return false;
-  return "debitore" in (pratica as Record<string, unknown>);
+  // Qualsiasi include pratica: il connector carica pratica + debitore insieme.
+  return hasInclude(include, "pratica");
 }
 
 function mapFindManyRow(row: Record<string, unknown>, args: Prisma.ProvvigioneFindManyArgs) {
@@ -115,10 +113,28 @@ function mapFindManyRow(row: Record<string, unknown>, args: Prisma.ProvvigioneFi
       const prRow = row.pratica as Record<string, unknown>;
       const prInc = inc.pratica as Record<string, unknown>;
       const praticaMapped = applySelect(prRow, prInc.select);
-      if (prInc.include && typeof prInc.include === "object" && "debitore" in prInc.include) {
+      if (prInc.select && typeof prInc.select === "object" && "debitore" in prInc.select) {
+        const debSel = (prInc.select as { debitore?: { select?: unknown } | boolean }).debitore;
+        (praticaMapped as Record<string, unknown>).debitore = applySelect(
+          prRow.debitore as Record<string, unknown>,
+          debSel && typeof debSel === "object" ? debSel.select : undefined
+        );
+      } else if (prInc.include && typeof prInc.include === "object" && "debitore" in prInc.include) {
         (praticaMapped as Record<string, unknown>).debitore = applySelect(
           prRow.debitore as Record<string, unknown>,
           (prInc.include as { debitore?: { select?: unknown } }).debitore?.select
+        );
+      }
+      if (prInc.select && typeof prInc.select === "object" && "mandante" in prInc.select) {
+        const manSel = (prInc.select as { mandante?: { select?: unknown } | boolean }).mandante;
+        const manRow = (prRow.mandante ?? {}) as Record<string, unknown>;
+        // Connector espone Perimetri/PerimetriJson — normalizza a perimetri.
+        if (manRow.perimetri == null && (manRow.Perimetri != null || manRow.PerimetriJson != null)) {
+          manRow.perimetri = manRow.Perimetri ?? manRow.PerimetriJson;
+        }
+        (praticaMapped as Record<string, unknown>).mandante = applySelect(
+          manRow,
+          manSel && typeof manSel === "object" ? manSel.select : undefined
         );
       }
       (mapped as Record<string, unknown>).pratica = praticaMapped;

@@ -23,7 +23,7 @@ export type IncassoListRequest = {
 
 const INCASSO_COLS = `
   i.Id, i.TenantId, i.PraticaId, i.UserId, i.Importo, i.Capitale, i.Interessi,
-  i.Spese, i.SpeseRec, i.Metodo, i.Modo, i.Causale, i.Data, i.DataScadenza, i.CreatedAt
+  i.Spese, i.SpeseRec, i.Metodo, i.Modo, i.Causale, i.Fattura, i.Data, i.DataScadenza, i.CreatedAt
 `;
 
 function bindIncassoFilter(
@@ -231,6 +231,7 @@ export type RegistraIncassoBody = {
     metodo?: string;
     modo?: string;
     causale?: string;
+    fattura?: string;
     data?: string;
     dataScadenza?: string | null;
   };
@@ -274,17 +275,18 @@ export async function registraIncasso(
       .input("metodo", sql.NVarChar(30), inc.metodo ?? "bonifico")
       .input("modo", sql.NVarChar(10), inc.modo ?? "VE")
       .input("causale", sql.NVarChar(500), inc.causale ?? "")
+      .input("fattura", sql.NVarChar(80), inc.fattura ?? "")
       .input("data", sql.DateTime2, inc.data ? new Date(inc.data) : new Date())
       .input("dataScadenza", sql.DateTime2, inc.dataScadenza ? new Date(inc.dataScadenza) : null)
       .query(`
         INSERT INTO dbo.Incassi (
           TenantId, PraticaId, UserId, Importo, Capitale, Interessi, Spese, SpeseRec,
-          Metodo, Modo, Causale, Data, DataScadenza
+          Metodo, Modo, Causale, Fattura, Data, DataScadenza
         )
         OUTPUT INSERTED.*
         VALUES (
           @tenantId, @praticaId, @userId, @importo, @capitale, @interessi, @spese, @speseRec,
-          @metodo, @modo, @causale, @data, @dataScadenza
+          @metodo, @modo, @causale, @fattura, @data, @dataScadenza
         )
       `);
     const incassoRow = incRes.recordset[0];
@@ -319,6 +321,165 @@ export async function registraIncasso(
 
     await tx.commit();
     return incassoRow;
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  }
+}
+
+export type AggiornaIncassoBody = {
+  incasso: {
+    importo: number;
+    capitale?: number;
+    interessi?: number;
+    spese?: number;
+    speseRec?: number;
+    metodo?: string;
+    modo?: string;
+    causale?: string;
+    fattura?: string;
+    data?: string;
+    dataScadenza?: string | null;
+  };
+  provvigione?: {
+    praticaId: string;
+    operatoreId: string;
+    baseImporto: number;
+    percentuale: number;
+    importo: number;
+  } | null;
+  praticaUpdate: { residuo: number; stato: string };
+};
+
+export async function aggiornaIncasso(
+  cfg: ConnectorConfig["db"],
+  tenantId: string,
+  incassoId: string,
+  body: AggiornaIncassoBody
+) {
+  const pool = await getPool(cfg);
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const existing = await new sql.Request(tx)
+      .input("id", sql.UniqueIdentifier, incassoId)
+      .input("tenantId", sql.UniqueIdentifier, tenantId)
+      .query(`
+        SELECT Id, PraticaId FROM dbo.Incassi
+        WHERE Id = @id AND TenantId = @tenantId
+      `);
+    const row = existing.recordset[0];
+    if (!row) throw new Error("Incasso non trovato");
+
+    const inc = body.incasso;
+    const upd = await new sql.Request(tx)
+      .input("id", sql.UniqueIdentifier, incassoId)
+      .input("importo", sql.Decimal(18, 2), inc.importo)
+      .input("capitale", sql.Decimal(18, 2), inc.capitale ?? 0)
+      .input("interessi", sql.Decimal(18, 2), inc.interessi ?? 0)
+      .input("spese", sql.Decimal(18, 2), inc.spese ?? 0)
+      .input("speseRec", sql.Decimal(18, 2), inc.speseRec ?? 0)
+      .input("metodo", sql.NVarChar(30), inc.metodo ?? "bonifico")
+      .input("modo", sql.NVarChar(10), inc.modo ?? "ve")
+      .input("causale", sql.NVarChar(500), inc.causale ?? "")
+      .input("fattura", sql.NVarChar(80), inc.fattura ?? "")
+      .input("data", sql.DateTime2, inc.data ? new Date(inc.data) : new Date())
+      .input("dataScadenza", sql.DateTime2, inc.dataScadenza ? new Date(inc.dataScadenza) : null)
+      .query(`
+        UPDATE dbo.Incassi SET
+          Importo = @importo,
+          Capitale = @capitale,
+          Interessi = @interessi,
+          Spese = @spese,
+          SpeseRec = @speseRec,
+          Metodo = @metodo,
+          Modo = @modo,
+          Causale = @causale,
+          Fattura = @fattura,
+          Data = @data,
+          DataScadenza = @dataScadenza
+        OUTPUT INSERTED.*
+        WHERE Id = @id
+      `);
+
+    await new sql.Request(tx)
+      .input("incassoId", sql.UniqueIdentifier, incassoId)
+      .query(`DELETE FROM dbo.Provvigioni WHERE IncassoId = @incassoId`);
+
+    if (body.provvigione) {
+      const prov = body.provvigione;
+      await new sql.Request(tx)
+        .input("tenantId", sql.UniqueIdentifier, tenantId)
+        .input("incassoId", sql.UniqueIdentifier, incassoId)
+        .input("praticaId", sql.UniqueIdentifier, prov.praticaId)
+        .input("operatoreId", sql.UniqueIdentifier, prov.operatoreId)
+        .input("baseImporto", sql.Decimal(18, 2), prov.baseImporto)
+        .input("percentuale", sql.Decimal(8, 4), prov.percentuale)
+        .input("importo", sql.Decimal(18, 2), prov.importo)
+        .query(`
+          INSERT INTO dbo.Provvigioni (
+            TenantId, IncassoId, PraticaId, OperatoreId, BaseImporto, Percentuale, Importo
+          )
+          VALUES (@tenantId, @incassoId, @praticaId, @operatoreId, @baseImporto, @percentuale, @importo)
+        `);
+    }
+
+    await new sql.Request(tx)
+      .input("praticaId", sql.UniqueIdentifier, String(row.PraticaId))
+      .input("residuo", sql.Decimal(18, 2), body.praticaUpdate.residuo)
+      .input("stato", sql.NVarChar(30), body.praticaUpdate.stato)
+      .query(`
+        UPDATE dbo.Pratiche SET Residuo = @residuo, Stato = @stato, UpdatedAt = SYSUTCDATETIME()
+        WHERE Id = @praticaId
+      `);
+
+    await tx.commit();
+    return upd.recordset[0];
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  }
+}
+
+export async function eliminaIncasso(
+  cfg: ConnectorConfig["db"],
+  tenantId: string,
+  incassoId: string,
+  praticaUpdate: { residuo: number; stato: string }
+) {
+  const pool = await getPool(cfg);
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const existing = await new sql.Request(tx)
+      .input("id", sql.UniqueIdentifier, incassoId)
+      .input("tenantId", sql.UniqueIdentifier, tenantId)
+      .query(`
+        SELECT Id, PraticaId FROM dbo.Incassi
+        WHERE Id = @id AND TenantId = @tenantId
+      `);
+    const row = existing.recordset[0];
+    if (!row) throw new Error("Incasso non trovato");
+
+    await new sql.Request(tx)
+      .input("incassoId", sql.UniqueIdentifier, incassoId)
+      .query(`DELETE FROM dbo.Provvigioni WHERE IncassoId = @incassoId`);
+
+    await new sql.Request(tx)
+      .input("id", sql.UniqueIdentifier, incassoId)
+      .query(`DELETE FROM dbo.Incassi WHERE Id = @id`);
+
+    await new sql.Request(tx)
+      .input("praticaId", sql.UniqueIdentifier, String(row.PraticaId))
+      .input("residuo", sql.Decimal(18, 2), praticaUpdate.residuo)
+      .input("stato", sql.NVarChar(30), praticaUpdate.stato)
+      .query(`
+        UPDATE dbo.Pratiche SET Residuo = @residuo, Stato = @stato, UpdatedAt = SYSUTCDATETIME()
+        WHERE Id = @praticaId
+      `);
+
+    await tx.commit();
+    return { ok: true };
   } catch (err) {
     await tx.rollback();
     throw err;

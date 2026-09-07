@@ -136,10 +136,9 @@ export function CercaPraticaPopup({
       </div>
 
       <p className="mb-2 text-[11px] text-[var(--muted)]">
-        Digita almeno 2 caratteri.
-        {campo === "note"
-          ? " Cerca nel registro note e nelle note di pratica."
-          : " Altri criteri di ricerca verranno aggiunti in seguito."}
+        Digita almeno 2 caratteri. Cerca in tutte le pratiche (qualsiasi stato, anche da
+        affidare)
+        {campo === "note" ? "; nel registro note e nelle note di pratica." : "."}
       </p>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--line)] bg-white">
@@ -154,7 +153,8 @@ export function CercaPraticaPopup({
                 <th className="px-3 py-2">Contratto</th>
                 <th className="px-3 py-2">Debitore</th>
                 <th className="px-3 py-2">Mand.</th>
-                <th className="px-3 py-2">Stato</th>
+                <th className="px-3 py-2">Sit. affido</th>
+                <th className="px-3 py-2">Operatore</th>
                 {campo === "note" ? (
                   <th className="px-3 py-2">Nota</th>
                 ) : null}
@@ -188,6 +188,7 @@ export function CercaPraticaPopup({
                     </td>
                     <td className="px-3 py-2">{p.mandante}</td>
                     <td className="px-3 py-2">{p.statoLabel}</td>
+                    <td className="px-3 py-2">{p.assegnatario || "—"}</td>
                     {campo === "note" ? (
                       <td className="max-w-[200px] truncate px-3 py-2 text-xs text-[var(--muted)]">
                         {p.notaAnteprima || "—"}

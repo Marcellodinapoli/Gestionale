@@ -122,7 +122,7 @@ export class PrismaPraticheRepository implements PraticheRepository {
         data: {
           assegnatarioId: input.assegnatarioId ?? null,
           operatoreTitolareId: input.titolareId ?? null,
-          stato: pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
+          stato: pratica.stato === "NUOVA" ? "IN_LAVORAZIONE" : pratica.stato,
         },
       });
     } else {
@@ -131,7 +131,7 @@ export class PrismaPraticheRepository implements PraticheRepository {
         data: {
           assegnatarioId: input.assegnatarioId ?? null,
           operatoreTitolareId: input.assegnatarioId ?? null,
-          stato: pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
+          stato: pratica.stato === "NUOVA" ? "IN_LAVORAZIONE" : pratica.stato,
         },
       });
     }

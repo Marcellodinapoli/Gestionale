@@ -1,7 +1,24 @@
 import { addIncassoAction } from "@/actions/core";
 import { METODI_INCASSO } from "@/lib/metodoIncasso";
+import {
+  MODI_INCASSO_PROVV,
+  MODO_INCASSO_VERIFICATO,
+} from "@/lib/incassoFattura";
 
-export function IncassoForm({ praticaId }: { praticaId: string }) {
+export function IncassoForm({
+  praticaId,
+  fattureInsolute = [],
+}: {
+  praticaId: string;
+  fattureInsolute?: Array<{
+    id: string;
+    numero: string;
+    importo: number;
+    pagato: number;
+  }>;
+}) {
+  const insolite = fattureInsolute.filter((f) => f.importo - f.pagato > 0.009);
+
   return (
     <form
       action={addIncassoAction}
@@ -23,18 +40,34 @@ export function IncassoForm({ praticaId }: { praticaId: string }) {
           </option>
         ))}
       </select>
-      <input
+      <select
         name="modo"
-        defaultValue="VE"
-        placeholder="Mo"
+        defaultValue={MODO_INCASSO_VERIFICATO}
         className="h-9 rounded border border-[var(--line)] px-2 text-sm"
-      />
+        title="Esito provvigione"
+      >
+        {MODI_INCASSO_PROVV.map((m) => (
+          <option key={m.value} value={m.value}>
+            {m.label}
+          </option>
+        ))}
+      </select>
       <input type="date" name="data" className="h-9 rounded border border-[var(--line)] px-2 text-sm" />
       <input
         type="date"
         name="dataScadenza"
         className="h-9 rounded border border-[var(--line)] px-2 text-sm"
       />
+      <select name="fattura" className="h-9 rounded border border-[var(--line)] px-2 text-sm">
+        <option value="">
+          {insolite.length ? "Fattura insoluta…" : "Nessuna fattura insoluta"}
+        </option>
+        {insolite.map((f) => (
+          <option key={f.id} value={f.numero}>
+            {f.numero}
+          </option>
+        ))}
+      </select>
       <input
         name="causale"
         placeholder="Causale (es. da file:P17294…)"

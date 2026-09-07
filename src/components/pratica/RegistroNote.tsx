@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { Pencil, Pin, PinOff } from "lucide-react";
 import {
   salvaNotaServizioPraticaAction,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/mandantePerimetri";
 import { isCodiceScaricoConDettagliPagamento } from "@/lib/scarico";
 import { METODI_INCASSO } from "@/lib/metodoIncasso";
+import { invalidatePraticaExtra } from "@/lib/praticaExtraClient";
 
 export type AttivitaRow = {
   id: string;
@@ -50,8 +51,10 @@ function NotaRiga({
     try {
       await updateAttivitaAction(formData);
       setEditing(false);
+      invalidatePraticaExtra();
       router.refresh();
     } catch (e) {
+      unstable_rethrow(e);
       onError(e instanceof Error ? e.message : "Errore modifica");
     } finally {
       setSaving(false);
@@ -65,8 +68,10 @@ function NotaRiga({
       const fd = new FormData();
       fd.set("attivitaId", row.id);
       await toggleFissaAttivitaAction(fd);
+      invalidatePraticaExtra();
       router.refresh();
     } catch (e) {
+      unstable_rethrow(e);
       onError(e instanceof Error ? e.message : "Errore fissaggio nota");
     } finally {
       setPinning(false);
@@ -180,7 +185,11 @@ function NotaRiga({
 export function InserisciNotaServizio({
   praticaId,
   codiceScarico,
+  codiceScaricoBk,
   codiciScaricoOperatore = [],
+  codiciScaricoBkOff = [],
+  canEditBkOff = false,
+  canClearScarico = false,
   promessaAt,
   promessaImporto,
   promessaMetodo,
@@ -191,7 +200,12 @@ export function InserisciNotaServizio({
 }: {
   praticaId: string;
   codiceScarico?: string | null;
+  codiceScaricoBk?: string | null;
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
+  codiciScaricoBkOff?: CodiceScaricoPerimetro[];
+  canEditBkOff?: boolean;
+  /** Consente di selezionare "—" per svuotare i codici già impostati. */
+  canClearScarico?: boolean;
   promessaAt?: string | null;
   promessaImporto?: number | null;
   promessaMetodo?: string | null;
@@ -202,9 +216,27 @@ export function InserisciNotaServizio({
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const codiciOperatore = codiciScaricoOperatoriEffettivi(codiciScaricoOperatore);
+  const codiciOperatore = (() => {
+    const base = codiciScaricoOperatoriEffettivi(codiciScaricoOperatore);
+    const cur = (codiceScarico || "").trim().toUpperCase();
+    if (!cur) return base;
+    if (base.some((c) => c.codice.trim().toUpperCase() === cur)) return base;
+    return [{ codice: cur, descrizione: cur }, ...base];
+  })();
+  const codiciBk = (() => {
+    const base = codiciScaricoBkOff;
+    const cur = (codiceScaricoBk || "").trim().toUpperCase();
+    if (!cur) return base;
+    if (base.some((c) => c.codice.trim().toUpperCase() === cur)) return base;
+    return [{ codice: cur, descrizione: cur }, ...base];
+  })();
   const [nota, setNota] = useState("");
-  const [codice, setCodice] = useState(codiceScarico || "");
+  const [codice, setCodice] = useState(() =>
+    (codiceScarico || "").trim().toUpperCase()
+  );
+  const [codiceBk, setCodiceBk] = useState(() =>
+    (codiceScaricoBk || "").trim().toUpperCase()
+  );
   const [promessa, setPromessa] = useState(promessaAt || "");
   const [importoPromessa, setImportoPromessa] = useState(
     promessaImporto != null && promessaImporto > 0 ? String(promessaImporto) : ""
@@ -215,13 +247,14 @@ export function InserisciNotaServizio({
   const bozzaApplicata = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    setCodice(codiceScarico || "");
+    setCodice((codiceScarico || "").trim().toUpperCase());
+    setCodiceBk((codiceScaricoBk || "").trim().toUpperCase());
     setPromessa(promessaAt || "");
     setImportoPromessa(
       promessaImporto != null && promessaImporto > 0 ? String(promessaImporto) : ""
     );
     setMetodoPagamento(promessaMetodo || "");
-  }, [codiceScarico, promessaAt, promessaImporto, promessaMetodo]);
+  }, [codiceScarico, codiceScaricoBk, promessaAt, promessaImporto, promessaMetodo]);
 
   useEffect(() => {
     if (!bozzaNota || bozzaKey == null) return;
@@ -251,6 +284,9 @@ export function InserisciNotaServizio({
       fd.set("praticaId", praticaId);
       fd.set("nota", nota.trim());
       fd.set("codScarico", codice);
+      if (canEditBkOff) {
+        fd.set("codScaricoBk", codiceBk);
+      }
       if (isCodiceScaricoConDettagliPagamento(codice) && promessa) {
         fd.set("promessaAt", promessa);
       }
@@ -263,9 +299,11 @@ export function InserisciNotaServizio({
       await salvaNotaServizioPraticaAction(fd);
 
       setNota("");
-      router.refresh();
+      invalidatePraticaExtra(praticaId);
       onDone?.();
+      router.refresh();
     } catch (err) {
+      unstable_rethrow(err);
       setError(err instanceof Error ? err.message : "Errore salvataggio");
     } finally {
       setSaving(false);
@@ -302,7 +340,9 @@ export function InserisciNotaServizio({
                 onChange={(e) => setCodice(e.target.value)}
                 className="mt-0.5 h-8 w-full rounded border border-[var(--line)] px-1.5 text-[13px]"
               >
-                <option value="">—</option>
+                {canClearScarico || !codice ? (
+                  <option value="">—</option>
+                ) : null}
                 {codiciOperatore.map((c) => (
                   <option key={c.codice} value={c.codice}>
                     {c.codice} — {c.descrizione}
@@ -353,6 +393,26 @@ export function InserisciNotaServizio({
                   </select>
                 </label>
               </>
+            ) : null}
+            {canEditBkOff ? (
+              <label className="w-full min-w-[160px] shrink-0 text-xs sm:w-[200px]">
+                <span className="font-semibold text-[var(--muted)]">Cod. bk off</span>
+                <select
+                  name="codScaricoBk"
+                  value={codiceBk}
+                  onChange={(e) => setCodiceBk(e.target.value)}
+                  className="mt-0.5 h-8 w-full rounded border border-[var(--line)] px-1.5 text-[13px]"
+                >
+                  {canClearScarico || !codiceBk ? (
+                    <option value="">—</option>
+                  ) : null}
+                  {codiciBk.map((c) => (
+                    <option key={c.codice} value={c.codice}>
+                      {c.codice} — {c.descrizione}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
           </div>
         </div>

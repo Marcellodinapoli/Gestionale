@@ -76,6 +76,14 @@ export async function createOperatoreAction(formData: FormData) {
     if (derived != null) annoNascita = derived;
   }
   const formazioneOnly = parseAccesso(formData);
+  const consulenteEsternoRaw =
+    String(formData.get("consulenteEsterno") || "") === "1" ||
+    String(formData.get("consulenteEsterno") || "").toLowerCase() === "true" ||
+    String(formData.get("consulenteEsterno") || "").toLowerCase() === "on";
+  const creditCalcEnabledRaw =
+    String(formData.get("creditCalcEnabled") || "") === "1" ||
+    String(formData.get("creditCalcEnabled") || "").toLowerCase() === "true" ||
+    String(formData.get("creditCalcEnabled") || "").toLowerCase() === "on";
   let role = String(formData.get("role") || "OPERATOR").trim();
   const supervisorId = String(formData.get("supervisorId") || "").trim() || null;
   const sedeId = String(formData.get("sedeId") || "").trim() || null;
@@ -90,6 +98,9 @@ export async function createOperatoreAction(formData: FormData) {
   if (formazioneOnly) {
     role = "OPERATOR";
   }
+
+  const consulenteEsterno = !formazioneOnly && role === "OPERATOR" && consulenteEsternoRaw;
+  const creditCalcEnabled = consulenteEsterno && creditCalcEnabledRaw;
 
   assertRuoloCreabile(user.role, role);
 
@@ -139,6 +150,8 @@ export async function createOperatoreAction(formData: FormData) {
       supervisorId,
       sedeId,
       formazioneOnly,
+      consulenteEsterno,
+      creditCalcEnabled,
       condizioneEconomica,
       importoFisso,
     },
@@ -148,7 +161,7 @@ export async function createOperatoreAction(formData: FormData) {
     tenantId: user.tenantId,
     action: "create",
     entity: "user",
-    dettaglio: `creato ${name} ${cognome} (${role}${formazioneOnly ? ", solo formazione" : ""})`,
+    dettaglio: `creato ${name} ${cognome} (${role}${formazioneOnly ? ", solo formazione" : ""}${consulenteEsterno ? ", consulente esterno" : ""}${creditCalcEnabled ? ", CreditCalc" : ""})`,
   });
   revalidatePath("/operatori");
   revalidatePath("/utenti");
@@ -389,6 +402,20 @@ export async function updateOperatoreAction(formData: FormData) {
 
   if (target.role === "OPERATOR" && !target.formazioneOnly) {
     data.supervisorId = supervisorId;
+  }
+
+  if (target.role === "OPERATOR") {
+    const consulenteEsterno =
+      String(formData.get("consulenteEsterno") || "") === "1" ||
+      String(formData.get("consulenteEsterno") || "").toLowerCase() === "true" ||
+      String(formData.get("consulenteEsterno") || "").toLowerCase() === "on";
+    const creditCalcEnabled =
+      consulenteEsterno &&
+      (String(formData.get("creditCalcEnabled") || "") === "1" ||
+        String(formData.get("creditCalcEnabled") || "").toLowerCase() === "true" ||
+        String(formData.get("creditCalcEnabled") || "").toLowerCase() === "on");
+    data.consulenteEsterno = consulenteEsterno;
+    data.creditCalcEnabled = creditCalcEnabled;
   }
 
   await userModel.update({

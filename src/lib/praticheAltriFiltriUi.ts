@@ -1,5 +1,5 @@
 import type { CodScaricoOp } from "@/lib/filtriCodScarico";
-import { parseCodScaricoOp, labelCodScaricoOp, parseCodScaricoList, hasCodScaricoFiltro, joinCodScaricoList } from "@/lib/filtriCodScarico";
+import { parseCodScaricoOp, labelCodScaricoOp, parseCodScaricoList, hasCodScaricoFiltro, joinCodScaricoList, labelCodScaricoFiltroCode } from "@/lib/filtriCodScarico";
 import type { OperatoreFiltroOp } from "@/lib/filtriOperatore";
 import {
   parseOperatoreOp,
@@ -40,6 +40,7 @@ export const ALTRI_FILTRI_KEYS = [
   "lotto",
   "operatore",
   "codScarico",
+  "codScaricoBk",
   "sitAffido",
   "affidoProvvisorio",
   "importoRataDa",
@@ -99,6 +100,9 @@ export type AltriFiltri = {
   operatoreOp?: OperatoreFiltroOp;
   codScarico?: string;
   codScaricoOp?: CodScaricoOp;
+  /** Codici scarico back office (provvigioni / statistiche). */
+  codScaricoBk?: string;
+  codScaricoBkOp?: CodScaricoOp;
   sitAffido?: SitAffidoFiltro;
   sitAffidoOp?: TextFilterOp;
   affidoProvvisorio?: string;
@@ -181,6 +185,13 @@ export function parseAltriFiltri(
     codScaricoOp: hasCodScaricoFiltro(sp.codScarico)
       ? parseCodScaricoOp(sp.codScaricoOp)
       : undefined,
+    codScaricoBk: (() => {
+      const joined = joinCodScaricoList(parseCodScaricoList(sp.codScaricoBk));
+      return joined || undefined;
+    })(),
+    codScaricoBkOp: hasCodScaricoFiltro(sp.codScaricoBk)
+      ? parseCodScaricoOp(sp.codScaricoBkOp)
+      : undefined,
     sitAffido:
       sp.sitAffido === "affidata" ||
       sp.sitAffido === "non_affidata" ||
@@ -244,6 +255,9 @@ export function appendAltriFiltriParams(sp: URLSearchParams, f?: AltriFiltri | n
   if (f.codScarico && f.codScaricoOp && f.codScaricoOp !== "eq") {
     sp.set("codScaricoOp", f.codScaricoOp);
   }
+  if (f.codScaricoBk && f.codScaricoBkOp && f.codScaricoBkOp !== "eq") {
+    sp.set("codScaricoBkOp", f.codScaricoBkOp);
+  }
   if (f.operatore && f.operatoreOp && f.operatoreOp !== "eq") {
     sp.set("operatoreOp", f.operatoreOp);
   }
@@ -270,12 +284,33 @@ export function appendAltriFiltriParams(sp: URLSearchParams, f?: AltriFiltri | n
   }
 }
 
-export function hasAltriFiltri(f?: AltriFiltri | null) {
+export function hasAltriFiltri(
+  f?: AltriFiltri | null,
+  opts?: { ignoreOperatoreId?: string | null }
+) {
   if (!f) return false;
+  const ignoreOp = opts?.ignoreOperatoreId?.trim() || "";
   const baseKeys = ALTRI_FILTRI_KEYS.filter(
     (k) => k !== "aggiuntivoCampo" && k !== "aggiuntivoValore"
   );
-  if (baseKeys.some((k) => f[k])) return true;
+  if (
+    baseKeys.some((k) => {
+      if (!f[k]) return false;
+      if (k === "operatore" && ignoreOp) {
+        const ids = parseOperatoreList(f.operatore);
+        if (
+          ids.length === 1 &&
+          ids[0] === ignoreOp &&
+          (!f.operatoreOp || f.operatoreOp === "eq")
+        ) {
+          return false;
+        }
+      }
+      return true;
+    })
+  ) {
+    return true;
+  }
   return hasAggiuntivoFiltro(f.aggiuntivoCampo, f.aggiuntivoValore);
 }
 
@@ -325,6 +360,7 @@ export type AltriFiltroAttivoVoce = {
 export const ALTRI_FILTRI_PRESERVE_KEYS = [
   ...ALTRI_FILTRI_KEYS,
   "codScaricoOp",
+  "codScaricoBkOp",
   "operatoreOp",
   "aggiuntivoOp",
   ...TEXT_FILTER_FIELD_SPECS.map((s) => s.op),
@@ -502,9 +538,22 @@ export function vociAltriFiltriAttivi(
     const codes = parseCodScaricoList(f.codScarico);
     push({
       id: "cod-scarico",
-      campo: "codice scarico",
+      campo: "cod. scarico",
       op: labelCodScaricoOp(f.codScaricoOp),
-      valore: codes.join(", "),
+      valore: codes.map(labelCodScaricoFiltroCode).join(", "),
+      suffisso: codes
+        .map((c) => CODICE_SCARICO_LABELS[c as keyof typeof CODICE_SCARICO_LABELS])
+        .filter(Boolean)
+        .join("; ") || undefined,
+    });
+  }
+  if (f.codScaricoBk) {
+    const codes = parseCodScaricoList(f.codScaricoBk);
+    push({
+      id: "cod-scarico-bk",
+      campo: "cod. bk off",
+      op: labelCodScaricoOp(f.codScaricoBkOp),
+      valore: codes.map(labelCodScaricoFiltroCode).join(", "),
       suffisso: codes
         .map((c) => CODICE_SCARICO_LABELS[c as keyof typeof CODICE_SCARICO_LABELS])
         .filter(Boolean)
@@ -561,7 +610,13 @@ const FILTRI_DESCRIZIONI: Partial<
   codScarico: (f) => {
     const v = vociAltriFiltriAttivi(f).find((x) => x.id === "cod-scarico");
     return v
-      ? `Cod. ${v.op ?? "="} ${v.valore}${v.suffisso ? ` (${v.suffisso})` : ""}`
+      ? `Cod. scarico ${v.op ?? "="} ${v.valore}${v.suffisso ? ` (${v.suffisso})` : ""}`
+      : undefined;
+  },
+  codScaricoBk: (f) => {
+    const v = vociAltriFiltriAttivi(f).find((x) => x.id === "cod-scarico-bk");
+    return v
+      ? `Cod. bk off ${v.op ?? "="} ${v.valore}${v.suffisso ? ` (${v.suffisso})` : ""}`
       : undefined;
   },
   perimetro: (f) => (f.perimetro ? `Perimetro ${f.perimetro}` : undefined),

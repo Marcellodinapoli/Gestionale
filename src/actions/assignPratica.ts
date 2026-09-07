@@ -85,7 +85,7 @@ async function assegnaPratica(
       data: {
         assegnatarioId,
         operatoreTitolareId: titolareCorrente,
-        stato: pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
+        stato: pratica.stato === "NUOVA" ? "IN_LAVORAZIONE" : pratica.stato,
       },
     });
     await writeAudit({
@@ -101,7 +101,7 @@ async function assegnaPratica(
       data: {
         assegnatarioId,
         operatoreTitolareId: assegnatarioId,
-        stato: pratica.stato === "NUOVA" ? "AFFIDATA" : pratica.stato,
+        stato: pratica.stato === "NUOVA" ? "IN_LAVORAZIONE" : pratica.stato,
       },
     });
     await writeAudit({

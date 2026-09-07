@@ -1,6 +1,9 @@
 "use client";
 
-import { isPraticaChiusa } from "@/lib/praticaCollegata";
+import {
+  isPraticaF9Collegata,
+  isPraticaF10Collegata,
+} from "@/lib/praticaCollegata";
 
 export type PraticaCollegataVoceClient = {
   id: string;
@@ -8,7 +11,9 @@ export type PraticaCollegataVoceClient = {
   nome: string;
   cf?: string | null;
   stato: string;
+  assegnatarioId?: string | null;
   codiceScarico?: string | null;
+  codiceScaricoBk?: string | null;
   mandante: string;
   mandanteNome: string;
   perimetro?: string | null;
@@ -36,6 +41,16 @@ const inflight = new Map<
   Promise<PraticheStessoDebitoreClientPayload | null>
 >();
 
+function voceFiltro(v: PraticaCollegataVoceClient) {
+  return {
+    stato: v.stato,
+    assegnatarioId: v.assegnatarioId,
+    scadenza: v.scadenza,
+    codiceScaricoBk: v.codiceScaricoBk,
+    mandante: v.mandante,
+  };
+}
+
 /** Adatta il payload cluster alla pratica corrente (cache condivisa tra collegate). */
 export function normalizePayloadForPratica(
   payload: PraticheStessoDebitoreClientPayload,
@@ -46,10 +61,11 @@ export function normalizePayloadForPratica(
   const hit = all.find((v) => v.id === praticaId);
   if (!hit) return payload;
   const others = all.filter((v) => v.id !== praticaId);
+  const ref = { mandante: hit.mandante };
   return {
     corrente: hit,
-    altre: others.filter((v) => !isPraticaChiusa(v.stato)),
-    altreChiuse: others.filter((v) => isPraticaChiusa(v.stato)),
+    altre: others.filter((v) => isPraticaF9Collegata(voceFiltro(v), ref)),
+    altreChiuse: others.filter((v) => isPraticaF10Collegata(voceFiltro(v), ref)),
   };
 }
 

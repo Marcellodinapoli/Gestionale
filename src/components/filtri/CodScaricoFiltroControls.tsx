@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import type { CodiceScaricoPerimetro } from "@/lib/mandantePerimetri";
 import {
   COD_SCARICO_FILTER_OPS,
+  COD_SCARICO_NULL,
   joinCodScaricoList,
   parseCodScaricoList,
   parseCodScaricoOp,
@@ -23,6 +24,7 @@ export function CodScaricoFiltroControls({
   fieldClass,
   codiciDisponibili = [],
   mandatoId,
+  perimetroSelezionato = false,
 }: {
   codScarico?: string;
   codScaricoOp?: CodScaricoOp | string;
@@ -33,6 +35,7 @@ export function CodScaricoFiltroControls({
   fieldClass?: string;
   codiciDisponibili?: CodiceScaricoPerimetro[];
   mandatoId?: string | null;
+  perimetroSelezionato?: boolean;
 }) {
   const op = parseCodScaricoOp(codScaricoOp);
   const controlled = Boolean(onCodScaricoChange);
@@ -40,13 +43,21 @@ export function CodScaricoFiltroControls({
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>(() => parseCodScaricoList(codScarico));
+  // SSR e primo paint client: stesso `disabled` (evita hydration mismatch se la lista codici differisce).
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     setSelected(parseCodScaricoList(codScarico));
   }, [codScarico]);
 
   useEffect(() => {
+    if (!hydrated) return;
     const allowed = new Set(codiciDisponibili.map((c) => c.codice.toUpperCase()));
+    allowed.add(COD_SCARICO_NULL);
     setSelected((prev) => {
       const filtered = prev.filter((c) => allowed.has(c.toUpperCase()));
       if (filtered.length !== prev.length) {
@@ -55,7 +66,7 @@ export function CodScaricoFiltroControls({
       }
       return prev;
     });
-  }, [codiciDisponibili, onCodScaricoChange]);
+  }, [hydrated, codiciDisponibili, onCodScaricoChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,8 +78,18 @@ export function CodScaricoFiltroControls({
   }, [open]);
 
   const joined = joinCodScaricoList(selected);
-  const canSelect = codiciDisponibili.length > 0;
-  const hint = hintCodiciScaricoFiltro(canSelect);
+  const hasCodici = codiciDisponibili.length > 0;
+  const canSelect = hydrated && hasCodici;
+  const hint = hintCodiciScaricoFiltro(
+    hasCodici,
+    perimetroSelezionato || Boolean(mandatoId)
+  );
+  const elencoConNull: CodiceScaricoPerimetro[] = hasCodici
+    ? [
+        { codice: COD_SCARICO_NULL, descrizione: "Senza codice" },
+        ...codiciDisponibili,
+      ]
+    : [];
 
   function applySelected(next: string[]) {
     setSelected(next);
@@ -83,7 +104,11 @@ export function CodScaricoFiltroControls({
   }
 
   const riepilogo = selected.length
-    ? `${selected.length} codice${selected.length === 1 ? "" : "i"} selezionat${selected.length === 1 ? "o" : "i"}`
+    ? selected.length <= 2
+      ? selected
+          .map((c) => (c.toUpperCase() === COD_SCARICO_NULL ? "null" : c))
+          .join(", ")
+      : `${selected.length} codici`
     : hint;
 
   return (
@@ -113,10 +138,11 @@ export function CodScaricoFiltroControls({
         <span className="text-[var(--muted)]">|</span>
         <button
           type="button"
-          disabled={!canSelect}
+          {...(!canSelect ? { disabled: true as const } : {})}
           onClick={() => canSelect && setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls={listId}
+          aria-disabled={!canSelect}
           className="flex min-w-0 flex-1 items-center gap-1 px-1 text-left text-xs text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className="min-w-0 flex-1 truncate">{riepilogo}</span>
@@ -133,9 +159,10 @@ export function CodScaricoFiltroControls({
           className="absolute z-20 mt-1 max-h-36 w-full overflow-y-auto rounded border border-[#7d94a8] bg-white shadow-lg"
           aria-label="Elenco codici scarico"
         >
-          {codiciDisponibili.map((c) => {
+          {elencoConNull.map((c) => {
             const code = c.codice.toUpperCase();
             const checked = selected.some((s) => s.toUpperCase() === code);
+            const isNull = code === COD_SCARICO_NULL;
             return (
               <li key={code} className="border-b border-[var(--line)] last:border-b-0">
                 <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-[#f8fafc]">
@@ -146,7 +173,9 @@ export function CodScaricoFiltroControls({
                     className="h-3.5 w-3.5 shrink-0 rounded border-[#7d94a8] text-[var(--navy)]"
                   />
                   <span className="min-w-0 truncate leading-snug">
-                    <span className="font-semibold">{code}</span>
+                    <span className="font-semibold">
+                      {isNull ? "null" : code}
+                    </span>
                     {c.descrizione ? (
                       <span className="text-[var(--muted)]"> — {c.descrizione}</span>
                     ) : null}

@@ -34,7 +34,19 @@ export function mandatoIdPerPerimetroFiltro(
   const key = perimetro?.trim();
   if (!key) return undefined;
   for (const m of mandanti || []) {
-    if (perimetroPerNome(parsePerimetri(m.perimetri), key)) return m.id;
+    const elenco = parsePerimetri(m.perimetri);
+    if (perimetroPerNome(elenco, key)) return m.id;
+    if (elenco.some((p) => p.descrizione.trim() === key)) return m.id;
+    if (
+      elenco.some((p) => {
+        const label = p.nomeInterno
+          ? `${p.nomeInterno} — ${p.descrizione || p.nomeMandante}`
+          : p.nomeMandante;
+        return label.trim() === key;
+      })
+    ) {
+      return m.id;
+    }
   }
   return undefined;
 }

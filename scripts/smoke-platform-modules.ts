@@ -16,6 +16,7 @@ const expectedStati = [
   "NUOVA",
   "AFFIDATA",
   "IN_LAVORAZIONE",
+  "SCADUTA",
   "PROMESSA",
   "PIANO",
   "INCASSO",

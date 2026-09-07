@@ -136,6 +136,31 @@ export async function praticaScopeWhere(user: SessionUser): Promise<Prisma.Prati
   return { AND: [base, ctx.periScope!] };
 }
 
+/**
+ * Scope F1 / ricerca pratica: tutte le pratiche del tenant (o del perimetro gruppo),
+ * in qualsiasi stato e indipendentemente dall’assegnatario (include da affidare).
+ */
+export async function praticaCercaScopeWhere(
+  user: SessionUser
+): Promise<Prisma.PraticaWhereInput> {
+  if (isManutenzione(user)) return nessunDatoWhere();
+  const tenantScope: Prisma.PraticaWhereInput = { tenantId: user.tenantId };
+  if (
+    user.role === "ADMIN" ||
+    user.role === "BACK_OFFICE" ||
+    user.role === "AMMINISTRAZIONE"
+  ) {
+    return tenantScope;
+  }
+  const ctx = await resolveGruppoPerimetroContext(user);
+  if (ctx.nelGruppo) {
+    if (ctx.nessunPerimetroGruppo) return nessunDatoWhere();
+    return { AND: [tenantScope, ctx.periScope!] };
+  }
+  // Fuori gruppo: almeno le pratiche già in portfolio (fallback).
+  return praticaWhere(user);
+}
+
 export function gruppoPerimetroOptsFromContext(
   ctx: GruppoPerimetroContext
 ): GruppoPerimetroOpts | undefined {

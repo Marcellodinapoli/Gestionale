@@ -50,8 +50,9 @@ import { hasModule, type ModuleId, type TenantPlatformConfig } from "@/lib/platf
 import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
 import { navigateBack } from "@/lib/navBack";
 import { labelForNavBackHref, navBackDisplayLabel } from "@/lib/navBackLabel";
-
-const PRATICHE_BACK_KEY = "credixa:pratiche-back";
+import {
+  PRATICHE_BACK_KEY,
+} from "@/lib/praticheNavBack";
 
 function isPratichePath(pathname: string) {
   return pathname === "/pratiche" || pathname.startsWith("/pratiche/");
@@ -652,6 +653,46 @@ function AffidiBackSync({
   return null;
 }
 
+/** Persiste / ripristina la destinazione ← Pratiche (filtri e ordine in query). */
+function PraticheBackSync({
+  onChange,
+}: {
+  onChange: (href: string | null, label?: string) => void;
+}) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const qs = searchParams.toString();
+    const full = qs ? `${pathname}?${qs}` : pathname;
+    const isPraticheLista = pathname === "/pratiche";
+    const isPraticheSottopagina =
+      pathname.startsWith("/pratiche/") && pathname !== "/pratiche";
+
+    if (isPraticheSottopagina) {
+      try {
+        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
+        const savedPath = saved?.split("?")[0] || "";
+        const href = saved && !isPratichePath(savedPath) ? saved : "/pratiche";
+        onChange(href, labelForNavBackHref(href));
+      } catch {
+        onChange("/pratiche", "Lista pratiche");
+      }
+    } else if (isPraticheLista) {
+      onChange(null, undefined);
+    } else {
+      onChange(null, undefined);
+      try {
+        sessionStorage.setItem(PRATICHE_BACK_KEY, full);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [pathname, searchParams, onChange]);
+
+  return null;
+}
+
 export function AppShell({
   user,
   platform,
@@ -674,42 +715,14 @@ export function AppShell({
     setAffidiBackLabel(label);
   }, []);
 
+  const onPraticheBackChange = useCallback((href: string | null, label?: string) => {
+    setPraticheBackHref(href);
+    setPraticheBackLabel(label);
+  }, []);
+
   useEffect(() => {
     setEmbedded(window.self !== window.top);
   }, []);
-
-  // ← in nav Pratiche solo nelle sottopagine (/pratiche/[id]/…), non sulla lista.
-  useEffect(() => {
-    const qs = window.location.search.replace(/^\?/, "");
-    const full = qs ? `${pathname}?${qs}` : pathname;
-    const isPraticheLista = pathname === "/pratiche";
-    const isPraticheSottopagina =
-      pathname.startsWith("/pratiche/") && pathname !== "/pratiche";
-
-    if (isPraticheSottopagina) {
-      try {
-        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
-        const savedPath = saved?.split("?")[0] || "";
-        const href = saved && !isPratichePath(savedPath) ? saved : "/pratiche";
-        setPraticheBackHref(href);
-        setPraticheBackLabel(labelForNavBackHref(href));
-      } catch {
-        setPraticheBackHref("/pratiche");
-        setPraticheBackLabel("Lista pratiche");
-      }
-    } else if (isPraticheLista) {
-      setPraticheBackHref(null);
-      setPraticheBackLabel(undefined);
-    } else {
-      setPraticheBackHref(null);
-      setPraticheBackLabel(undefined);
-      try {
-        sessionStorage.setItem(PRATICHE_BACK_KEY, full);
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [pathname]);
 
   if (embedded) {
     return (
@@ -733,6 +746,9 @@ export function AppShell({
     <PrivacyLockProvider userName={user.name}>
     <Suspense fallback={null}>
       <AffidiBackSync onChange={onAffidiBackChange} />
+    </Suspense>
+    <Suspense fallback={null}>
+      <PraticheBackSync onChange={onPraticheBackChange} />
     </Suspense>
     <div className="flex h-dvh flex-col bg-[var(--bg)]">
       <header className="relative z-40 shrink-0 bg-[var(--navy)] text-white shadow-md print:hidden">

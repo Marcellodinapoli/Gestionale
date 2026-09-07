@@ -58,6 +58,7 @@ function mapPraticaAffidabile(
     numero: string;
     stato: string;
     residuo: number;
+    scadenza: Date | string | null;
     assegnatarioId: string | null;
     operatoreTitolareId: string | null;
     debitore: { nome: string; cognome: string };
@@ -70,7 +71,8 @@ function mapPraticaAffidabile(
     numero: p.numero,
     stato: p.stato,
     residuo: p.residuo,
-    debitoreNome: `${p.debitore.nome} ${p.debitore.cognome}`,
+    scadenza: p.scadenza,
+    debitoreNome: `${p.debitore.cognome} ${p.debitore.nome}`.trim(),
     assegnatarioId: p.assegnatarioId,
     assegnatarioNome: p.assegnatario?.name ?? null,
     operatoreTitolareId: p.operatoreTitolareId,
@@ -100,6 +102,8 @@ export default async function AffidiPage({
     caricoMandato?: string;
     caricoPerimetro?: string;
     caricoMese?: string;
+    affidaSort?: string;
+    affidaDir?: string;
   }>;
 }) {
   await requireModule("affidi");
@@ -112,6 +116,8 @@ export default async function AffidiPage({
     caricoMandato: caricoMandatoRaw,
     caricoPerimetro: caricoPerimetroRaw,
     caricoMese: caricoMeseRaw,
+    affidaSort: affidaSortRaw,
+    affidaDir: affidaDirRaw,
   } = await searchParams;
 
   const gruppo = await getGruppoLavoro(user);
@@ -580,6 +586,8 @@ export default async function AffidiPage({
                   </p>
                   <AffidiDaAffidareTable
                     operatori={operatori}
+                    affidaSort={affidaSortRaw}
+                    affidaDir={affidaDirRaw}
                     pratiche={ordinaPraticheAffidabili(praticheAffidabiliPerimetro).map(
                       mapPraticaAffidabile
                     )}
@@ -743,6 +751,8 @@ export default async function AffidiPage({
                   </p>
                   <AffidiDaAffidareTable
                     operatori={operatori}
+                    affidaSort={affidaSortRaw}
+                    affidaDir={affidaDirRaw}
                     pratiche={ordinaPraticheAffidabili(praticheAffidabiliOverview).map(
                       mapPraticaAffidabile
                     )}
@@ -864,6 +874,8 @@ export default async function AffidiPage({
             </p>
             <AffidiDaAffidareTable
               operatori={operatori}
+              affidaSort={affidaSortRaw}
+              affidaDir={affidaDirRaw}
               pratiche={ordinaPraticheAffidabili(praticheAffidabiliMonitor).map(mapPraticaAffidabile)}
             />
           </>

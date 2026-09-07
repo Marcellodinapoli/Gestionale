@@ -1,0 +1,13 @@
+---
+description: Non toccare mai il database SQL del gestionale senza richiesta esplicita
+alwaysApply: true
+---
+
+# Database SQL — solo su richiesta esplicita
+
+Quando si lavora sul **gestionale** (Credixa / Connector / app collegata):
+
+- **Non** connettersi a SQL Server, eseguire query, UPDATE/INSERT/DELETE, script di fix dati, seed, migrazioni applicate al DB, né modificare contenuti nelle tabelle.
+- **Non** usare il Connector o altri API solo per “aggiustare” righe nel DB (stato pratiche, utenti, ecc.) senza che l’utente lo chieda.
+- Il codice dell’applicazione (Next.js, Connector, Flutter) si può modificare normalmente.
+- Toccare il DB **solo** se l’utente lo chiede in modo esplicito in quel messaggio (es. “sistema i dati”, “esegui la migration sul DB”, “aggiorna la pratica X in SQL”).

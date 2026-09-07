@@ -11,8 +11,9 @@ function applyEqNe(
   return parseTextFilterOp(op) === "ne" ? { NOT: cond } : cond;
 }
 
-function strClause(val: string, op?: TextFilterOp | null): Prisma.StringFilter {
-  return prismaTextClause(val, op);
+/** Match testo positivo; la ≠ va applicata con applyEqNe. */
+function strMatch(val: string): Prisma.StringFilter {
+  return prismaTextClause(val, "eq");
 }
 
 function parseNum(val: string): number | undefined {
@@ -38,10 +39,9 @@ function dateDayRange(val: string) {
   return { gte: startOfDay(d), lt: startOfNextDay(d) };
 }
 
-function numClause(val: string, op?: TextFilterOp | null): Prisma.FloatFilter | undefined {
+function numMatch(val: string): Prisma.FloatFilter | undefined {
   const n = parseNum(val);
   if (n == null) return undefined;
-  if (parseTextFilterOp(op) === "ne") return { not: n };
   return { equals: n };
 }
 
@@ -52,12 +52,12 @@ function nominativoWhere(val: string, op?: TextFilterOp | null): Prisma.PraticaW
     const combo: Prisma.PraticaWhereInput[] = [
       {
         debitore: {
-          AND: [{ cognome: strClause(a, op) }, { nome: strClause(b, op) }],
+          AND: [{ cognome: strMatch(a) }, { nome: strMatch(b) }],
         },
       },
       {
         debitore: {
-          AND: [{ cognome: strClause(b, op) }, { nome: strClause(a, op) }],
+          AND: [{ cognome: strMatch(b) }, { nome: strMatch(a) }],
         },
       },
     ];
@@ -66,8 +66,8 @@ function nominativoWhere(val: string, op?: TextFilterOp | null): Prisma.PraticaW
   return applyEqNe(
     {
       OR: [
-        { debitore: { nome: strClause(val, op) } },
-        { debitore: { cognome: strClause(val, op) } },
+        { debitore: { nome: strMatch(val) } },
+        { debitore: { cognome: strMatch(val) } },
       ],
     },
     op
@@ -78,8 +78,8 @@ function ndgWhere(val: string, op?: TextFilterOp | null): Prisma.PraticaWhereInp
   return applyEqNe(
     {
       OR: [
-        { debitore: { ndg: strClause(val, op) } },
-        { debitore: { codiceFiscale: strClause(val, op) } },
+        { debitore: { ndg: strMatch(val) } },
+        { debitore: { codiceFiscale: strMatch(val) } },
       ],
     },
     op
@@ -109,28 +109,28 @@ export function aggiuntivoFiltroWhere(
     case "nominativo":
       return nominativoWhere(val, op);
     case "indirizzo":
-      return applyEqNe({ debitore: { indirizzo: strClause(val, op) } }, op);
+      return applyEqNe({ debitore: { indirizzo: strMatch(val) } }, op);
     case "localita":
-      return applyEqNe({ debitore: { citta: strClause(val, op) } }, op);
+      return applyEqNe({ debitore: { citta: strMatch(val) } }, op);
     case "cap":
-      return applyEqNe({ debitore: { cap: strClause(val, op) } }, op);
+      return applyEqNe({ debitore: { cap: strMatch(val) } }, op);
     case "provincia":
-      return applyEqNe({ debitore: { provincia: strClause(val, op) } }, op);
+      return applyEqNe({ debitore: { provincia: strMatch(val) } }, op);
     case "cedente":
-      return applyEqNe({ mandante: { ragioneSociale: strClause(val, op) } }, op);
+      return applyEqNe({ mandante: { ragioneSociale: strMatch(val) } }, op);
     case "contratto":
-      return applyEqNe({ numero: strClause(val, op) }, op);
+      return applyEqNe({ numero: strMatch(val) }, op);
     case "societa":
-      return applyEqNe({ mandante: { codice: strClause(val, op) } }, op);
+      return applyEqNe({ mandante: { codice: strMatch(val) } }, op);
     case "importo_definito": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ residuo: n }, op);
     }
     case "fattura_numero":
-      return applyEqNe({ fatture: { some: { numero: strClause(val, op) } } }, op);
+      return applyEqNe({ fatture: { some: { numero: strMatch(val) } } }, op);
     case "fattura_causale":
-      return applyEqNe({ fatture: { some: { causale: strClause(val, op) } } }, op);
+      return applyEqNe({ fatture: { some: { causale: strMatch(val) } } }, op);
     case "fattura_data": {
       const range = dateDayRange(val);
       if (!range) return undefined;
@@ -142,12 +142,12 @@ export function aggiuntivoFiltroWhere(
       return applyEqNe({ fatture: { some: { dataScadenza: range } } }, op);
     }
     case "fattura_importo": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ fatture: { some: { importo: n } } }, op);
     }
     case "fattura_pagato": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ fatture: { some: { pagato: n } } }, op);
     }
@@ -157,33 +157,33 @@ export function aggiuntivoFiltroWhere(
       return applyEqNe({ incassi: { some: { data: range } } }, op);
     }
     case "incasso_metodo":
-      return applyEqNe({ incassi: { some: { metodo: strClause(val, op) } } }, op);
+      return applyEqNe({ incassi: { some: { metodo: strMatch(val) } } }, op);
     case "incasso_modo":
-      return applyEqNe({ incassi: { some: { modo: strClause(val, op) } } }, op);
+      return applyEqNe({ incassi: { some: { modo: strMatch(val) } } }, op);
     case "incasso_importo": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ incassi: { some: { importo: n } } }, op);
     }
     case "incasso_capitale": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ incassi: { some: { capitale: n } } }, op);
     }
     case "incasso_interessi": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ incassi: { some: { interessi: n } } }, op);
     }
     case "incasso_spese": {
-      const n = numClause(val, op);
+      const n = numMatch(val);
       if (!n) return undefined;
       return applyEqNe({ incassi: { some: { spese: n } } }, op);
     }
     case "incasso_causale":
-      return applyEqNe({ incassi: { some: { causale: strClause(val, op) } } }, op);
+      return applyEqNe({ incassi: { some: { causale: strMatch(val) } } }, op);
     case "incasso_operatore":
-      return applyEqNe({ incassi: { some: { user: { name: strClause(val, op) } } } }, op);
+      return applyEqNe({ incassi: { some: { user: { name: strMatch(val) } } } }, op);
     default:
       return undefined;
   }

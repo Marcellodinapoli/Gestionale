@@ -20,6 +20,11 @@ function mapProvvigioneRow(row: Record<string, unknown>) {
     if (pr.debitore && typeof pr.debitore === "object") {
       (mapped.pratica as Record<string, unknown>).debitore = mapSqlRow(pr.debitore as Record<string, unknown>);
     }
+    if (pr.mandante && typeof pr.mandante === "object") {
+      (mapped.pratica as Record<string, unknown>).mandante = mapSqlRow(
+        pr.mandante as Record<string, unknown>
+      );
+    }
   }
   if (row.incasso && typeof row.incasso === "object") {
     mapped.incasso = mapSqlRow(row.incasso as Record<string, unknown>);

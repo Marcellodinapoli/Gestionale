@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { euro } from "@/lib/domainFormat";
+import { isModoNonProvvigionabile } from "@/lib/incassoFattura";
 import { isImportoFissoProvvigioneId } from "@/lib/provvigioniImportoFisso";
 import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
 import {
@@ -88,7 +89,10 @@ export type ProvvigioneRigaLista = {
   stato: string;
   statoLabel: string;
   perimetro: string;
+  perimetroLabel?: string;
   codiceScarico: string;
+  modo?: string;
+  fattura?: string;
 };
 
 function RigaTabella({
@@ -101,10 +105,22 @@ function RigaTabella({
   const fisso = isImportoFissoProvvigioneId(r.id);
   return (
     <tr className="border-t border-[var(--line)]">
-      <td className="px-3 py-2">{r.perimetro}</td>
+      <td className="px-3 py-2">{r.perimetroLabel || r.perimetro}</td>
       <td className="px-3 py-2 whitespace-nowrap">{r.data}</td>
       {showOperatore ? <td className="px-3 py-2">{r.operatoreNome}</td> : null}
       <td className="px-3 py-2 font-mono text-xs">{r.codiceScarico}</td>
+      <td className="px-3 py-2 font-mono text-xs">
+        {isModoNonProvvigionabile(r.modo) ? (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900">
+            np
+          </span>
+        ) : (
+          <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-900">
+            ve
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 font-mono text-xs">{r.fattura || "—"}</td>
       <td className="px-3 py-2">
         {fisso || !r.praticaId ? (
           <span className="text-[var(--muted)]">{r.praticaNumero}</span>
@@ -116,7 +132,9 @@ function RigaTabella({
       </td>
       <td className="px-3 py-2">{r.debitoreNome}</td>
       <td className="px-3 py-2 text-right tabular-nums">{euro(r.baseImporto)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{r.percentuale.toFixed(1)}%</td>
+      <td className="px-3 py-2 text-right tabular-nums font-semibold">
+        {r.percentuale.toFixed(1)}%
+      </td>
       <td className="px-3 py-2 text-right font-semibold tabular-nums">{euro(r.importo)}</td>
       <td className="px-3 py-2">
         <span
@@ -361,7 +379,7 @@ export function ProvvigioniListaPerimetro({
   sezioni: SezioneProvvigioni<ProvvigioneRigaLista>[];
   showOperatore?: boolean;
 }) {
-  const colspan = (showOperatore ? 10 : 9);
+  const colspan = (showOperatore ? 12 : 11);
 
   if (!sezioni.length) {
     return (
@@ -383,7 +401,7 @@ export function ProvvigioniListaPerimetro({
               Perimetro
             </p>
             <h3 className="text-base font-bold tracking-tight">
-              {sez.perimetro}
+              {sez.perimetroLabel || sez.perimetro}
               <span className="ml-2 text-sm font-normal opacity-90">
                 · Mandato {sez.mandanteCodice}
               </span>
@@ -400,10 +418,14 @@ export function ProvvigioniListaPerimetro({
                   <th className="px-3 py-2">Data</th>
                   {showOperatore ? <th className="px-3 py-2">Operatore</th> : null}
                   <th className="px-3 py-2">Codice scarico</th>
+                  <th className="px-3 py-2">Esito</th>
+                  <th className="px-3 py-2">Fattura</th>
                   <th className="px-3 py-2">Pratica</th>
                   <th className="px-3 py-2">Debitore</th>
                   <th className="px-3 py-2 text-right">Incasso</th>
-                  <th className="px-3 py-2 text-right">%</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">
+                    % adottata
+                  </th>
                   <th className="px-3 py-2 text-right">Provvigione</th>
                   <th className="px-3 py-2">Stato</th>
                 </tr>

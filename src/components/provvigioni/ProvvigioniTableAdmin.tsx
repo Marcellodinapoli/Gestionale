@@ -10,6 +10,7 @@ import {
   updateImportoProvvigioneAction,
 } from "@/actions/provvigioniAdmin";
 import { isImportoFissoProvvigioneId } from "@/lib/provvigioniImportoFisso";
+import { isModoNonProvvigionabile } from "@/lib/incassoFattura";
 import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
 import { ProvvigioniPannelloEconomico } from "@/components/provvigioni/ProvvigioniListaPerimetro";
 
@@ -26,7 +27,10 @@ type Riga = {
   stato: string;
   statoLabel: string;
   perimetro: string;
+  perimetroLabel?: string;
   codiceScarico: string;
+  modo?: string;
+  fattura?: string;
 };
 
 function euro(value: number) {
@@ -46,7 +50,13 @@ export function ProvvigioniTableAdmin({
   const [liquidando, setLiquidando] = useState(false);
 
   const righe = sezioni.flatMap((s) => s.righe);
-  const maturate = righe.filter((r) => r.stato === "MATURATA" && !isImportoFissoProvvigioneId(r.id));
+  const maturate = righe.filter(
+    (r) =>
+      r.stato === "MATURATA" &&
+      !isImportoFissoProvvigioneId(r.id) &&
+      !isModoNonProvvigionabile(r.modo) &&
+      r.importo > 0
+  );
   const allSelected = maturate.length > 0 && maturate.every((r) => selected.has(r.id));
 
   function toggleAll() {
@@ -125,7 +135,7 @@ export function ProvvigioniTableAdmin({
                 Perimetro
               </p>
               <h3 className="text-base font-bold tracking-tight">
-                {sez.perimetro}
+                {sez.perimetroLabel || sez.perimetro}
                 <span className="ml-2 text-sm font-normal opacity-90">
                   · Mandato {sez.mandanteCodice}
                 </span>
@@ -141,15 +151,19 @@ export function ProvvigioniTableAdmin({
                     <th className="w-8 px-2 py-2" />
                     <th className="px-3 py-2">Perimetro</th>
                     <th className="px-3 py-2">Data</th>
-                    <th>Operatore</th>
-                    <th>Codice scarico</th>
-                    <th>Pratica</th>
-                    <th>Debitore</th>
-                    <th>Incasso</th>
-                    <th>%</th>
-                    <th>Provvigione</th>
-                    <th>Stato</th>
-                    <th className="w-16" />
+                    <th className="px-3 py-2">Operatore</th>
+                    <th className="px-3 py-2">Codice scarico</th>
+                    <th className="px-3 py-2">Esito</th>
+                    <th className="px-3 py-2">Fattura</th>
+                    <th className="px-3 py-2">Pratica</th>
+                    <th className="px-3 py-2">Debitore</th>
+                    <th className="px-3 py-2 text-right">Incasso</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-right">
+                      % adottata
+                    </th>
+                    <th className="px-3 py-2 text-right">Provvigione</th>
+                    <th className="px-3 py-2">Stato</th>
+                    <th className="w-16 px-2 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -163,7 +177,7 @@ export function ProvvigioniTableAdmin({
                   ))}
                   {!sez.righe.length ? (
                     <tr>
-                      <td colSpan={12} className="px-3 py-4 text-center text-[var(--muted)]">
+                      <td colSpan={14} className="px-3 py-4 text-center text-[var(--muted)]">
                         Nessun movimento in questo perimetro nel mese selezionato.
                       </td>
                     </tr>
@@ -230,11 +244,23 @@ function RigaProvvigione({
           />
         )}
       </td>
-      <td className="px-3 py-2">{r.perimetro}</td>
+      <td className="px-3 py-2">{r.perimetroLabel || r.perimetro}</td>
       <td className="px-3 py-2 whitespace-nowrap">{r.data}</td>
-      <td>{r.operatoreNome}</td>
-      <td className="font-mono text-xs">{r.codiceScarico}</td>
-      <td>
+      <td className="px-3 py-2">{r.operatoreNome}</td>
+      <td className="px-3 py-2 font-mono text-xs">{r.codiceScarico}</td>
+      <td className="px-3 py-2 font-mono text-xs">
+        {isModoNonProvvigionabile(r.modo) ? (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900">
+            np
+          </span>
+        ) : (
+          <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-900">
+            ve
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 font-mono text-xs">{r.fattura || "—"}</td>
+      <td className="px-3 py-2">
         {fisso || !r.praticaId ? (
           <span className="text-[var(--muted)]">{r.praticaNumero}</span>
         ) : (
@@ -243,9 +269,9 @@ function RigaProvvigione({
           </Link>
         )}
       </td>
-      <td>{r.debitoreNome}</td>
-      <td>{euro(r.baseImporto)}</td>
-      <td>
+      <td className="px-3 py-2">{r.debitoreNome}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{euro(r.baseImporto)}</td>
+      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
         {editing ? (
           <input
             value={perc}
@@ -256,7 +282,7 @@ function RigaProvvigione({
           `${r.percentuale.toFixed(1)}%`
         )}
       </td>
-      <td className="font-semibold">
+      <td className="px-3 py-2 text-right font-semibold tabular-nums">
         {editing ? (
           <input
             value={importo}
@@ -267,7 +293,7 @@ function RigaProvvigione({
           euro(r.importo)
         )}
       </td>
-      <td>
+      <td className="px-3 py-2">
         {fisso ? (
           <span
             className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${

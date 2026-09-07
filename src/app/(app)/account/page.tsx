@@ -26,6 +26,8 @@ export default async function AccountPage() {
       passwordChangedAt: true,
       postazioneId: true,
       postazioneFissa: true,
+      consulenteEsterno: true,
+      creditCalcEnabled: true,
       postazione: { select: { nome: true, interno: true } },
     },
   });
@@ -58,6 +60,13 @@ export default async function AccountPage() {
     occupante: p.occupanti[0]?.name || null,
   }));
 
+  const postazioneDaLista = user.postazioneId
+    ? postazioniLista.find((p) => p.id === user.postazioneId)
+    : undefined;
+  const postazioneNome = user.postazione?.nome ?? postazioneDaLista?.nome ?? null;
+  const postazioneInterno =
+    user.postazione?.interno ?? postazioneDaLista?.interno ?? null;
+
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
@@ -71,16 +80,19 @@ export default async function AccountPage() {
           name: user.name,
           email: user.email,
           role: user.role as Role,
-          interno: user.interno?.trim() || user.postazione?.interno || "",
+          interno: user.interno?.trim() || postazioneInterno || "",
           prefissoChiamata: user.prefissoChiamata || "",
-          postazioneNome: user.postazione?.nome ?? null,
-          postazioneInterno: user.postazione?.interno ?? null,
+          postazioneNome,
+          postazioneInterno,
           postazioneId: user.postazioneId,
           postazioneFissa: Boolean(user.postazioneFissa),
           showPostazioneFissa: canImpostarePostazioneFissa(user.role as Role),
           gestiscePostazione,
           postazioni: postazioniLista,
           giorniAllaScadenza: giorniAllaScadenzaPassword(user.passwordChangedAt),
+          creditCalcEnabled: Boolean(
+            user.consulenteEsterno && user.creditCalcEnabled
+          ),
         }}
       />
     </div>

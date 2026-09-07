@@ -52,7 +52,12 @@ export function praticaDb(ctx: PraticaDbContext): typeof prisma.pratica {
     findUnique: async (args: Prisma.PraticaFindUniqueArgs) => {
       const id = String((args.where as { id?: string })?.id || "");
       if (!id) return null;
-      const row = await r.getById(ctx.tenantSlug, ctx.tenantId, id, prismaIncludeToList(args.include));
+      const row = await r.getById(
+        ctx.tenantSlug,
+        ctx.tenantId,
+        id,
+        prismaArgsToInclude(args.include, args.select)
+      );
       if (!row) return null;
       return applySelect(row, args.select) as never;
     },
@@ -72,21 +77,24 @@ export function praticaDb(ctx: PraticaDbContext): typeof prisma.pratica {
         scope: toPraticaScope(ctx),
         filter: prismaWhereToFilter(args.where),
         take: 1,
-        include: prismaIncludeToList(args.include),
+        include: prismaArgsToInclude(args.include, args.select),
       });
       const row = items.items[0] ?? null;
       return row ? (applySelect(row, args.select) as never) : null;
     },
     findMany: async (args: Prisma.PraticaFindManyArgs) => {
+      // Prisma senza `take` restituisce tutte le righe; col connector il default 25
+      // tagliava silenziosamente elenchi (es. Affidi → solo le prime 25 = tutte PIANO nel seed).
+      const take = args.take ?? 10_000;
       const result = await r.list({
         tenantSlug: ctx.tenantSlug,
         scope: toPraticaScope(ctx),
         filter: prismaWhereToFilter(args.where),
         sort: prismaOrderByToSort(args.orderBy),
         skip: args.skip ?? undefined,
-        take: args.take ?? undefined,
-        pageSize: args.take ?? 25,
-        include: prismaIncludeToList(args.include),
+        take,
+        pageSize: take,
+        include: prismaArgsToInclude(args.include, args.select),
       });
       return result.items.map((row) => applySelect(row, args.select)) as never[];
     },
@@ -137,6 +145,18 @@ export async function idsTotIncassatoForTenant(ctx: PraticaDbContext, da?: numbe
   return repo(ctx).idsTotIncassato(ctx.tenantSlug, ctx.tenantId, da, a);
 }
 
+function prismaArgsToInclude(
+  include: unknown,
+  select: unknown
+): PraticaListRequest["include"] | undefined {
+  const fromInclude = prismaIncludeToList(include);
+  const fromSelect = prismaIncludeToList(select);
+  if (!fromInclude?.length && !fromSelect?.length) return undefined;
+  return Array.from(new Set([...(fromInclude || []), ...(fromSelect || [])])) as NonNullable<
+    PraticaListRequest["include"]
+  >;
+}
+
 function prismaIncludeToList(include: unknown): PraticaListRequest["include"] | undefined {
   if (!include || typeof include !== "object") return undefined;
   const inc = include as Record<string, unknown>;
@@ -182,9 +202,23 @@ function applySelect(row: Record<string, unknown>, select: unknown) {
   if (!select || typeof select !== "object") return row;
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(select as Record<string, unknown>)) {
-    if ((select as Record<string, boolean>)[key]) out[key] = row[key];
+    const sel = (select as Record<string, unknown>)[key];
+    // Prisma select: true | nested object (include/orderBy/select)
+    if (sel) out[key] = row[key] ?? (isRelationSelectKey(key) ? [] : undefined);
   }
   return out;
+}
+
+function isRelationSelectKey(key: string) {
+  return [
+    "attivita",
+    "incassi",
+    "fatture",
+    "documenti",
+    "rate",
+    "garanti",
+    "debitoreRecapiti",
+  ].includes(key);
 }
 
 function prismaOrderByToSort(orderBy: unknown): PraticaListRequest["sort"] | undefined {
@@ -208,11 +242,174 @@ function prismaOrderByToSort(orderBy: unknown): PraticaListRequest["sort"] | und
 function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
   if (!where) return undefined;
   const filter: NonNullable<PraticaListRequest["filter"]> = {};
+
+  const merge = <T>(key: keyof typeof filter, values: T[]) => {
+    if (!values.length) return;
+    const prev = (filter[key] as T[] | undefined) || [];
+    (filter as Record<string, unknown>)[key as string] = [
+      ...new Set([...prev, ...values].map(String)),
+    ];
+  };
+
+  const extractOrOperatorePerimetro = (
+    orNodes: unknown[],
+    into: "in" | "notIn"
+  ) => {
+    const operatoreIds = new Set<string>();
+    const periKeys = new Set<string>();
+    let debitoreTerm: string | undefined;
+    let telefonoTerm: string | undefined;
+    let cfTerm: string | undefined;
+    let garanteTerm: string | undefined;
+    let noteTerm: string | undefined;
+
+    for (const orNode of orNodes) {
+      if (!orNode || typeof orNode !== "object") continue;
+      const o = orNode as Record<string, unknown>;
+
+      if (typeof o.numeroMandante === "string") periKeys.add(o.numeroMandante);
+      if (o.numeroMandante && typeof o.numeroMandante === "object") {
+        const nm = o.numeroMandante as Record<string, unknown>;
+        if (Array.isArray(nm.in)) nm.in.forEach((v) => periKeys.add(String(v)));
+      }
+      if (o.importBatch && typeof o.importBatch === "object") {
+        const ib = o.importBatch as { is?: { perimetro?: unknown } };
+        const peri = ib.is?.perimetro;
+        if (typeof peri === "string") periKeys.add(peri);
+      }
+      if (o.assegnatarioId && typeof o.assegnatarioId === "object") {
+        const a = o.assegnatarioId as Record<string, unknown>;
+        if (Array.isArray(a.in)) a.in.forEach((id) => operatoreIds.add(String(id)));
+      }
+      if (o.operatoreTitolareId && typeof o.operatoreTitolareId === "object") {
+        const t = o.operatoreTitolareId as Record<string, unknown>;
+        if (Array.isArray(t.in)) t.in.forEach((id) => operatoreIds.add(String(id)));
+      }
+
+      const containsOf = (node: unknown): string | undefined => {
+        if (!node || typeof node !== "object") return undefined;
+        const n = node as Record<string, unknown>;
+        if (typeof n.contains === "string") return n.contains;
+        return undefined;
+      };
+
+      if (o.debitore && typeof o.debitore === "object") {
+        const d = o.debitore as Record<string, unknown>;
+        const nome = containsOf(d.nome);
+        const cognome = containsOf(d.cognome);
+        if (nome || cognome) debitoreTerm = debitoreTerm || nome || cognome;
+        const tel = containsOf(d.telefono);
+        if (tel) telefonoTerm = telefonoTerm || tel;
+        const cf = containsOf(d.codiceFiscale);
+        if (cf) cfTerm = cfTerm || cf;
+        if (d.recapiti && typeof d.recapiti === "object") {
+          const some = (d.recapiti as { some?: { valore?: unknown } }).some;
+          telefonoTerm = telefonoTerm || containsOf(some?.valore);
+        }
+      }
+      if (o.garanti && typeof o.garanti === "object") {
+        const some = (o.garanti as { some?: Record<string, unknown> }).some;
+        if (some) {
+          telefonoTerm = telefonoTerm || containsOf(some.telefono);
+          cfTerm = cfTerm || containsOf(some.codiceFiscale);
+          garanteTerm =
+            garanteTerm ||
+            containsOf(some.nome) ||
+            containsOf(some.cognome) ||
+            containsOf(some.codiceFiscale);
+        }
+      }
+      noteTerm = noteTerm || containsOf(o.note);
+      if (o.attivita && typeof o.attivita === "object") {
+        const some = (o.attivita as { some?: { nota?: unknown } }).some;
+        noteTerm = noteTerm || containsOf(some?.nota);
+      }
+    }
+
+    if (into === "in") {
+      if (operatoreIds.size) merge("operatoreIdsIn", [...operatoreIds]);
+      if (periKeys.size) merge("perimetroKeys", [...periKeys]);
+      // Debitore OR garante nello stesso OR → non AND-are i due filtri.
+      if (debitoreTerm && garanteTerm) {
+        filter.debitoreContains = debitoreTerm;
+      } else {
+        if (debitoreTerm) filter.debitoreContains = debitoreTerm;
+        if (garanteTerm) filter.garanteContains = garanteTerm;
+      }
+      if (telefonoTerm) filter.telefonoContains = telefonoTerm;
+      if (cfTerm) filter.cfPivaContains = cfTerm;
+      if (noteTerm) filter.noteContains = noteTerm;
+    } else {
+      if (operatoreIds.size) merge("operatoreIdsNotIn", [...operatoreIds]);
+      if (periKeys.size) merge("perimetroKeysNot", [...periKeys]);
+      if (debitoreTerm && garanteTerm) {
+        filter.debitoreNotContains = debitoreTerm;
+      } else {
+        if (debitoreTerm) filter.debitoreNotContains = debitoreTerm;
+        if (garanteTerm) filter.garanteNotContains = garanteTerm;
+      }
+      if (telefonoTerm) filter.telefonoNotContains = telefonoTerm;
+      if (cfTerm) filter.cfPivaNotContains = cfTerm;
+      if (noteTerm) filter.noteNotContains = noteTerm;
+    }
+  };
+
+  const walkNegated = (w: unknown) => {
+    if (!w || typeof w !== "object") return;
+    const node = w as Record<string, unknown>;
+
+    if (typeof node.mandanteId === "string") {
+      merge("mandanteIdsNotIn", [node.mandanteId]);
+    }
+    if (typeof node.numeroMandante === "string") {
+      merge("numeroMandantiNotIn", [node.numeroMandante]);
+    }
+    if (node.assegnatarioId === null) {
+      // NOT (assegnatario IS NULL) → ha assegnatario
+      filter.hasAssegnatario = true;
+    }
+    if (node.assegnatarioId && typeof node.assegnatarioId === "object") {
+      const a = node.assegnatarioId as Record<string, unknown>;
+      if (a.not === null) {
+        // NOT (assegnatario IS NOT NULL) → senza assegnatario
+        filter.hasAssegnatario = false;
+      }
+      if (Array.isArray(a.in)) merge("assegnatarioIdsNotIn", a.in.map(String));
+    }
+    if (node.id && typeof node.id === "object") {
+      const idObj = node.id as Record<string, unknown>;
+      if (Array.isArray(idObj.in)) merge("excludeIds", idObj.in.map(String));
+    }
+    if (node.debitore && typeof node.debitore === "object") {
+      const d = node.debitore as Record<string, unknown>;
+      const containsOf = (v: unknown) =>
+        v && typeof v === "object" && typeof (v as { contains?: unknown }).contains === "string"
+          ? String((v as { contains: string }).contains)
+          : undefined;
+      const citta = containsOf(d.citta);
+      const prov = containsOf(d.provincia);
+      if (citta) filter.cittaNotContains = citta;
+      if (prov) filter.provNotContains = prov;
+    }
+    if (node.OR && Array.isArray(node.OR)) {
+      extractOrOperatorePerimetro(node.OR, "notIn");
+    }
+  };
+
   const walk = (w: unknown) => {
     if (!w || typeof w !== "object") return;
     const node = w as Record<string, unknown>;
     if (typeof node.tenantId === "string") {
       /* scope handled separately */
+    }
+    // Sentinel F1: evita traduzione OR debitore/garante → AND sul connector.
+    if (node.cercaPratica && typeof node.cercaPratica === "object") {
+      const c = node.cercaPratica as { campo?: string; q?: string };
+      if (c.campo && c.q && String(c.q).trim().length >= 2) {
+        filter.searchCampo = String(c.campo);
+        filter.searchTerm = String(c.q).trim();
+        filter.cercaAmpia = true;
+      }
     }
     if (node.id) {
       if (typeof node.id === "string") filter.ids = [node.id];
@@ -227,21 +424,109 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
       if (Array.isArray(s.notIn)) filter.notStati = s.notIn.map(String);
     }
     if (typeof node.mandanteId === "string") filter.mandanteId = node.mandanteId;
+    if (typeof node.codiceScarico === "string") filter.codScarico = node.codiceScarico;
+    if (node.codiceScarico === null) filter.codScaricoIsNull = true;
+    if (node.codiceScarico && typeof node.codiceScarico === "object") {
+      const c = node.codiceScarico as Record<string, unknown>;
+      if (Array.isArray(c.in)) {
+        filter.codScaricoIn = [
+          ...new Set([...(filter.codScaricoIn || []), ...c.in.map(String)]),
+        ];
+      }
+      if (Array.isArray(c.notIn)) {
+        filter.codScaricoNotIn = [
+          ...new Set([...(filter.codScaricoNotIn || []), ...c.notIn.map(String)]),
+        ];
+      }
+      if (c.not === null) filter.codScaricoNotNull = true;
+    }
+    if (typeof node.codiceScaricoBk === "string") filter.codScaricoBk = node.codiceScaricoBk;
+    if (node.codiceScaricoBk === null) filter.codScaricoBkIsNull = true;
+    if (node.codiceScaricoBk && typeof node.codiceScaricoBk === "object") {
+      const c = node.codiceScaricoBk as Record<string, unknown>;
+      if (Array.isArray(c.in)) {
+        filter.codScaricoBkIn = [
+          ...new Set([...(filter.codScaricoBkIn || []), ...c.in.map(String)]),
+        ];
+      }
+      if (Array.isArray(c.notIn)) {
+        filter.codScaricoBkNotIn = [
+          ...new Set([...(filter.codScaricoBkNotIn || []), ...c.notIn.map(String)]),
+        ];
+      }
+      if (c.not === null) filter.codScaricoBkNotNull = true;
+    }
     if (node.AND && Array.isArray(node.AND)) node.AND.forEach(walk);
+    if (node.NOT) {
+      const parts = Array.isArray(node.NOT) ? node.NOT : [node.NOT];
+      parts.forEach(walkNegated);
+    }
     if (node.OR && Array.isArray(node.OR)) {
       const perimetroOr: NonNullable<PraticaListRequest["filter"]>["perimetroOr"] = [];
+      const cfIn = new Set<string>();
       for (const orNode of node.OR) {
         if (!orNode || typeof orNode !== "object") continue;
         const o = orNode as Record<string, unknown>;
-        if (typeof o.mandanteId !== "string") continue;
-        const entry: { mandanteId: string; numeroMandanti?: string[] } = { mandanteId: o.mandanteId };
-        if (o.numeroMandante && typeof o.numeroMandante === "object") {
-          const nm = o.numeroMandante as Record<string, unknown>;
-          if (Array.isArray(nm.in)) entry.numeroMandanti = nm.in.map(String);
+        if (typeof o.mandanteId === "string") {
+          const entry: { mandanteId: string; numeroMandanti?: string[] } = {
+            mandanteId: o.mandanteId,
+          };
+          if (o.numeroMandante && typeof o.numeroMandante === "object") {
+            const nm = o.numeroMandante as Record<string, unknown>;
+            if (Array.isArray(nm.in)) entry.numeroMandanti = nm.in.map(String);
+          }
+          perimetroOr.push(entry);
         }
-        perimetroOr.push(entry);
+        // F9/F10: OR su CF debitore / garante
+        if (o.debitore && typeof o.debitore === "object") {
+          const d = o.debitore as Record<string, unknown>;
+          if (d.codiceFiscale && typeof d.codiceFiscale === "object") {
+            const cf = d.codiceFiscale as Record<string, unknown>;
+            if (Array.isArray(cf.in)) cf.in.forEach((v) => cfIn.add(String(v)));
+          }
+        }
+        if (o.garanti && typeof o.garanti === "object") {
+          const some = (o.garanti as { some?: Record<string, unknown> }).some;
+          if (some?.codiceFiscale && typeof some.codiceFiscale === "object") {
+            const cf = some.codiceFiscale as Record<string, unknown>;
+            if (Array.isArray(cf.in)) cf.in.forEach((v) => cfIn.add(String(v)));
+          }
+        }
+        // Cod. scarico: null OR in / eq
+        if (o.codiceScarico === null) filter.codScaricoIsNull = true;
+        if (typeof o.codiceScarico === "string") {
+          filter.codScaricoIn = [
+            ...new Set([...(filter.codScaricoIn || []), o.codiceScarico]),
+          ];
+        }
+        if (o.codiceScarico && typeof o.codiceScarico === "object") {
+          const c = o.codiceScarico as Record<string, unknown>;
+          if (Array.isArray(c.in)) {
+            filter.codScaricoIn = [
+              ...new Set([...(filter.codScaricoIn || []), ...c.in.map(String)]),
+            ];
+          }
+        }
+        if (o.codiceScaricoBk === null) filter.codScaricoBkIsNull = true;
+        if (typeof o.codiceScaricoBk === "string") {
+          filter.codScaricoBkIn = [
+            ...new Set([...(filter.codScaricoBkIn || []), o.codiceScaricoBk]),
+          ];
+        }
+        if (o.codiceScaricoBk && typeof o.codiceScaricoBk === "object") {
+          const c = o.codiceScaricoBk as Record<string, unknown>;
+          if (Array.isArray(c.in)) {
+            filter.codScaricoBkIn = [
+              ...new Set([...(filter.codScaricoBkIn || []), ...c.in.map(String)]),
+            ];
+          }
+        }
       }
       if (perimetroOr.length) filter.perimetroOr = perimetroOr;
+      if (cfIn.size) {
+        filter.codiciFiscaliIn = [...new Set([...(filter.codiciFiscaliIn || []), ...cfIn])];
+      }
+      extractOrOperatorePerimetro(node.OR, "in");
     }
     if (node.OR && !Array.isArray(node.OR)) walk(node.OR);
     if (node.assegnatarioId === null) filter.hasAssegnatario = false;
@@ -249,12 +534,24 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
     if (node.assegnatarioId && typeof node.assegnatarioId === "object") {
       const a = node.assegnatarioId as Record<string, unknown>;
       if (Array.isArray(a.in)) filter.assegnatarioIdsIn = a.in.map(String);
+      if (a.not === null) filter.hasAssegnatario = true;
     }
     if (typeof node.numeroMandante === "string") filter.numeroMandante = node.numeroMandante;
     if (node.numeroMandante && typeof node.numeroMandante === "object") {
       const nm = node.numeroMandante as Record<string, unknown>;
       if (Array.isArray(nm.in)) filter.numeroMandantiIn = nm.in.map(String);
       if (nm.not === null) filter.numeroMandanteNotNull = true;
+    }
+    if (node.debitore && typeof node.debitore === "object") {
+      const d = node.debitore as Record<string, unknown>;
+      const containsOf = (v: unknown) =>
+        v && typeof v === "object" && typeof (v as { contains?: unknown }).contains === "string"
+          ? String((v as { contains: string }).contains)
+          : undefined;
+      const citta = containsOf(d.citta);
+      const prov = containsOf(d.provincia);
+      if (citta) filter.cittaContains = citta;
+      if (prov) filter.provContains = prov;
     }
     if (node.dataAffido && typeof node.dataAffido === "object") {
       const da = node.dataAffido as Record<string, unknown>;

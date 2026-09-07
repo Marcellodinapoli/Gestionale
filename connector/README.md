@@ -87,12 +87,25 @@ connector/src/
   services/           # query SQL per dominio
 ```
 
-## Sicurezza
+## CreditCalc (consulenti esterni)
 
-- Credenziali SQL solo nel Connettore (mai in Next.js public env)
-- Query sempre parametrizzate (`@tenantId`, `@id`, …)
-- Log senza password/token
-- In produzione: TLS tra Credixa Cloud e Connettore cliente
+Base: `/api/v1/tenants/:tenantSlug/creditcalc`
+
+Trasporto tecnico usato dal **BFF Gestionale** (`/api/creditcalc/*`).
+L’app CreditCalc **non** si collega più direttamente al Connettore: l’identità è
+`Firebase UID → Connection → gestionaleUserId + tenantId`.
+
+| Metodo | Path | Body | Descrizione |
+|--------|------|------|-------------|
+| POST | `/login` | `{ tenantSlug?, email, password }` | **Deprecato per mobile** (solo test interni) |
+| POST | `/session` | `{ userId }` | Verifica consulente + CreditCalc ON |
+| POST | `/pratiche` | `{ userId, take?, skip? }` | Pratiche in affido |
+| POST | `/pratiche/:id` | `{ userId }` | Dettaglio + ultime note |
+| POST | `/pratiche/:id/lavorazione` | `{ userId, nota?, codiceScarico? }` | Nota e/o codice scarico |
+
+Accesso solo se su `Users` sono attivi `ConsulenteEsterno` e `CreditCalcEnabled` (impostati da Admin/Amministrazione nella scheda operatore). Scope: solo pratiche con `AssegnatarioId = userId`.
+
+Routing Connettore per tenant (lato BFF): `CONNECTOR_BASE_URL` oppure `CONNECTOR_URLS_JSON` / collection `tenant_connector_config`. Il cambio URL **non** richiede nuovo pairing.
 
 ## Test
 

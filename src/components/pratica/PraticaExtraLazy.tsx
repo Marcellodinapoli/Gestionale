@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { ContabilePreviewPanel } from "@/components/pratica/ContabilePreviewPanel";
 import { RegistroNote } from "@/components/pratica/RegistroNote";
 import { formatNotaLine } from "@/lib/noteFormat";
-import { fetchPraticaExtra, type PraticaExtraPayload } from "@/lib/praticaExtraClient";
+import {
+  fetchPraticaExtra,
+  PRATICA_EXTRA_INVALIDATE_EVENT,
+  type PraticaExtraPayload,
+} from "@/lib/praticaExtraClient";
 
 type Debitore = {
   ndg?: string | null;
@@ -18,9 +22,14 @@ type Debitore = {
   provincia?: string | null;
 };
 
+type NotaStreamPayload = {
+  attivita: PraticaExtraPayload["attivita"];
+};
+
 export function ContabilePreviewLazy({
   praticaId,
   canEditFatture,
+  canEditIncassi,
   debitore,
   numero,
   creditore,
@@ -31,6 +40,7 @@ export function ContabilePreviewLazy({
 }: {
   praticaId: string;
   canEditFatture?: boolean;
+  canEditIncassi?: boolean;
   debitore: Debitore;
   numero: string;
   creditore: string;
@@ -45,13 +55,25 @@ export function ContabilePreviewLazy({
   useEffect(() => {
     let cancelled = false;
     setPending(true);
-    fetchPraticaExtra(praticaId).then((data) => {
+    fetchPraticaExtra(praticaId, { force: true }).then((data) => {
       if (cancelled) return;
-      setExtra(data);
+      if (data) setExtra(data);
       setPending(false);
     });
+
+    function onInvalidate(ev: Event) {
+      const detail = (ev as CustomEvent<{ praticaId?: string | null }>).detail;
+      if (detail?.praticaId && detail.praticaId !== praticaId) return;
+      fetchPraticaExtra(praticaId, { force: true }).then((data) => {
+        if (cancelled) return;
+        if (data) setExtra(data);
+      });
+    }
+    window.addEventListener(PRATICA_EXTRA_INVALIDATE_EVENT, onInvalidate);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(PRATICA_EXTRA_INVALIDATE_EVENT, onInvalidate);
     };
   }, [praticaId]);
 
@@ -76,6 +98,7 @@ export function ContabilePreviewLazy({
       <ContabilePreviewPanel
         praticaId={praticaId}
         canEditFatture={canEditFatture}
+        canEditIncassi={canEditIncassi}
         debitore={debitore}
         numero={numero}
         creditore={creditore}
@@ -104,17 +127,79 @@ export function RegistroNoteLazy({
 }) {
   const [extra, setExtra] = useState<PraticaExtraPayload | null>(null);
   const [pending, setPending] = useState(true);
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setPending(true);
-    fetchPraticaExtra(praticaId).then((data) => {
+    let es: EventSource | null = null;
+    let fallbackTimer: number | undefined;
+
+    async function loadOnce(showPending: boolean) {
+      if (showPending) setPending(true);
+      const data = await fetchPraticaExtra(praticaId, { force: true });
       if (cancelled) return;
-      setExtra(data);
+      // Non azzerare le note già visibili se una fetch fallisce.
+      if (data) setExtra(data);
       setPending(false);
-    });
+    }
+
+    void loadOnce(true);
+
+    const streamUrl = `/api/pratiche/${encodeURIComponent(praticaId)}/notes/stream`;
+    try {
+      es = new EventSource(streamUrl);
+      es.addEventListener("notes", (ev) => {
+        if (cancelled) return;
+        try {
+          const payload = JSON.parse(
+            (ev as MessageEvent).data
+          ) as NotaStreamPayload;
+          if (!Array.isArray(payload.attivita)) return;
+          setLive(true);
+          setExtra((prev) => ({
+            attivita: payload.attivita,
+            incassi: prev?.incassi || [],
+            fatture: prev?.fatture || [],
+          }));
+          setPending(false);
+        } catch {
+          /* ignore parse */
+        }
+      });
+      es.onerror = () => {
+        setLive(false);
+        // Fallback polling se lo stream cade
+        if (fallbackTimer == null) {
+          fallbackTimer = window.setInterval(() => {
+            void loadOnce(false);
+          }, 1000);
+        }
+      };
+      es.onopen = () => {
+        setLive(true);
+        if (fallbackTimer != null) {
+          window.clearInterval(fallbackTimer);
+          fallbackTimer = undefined;
+        }
+      };
+    } catch {
+      fallbackTimer = window.setInterval(() => {
+        void loadOnce(false);
+      }, 1000);
+    }
+
+    function onVisible() {
+      if (document.visibilityState === "visible") void loadOnce(false);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
     return () => {
       cancelled = true;
+      es?.close();
+      if (fallbackTimer != null) window.clearInterval(fallbackTimer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [praticaId]);
 
@@ -126,7 +211,7 @@ export function RegistroNoteLazy({
     .map((a) => ({
       id: a.id,
       line: formatNotaLine({
-        userName: a.user.name,
+        userName: a.user?.name || "Operatore",
         createdAt: new Date(a.createdAt),
         tipo: a.tipo,
         esito: a.esito,
@@ -145,6 +230,13 @@ export function RegistroNoteLazy({
       {pending ? (
         <div className="pointer-events-none absolute right-2 top-1 z-10 rounded bg-[#1a4f7a]/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">
           Caricamento note…
+        </div>
+      ) : live ? (
+        <div
+          className="pointer-events-none absolute right-2 top-1 z-10 rounded bg-emerald-700/85 px-1.5 py-0.5 text-[9px] font-semibold text-white"
+          title="Aggiornamento note in tempo reale"
+        >
+          live
         </div>
       ) : null}
       <RegistroNote

@@ -5,10 +5,12 @@
 
 export const STATO_LABELS: Record<string, string> = {
   NUOVA: "Nuova",
-  AFFIDATA: "Affidata",
+  AFFIDATA: "In lavorazione",
   IN_LAVORAZIONE: "In lavorazione",
-  PROMESSA: "Promessa",
-  PIANO: "Piano di rientro",
+  SCADUTA: "Scaduta",
+  // Legacy / chiusure reali (non in tendina filtro)
+  PROMESSA: "In lavorazione",
+  PIANO: "In lavorazione",
   INCASSO: "Incassata",
   INESIGIBILE: "Inesigibile",
   RESA: "Resa mandante",
@@ -28,11 +30,12 @@ export const CODICE_SCARICO_LABELS: Record<CodiceScarico, string> = {
   LPT: "Resa mandante",
 };
 
-/** Mapping stato pratica ↔ codice scarico (recupero crediti). */
+/** Mapping stato chiusura ↔ codice scarico (recupero crediti).
+ * PTC / PPC / LPP sono solo codice scarico: non cambiano il ciclo di vita
+ * (resta IN_LAVORAZIONE fino a scadenza; INCASSO solo con residuo azzerato da incasso).
+ * MOV / LPT chiudono ancora la pratica (inesigibile / resa).
+ */
 export const STATO_SCARICO: Record<string, CodiceScarico> = {
-  INCASSO: "PTC",
-  PROMESSA: "PPC",
   INESIGIBILE: "MOV",
-  PIANO: "LPP",
   RESA: "LPT",
 };

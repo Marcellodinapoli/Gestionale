@@ -21,7 +21,8 @@ import {
   etichettaFiltroCollegata,
 } from "@/lib/praticaCollegata";
 import { buildPraticaCodaHref, buildPraticheListaHref, type CodaNav } from "@/lib/praticaCodaNav";
-import { codiceScaricoPratica } from "@/lib/scarico";
+import { statoOperativoPratica } from "@/lib/statoOperativoPratica";
+import { canClearCodiceScarico, canEditCodiceScaricoBk } from "@/lib/permissions";
 import type {
   CodiceScaricoPerimetro,
   PdrConfigPerimetro,
@@ -53,6 +54,7 @@ type PraticaData = {
   contratto?: string | null;
   commessa?: string | null;
   stato: string;
+  assegnatarioId?: string | null;
   capitale: number;
   interessi: number;
   spese: number;
@@ -70,6 +72,8 @@ type PraticaData = {
   tipoContatto: string | null;
   codiceScarico: string | null;
   codiceScaricoAt: Date | null;
+  codiceScaricoBk: string | null;
+  codiceScaricoBkAt?: Date | null;
   memoAt: Date | null;
   promessaAt: Date | null;
   promessaImporto: number | null;
@@ -99,6 +103,8 @@ function HeaderRigaDati({
   scadenza,
   praticaId,
   stato,
+  assegnatarioId,
+  codiceScaricoBk,
   filtroStato,
   promessaAt,
   canEditStato,
@@ -109,12 +115,33 @@ function HeaderRigaDati({
   scadenza: Date | null;
   praticaId: string;
   stato: string;
+  assegnatarioId?: string | null;
+  codiceScaricoBk?: string | null;
   filtroStato?: string | null;
   promessaAt?: string | null;
   canEditStato: boolean;
 }) {
   const affido = dataAffido ? dataIt(dataAffido) : null;
   const scad = scadenza ? dataIt(scadenza) : null;
+  const giorniRimanenti = (() => {
+    if (!scadenza) return null;
+    const scadDay = scadenza instanceof Date ? scadenza : new Date(scadenza);
+    if (Number.isNaN(scadDay.getTime())) return null;
+    const oggi = new Date();
+    const startOggi = Date.UTC(oggi.getFullYear(), oggi.getMonth(), oggi.getDate());
+    const startScad = Date.UTC(
+      scadDay.getFullYear(),
+      scadDay.getMonth(),
+      scadDay.getDate()
+    );
+    return Math.round((startScad - startOggi) / 86_400_000);
+  })();
+  const statoBadge = statoOperativoPratica({
+    stato,
+    assegnatarioId,
+    scadenza,
+    codiceScaricoBk,
+  });
 
   const boxCls =
     "rounded border border-[var(--line)] bg-white px-1.5 py-px font-mono text-xs leading-tight text-[var(--navy)]";
@@ -122,20 +149,47 @@ function HeaderRigaDati({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5">
+        <span className="text-xs font-bold">Sit. affido</span>
         <StatoPraticaBar
           praticaId={praticaId}
-          stato={stato}
+          stato={statoBadge}
           filtroStato={filtroStato}
           promessaAt={promessaAt}
           canEdit={canEditStato}
           compact
         />
       </span>
-      {affido || scad ? (
+      {affido ? (
         <span className="inline-flex items-center gap-1">
-          <span className="text-xs font-bold">Aff/Scad</span>
-          {affido ? <span className={boxCls}>{affido}</span> : null}
-          {scad ? <span className={boxCls}>{scad}</span> : null}
+          <span className="text-xs font-bold">Affidata il:</span>
+          <span className={boxCls}>{affido}</span>
+        </span>
+      ) : null}
+      {scad ? (
+        <span className="inline-flex items-center gap-1">
+          <span className="text-xs font-bold">Scade il:</span>
+          <span className={boxCls}>{scad}</span>
+        </span>
+      ) : null}
+      {giorniRimanenti != null ? (
+        <span className="inline-flex items-center gap-1">
+          <span className="text-xs font-bold">Restano:</span>
+          <span
+            className={`${boxCls} ${
+              giorniRimanenti <= 7 ? "!border-red-300 !text-[var(--danger)] font-semibold" : ""
+            }`}
+            title={
+              giorniRimanenti < 0
+                ? `Scaduta da ${Math.abs(giorniRimanenti)} gg`
+                : giorniRimanenti === 0
+                  ? "Scade oggi"
+                  : `${giorniRimanenti} giorni rimanenti`
+            }
+          >
+            {giorniRimanenti < 0
+              ? `-${Math.abs(giorniRimanenti)} gg`
+              : `${giorniRimanenti} gg`}
+          </span>
         </span>
       ) : null}
       {numeroMandante ? (
@@ -156,7 +210,9 @@ function HeaderRigaDati({
 
 export function PraticaSchedaOperatore({
   pratica,
+  perimetroLabel,
   codiciScaricoOperatore = [],
+  codiciScaricoBkOff = [],
   smsPresets = [],
   pdrDisponibile = false,
   pdrConfig,
@@ -164,6 +220,7 @@ export function PraticaSchedaOperatore({
   canEditNotes,
   canEditStato,
   canRegistraIncasso,
+  canEditIncassi,
   lockedByName,
   nav,
   currentUserName,
@@ -176,7 +233,10 @@ export function PraticaSchedaOperatore({
   collegatePayload = null,
 }: {
   pratica: PraticaData;
+  /** Etichetta perimetro mandante (es. MO · Riattivazioni). */
+  perimetroLabel?: string | null;
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
+  codiciScaricoBkOff?: CodiceScaricoPerimetro[];
   smsPresets?: SmsPreset[];
   /** Fasce PDR configurate sul perimetro mandante. */
   pdrDisponibile?: boolean;
@@ -186,6 +246,7 @@ export function PraticaSchedaOperatore({
   canEditNotes: boolean;
   canEditStato: boolean;
   canRegistraIncasso?: boolean;
+  canEditIncassi?: boolean;
   lockedByName?: string | null;
   nav: {
     page: number;
@@ -264,6 +325,8 @@ export function PraticaSchedaOperatore({
             scadenza={pratica.scadenza}
             praticaId={pratica.id}
             stato={pratica.stato}
+            assegnatarioId={pratica.assegnatarioId}
+            codiceScaricoBk={pratica.codiceScaricoBk}
             filtroStato={nav.codaNav?.filtro?.stato}
             promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
             canEditStato={canEditStato}
@@ -357,6 +420,7 @@ export function PraticaSchedaOperatore({
           <ContabilePreviewLazy
             praticaId={pratica.id}
             canEditFatture={canRegistraIncasso}
+            canEditIncassi={canEditIncassi}
             debitore={pratica.debitore}
             numero={pratica.numero}
             creditore={pratica.mandante.ragioneSociale}
@@ -423,10 +487,12 @@ export function PraticaSchedaOperatore({
         </span>
         <span className="shrink-0 text-[var(--muted)]">·</span>
         <span className="shrink-0 font-mono">{pratica.mandante.codice}</span>
-        {pratica.scadenza ? (
+        {perimetroLabel ? (
           <>
             <span className="shrink-0 text-[var(--muted)]">·</span>
-            <span className="shrink-0">Scad. {dataIt(pratica.scadenza)}</span>
+            <span className="min-w-0 truncate" title={perimetroLabel}>
+              Perimetro {perimetroLabel}
+            </span>
           </>
         ) : null}
       </div>
@@ -436,8 +502,12 @@ export function PraticaSchedaOperatore({
           praticaId={pratica.id}
           canEditNotes={canEditNotes}
           praticaLocked={praticaBloccata}
-          codiceScarico={codiceScaricoPratica(pratica.stato, pratica.codiceScarico)}
+          codiceScarico={pratica.codiceScarico}
+          codiceScaricoBk={pratica.codiceScaricoBk}
           codiciScaricoOperatore={codiciScaricoOperatore}
+          codiciScaricoBkOff={codiciScaricoBkOff}
+          canEditBkOff={canEditCodiceScaricoBk(currentUserRole)}
+          canClearScarico={canClearCodiceScarico(currentUserRole)}
           memoAt={datetimeLocalValue(pratica.memoAt)}
           promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
           promessaImporto={pratica.promessaImporto}
@@ -454,6 +524,13 @@ export function PraticaSchedaOperatore({
           }
           recordingMode={recordingMode}
           currentUserRole={currentUserRole}
+          incassoRiparto={{
+            capitale: pratica.capitale,
+            interessi: pratica.interessi,
+            spese: pratica.spese,
+            speseRecupero,
+            importoRata: importoRata ?? null,
+          }}
           nextPraticaHref={(() => {
             const nextIdx = nav.page;
             if (nextIdx >= nav.totalPages) return null;
@@ -489,8 +566,11 @@ export function PraticaSchedaOperatore({
             <RiepilogoEsitoPratica
               stato={pratica.stato}
               codiceScarico={pratica.codiceScarico}
+              codiceScaricoBk={pratica.codiceScaricoBk}
               codiceScaricoAt={pratica.codiceScaricoAt}
+              codiceScaricoBkAt={pratica.codiceScaricoBkAt}
               promessaAt={pratica.promessaAt ? dateInputValue(pratica.promessaAt) : ""}
+              disabled={praticaBloccata || !canEditNotes}
             />
           }
           hrefForPage={(p) => {

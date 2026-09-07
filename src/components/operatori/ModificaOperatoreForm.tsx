@@ -16,6 +16,8 @@ export type OperatoreModifica = {
   role: string;
   acronimo: string | null;
   formazioneOnly: boolean;
+  consulenteEsterno: boolean;
+  creditCalcEnabled: boolean;
   sedeId: string | null;
   supervisorId: string | null;
   codiceFiscale: string | null;
@@ -41,6 +43,8 @@ export function ModificaOperatoreForm({
   const [condizioneEconomica, setCondizioneEconomica] = useState<CondizioneEconomica>(
     utente.condizioneEconomica
   );
+  const [consulenteEsterno, setConsulenteEsterno] = useState(utente.consulenteEsterno);
+  const [creditCalcEnabled, setCreditCalcEnabled] = useState(utente.creditCalcEnabled);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -207,6 +211,54 @@ export function ModificaOperatoreForm({
           />
         </label>
       </div>
+
+      {utente.role === "OPERATOR" ? (
+        <div className="space-y-2 border-t border-[var(--line)] pt-3">
+          <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
+            CreditCalc / consulente esterno
+          </p>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="consulenteEsterno"
+              value="1"
+              checked={consulenteEsterno}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setConsulenteEsterno(on);
+                if (!on) setCreditCalcEnabled(false);
+              }}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-medium text-[var(--navy)]">Consulente esterno</span>
+              <span className="block text-xs text-[var(--muted)]">
+                Profilo distinto dall&apos;operatore interno; vede solo pratiche in affido.
+              </span>
+            </span>
+          </label>
+          <label
+            className={`flex items-start gap-2 text-sm ${consulenteEsterno ? "" : "opacity-50"}`}
+          >
+            <input
+              type="checkbox"
+              name="creditCalcEnabled"
+              value="1"
+              checked={creditCalcEnabled}
+              disabled={!consulenteEsterno}
+              onChange={(e) => setCreditCalcEnabled(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-medium text-[var(--navy)]">Abilita accesso CreditCalc</span>
+              <span className="block text-xs text-[var(--muted)]">
+                Solo Admin/Amministrazione. Consente aprire pratiche (mobile), note e codice
+                scarico. L’operatore genera il QR da Account.
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <button

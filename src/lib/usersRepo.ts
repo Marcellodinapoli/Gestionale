@@ -53,7 +53,7 @@ export function usersDb(ctx: UserDbContext): typeof prisma.user {
         orderBy: prismaOrderByToSort(args.orderBy),
         skip: args.skip ?? undefined,
         take: args.take ?? undefined,
-        include: prismaIncludeToUserInclude(args.include),
+        include: prismaIncludeToUserInclude(args.include, args.select),
         select: args.select as Record<string, unknown> | undefined,
       });
       return result.items.map((row) => mapUserRow(row, args.select ?? args.include)) as never[];
@@ -67,7 +67,7 @@ export function usersDb(ctx: UserDbContext): typeof prisma.user {
         filter: prismaWhereToFilter(args.where),
         orderBy: prismaOrderByToSort(args.orderBy),
         take: 1,
-        include: prismaIncludeToUserInclude(args.include),
+        include: prismaIncludeToUserInclude(args.include, args.select),
         select: args.select as Record<string, unknown> | undefined,
       });
       const row = items.items[0] ?? null;
@@ -86,7 +86,7 @@ export function usersDb(ctx: UserDbContext): typeof prisma.user {
           where.tenantId_email.tenantId,
           where.tenantId_email.email,
           {
-            include: prismaIncludeToUserInclude(args.include),
+            include: prismaIncludeToUserInclude(args.include, args.select),
             select: args.select as Record<string, unknown> | undefined,
           }
         );
@@ -94,7 +94,7 @@ export function usersDb(ctx: UserDbContext): typeof prisma.user {
       }
       if (where?.id) {
         const row = await r.getById(slug, ctx.tenantId, where.id, {
-          include: prismaIncludeToUserInclude(args.include),
+          include: prismaIncludeToUserInclude(args.include, args.select),
           select: args.select as Record<string, unknown> | undefined,
         });
         return row ? (mapUserRow(row, args.select ?? args.include) as never) : null;
@@ -126,14 +126,17 @@ export function usersDb(ctx: UserDbContext): typeof prisma.user {
   } as unknown as typeof prisma.user;
 }
 
-function prismaIncludeToUserInclude(include: unknown): UserInclude | undefined {
-  if (!include || typeof include !== "object") return undefined;
-  const inc = include as Record<string, unknown>;
+function prismaIncludeToUserInclude(include: unknown, select?: unknown): UserInclude | undefined {
   const out: UserInclude = {};
-  if (inc.sede) out.sede = true;
-  if (inc.postazione) out.postazione = true;
-  if (inc.supervisor) out.supervisor = true;
-  if (inc.passwordHistory) out.passwordHistory = true;
+  for (const src of [include, select]) {
+    if (!src || typeof src !== "object") continue;
+    const inc = src as Record<string, unknown>;
+    // Prisma `select: { postazione: { select: … } }` equivale a un include della relazione.
+    if (inc.sede) out.sede = true;
+    if (inc.postazione) out.postazione = true;
+    if (inc.supervisor) out.supervisor = true;
+    if (inc.passwordHistory) out.passwordHistory = true;
+  }
   return Object.keys(out).length ? out : undefined;
 }
 
