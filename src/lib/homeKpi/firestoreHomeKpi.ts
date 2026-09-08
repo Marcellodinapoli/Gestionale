@@ -27,7 +27,7 @@ import {
 import type { GruppoLavoro } from "@/lib/gruppoLavoro";
 import type { HomeKpiBundle, HomeKpiContext } from "@/lib/data/contracts/dashboard";
 import { amministrazioneRicaviFlags } from "@/lib/homeKpi/buildContext";
-import { parsePerimetri } from "@/lib/mandantePerimetri";
+import { parsePerimetriList, chiaviMatchPerimetro } from "@/lib/mandantePerimetri";
 import { prismaCount } from "@/lib/prismaCount";
 import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 
@@ -66,6 +66,8 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
         capitale: true,
         interessi: true,
         spese: true,
+        residuo: true,
+        nettoDaPagare: true,
         incassi: { select: { importo: true } },
       },
     }),
@@ -81,34 +83,65 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
   ]);
   const byMandante = new Map<
     string,
-    { n: number; affidato: number; incassato: number; ricavoLordo: number }
+    {
+      n: number;
+      affidato: number;
+      residuo: number;
+      insoluto: number;
+      incassato: number;
+      ricavoLordo: number;
+    }
   >();
   for (const p of pratiche) {
     const cur = byMandante.get(p.mandanteId) || {
       n: 0,
       affidato: 0,
+      residuo: 0,
+      insoluto: 0,
       incassato: 0,
       ricavoLordo: 0,
     };
     cur.n += 1;
     cur.affidato += (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0);
+    const residuo = p.residuo || 0;
+    cur.residuo += residuo;
+    cur.insoluto +=
+      p.nettoDaPagare != null && Number.isFinite(p.nettoDaPagare)
+        ? p.nettoDaPagare
+        : residuo;
     cur.incassato += p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
     byMandante.set(p.mandanteId, cur);
   }
   for (const pv of provvigioni) {
     const mid = pv.pratica.mandanteId;
-    const cur = byMandante.get(mid) || { n: 0, affidato: 0, incassato: 0, ricavoLordo: 0 };
+    const cur = byMandante.get(mid) || {
+      n: 0,
+      affidato: 0,
+      residuo: 0,
+      insoluto: 0,
+      incassato: 0,
+      ricavoLordo: 0,
+    };
     cur.ricavoLordo += pv.importo || 0;
     byMandante.set(mid, cur);
   }
   return mandanti.map((m) => {
-    const agg = byMandante.get(m.id) || { n: 0, affidato: 0, incassato: 0, ricavoLordo: 0 };
+    const agg = byMandante.get(m.id) || {
+      n: 0,
+      affidato: 0,
+      residuo: 0,
+      insoluto: 0,
+      incassato: 0,
+      ricavoLordo: 0,
+    };
     return {
       id: m.id,
       codice: m.codice,
       ragioneSociale: m.ragioneSociale,
       pratiche: agg.n,
       affidato: agg.affidato,
+      residuo: agg.residuo,
+      insoluto: agg.insoluto,
       incassato: agg.incassato,
       ricavoLordo: agg.ricavoLordo,
       percentuale: agg.affidato > 0 ? (agg.incassato / agg.affidato) * 100 : 0,
@@ -308,26 +341,14 @@ export async function loadFirestoreHomeKpi(
       select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
     });
 
-    const lottiPerMandante = await prisma.pratica.groupBy({
-      by: ["mandanteId", "numeroMandante"],
-      where: { tenantId: user.tenantId, numeroMandante: { not: null } },
-    });
-
-    const lottiMap = new Map<string, Set<string>>();
-    for (const row of lottiPerMandante) {
-      const lotto = row.numeroMandante?.trim();
-      if (!lotto) continue;
-      const set = lottiMap.get(row.mandanteId) ?? new Set<string>();
-      set.add(lotto);
-      lottiMap.set(row.mandanteId, set);
-    }
-
     const mandantiFiltriUi = mandantiFiltro.map((m) => {
-      const fromConfig = parsePerimetri(m.perimetri).map((p) => p.nomeMandante);
-      const fromPratiche = [...(lottiMap.get(m.id) ?? [])];
-      const perimetri = [...new Set([...fromConfig, ...fromPratiche])].sort((a, b) =>
-        a.localeCompare(b, "it")
-      );
+      const perimetri = parsePerimetriList(m.perimetri)
+        .map((p) => ({
+          value: p.nomeMandante,
+          label: p.label || p.nomeMandante,
+        }))
+        .filter((p) => p.value)
+        .sort((a, b) => a.label.localeCompare(b.label, "it"));
       return { id: m.id, codice: m.codice, ragioneSociale: m.ragioneSociale, perimetri };
     });
 
@@ -338,15 +359,30 @@ export async function loadFirestoreHomeKpi(
       const p = incPerimetro.trim();
       if (mandanteFiltroOk) {
         const m = mandantiFiltriUi.find((x) => x.id === mandanteFiltroOk);
-        return m?.perimetri.includes(p) ? p : undefined;
+        return m?.perimetri.some((x) => x.value === p) ? p : undefined;
       }
-      return mandantiFiltriUi.some((m) => m.perimetri.includes(p)) ? p : undefined;
+      return mandantiFiltriUi.some((m) => m.perimetri.some((x) => x.value === p))
+        ? p
+        : undefined;
     })();
+
+    const numeriMandanteFiltro = perimetroFiltroOk
+      ? [
+          ...new Set(
+            (mandanteFiltroOk
+              ? mandantiFiltro.filter((m) => m.id === mandanteFiltroOk)
+              : mandantiFiltro
+            ).flatMap((m) => chiaviMatchPerimetro(m.perimetri, perimetroFiltroOk))
+          ),
+        ]
+      : [];
 
     const praticaIncassoFilter: Prisma.PraticaWhereInput = {
       tenantId: user.tenantId,
       ...(mandanteFiltroOk ? { mandanteId: mandanteFiltroOk } : {}),
-      ...(perimetroFiltroOk ? { numeroMandante: perimetroFiltroOk } : {}),
+      ...(numeriMandanteFiltro.length
+        ? { numeroMandante: { in: numeriMandanteFiltro } }
+        : {}),
       ...(sedePraticaWhere || {}),
     };
 

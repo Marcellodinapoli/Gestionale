@@ -13,12 +13,23 @@ export type AffidiMonitoraggioDto = {
 export function praticaMonitorWhere(
   tenantId: string,
   mandanteId?: string,
-  perimetro?: string
+  perimetro?: string,
+  numeriMandante?: string[]
 ): Prisma.PraticaWhereInput {
+  const numeri =
+    numeriMandante?.length
+      ? numeriMandante
+      : perimetro
+        ? [perimetro]
+        : [];
   return {
     tenantId,
     ...(mandanteId ? { mandanteId } : {}),
-    ...(perimetro ? { numeroMandante: perimetro } : {}),
+    ...(numeri.length === 1
+      ? { numeroMandante: numeri[0] }
+      : numeri.length > 1
+        ? { numeroMandante: { in: numeri } }
+        : {}),
   };
 }
 
@@ -27,6 +38,7 @@ export async function loadAffidiMonitoraggio(
   opts: {
     mandanteId?: string;
     perimetro?: string;
+    numeriMandante?: string[];
     mese?: string;
   }
 ): Promise<AffidiMonitoraggioDto> {
@@ -35,7 +47,12 @@ export async function loadAffidiMonitoraggio(
   const tra7gg = new Date(oggi);
   tra7gg.setDate(tra7gg.getDate() + 7);
 
-  const praticaWhere = praticaMonitorWhere(user.tenantId, opts.mandanteId, opts.perimetro);
+  const praticaWhere = praticaMonitorWhere(
+    user.tenantId,
+    opts.mandanteId,
+    opts.perimetro,
+    opts.numeriMandante
+  );
 
   const [nuove, inLavorazione, inScadenza7gg, nonAssegnate] = await Promise.all([
       prisma.pratica.count({

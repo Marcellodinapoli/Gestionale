@@ -1,6 +1,7 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { requireUser } from "@/lib/guard";
+import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { AccountEditor } from "@/components/account/AccountEditor";
 import { giorniAllaScadenzaPassword } from "@/lib/passwordPolicy";
@@ -31,7 +32,7 @@ export default async function AccountPage() {
       postazione: { select: { nome: true, interno: true } },
     },
   });
-  if (!user) return null;
+  if (!user) notFound();
 
   const gestiscePostazione = requiresPostazione({
     role: user.role as Role,

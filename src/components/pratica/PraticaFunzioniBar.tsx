@@ -159,6 +159,10 @@ export function PraticaFunzioniBar({
   promessaImporto,
   promessaMetodo,
   residuo = 0,
+  importoIniziale,
+  codiceFiscale,
+  mandanteLabel,
+  perimetroLabel,
   pdrDisponibile = false,
   pdrConfig,
   stralcioConfig,
@@ -186,6 +190,12 @@ export function PraticaFunzioniBar({
   promessaImporto?: number | null;
   promessaMetodo?: string | null;
   residuo?: number;
+  /** Netto da pagare / importo precompilato per PDR. */
+  importoIniziale?: number;
+  codiceFiscale?: string | null;
+  mandanteLabel?: string | null;
+  /** Etichetta perimetro risolto per la pratica. */
+  perimetroLabel?: string | null;
   /** Se false, piano di rientro comunica che non è previsto sul perimetro. */
   pdrDisponibile?: boolean;
   pdrConfig?: PdrConfigPerimetro;
@@ -632,10 +642,15 @@ export function PraticaFunzioniBar({
         open={popup === "piano"}
         title="Piano di rientro"
         onClose={() => setPopup(null)}
+        wide
       >
         <PianoRientroPopup
           praticaId={praticaId}
           residuo={residuo}
+          importoIniziale={importoIniziale}
+          pdr={pdrConfig ?? emptyPdrConfig()}
+          codiceFiscale={codiceFiscale}
+          mandanteLabel={mandanteLabel}
           onDone={() => setPopup(null)}
         />
       </Modal>
@@ -651,6 +666,8 @@ export function PraticaFunzioniBar({
           residuo={residuo}
           stralcio={stralcioConfig ?? emptyStralcioConfig()}
           pdr={pdrConfig ?? emptyPdrConfig()}
+          mandanteLabel={mandanteLabel}
+          perimetroLabel={perimetroLabel}
           onDone={() => setPopup(null)}
         />
       </Modal>

@@ -17,13 +17,16 @@ import {
   type CodiceScaricoPerimetro,
   type LatoEconomico,
   type MandantePerimetro,
+  type PagamentiIntestazioniPerimetro,
   type PdrBand,
   type PdrConfigPerimetro,
   type ScaglioneBase,
   type SmsPresetPerimetro,
   type StralcioConfigPerimetro,
+  emptyPagamentiIntestazioni,
   emptyPdrConfig,
   emptyStralcioConfig,
+  emptyLatoEconomico,
 } from "@/lib/mandantePerimetri";
 
 const inputCls = "h-9 w-full rounded border border-[var(--line)] px-2 text-sm";
@@ -67,6 +70,15 @@ type StralcioForm = {
   note: string;
 };
 
+type PagamentiForm = {
+  bonificoIntestatoA: string;
+  bonificoIban: string;
+  bollettinoIntestatoA: string;
+  bollettinoCcp: string;
+  bollettinoIndirizzo: string;
+  assegnoIntestatoA: string;
+};
+
 type PerimetroForm = {
   id: string;
   /** Acronimo interno (schede cliente). */
@@ -75,11 +87,13 @@ type PerimetroForm = {
   nomeMandante: string;
   ricevuta: LatoForm;
   pagata: LatoForm;
+  pagataConsulenti: LatoForm;
   codiciScarico: CodiceScaricoPerimetro[];
   codiciScaricoOperatori: CodiceScaricoPerimetro[];
   smsPreimpostati: SmsPresetPerimetro[];
   pdr: PdrForm;
   stralcio: StralcioForm;
+  pagamenti: PagamentiForm;
   /** Firma codici scarico all'ultimo salvataggio riuscito del perimetro */
   codiciScaricoSavedSig: string;
 };
@@ -286,6 +300,28 @@ function formToStralcio(form: StralcioForm): StralcioConfigPerimetro {
   };
 }
 
+function pagamentiToForm(p: PagamentiIntestazioniPerimetro): PagamentiForm {
+  return {
+    bonificoIntestatoA: p.bonificoIntestatoA ?? "",
+    bonificoIban: p.bonificoIban ?? "",
+    bollettinoIntestatoA: p.bollettinoIntestatoA ?? "",
+    bollettinoCcp: p.bollettinoCcp ?? "",
+    bollettinoIndirizzo: p.bollettinoIndirizzo ?? "",
+    assegnoIntestatoA: p.assegnoIntestatoA ?? "",
+  };
+}
+
+function formToPagamenti(form: PagamentiForm): PagamentiIntestazioniPerimetro {
+  return {
+    bonificoIntestatoA: form.bonificoIntestatoA.trim(),
+    bonificoIban: form.bonificoIban.trim(),
+    bollettinoIntestatoA: form.bollettinoIntestatoA.trim(),
+    bollettinoCcp: form.bollettinoCcp.trim(),
+    bollettinoIndirizzo: form.bollettinoIndirizzo.trim(),
+    assegnoIntestatoA: form.assegnoIntestatoA.trim(),
+  };
+}
+
 function perimetroToForm(p: MandantePerimetro): PerimetroForm {
   const sig = p.codiciScarico.length > 0 ? codiciSig(p.codiciScarico) : "";
   const descrizione = (p.descrizione || p.nomeMandante || "").trim();
@@ -296,11 +332,13 @@ function perimetroToForm(p: MandantePerimetro): PerimetroForm {
     nomeMandante: p.nomeMandante || descrizione,
     ricevuta: latoToForm(p.ricevuta),
     pagata: latoToForm(p.pagata),
+    pagataConsulenti: latoToForm(p.pagataConsulenti ?? emptyLatoEconomico()),
     codiciScarico: [...p.codiciScarico],
     codiciScaricoOperatori: [...p.codiciScaricoOperatori],
     smsPreimpostati: [...p.smsPreimpostati],
     pdr: pdrToForm(p.pdr ?? emptyPdrConfig()),
     stralcio: stralcioToForm(p.stralcio ?? emptyStralcioConfig()),
+    pagamenti: pagamentiToForm(p.pagamenti ?? emptyPagamentiIntestazioni()),
     codiciScaricoSavedSig: sig,
   };
 }
@@ -320,11 +358,13 @@ export function formPerimetriToData(items: PerimetroForm[]): MandantePerimetro[]
         nomeMandante: nomeMandante || nomeInterno || descrizione || "—",
         ricevuta: formToLato(p.ricevuta),
         pagata: formToLato(p.pagata),
+        pagataConsulenti: formToLato(p.pagataConsulenti),
         codiciScarico: p.codiciScarico,
         codiciScaricoOperatori: p.codiciScaricoOperatori,
         smsPreimpostati: p.smsPreimpostati,
         pdr: formToPdr(p.pdr),
         stralcio: formToStralcio(p.stralcio),
+        pagamenti: formToPagamenti(p.pagamenti),
       } satisfies MandantePerimetro;
     })
     .filter((p): p is MandantePerimetro => p != null);
@@ -1184,6 +1224,111 @@ function StralcioPerimetroEditor({
   );
 }
 
+function PagamentiPerimetroEditor({
+  value,
+  onChange,
+}: {
+  value: PagamentiForm;
+  onChange: (next: PagamentiForm) => void;
+}) {
+  return (
+    <div className="rounded border border-[var(--line)] bg-white p-3">
+      <p className="text-xs font-bold uppercase text-[#1a365d]">
+        Intestazioni modalità di pagamento
+      </p>
+      <p className="mb-3 text-[10px] text-[var(--muted)]">
+        Coordinate da indicare all&apos;operatore / debitore (come in CreditCalc).
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            Bonifico bancario — intestato a
+          </span>
+          <input
+            type="text"
+            value={value.bonificoIntestatoA}
+            onChange={(e) =>
+              onChange({ ...value, bonificoIntestatoA: e.target.value })
+            }
+            className={smallInputCls}
+            placeholder="es. Credixa S.r.l."
+          />
+        </label>
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            Bonifico — IBAN
+          </span>
+          <input
+            type="text"
+            value={value.bonificoIban}
+            onChange={(e) =>
+              onChange({ ...value, bonificoIban: e.target.value })
+            }
+            className={smallInputCls}
+            placeholder="IT…"
+          />
+        </label>
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            Bollettino postale — intestato a
+          </span>
+          <input
+            type="text"
+            value={value.bollettinoIntestatoA}
+            onChange={(e) =>
+              onChange({ ...value, bollettinoIntestatoA: e.target.value })
+            }
+            className={smallInputCls}
+            placeholder="es. Credixa S.r.l."
+          />
+        </label>
+        <label className="text-[10px]">
+          <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+            CCP / CCN (numero)
+          </span>
+          <input
+            type="text"
+            value={value.bollettinoCcp}
+            onChange={(e) =>
+              onChange({ ...value, bollettinoCcp: e.target.value })
+            }
+            className={smallInputCls}
+            placeholder="es. 001234567890"
+          />
+        </label>
+      </div>
+      <label className="mt-2 block text-[10px]">
+        <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+          Bollettino — indirizzo
+        </span>
+        <input
+          type="text"
+          value={value.bollettinoIndirizzo}
+          onChange={(e) =>
+            onChange({ ...value, bollettinoIndirizzo: e.target.value })
+          }
+          className={smallInputCls}
+          placeholder="es. Via Roma 1, 00100 Roma"
+        />
+      </label>
+      <label className="mt-2 block text-[10px]">
+        <span className="mb-0.5 block font-semibold uppercase text-[var(--muted)]">
+          Assegno bancario / circolare — intestato a
+        </span>
+        <input
+          type="text"
+          value={value.assegnoIntestatoA}
+          onChange={(e) =>
+            onChange({ ...value, assegnoIntestatoA: e.target.value })
+          }
+          className={smallInputCls}
+          placeholder="es. Credixa S.r.l. oppure non trasferibile"
+        />
+      </label>
+    </div>
+  );
+}
+
 function SmsPerimetroEditor({
   sms,
   onChange,
@@ -1538,6 +1683,10 @@ export function PerimetriMandanteSection({
                             codiciScarico,
                             ricevuta: cleanLatoCodici(row.ricevuta, codiciScarico),
                             pagata: cleanLatoCodici(row.pagata, codiciScarico),
+                            pagataConsulenti: cleanLatoCodici(
+                              row.pagataConsulenti,
+                              codiciScarico
+                            ),
                           };
                         })
                       )
@@ -1554,6 +1703,10 @@ export function PerimetriMandanteSection({
                         )
                       )
                     }
+                  />
+                  <PagamentiPerimetroEditor
+                    value={p.pagamenti}
+                    onChange={(pagamenti) => updatePerimetro(p.id, { pagamenti })}
                   />
                   <PdrPerimetroEditor
                     value={p.pdr}
@@ -1595,17 +1748,27 @@ export function PerimetriMandanteSection({
                       <>
                         <LatoEconomicoEditor
                           title="Provvigioni dalla mandante"
-                          subtitle="Ciò che la mandante paga all'agenzia su questo perimetro."
+                          subtitle="Ciò che la mandante paga all'agenzia su questo perimetro (visione admin)."
                           value={p.ricevuta}
                           onChange={(ricevuta) => updatePerimetro(p.id, { ricevuta })}
                           codiciScarico={p.codiciScarico}
                           codiciScaricoOpzioni={codiciOpzioni}
                         />
                         <LatoEconomicoEditor
-                          title="Provvigioni ai collaboratori"
-                          subtitle="Ciò che l'agenzia paga ai dipendenti su questo perimetro."
+                          title="Provvigioni agli operatori"
+                          subtitle="Ciò che l'agenzia paga agli operatori su questo perimetro."
                           value={p.pagata}
                           onChange={(pagata) => updatePerimetro(p.id, { pagata })}
+                          codiciScarico={p.codiciScarico}
+                          codiciScaricoOpzioni={codiciOpzioni}
+                        />
+                        <LatoEconomicoEditor
+                          title="Provvigioni ai consulenti"
+                          subtitle="Ciò che l'agenzia paga ai consulenti su questo perimetro."
+                          value={p.pagataConsulenti}
+                          onChange={(pagataConsulenti) =>
+                            updatePerimetro(p.id, { pagataConsulenti })
+                          }
                           codiciScarico={p.codiciScarico}
                           codiciScaricoOpzioni={codiciOpzioni}
                         />

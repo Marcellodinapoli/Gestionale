@@ -39,7 +39,10 @@ export function formatNotaLine(input: {
   if (input.esito && input.tipo !== "TELEFONATA") {
     parts.push(esitoLabel(input.esito));
   }
-  if (input.nota?.trim()) parts.push(input.nota.trim());
+  if (input.nota?.trim()) {
+    // Note salvate con newline: in registro restano su flusso continuo (a capo solo se serve).
+    parts.push(input.nota.trim().replace(/\s*\n+\s*/g, " · "));
+  }
   const body = parts.join(" — ") || "—";
   return `${sigla} ${date} ${time} ${body}`;
 }

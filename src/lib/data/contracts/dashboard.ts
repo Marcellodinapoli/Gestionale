@@ -51,6 +51,10 @@ export type RiepilogoMandanteDto = {
   ragioneSociale: string;
   pratiche: number;
   affidato: number;
+  /** Somma residuo pratiche (debito residuo affidato). */
+  residuo: number;
+  /** Somma netti da pagare (COALESCE nettoDaPagare, residuo). */
+  insoluto: number;
   incassato: number;
   ricavoLordo: number;
   percentuale: number;
@@ -91,7 +95,8 @@ export type HomeKpiAdmin = {
     id: string;
     codice: string;
     ragioneSociale: string;
-    perimetri: string[];
+    /** Solo perimetri configurati sulla mandante (value = chiave import). */
+    perimetri: Array<{ value: string; label: string }>;
   }>;
   tipologieIncasso: TipologiaIncassoDto[];
   /** Caricata solo con includeProduttivita nel contesto richiesta. */

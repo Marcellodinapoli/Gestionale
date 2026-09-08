@@ -118,14 +118,73 @@ function aggregaCodiciScaricoAdminSql(
   }));
 }
 
-function parsePerimetriNames(json: string | null | undefined): string[] {
+function parsePerimetriOpts(
+  json: string | null | undefined
+): Array<{ value: string; label: string }> {
   if (!json?.trim()) return [];
   try {
-    const arr = JSON.parse(json) as Array<{ nomeMandante?: string }>;
+    const arr = JSON.parse(json) as Array<{
+      nomeMandante?: string;
+      nomeInterno?: string;
+      descrizione?: string;
+    }>;
     if (!Array.isArray(arr)) return [];
-    return arr.map((p) => p.nomeMandante?.trim()).filter(Boolean) as string[];
+    const out: Array<{ value: string; label: string }> = [];
+    for (const p of arr) {
+      const descrizione = String(p.descrizione || p.nomeMandante || "").trim();
+      const nomeMandante = String(p.nomeMandante || descrizione || "").trim();
+      const nomeInterno = String(p.nomeInterno || "").trim();
+      if (!nomeMandante) continue;
+      const label =
+        nomeInterno && descrizione && nomeInterno !== descrizione
+          ? `${nomeInterno} · ${descrizione}`
+          : nomeInterno || descrizione || nomeMandante;
+      out.push({ value: nomeMandante, label });
+    }
+    return out.sort((a, b) => a.label.localeCompare(b.label, "it"));
   } catch {
     return [];
+  }
+}
+
+function chiaviMatchPerimetroJson(
+  json: string | null | undefined,
+  selected: string
+): string[] {
+  const key = selected.trim();
+  if (!key) return [];
+  if (!json?.trim()) return [key];
+  try {
+    const arr = JSON.parse(json) as Array<{
+      nomeMandante?: string;
+      nomeInterno?: string;
+      descrizione?: string;
+    }>;
+    if (!Array.isArray(arr)) return [key];
+    const hit = arr.find((p) => {
+      const nomeMandante = String(p.nomeMandante || "").trim();
+      const descrizione = String(p.descrizione || "").trim();
+      const nomeInterno = String(p.nomeInterno || "").trim();
+      return (
+        nomeMandante === key ||
+        descrizione === key ||
+        nomeInterno === key ||
+        (nomeInterno && descrizione && `${nomeInterno} · ${descrizione}` === key)
+      );
+    });
+    if (!hit) return [key];
+    return [
+      ...new Set(
+        [
+          key,
+          String(hit.nomeMandante || "").trim(),
+          String(hit.descrizione || "").trim(),
+          String(hit.nomeInterno || "").trim(),
+        ].filter(Boolean)
+      ),
+    ];
+  } catch {
+    return [key];
   }
 }
 
@@ -520,6 +579,8 @@ async function loadAdminSection(
     SELECT m.Id, m.Codice, m.RagioneSociale,
       COUNT(p.Id) AS pratiche,
       ISNULL(SUM(p.ImportoTotale), 0) AS affidato,
+      ISNULL(SUM(p.Residuo), 0) AS residuo,
+      ISNULL(SUM(ISNULL(p.NettoDaPagare, p.Residuo)), 0) AS insoluto,
       ISNULL(SUM(p.TotIncassato), 0) AS incassato,
       ${ricavoLordoExpr} AS ricavoLordo
     FROM dbo.Mandanti m
@@ -537,6 +598,8 @@ async function loadAdminSection(
       RagioneSociale: string;
       pratiche: number;
       affidato: unknown;
+      residuo: unknown;
+      insoluto: unknown;
       incassato: unknown;
       ricavoLordo: unknown;
     }) => {
@@ -548,6 +611,8 @@ async function loadAdminSection(
         ragioneSociale: r.RagioneSociale,
         pratiche: Number(r.pratiche),
         affidato,
+        residuo: Number(r.residuo),
+        insoluto: Number(r.insoluto),
         incassato,
         ricavoLordo: Number(r.ricavoLordo),
         percentuale: affidato > 0 ? (incassato / affidato) * 100 : 0,
@@ -560,13 +625,26 @@ async function loadAdminSection(
     SELECT Id, Codice, RagioneSociale, PerimetriJson FROM dbo.Mandanti WHERE TenantId = @tenantId ORDER BY Codice
   `);
 
-  tick();
-  const lottiReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
-  const lottiRes = await lottiReq.query(`
-    SELECT MandanteId, NumeroMandante FROM dbo.Pratiche
-    WHERE TenantId = @tenantId AND NumeroMandante IS NOT NULL
-    GROUP BY MandanteId, NumeroMandante
-  `);
+  const mandantiRows = mandantiRes.recordset as Array<{
+    Id: string;
+    Codice: string;
+    RagioneSociale: string;
+    PerimetriJson: string | null;
+  }>;
+
+  const numeriMandanteFiltro = (() => {
+    const peri = req.incPerimetro?.trim();
+    if (!peri) return [] as string[];
+    const list = req.incMandante
+      ? mandantiRows.filter((m) => String(m.Id) === req.incMandante)
+      : mandantiRows;
+    const keys = new Set<string>();
+    for (const m of list) {
+      for (const k of chiaviMatchPerimetroJson(m.PerimetriJson, peri)) keys.add(k);
+    }
+    if (!keys.size) keys.add(peri);
+    return [...keys];
+  })();
 
   tick();
   const incFilterReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
@@ -576,9 +654,14 @@ async function loadAdminSection(
     incFilterReq.input("mandanteId", sql.UniqueIdentifier, req.incMandante);
     incClauses.push("p.MandanteId = @mandanteId");
   }
-  if (req.incPerimetro) {
-    incFilterReq.input("numeroMandante", sql.NVarChar(100), req.incPerimetro);
-    incClauses.push("p.NumeroMandante = @numeroMandante");
+  if (numeriMandanteFiltro.length) {
+    const placeholders: string[] = [];
+    numeriMandanteFiltro.forEach((k, i) => {
+      const name = `nm${i}`;
+      incFilterReq.input(name, sql.NVarChar(100), k);
+      placeholders.push(`@${name}`);
+    });
+    incClauses.push(`p.NumeroMandante IN (${placeholders.join(", ")})`);
   }
   if (sedeId) {
     incFilterReq.input("sedeId", sql.UniqueIdentifier, sedeId);
@@ -618,13 +701,17 @@ async function loadAdminSection(
     if (req.incMandante) {
       prodReq.input("mandanteId", sql.UniqueIdentifier, req.incMandante);
     }
-    if (req.incPerimetro) {
-      prodReq.input("numeroMandante", sql.NVarChar(100), req.incPerimetro);
-    }
+    numeriMandanteFiltro.forEach((k, i) => {
+      prodReq.input(`nm${i}`, sql.NVarChar(100), k);
+    });
 
     const praticaJoinClauses = ["p.TenantId = @tenantId"];
     if (req.incMandante) praticaJoinClauses.push("p.MandanteId = @mandanteId");
-    if (req.incPerimetro) praticaJoinClauses.push("p.NumeroMandante = @numeroMandante");
+    if (numeriMandanteFiltro.length) {
+      praticaJoinClauses.push(
+        `p.NumeroMandante IN (${numeriMandanteFiltro.map((_, i) => `@nm${i}`).join(", ")})`
+      );
+    }
     const praticaSedeJoin = sedeId
       ? `LEFT JOIN dbo.Users uap ON uap.Id = p.AssegnatarioId LEFT JOIN dbo.Users utp ON utp.Id = p.OperatoreTitolareId`
       : "";
@@ -678,35 +765,17 @@ async function loadAdminSection(
     ${sedeId ? "AND SedeId = @sedeId" : ""}
   `);
 
-  const lottiMap = new Map<string, Set<string>>();
-  for (const row of lottiRes.recordset as Array<{ MandanteId: string; NumeroMandante: string | null }>) {
-    const lotto = row.NumeroMandante?.trim();
-    if (!lotto) continue;
-    const set = lottiMap.get(String(row.MandanteId)) ?? new Set<string>();
-    set.add(lotto);
-    lottiMap.set(String(row.MandanteId), set);
-  }
-
-  const mandantiAttivi = mandantiRes.recordset.map((m: { Id: string; Codice: string }) => ({
+  const mandantiAttivi = mandantiRows.map((m) => ({
     id: String(m.Id),
     codice: m.Codice,
   }));
 
-  const mandantiFiltriUi = mandantiRes.recordset.map(
-    (m: { Id: string; Codice: string; RagioneSociale: string; PerimetriJson: string | null }) => {
-      const fromConfig = parsePerimetriNames(m.PerimetriJson);
-      const fromPratiche = [...(lottiMap.get(String(m.Id)) ?? [])];
-      const perimetri = [...new Set([...fromConfig, ...fromPratiche])].sort((a, b) =>
-        a.localeCompare(b, "it")
-      );
-      return {
-        id: String(m.Id),
-        codice: m.Codice,
-        ragioneSociale: m.RagioneSociale,
-        perimetri,
-      };
-    }
-  );
+  const mandantiFiltriUi = mandantiRows.map((m) => ({
+    id: String(m.Id),
+    codice: m.Codice,
+    ragioneSociale: m.RagioneSociale,
+    perimetri: parsePerimetriOpts(m.PerimetriJson),
+  }));
 
   tick();
   const caricoReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
@@ -757,9 +826,14 @@ async function loadAdminSection(
     scaricoReq.input("mandanteId", sql.UniqueIdentifier, req.incMandante);
     scaricoClauses.push("p.MandanteId = @mandanteId");
   }
-  if (req.incPerimetro) {
-    scaricoReq.input("numeroMandante", sql.NVarChar(100), req.incPerimetro);
-    scaricoClauses.push("p.NumeroMandante = @numeroMandante");
+  if (numeriMandanteFiltro.length) {
+    const placeholders: string[] = [];
+    numeriMandanteFiltro.forEach((k, i) => {
+      const name = `snm${i}`;
+      scaricoReq.input(name, sql.NVarChar(100), k);
+      placeholders.push(`@${name}`);
+    });
+    scaricoClauses.push(`p.NumeroMandante IN (${placeholders.join(", ")})`);
   }
   if (sedeId) {
     scaricoReq.input("sedeId", sql.UniqueIdentifier, sedeId);

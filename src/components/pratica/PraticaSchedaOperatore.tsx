@@ -513,6 +513,10 @@ export function PraticaSchedaOperatore({
           promessaImporto={pratica.promessaImporto}
           promessaMetodo={pratica.promessaMetodo}
           residuo={pratica.residuo}
+          importoIniziale={nettoDaPagare}
+          codiceFiscale={pratica.debitore.codiceFiscale}
+          mandanteLabel={`${pratica.mandante.codice} · ${pratica.mandante.ragioneSociale}`}
+          perimetroLabel={perimetroLabel}
           pdrDisponibile={pdrDisponibile}
           pdrConfig={pdrConfig}
           stralcioConfig={stralcioConfig}

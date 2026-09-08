@@ -2,9 +2,9 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createStralcioPianoAction } from "@/actions/core";
+import { addAttivitaAction } from "@/actions/core";
 import { dataIt, euro, importoIt } from "@/lib/domainFormat";
-import { METODI_INCASSO } from "@/lib/metodoIncasso";
+import { METODI_INCASSO, metodoIncassoLabel } from "@/lib/metodoIncasso";
 import {
   emptyPdrConfig,
   emptyStralcioConfig,
@@ -94,12 +94,16 @@ export function SaldoStralcioPopup({
   residuo,
   stralcio = emptyStralcioConfig(),
   pdr = emptyPdrConfig(),
+  mandanteLabel,
+  perimetroLabel,
   onDone,
 }: {
   praticaId: string;
   residuo: number;
   stralcio?: StralcioConfigPerimetro;
   pdr?: PdrConfigPerimetro;
+  mandanteLabel?: string | null;
+  perimetroLabel?: string | null;
   onDone?: () => void;
 }) {
   const router = useRouter();
@@ -266,17 +270,46 @@ export function SaldoStralcioPopup({
     setSaving(true);
     setError(null);
     try {
+      const debito = parseEuroInput(debitoText) ?? 0;
+      const stralciato = parseEuroInput(stralciatoText) ?? 0;
+      const residuoPagare = parseEuroInput(residuoText) ?? 0;
+      const perc = parsePercentInput(percentText);
+      const totale = round2(rate.reduce((s, r) => s + r.importo, 0));
+      const inizio = rate[0]!.scadenza;
+      const fine = rate[rate.length - 1]!.scadenza;
+      const nRate = rate.length;
+      const prima = rate[0]!.importo;
+      const ultima = rate[nRate - 1]!.importo;
+      const conguaglio =
+        nRate > 1 && Math.abs(ultima - prima) > 0.009
+          ? `Ultima rata (conguaglio): ${euro(ultima)}`
+          : null;
+      const importoRateTxt =
+        nRate > 1 && Math.abs(ultima - prima) > 0.009
+          ? `Importo rate: ${euro(prima)} × ${nRate - 1}`
+          : `Importo rata: ${euro(prima)}`;
+      const nota = [
+        "Saldo a stralcio sviluppato",
+        `Debito: ${euro(debito)}`,
+        perc != null
+          ? `Stralcio: ${perc.toFixed(2).replace(".", ",")}% (${euro(stralciato)})`
+          : null,
+        `Residuo da pagare: ${euro(residuoPagare)}`,
+        `Totale piano: ${euro(totale)}`,
+        `Rate: ${nRate}`,
+        importoRateTxt,
+        conguaglio,
+        `Data inizio: ${dataIt(inizio)}`,
+        `Data fine: ${dataIt(fine)}`,
+        metodo ? `Modalità: ${metodoIncassoLabel(metodo)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
       const fd = new FormData();
       fd.set("praticaId", praticaId);
-      fd.set("nRate", String(nRate));
-      fd.set("primaScadenza", primaScadenza);
-      fd.set("importoResiduo", String(parseEuroInput(residuoText) ?? 0));
-      fd.set("metodoPagamento", metodo);
-      fd.set(
-        "percentualeStralcio",
-        String(parsePercentInput(percentText) ?? "")
-      );
-      await createStralcioPianoAction(fd);
+      fd.set("nota", nota);
+      await addAttivitaAction(fd);
       router.refresh();
       onDone?.();
     } catch (err) {
@@ -291,6 +324,27 @@ export function SaldoStralcioPopup({
 
   return (
     <form onSubmit={salvaPiano} className="space-y-3 px-3 py-3 text-sm">
+      {mandanteLabel || perimetroLabel ? (
+        <p className="text-[11px] text-[var(--muted)]">
+          {mandanteLabel ? (
+            <>
+              Mandante:{" "}
+              <span className="font-semibold text-[var(--navy)]">
+                {mandanteLabel}
+              </span>
+            </>
+          ) : null}
+          {mandanteLabel && perimetroLabel ? " · " : null}
+          {perimetroLabel ? (
+            <>
+              Perimetro:{" "}
+              <span className="font-semibold text-[var(--navy)]">
+                {perimetroLabel}
+              </span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       {vincoli ? (
         <div className="rounded border border-[#c5d4e4] bg-[#f0f5fa] px-3 py-2 text-[11px] text-[#1a365d]">
           <p className="font-semibold">Condizioni mandante (% stralcio)</p>
@@ -311,8 +365,9 @@ export function SaldoStralcioPopup({
         </div>
       ) : (
         <p className="text-[11px] text-[var(--muted)]">
-          Nessun vincolo sul perimetro: puoi negoziare liberamente (come
-          CreditCalc).
+          Nessun vincolo % stralcio sul perimetro collegato: puoi negoziare
+          liberamente (come CreditCalc). Configura min/max/proposta in Anagrafica
+          mandante → Perimetri.
         </p>
       )}
 
@@ -472,7 +527,7 @@ export function SaldoStralcioPopup({
             disabled={saving}
             className="h-9 rounded border border-[var(--navy)] bg-white px-4 text-sm font-medium text-[var(--navy)] disabled:opacity-60"
           >
-            {saving ? "Salvataggio…" : "Salva piano sul residuo"}
+            {saving ? "Salvataggio…" : "Salva in note"}
           </button>
         ) : null}
       </div>
@@ -503,7 +558,8 @@ export function SaldoStralcioPopup({
       {error ? <p className="text-xs text-[var(--danger)]">{error}</p> : null}
       <p className="text-[11px] text-[var(--muted)]">
         Come CreditCalc: i campi si aggiornano a vicenda. «Sviluppa» calcola le
-        rate; «Salva» crea il piano sulla pratica con il residuo negoziato.
+        rate; «Salva in note» registra il riepilogo nel registro (senza elenco
+        completo delle rate).
       </p>
     </form>
   );

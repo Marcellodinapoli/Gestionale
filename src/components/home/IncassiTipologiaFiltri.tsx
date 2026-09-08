@@ -14,8 +14,24 @@ export type MandanteFiltroIncassi = {
   id: string;
   codice: string;
   ragioneSociale: string;
-  perimetri: string[];
+  perimetri: Array<{ value: string; label: string } | string>;
 };
+
+function normalizePerimetroOpt(
+  p: { value: string; label: string } | string
+): { value: string; label: string } | null {
+  if (typeof p === "string") {
+    const v = p.trim();
+    return v ? { value: v, label: v } : null;
+  }
+  if (p && typeof p === "object") {
+    const value = String(p.value ?? "").trim();
+    const label = String(p.label ?? p.value ?? "").trim();
+    if (!value) return null;
+    return { value, label: label || value };
+  }
+  return null;
+}
 
 export function IncassiTipologiaFiltri({
   mandanti,
@@ -32,17 +48,25 @@ export function IncassiTipologiaFiltri({
 }) {
   const router = useRouter();
   const [mandante, setMandante] = useState(mandanteId || "");
-  const [peri, setPeri] = useState(perimetro || "");
+  const [peri, setPeri] = useState(
+    typeof perimetro === "string" ? perimetro : ""
+  );
   const [meseSel, setMeseSel] = useState(mese || "");
   const meseOpts = useMemo(() => incMeseSelectOptions(), []);
 
   const perimetriOpts = useMemo(() => {
-    if (!mandante) {
-      const all = new Set<string>();
-      for (const m of mandanti) for (const p of m.perimetri) all.add(p);
-      return [...all].sort((a, b) => a.localeCompare(b, "it"));
+    const source = !mandante
+      ? mandanti.flatMap((m) => m.perimetri)
+      : mandanti.find((m) => m.id === mandante)?.perimetri ?? [];
+    const byValue = new Map<string, string>();
+    for (const raw of source) {
+      const p = normalizePerimetroOpt(raw);
+      if (!p) continue;
+      if (!byValue.has(p.value)) byValue.set(p.value, p.label);
     }
-    return mandanti.find((m) => m.id === mandante)?.perimetri ?? [];
+    return [...byValue.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "it"));
   }, [mandante, mandanti]);
 
   function buildHref(nextMandante: string, nextPeri: string, nextMese: string) {
@@ -99,8 +123,8 @@ export function IncassiTipologiaFiltri({
         >
           <option value="">Tutti</option>
           {perimetriOpts.map((p) => (
-            <option key={p} value={p}>
-              {p}
+            <option key={p.value} value={p.value}>
+              {p.label}
             </option>
           ))}
         </select>

@@ -47,6 +47,8 @@ function RiepilogoMandantiTable({
   mostraTotali?: boolean;
 }) {
   const totAffidato = righe.reduce((s, r) => s + r.affidato, 0);
+  const totResiduo = righe.reduce((s, r) => s + r.residuo, 0);
+  const totInsoluto = righe.reduce((s, r) => s + r.insoluto, 0);
   const totIncassato = righe.reduce((s, r) => s + r.incassato, 0);
   const totRicavoLordo = righe.reduce((s, r) => s + r.ricavoLordo, 0);
   const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
@@ -66,6 +68,8 @@ function RiepilogoMandantiTable({
               {mostraTotali ? (
                 <>
                   <th className="text-right">Affidato</th>
+                  <th className="text-right">Residuo</th>
+                  <th className="text-right">Insoluto</th>
                   <th className="text-right">Incassato</th>
                   <th className="text-right">Ricavo lordo</th>
                   <th className="text-right">% Recupero</th>
@@ -86,6 +90,8 @@ function RiepilogoMandantiTable({
                 {mostraTotali ? (
                   <>
                     <td className="text-right">{euro(r.affidato)}</td>
+                    <td className="text-right">{euro(r.residuo)}</td>
+                    <td className="text-right">{euro(r.insoluto)}</td>
                     <td className="text-right font-semibold">{euro(r.incassato)}</td>
                     <td className="text-right font-semibold text-emerald-700">
                       {euro(r.ricavoLordo)}
@@ -114,6 +120,8 @@ function RiepilogoMandantiTable({
                 </td>
                 <td className="text-right">{righe.reduce((s, r) => s + r.pratiche, 0)}</td>
                 <td className="text-right">{euro(totAffidato)}</td>
+                <td className="text-right">{euro(totResiduo)}</td>
+                <td className="text-right">{euro(totInsoluto)}</td>
                 <td className="text-right">{euro(totIncassato)}</td>
                 <td className="text-right text-emerald-700">{euro(totRicavoLordo)}</td>
                 <td className="text-right">
@@ -300,6 +308,8 @@ export default async function HomePage({
 
     const mandantiRiepilogo = admin.mandantiRiepilogo;
     const totAffidato = mandantiRiepilogo.reduce((s, r) => s + r.affidato, 0);
+    const totResiduo = mandantiRiepilogo.reduce((s, r) => s + r.residuo, 0);
+    const totInsoluto = mandantiRiepilogo.reduce((s, r) => s + r.insoluto, 0);
     const totIncassato = mandantiRiepilogo.reduce((s, r) => s + r.incassato, 0);
     const totRicavoLordo = mandantiRiepilogo.reduce((s, r) => s + r.ricavoLordo, 0);
     const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
@@ -312,11 +322,13 @@ export default async function HomePage({
     const perimetroFiltroOk = (() => {
       if (!incPerimetro?.trim()) return undefined;
       const p = incPerimetro.trim();
+      const match = (x: { value: string; label: string } | string) =>
+        typeof x === "string" ? x === p : x.value === p;
       if (mandanteFiltroOk) {
         const m = mandantiFiltriUi.find((x) => x.id === mandanteFiltroOk);
-        return m?.perimetri.includes(p) ? p : undefined;
+        return m?.perimetri.some(match) ? p : undefined;
       }
-      return mandantiFiltriUi.some((m) => m.perimetri.includes(p)) ? p : undefined;
+      return mandantiFiltriUi.some((m) => m.perimetri.some(match)) ? p : undefined;
     })();
 
     const totImportoMetodi = admin.tipologieIncasso.reduce((s, r) => s + r.importo, 0);
@@ -368,14 +380,15 @@ export default async function HomePage({
           }}
         />
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 lg:gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 lg:gap-3">
           <DashboardKpi title="Mandanti" value={mandantiAttivi.length} href="/mandanti" />
           <DashboardKpi
             title="Pratiche"
             value={mandantiRiepilogo.reduce((s, r) => s + r.pratiche, 0)}
             href="/pratiche"
           />
-          <DashboardKpi title="Totale affidato" value={euro(totAffidato)} />
+          <DashboardKpi title="Debito residuo affidato" value={euro(totResiduo)} />
+          <DashboardKpi title="Debito insoluto affidato" value={euro(totInsoluto)} />
           <DashboardKpi title="Totale incassato" value={euro(totIncassato)} />
           <DashboardKpi
             title="% Recupero"

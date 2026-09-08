@@ -33,12 +33,16 @@ const DEFAULT: DialContextValue = {
 
 const TelephonyDialContext = createContext<DialContextValue>(DEFAULT);
 
+type AvvisoCentralino = "interno" | "prefisso" | null;
+
 type TelephonyUiContextValue = {
   avvisaInternoMancante: () => void;
+  avvisaPrefissoMancante: () => void;
 };
 
 const TelephonyUiContext = createContext<TelephonyUiContextValue>({
   avvisaInternoMancante: () => undefined,
+  avvisaPrefissoMancante: () => undefined,
 });
 
 export function TelephonyDialProvider({
@@ -54,7 +58,7 @@ export function TelephonyDialProvider({
   richiedeInterno?: boolean;
   children: ReactNode;
 }) {
-  const [avvisoInterno, setAvvisoInterno] = useState(false);
+  const [avviso, setAvviso] = useState<AvvisoCentralino>(null);
 
   const value: DialContextValue = {
     ...config,
@@ -63,16 +67,19 @@ export function TelephonyDialProvider({
     richiedeInterno,
   };
 
-  const avvisaInternoMancante = useCallback(() => setAvvisoInterno(true), []);
+  const avvisaInternoMancante = useCallback(() => setAvviso("interno"), []);
+  const avvisaPrefissoMancante = useCallback(() => setAvviso("prefisso"), []);
 
   return (
     <TelephonyDialContext.Provider value={value}>
-      <TelephonyUiContext.Provider value={{ avvisaInternoMancante }}>
+      <TelephonyUiContext.Provider
+        value={{ avvisaInternoMancante, avvisaPrefissoMancante }}
+      >
         {children}
         <Modal
-          open={avvisoInterno}
+          open={avviso === "interno"}
           title="Interno non configurato"
-          onClose={() => setAvvisoInterno(false)}
+          onClose={() => setAvviso(null)}
         >
           <div className="space-y-4 p-4">
             <p className="text-sm leading-relaxed text-[var(--navy)]">
@@ -83,14 +90,44 @@ export function TelephonyDialProvider({
             <div className="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setAvvisoInterno(false)}
+                onClick={() => setAvviso(null)}
                 className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm font-semibold text-[var(--navy)] hover:bg-slate-50"
               >
                 Chiudi
               </button>
               <Link
                 href="/account"
-                onClick={() => setAvvisoInterno(false)}
+                onClick={() => setAvviso(null)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white hover:bg-[#1a365d]"
+              >
+                <Phone className="h-4 w-4" />
+                Vai all&apos;account
+              </Link>
+            </div>
+          </div>
+        </Modal>
+        <Modal
+          open={avviso === "prefisso"}
+          title="Prefisso chiamata non configurato"
+          onClose={() => setAvviso(null)}
+        >
+          <div className="space-y-4 p-4">
+            <p className="text-sm leading-relaxed text-[var(--navy)]">
+              Per effettuare chiamate dalla scheda cliente devi impostare il{" "}
+              <strong>prefisso</strong> con cui uscire dalla centralina (es.{" "}
+              <strong>9</strong>) in <strong>Account → Centralino</strong>.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAvviso(null)}
+                className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm font-semibold text-[var(--navy)] hover:bg-slate-50"
+              >
+                Chiudi
+              </button>
+              <Link
+                href="/account"
+                onClick={() => setAvviso(null)}
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white hover:bg-[#1a365d]"
               >
                 <Phone className="h-4 w-4" />
@@ -115,12 +152,17 @@ export function usePrefissoChiamata(): string {
 /** Click-to-call con protocollo softphone e prefisso operatore. Ritorna false se bloccata. */
 export function useChiamaNumero() {
   const cfg = useDialConfig();
-  const { avvisaInternoMancante } = useContext(TelephonyUiContext);
+  const { avvisaInternoMancante, avvisaPrefissoMancante } =
+    useContext(TelephonyUiContext);
 
   return useCallback(
     (numero: string): boolean => {
       if (cfg.richiedeInterno && !cfg.interno) {
         avvisaInternoMancante();
+        return false;
+      }
+      if (!cfg.prefissoChiamata) {
+        avvisaPrefissoMancante();
         return false;
       }
       chiamaNumeroRaw(withPrefisso(numero, cfg.prefissoChiamata), {
@@ -129,6 +171,6 @@ export function useChiamaNumero() {
       });
       return true;
     },
-    [cfg, avvisaInternoMancante]
+    [cfg, avvisaInternoMancante, avvisaPrefissoMancante]
   );
 }

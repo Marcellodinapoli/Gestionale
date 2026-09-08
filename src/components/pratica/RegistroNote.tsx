@@ -83,19 +83,17 @@ function NotaRiga({
     const fissata = Boolean(row.fissata || evidenza);
     return (
       <div
-        className={`group flex w-full items-center gap-2 border-b last:border-0 ${
+        className={`group flex w-full shrink-0 items-start gap-2 border-b last:border-0 ${
           importante
             ? "min-h-8 border-b-amber-400/40 bg-[#ffd54f] px-3 py-1.5 text-[#5a3e00]"
             : fissata
               ? "min-h-8 border-b-amber-400/30 bg-[#ffe08a] px-3 py-1.5 text-[#5a3e00]"
-              : "h-7 shrink-0 border-[#b8d9e2]/60 px-3"
+              : "min-h-7 border-[#b8d9e2]/60 px-3 py-1"
         }`}
       >
         <p
-          className={`min-w-0 flex-1 ${
-            importante || fissata
-              ? "whitespace-normal break-words font-semibold leading-snug"
-              : "truncate"
+          className={`min-w-0 flex-1 break-words leading-snug [overflow-wrap:anywhere] ${
+            importante || fissata ? "font-semibold" : ""
           }`}
           title={row.line}
         >
@@ -107,7 +105,7 @@ function NotaRiga({
           {row.line}
         </p>
         {showActions ? (
-          <div className="flex shrink-0 items-center gap-0.5 font-sans text-[11px] text-[#1a4a55]">
+          <div className="flex shrink-0 items-center gap-0.5 pt-0.5 font-sans text-[11px] text-[#1a4a55]">
             <button
               type="button"
               disabled={pinning}
@@ -136,7 +134,7 @@ function NotaRiga({
           </div>
         ) : lockedForUser ? (
           <span
-            className="shrink-0 font-sans text-[10px] font-semibold text-slate-600"
+            className="shrink-0 pt-0.5 font-sans text-[10px] font-semibold text-slate-600"
             title="Nota non modificabile"
           >
             solo lettura
@@ -465,7 +463,7 @@ export function RegistroNote({
       </div>
 
       {fissate.length ? (
-        <div className="shrink-0 border-b-2 border-amber-500 bg-[#ffd54f] font-mono text-[13px] leading-7">
+        <div className="shrink-0 border-b-2 border-amber-500 bg-[#ffd54f] font-mono text-[13px] leading-snug">
           {fissate.map((a) => (
             <NotaRiga
               key={a.id}
@@ -479,7 +477,7 @@ export function RegistroNote({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden font-mono text-[13px] leading-7 text-[#0d2a32]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden font-mono text-[13px] leading-snug text-[#0d2a32]">
         {attivita.length === 0 ? (
           <p className="flex flex-1 items-start px-3 py-2 italic text-[var(--muted)]">
             Nessuna nota registrata.

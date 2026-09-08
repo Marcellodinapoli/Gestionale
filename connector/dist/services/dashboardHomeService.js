@@ -10,14 +10,26 @@ function nextDayIso(iso) {
     d.setUTCDate(d.getUTCDate() + 1);
     return d;
 }
-function parsePerimetriNames(json) {
+function parsePerimetriOpts(json) {
     if (!json?.trim())
         return [];
     try {
         const arr = JSON.parse(json);
         if (!Array.isArray(arr))
             return [];
-        return arr.map((p) => p.nomeMandante?.trim()).filter(Boolean);
+        const out = [];
+        for (const p of arr) {
+            const descrizione = String(p.descrizione || p.nomeMandante || "").trim();
+            const nomeMandante = String(p.nomeMandante || descrizione || "").trim();
+            const nomeInterno = String(p.nomeInterno || "").trim();
+            if (!nomeMandante)
+                continue;
+            const label = nomeInterno && descrizione && nomeInterno !== descrizione
+                ? `${nomeInterno} · ${descrizione}`
+                : nomeInterno || descrizione || nomeMandante;
+            out.push({ value: nomeMandante, label });
+        }
+        return out.sort((a, b) => a.label.localeCompare(b.label, "it"));
     }
     catch {
         return [];
@@ -321,6 +333,8 @@ async function loadAdminSection(pool, req, tick) {
     SELECT m.Id, m.Codice, m.RagioneSociale,
       COUNT(p.Id) AS pratiche,
       ISNULL(SUM(p.ImportoTotale), 0) AS affidato,
+      ISNULL(SUM(p.Residuo), 0) AS residuo,
+      ISNULL(SUM(ISNULL(p.NettoDaPagare, p.Residuo)), 0) AS insoluto,
       ISNULL(SUM(p.TotIncassato), 0) AS incassato
     FROM dbo.Mandanti m
     LEFT JOIN dbo.Pratiche p ON p.MandanteId = m.Id AND p.TenantId = @tenantId
@@ -338,7 +352,10 @@ async function loadAdminSection(pool, req, tick) {
             ragioneSociale: r.RagioneSociale,
             pratiche: Number(r.pratiche),
             affidato,
+            residuo: Number(r.residuo),
+            insoluto: Number(r.insoluto),
             incassato,
+            ricavoLordo: 0,
             percentuale: affidato > 0 ? (incassato / affidato) * 100 : 0,
         };
     });
@@ -439,14 +456,11 @@ async function loadAdminSection(pool, req, tick) {
         codice: m.Codice,
     }));
     const mandantiFiltriUi = mandantiRes.recordset.map((m) => {
-        const fromConfig = parsePerimetriNames(m.PerimetriJson);
-        const fromPratiche = [...(lottiMap.get(String(m.Id)) ?? [])];
-        const perimetri = [...new Set([...fromConfig, ...fromPratiche])].sort((a, b) => a.localeCompare(b, "it"));
         return {
             id: String(m.Id),
             codice: m.Codice,
             ragioneSociale: m.RagioneSociale,
-            perimetri,
+            perimetri: parsePerimetriOpts(m.PerimetriJson),
         };
     });
     tick();

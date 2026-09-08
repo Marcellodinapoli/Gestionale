@@ -41,6 +41,7 @@ import {
   etichettaFiltriMonitorAffidi,
   filtraPraticheAffidiMonitor,
   mandantiConPerimetriAffidi,
+  numeriMandantePerFiltroPerimetro,
   risolviFiltriMonitorAffidi,
 } from "@/lib/affidi/affidiMonitorPerimetri";
 import { incassatoMesePerOperatore } from "@/lib/affidi/incassatoMeseOperatore";
@@ -143,25 +144,7 @@ export default async function AffidiPage({
     perimetri: parsePerimetriList(m.perimetri),
   }));
 
-  const lottiPerMandante = vuoto
-    ? new Map<string, Set<string>>()
-    : await (async () => {
-        const rows = await prisma.pratica.groupBy({
-          by: ["mandanteId", "numeroMandante"],
-          where: { tenantId: user.tenantId, numeroMandante: { not: null } },
-        });
-        const map = new Map<string, Set<string>>();
-        for (const row of rows) {
-          const lotto = row.numeroMandante?.trim();
-          if (!lotto) continue;
-          const set = map.get(row.mandanteId) ?? new Set<string>();
-          set.add(lotto);
-          map.set(row.mandanteId, set);
-        }
-        return map;
-      })();
-
-  const mandantiMonitor = mandantiConPerimetriAffidi(mandantiDb, lottiPerMandante);
+  const mandantiMonitor = mandantiConPerimetriAffidi(mandantiDb);
 
   const [operatori, tuttiOperatori, periCtx] = await Promise.all([
     vuoto
@@ -292,21 +275,43 @@ export default async function AffidiPage({
   );
   const { label: meseCaricoLabel } = rangeMeseIncassi(caricoMeseRaw);
   const annoCarico = parseIncMeseParam(caricoMeseRaw).year;
+  const numeriMonitor = numeriMandantePerFiltroPerimetro(
+    mandantiMonitor,
+    perimetroMonitorOk,
+    mandatoMonitorOk
+  );
+  const numeriCarico = numeriMandantePerFiltroPerimetro(
+    mandantiMonitor,
+    perimetroCaricoOk,
+    mandatoCaricoOk
+  );
   const praticaWhereMonitor = praticaMonitorWhere(
     user.tenantId,
     mandatoMonitorOk,
-    perimetroMonitorOk
+    perimetroMonitorOk,
+    numeriMonitor
   );
   const praticaWhereCarico = praticaMonitorWhere(
     user.tenantId,
     mandatoCaricoOk,
-    perimetroCaricoOk
+    perimetroCaricoOk,
+    numeriCarico
   );
   const affidateMonitor = mostraMonitor
-    ? filtraPraticheAffidiMonitor(affidate, mandatoMonitorOk, perimetroMonitorOk)
+    ? filtraPraticheAffidiMonitor(
+        affidate,
+        mandantiMonitor,
+        mandatoMonitorOk,
+        perimetroMonitorOk
+      )
     : affidate;
   const affidateCarico = mostraMonitor
-    ? filtraPraticheAffidiMonitor(affidate, mandatoCaricoOk, perimetroCaricoOk)
+    ? filtraPraticheAffidiMonitor(
+        affidate,
+        mandantiMonitor,
+        mandatoCaricoOk,
+        perimetroCaricoOk
+      )
     : affidate;
   const operatorIdsCarico = membriCarico.map((m) => m.id);
   const [scarichiDettaglio, incassatoMese, guadagnoMese] =
@@ -349,6 +354,7 @@ export default async function AffidiPage({
       ? await loadAffidiMonitoraggio(user, {
           mandanteId: mandatoMonitorOk,
           perimetro: perimetroMonitorOk,
+          numeriMandante: numeriMonitor,
         })
       : null;
   const monitorPanel =
@@ -477,7 +483,12 @@ export default async function AffidiPage({
     ? praticheAffidabiliPerimetro
     : filtraPerMandante(praticheAffidabili);
   const praticheAffidabiliMonitor = mostraMonitor
-    ? filtraPraticheAffidiMonitor(praticheAffidabili, mandatoMonitorOk, perimetroMonitorOk)
+    ? filtraPraticheAffidiMonitor(
+        praticheAffidabili,
+        mandantiMonitor,
+        mandatoMonitorOk,
+        perimetroMonitorOk
+      )
     : praticheAffidabili;
   const daAssegnareMonitor = praticheAffidabiliMonitor.filter((p) => p.assegnatarioId == null);
   const daAssegnareOverview = refPerimetro ? daAssegnarePerimetro : filtraPerMandante(daAssegnare);

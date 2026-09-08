@@ -1890,6 +1890,67 @@ export async function createPianoAction(formData: FormData) {
   revalidatePath(`/pratiche/${praticaId}`);
 }
 
+/** Piano PDR sviluppato in scheda (rate già calcolate lato client, stile CreditCalc). */
+export async function createPdrPianoAction(formData: FormData) {
+  const user = await requireWritablePermission("incassi:create");
+  const praticaId = String(formData.get("praticaId") || "");
+  await assertPraticaEditable(user, praticaId);
+  const metodoPagamento = String(formData.get("metodoPagamento") || "").trim();
+  const rateRaw = String(formData.get("rateJson") || "").trim();
+  const pratica = await (await praticaModel()).findUnique({ where: { id: praticaId } });
+  if (!pratica) fail("Pratica non trovata");
+  if (!metodoPagamento) fail("Seleziona la modalità di pagamento");
+  let rate: Array<{ numeroRata: number; importo: number; scadenza: string }>;
+  try {
+    const parsed = JSON.parse(rateRaw);
+    if (!Array.isArray(parsed) || !parsed.length) fail("Piano rate non valido");
+    rate = parsed.map((r: Record<string, unknown>, i: number) => ({
+      numeroRata: Number(r.numeroRata ?? i + 1),
+      importo: Number(r.importo),
+      scadenza: String(r.scadenza || ""),
+    }));
+  } catch {
+    fail("Piano rate non valido");
+  }
+  if (rate.length < 1 || rate.length > 120) fail("Numero rate non consentito");
+  for (const r of rate) {
+    if (!Number.isFinite(r.importo) || r.importo <= 0) fail("Importo rata non valido");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.scadenza)) fail("Scadenza rata non valida");
+  }
+
+  await (await pianoRataModel()).deleteMany({ where: { praticaId } });
+  await createManyPianoRate(
+    {
+      tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug ?? user.tenantId,
+    },
+    rate.map((r) => ({
+      praticaId,
+      numeroRata: r.numeroRata,
+      importo: Math.round(r.importo * 100) / 100,
+      scadenza: new Date(`${r.scadenza}T12:00:00`),
+    }))
+  );
+  await (await praticaModel()).update({
+    where: { id: praticaId },
+    data: {
+      codiceScarico: "LPP",
+      stato:
+        pratica.stato === "NUOVA" || pratica.stato === "PIANO"
+          ? "IN_LAVORAZIONE"
+          : pratica.stato,
+    },
+  });
+  await writeAudit({
+    userId: user.id,
+    action: "piano",
+    entity: "pratica",
+    entityId: praticaId,
+    dettaglio: `PDR ${rate.length} rate · ${metodoPagamento}`,
+  });
+  revalidatePath(`/pratiche/${praticaId}`);
+}
+
 /** Piano da saldo e stralcio (residuo negoziato, 1–10 rate come CreditCalc). */
 export async function createStralcioPianoAction(formData: FormData) {
   const user = await requireWritablePermission("incassi:create");

@@ -105,7 +105,10 @@ export default async function StampaPraticaPage({
   }
 
   return (
-    <StampaAnteprima praticaId={pratica.id}>
+    <StampaAnteprima
+      backHref={`/pratiche/${pratica.id}`}
+      backLabel="← Torna alla pratica (Esc)"
+    >
       <div className="text-[13px] leading-5 text-[#132033]">
         <header className="mb-4 border-b border-[#132033] pb-2">
           <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
@@ -236,9 +239,9 @@ export default async function StampaPraticaPage({
             Registro note
           </h2>
           {pratica.attivita.length ? (
-            <ul className="space-y-0.5 font-mono text-[12px]">
+            <ul className="space-y-1 font-mono text-[12px]">
               {pratica.attivita.map((a) => (
-                <li key={a.id}>
+                <li key={a.id} className="whitespace-pre-wrap break-words">
                   {formatNotaLine({
                     userName: a.user.name,
                     createdAt: a.createdAt,

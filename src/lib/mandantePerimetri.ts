@@ -123,6 +123,50 @@ export function emptyStralcioConfig(): StralcioConfigPerimetro {
   };
 }
 
+/**
+ * Intestazioni / coordinate per le modalità di pagamento sul perimetro
+ * (come CreditCalc: bonifico, bollettino, assegno).
+ */
+export type PagamentiIntestazioniPerimetro = {
+  /** Bonifico bancario — intestato a. */
+  bonificoIntestatoA: string;
+  /** IBAN bonifico (opzionale). */
+  bonificoIban: string;
+  /** Bollettino postale — intestato a. */
+  bollettinoIntestatoA: string;
+  /** Numero CCP / CCN. */
+  bollettinoCcp: string;
+  /** Indirizzo del bollettino. */
+  bollettinoIndirizzo: string;
+  /** Assegno bancario/circolare — intestato a. */
+  assegnoIntestatoA: string;
+};
+
+export function emptyPagamentiIntestazioni(): PagamentiIntestazioniPerimetro {
+  return {
+    bonificoIntestatoA: "",
+    bonificoIban: "",
+    bollettinoIntestatoA: "",
+    bollettinoCcp: "",
+    bollettinoIndirizzo: "",
+    assegnoIntestatoA: "",
+  };
+}
+
+export function hasPagamentiIntestazioni(
+  p: PagamentiIntestazioniPerimetro | null | undefined
+): boolean {
+  if (!p) return false;
+  return Boolean(
+    p.bonificoIntestatoA?.trim() ||
+      p.bonificoIban?.trim() ||
+      p.bollettinoIntestatoA?.trim() ||
+      p.bollettinoCcp?.trim() ||
+      p.bollettinoIndirizzo?.trim() ||
+      p.assegnoIntestatoA?.trim()
+  );
+}
+
 /** True se la mandante ha imposto almeno un vincolo/proposta %. */
 export function hasStralcioVincoli(
   s: StralcioConfigPerimetro | null | undefined
@@ -149,8 +193,10 @@ export type MandantePerimetro = {
   nomeMandante: string;
   /** Provvigioni e incentivi che la mandante paga all'agenzia. */
   ricevuta: LatoEconomico;
-  /** Provvigioni e incentivi che l'agenzia paga ai collaboratori. */
+  /** Provvigioni e incentivi che l'agenzia paga agli operatori. */
   pagata: LatoEconomico;
+  /** Provvigioni e incentivi che l'agenzia paga ai consulenti. */
+  pagataConsulenti: LatoEconomico;
   /** Codici scarico back office (provvigioni, scaglioni, statistiche). */
   codiciScarico: CodiceScaricoPerimetro[];
   /** Codici scarico selezionabili dagli operatori in lavorazione. */
@@ -160,6 +206,8 @@ export type MandantePerimetro = {
   pdr: PdrConfigPerimetro;
   /** Condizioni saldo a stralcio (percentuali mandante). */
   stralcio: StralcioConfigPerimetro;
+  /** Intestazioni modalità di pagamento (bonifico, bollettino, assegno). */
+  pagamenti: PagamentiIntestazioniPerimetro;
 };
 
 export type PerimetroListItem = {
@@ -336,6 +384,32 @@ export function toPerimetroListItem(p: MandantePerimetro): PerimetroListItem {
     nomeMandante: numeroMandantePerimetro(p),
     label: etichettaPerimetro(p),
   };
+}
+
+/**
+ * Chiavi su `numeroMandante` / import che corrispondono al perimetro selezionato
+ * (nomeMandante, descrizione, acronimo). Solo da config mandante, non da lotti.
+ */
+export function chiaviMatchPerimetro(
+  perimetriRaw: string | null | undefined,
+  selected: string
+): string[] {
+  const key = selected.trim();
+  if (!key) return [];
+  const elenco = parsePerimetri(perimetriRaw);
+  const hit = perimetroPerNome(elenco, key);
+  if (!hit) return [key];
+  return [
+    ...new Set(
+      [
+        key,
+        hit.nomeMandante.trim(),
+        hit.descrizione.trim(),
+        hit.nomeInterno.trim(),
+        numeroMandantePerimetro(hit),
+      ].filter(Boolean)
+    ),
+  ];
 }
 
 export type CodiceScaricoPerimetro = {
@@ -531,11 +605,13 @@ export function emptyPerimetro(
     nomeMandante: chiave,
     ricevuta: emptyLatoEconomico(),
     pagata: emptyLatoEconomico(),
+    pagataConsulenti: emptyLatoEconomico(),
     codiciScarico: [],
     codiciScaricoOperatori: [],
     smsPreimpostati: [],
     pdr: emptyPdrConfig(),
     stralcio: emptyStralcioConfig(),
+    pagamenti: emptyPagamentiIntestazioni(),
   };
 }
 
@@ -644,22 +720,77 @@ function normalizeStralcioConfig(raw: unknown): StralcioConfigPerimetro {
   };
 }
 
-/** Config PDR del perimetro pratica (per numeroMandante / lotto). */
+function normalizePagamentiIntestazioni(
+  raw: unknown
+): PagamentiIntestazioniPerimetro {
+  const empty = emptyPagamentiIntestazioni();
+  if (!raw || typeof raw !== "object") return empty;
+  const o = raw as Record<string, unknown>;
+  // Chiavi CreditCalc (bbHeader, bpHeader, …) + nomi gestionale.
+  return {
+    bonificoIntestatoA: String(
+      o.bonificoIntestatoA ?? o.bbHeader ?? ""
+    ).trim(),
+    bonificoIban: String(o.bonificoIban ?? o.iban ?? "").trim(),
+    bollettinoIntestatoA: String(
+      o.bollettinoIntestatoA ?? o.bpHeader ?? ""
+    ).trim(),
+    bollettinoCcp: String(o.bollettinoCcp ?? o.ccp ?? o.ccn ?? "").trim(),
+    bollettinoIndirizzo: String(
+      o.bollettinoIndirizzo ?? o.indBp ?? ""
+    ).trim(),
+    assegnoIntestatoA: String(
+      o.assegnoIntestatoA ?? o.assHeader ?? ""
+    ).trim(),
+  };
+}
+
+/** Config PDR del perimetro pratica (lotto / chiave import / unico perimetro). */
 export function pdrConfigPerPratica(
   perimetriRaw: string | null | undefined,
-  numeroMandante: string | null | undefined
+  numeroMandante: string | null | undefined,
+  perimetroAlt?: string | null
 ): PdrConfigPerimetro {
-  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
+  const elenco = parsePerimetri(perimetriRaw);
+  const hit = resolvePerimetroPratica(perimetriRaw, numeroMandante, perimetroAlt);
+  if (hit && hasPdrFasceConfigurate(hit.pdr)) {
+    return hit.pdr;
+  }
+  const withPdr = elenco.filter((p) => hasPdrFasceConfigurate(p.pdr));
+  if (withPdr.length === 1) return withPdr[0]!.pdr;
   return hit?.pdr ?? emptyPdrConfig();
 }
 
 /** Config stralcio del perimetro pratica. */
 export function stralcioConfigPerPratica(
   perimetriRaw: string | null | undefined,
-  numeroMandante: string | null | undefined
+  numeroMandante: string | null | undefined,
+  perimetroAlt?: string | null
 ): StralcioConfigPerimetro {
-  const hit = perimetroPerNome(parsePerimetri(perimetriRaw), numeroMandante);
+  const elenco = parsePerimetri(perimetriRaw);
+  const hit = resolvePerimetroPratica(perimetriRaw, numeroMandante, perimetroAlt);
+  if (hit && hasStralcioVincoli(hit.stralcio)) {
+    return hit.stralcio;
+  }
+  const withStralcio = elenco.filter((p) => hasStralcioVincoli(p.stralcio));
+  if (withStralcio.length === 1) return withStralcio[0]!.stralcio;
   return hit?.stralcio ?? emptyStralcioConfig();
+}
+
+/** Intestazioni pagamenti del perimetro pratica. */
+export function pagamentiConfigPerPratica(
+  perimetriRaw: string | null | undefined,
+  numeroMandante: string | null | undefined,
+  perimetroAlt?: string | null
+): PagamentiIntestazioniPerimetro {
+  const elenco = parsePerimetri(perimetriRaw);
+  const hit = resolvePerimetroPratica(perimetriRaw, numeroMandante, perimetroAlt);
+  if (hit && hasPagamentiIntestazioni(hit.pagamenti)) {
+    return hit.pagamenti;
+  }
+  const withPag = elenco.filter((p) => hasPagamentiIntestazioni(p.pagamenti));
+  if (withPag.length === 1) return withPag[0]!.pagamenti;
+  return hit?.pagamenti ?? emptyPagamentiIntestazioni();
 }
 
 function parseCodiciScaricoMandante(raw: string | null | undefined): CodiceScaricoPerimetro[] {
@@ -797,6 +928,7 @@ export function parsePerimetri(raw: string | null | undefined | unknown): Mandan
           nomeMandante,
           ricevuta: normalizeLato(o.ricevuta),
           pagata: normalizeLato(o.pagata),
+          pagataConsulenti: normalizeLato(o.pagataConsulenti),
           codiciScarico: normalizeCodiciScarico(o.codiciScarico),
           codiciScaricoOperatori: normalizeCodiciScarico(o.codiciScaricoOperatori),
           smsPreimpostati: normalizeSmsPresets(o.smsPreimpostati),
@@ -810,6 +942,9 @@ export function parsePerimetri(raw: string | null | undefined | unknown): Mandan
             }
           ),
           stralcio: normalizeStralcioConfig(o.stralcio),
+          pagamenti: normalizePagamentiIntestazioni(
+            o.pagamenti ?? o.payments ?? o.coordinatePagamenti
+          ),
         } satisfies MandantePerimetro;
       })
       .filter((p): p is MandantePerimetro => p != null);
@@ -853,11 +988,13 @@ export function loadPerimetriForEditor(mandante: {
         nomeMandante: "Generale",
         ricevuta: legacyRicevuta,
         pagata: emptyLatoEconomico(),
+        pagataConsulenti: emptyLatoEconomico(),
         codiciScarico: legacyCodici,
         codiciScaricoOperatori: [],
         smsPreimpostati: legacySms,
         pdr: emptyPdrConfig(),
         stralcio: emptyStralcioConfig(),
+        pagamenti: emptyPagamentiIntestazioni(),
       },
     ];
   }
@@ -870,8 +1007,11 @@ export function loadPerimetriForEditor(mandante: {
         ricevuta: latoIsEmpty(first.ricevuta) ? legacyRicevuta : first.ricevuta,
         codiciScarico: first.codiciScarico.length ? first.codiciScarico : legacyCodici,
         smsPreimpostati: first.smsPreimpostati.length ? first.smsPreimpostati : legacySms,
+        pagata: first.pagata ?? emptyLatoEconomico(),
+        pagataConsulenti: first.pagataConsulenti ?? emptyLatoEconomico(),
         pdr: first.pdr ?? emptyPdrConfig(),
         stralcio: first.stralcio ?? emptyStralcioConfig(),
+        pagamenti: first.pagamenti ?? emptyPagamentiIntestazioni(),
       },
       ...items.slice(1),
     ];

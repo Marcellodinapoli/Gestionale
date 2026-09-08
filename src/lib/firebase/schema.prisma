@@ -241,9 +241,9 @@ model Pratica {
   nettoDaPagare   Float?
   codiceScarico   String?
   codiceScaricoAt DateTime?
-  /** Codice scarico back office (visibile a tutti, editabile da non op/supervisor). */
+  /// Codice scarico back office (visibile a tutti, editabile da non op/supervisor).
   codiceScaricoBk String?
-  /** Data/ora in cui il codice scarico bk off è stato impostato o modificato. */
+  /// Data/ora in cui il codice scarico bk off è stato impostato o modificato.
   codiceScaricoBkAt DateTime?
   dataAffido      DateTime?
   scadenza        DateTime?
@@ -410,7 +410,7 @@ model Incasso {
   metodo      String   @default("bonifico")
   modo        String   @default("VE")
   causale     String   @default("")
-  /** Numero fattura oppure "np" (non provvigioneabile). */
+  /// Numero fattura oppure "np" (non provvigioneabile).
   fattura     String   @default("")
   data        DateTime @default(now())
   dataScadenza DateTime?

@@ -23,14 +23,16 @@ function mmToPx(mm: number) {
 }
 
 export function StampaAnteprima({
-  praticaId,
+  backHref,
+  backLabel = "← Torna indietro (Esc)",
   children,
 }: {
-  praticaId: string;
+  backHref: string;
+  backLabel?: string;
   children: ReactNode;
 }) {
   const measureRef = useRef<HTMLDivElement>(null);
-  useEscBack(`/pratiche/${praticaId}`);
+  useEscBack(backHref);
   const [pageCount, setPageCount] = useState(1);
   const [pagePx, setPagePx] = useState(0);
   const [html, setHtml] = useState("");
@@ -61,10 +63,10 @@ export function StampaAnteprima({
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href={`/pratiche/${praticaId}`}
+            href={backHref}
             className="inline-flex h-10 items-center rounded border border-white/30 px-4 text-sm text-white hover:bg-white/10"
           >
-            ← Torna alla pratica (Esc)
+            {backLabel}
           </Link>
           <button
             type="button"

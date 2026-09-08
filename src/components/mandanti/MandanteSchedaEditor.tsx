@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Printer, Trash2 } from "lucide-react";
 import {
   updateMandanteAction,
   createMandanteAction,
@@ -15,6 +15,9 @@ import {
   type MandantePerimetro,
 } from "@/lib/mandantePerimetri";
 import { PerimetriMandanteSection } from "@/components/mandanti/PerimetriMandanteSection";
+import { Modal } from "@/components/Modal";
+
+type DestinatarioStampa = "admin" | "operatore" | "consulente";
 
 type MandanteData = {
   id: string;
@@ -86,8 +89,14 @@ export function MandanteSchedaEditor({
   const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [savedRevision, setSavedRevision] = useState(0);
+  const [stampaOpen, setStampaOpen] = useState(false);
 
   const canCreatePerimetro = Boolean(ragioneSociale.trim() && codice.trim());
+
+  function vaiAllaStampa(destinatario: DestinatarioStampa) {
+    setStampaOpen(false);
+    router.push(`/mandanti/${mandante.id}/stampa?destinatario=${destinatario}`);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -201,12 +210,76 @@ export function MandanteSchedaEditor({
         <h1 className="text-lg font-bold text-[var(--navy)]">
           {isNew ? "Nuova mandante" : `${mandante.codice} · ${mandante.ragioneSociale}`}
         </h1>
-        {!isNew && (
-          <span className="ml-auto text-xs text-[var(--muted)]">
-            {mandante.pratiche} pratiche
-          </span>
-        )}
+        {!isNew ? (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[var(--muted)]">
+              {mandante.pratiche} pratiche
+            </span>
+            <button
+              type="button"
+              onClick={() => setStampaOpen(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded border border-[var(--line)] bg-white px-3 text-xs font-semibold text-[var(--navy)] hover:bg-[#eef4f8]"
+              title="Stampa i dati salvati della scheda"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Stampa
+            </button>
+          </div>
+        ) : null}
       </div>
+
+      <Modal
+        open={stampaOpen}
+        title="Destinatario della stampa"
+        onClose={() => setStampaOpen(false)}
+      >
+        <div className="space-y-3 px-4 py-4 text-sm">
+          <p className="text-[var(--muted)]">
+            Per chi è questa stampa? Le provvigioni mostrate dipendono dalla
+            scelta (dati già salvati).
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => vaiAllaStampa("admin")}
+              className="rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2.5 text-left hover:border-[var(--navy)] hover:bg-[#eef4f8]"
+            >
+              <span className="block font-semibold text-[var(--navy)]">
+                Admin / amministrazione
+              </span>
+              <span className="mt-0.5 block text-[11px] text-[var(--muted)]">
+                Tutte le provvigioni: percepite dalla mandante e da pagare a
+                operatori e consulenti.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => vaiAllaStampa("operatore")}
+              className="rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2.5 text-left hover:border-[var(--navy)] hover:bg-[#eef4f8]"
+            >
+              <span className="block font-semibold text-[var(--navy)]">
+                Operatore
+              </span>
+              <span className="mt-0.5 block text-[11px] text-[var(--muted)]">
+                Solo le provvigioni da pagare agli operatori (niente ricevute
+                mandante né consulenti).
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => vaiAllaStampa("consulente")}
+              className="rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2.5 text-left hover:border-[var(--navy)] hover:bg-[#eef4f8]"
+            >
+              <span className="block font-semibold text-[var(--navy)]">
+                Consulente
+              </span>
+              <span className="mt-0.5 block text-[11px] text-[var(--muted)]">
+                Solo le provvigioni da pagare ai consulenti.
+              </span>
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <form id="mandante-scheda-form" onSubmit={handleSubmit} className="space-y-4">
         <div className={sectionCls}>

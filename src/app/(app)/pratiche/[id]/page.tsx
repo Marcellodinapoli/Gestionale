@@ -173,12 +173,14 @@ export default async function PraticaDetailPage({
   );
   const pdrConfig = pdrConfigPerPratica(
     pratica.mandante.perimetri,
-    pratica.numeroMandante
+    pratica.numeroMandante,
+    perimetroAlt
   );
   const pdrDisponibile = hasPdrFasceConfigurate(pdrConfig);
   const stralcioConfig = stralcioConfigPerPratica(
     pratica.mandante.perimetri,
-    pratica.numeroMandante
+    pratica.numeroMandante,
+    perimetroAlt
   );
 
   const { canWork, lockedByName } = workCtx;

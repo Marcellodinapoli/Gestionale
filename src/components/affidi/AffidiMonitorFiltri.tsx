@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { buildAffidiHref, type AffidiNavParams } from "@/components/affidi/AffidiCaricoOperatori";
-import type { MandantePerimetriAffidi } from "@/lib/affidi/affidiMonitorPerimetri";
+import {
+  valoriPerimetroMandante,
+  type MandantePerimetriAffidi,
+} from "@/lib/affidi/affidiMonitorPerimetri";
 import {
   FILTRI_APPLY_BUTTON_CLASS,
   FILTRI_BAR_CONTAINER_CLASS,
@@ -29,14 +32,10 @@ export function AffidiMonitorFiltri({
   const [mandato, setMandato] = useState(mandatoId || "");
   const [peri, setPeri] = useState(perimetro || "");
 
-  const perimetriOpts = useMemo(() => {
-    if (!mandato) {
-      const all = new Set<string>();
-      for (const m of mandanti) for (const p of m.perimetri) all.add(p);
-      return [...all].sort((a, b) => a.localeCompare(b, "it"));
-    }
-    return mandanti.find((m) => m.id === mandato)?.perimetri ?? [];
-  }, [mandato, mandanti]);
+  const perimetriOpts = useMemo(
+    () => valoriPerimetroMandante(mandanti, mandato || undefined),
+    [mandato, mandanti]
+  );
 
   function buildHref(nextMandato: string, nextPeri: string) {
     return buildAffidiHref({
@@ -89,8 +88,8 @@ export function AffidiMonitorFiltri({
         >
           <option value="">Tutti</option>
           {perimetriOpts.map((p) => (
-            <option key={p} value={p}>
-              {p}
+            <option key={p.value} value={p.value}>
+              {p.label}
             </option>
           ))}
         </select>
