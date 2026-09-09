@@ -48,6 +48,7 @@ function mapRow(b: {
     lotto: b.lotto,
     affidoIl: b.affidoIl.toISOString(),
     scadenzaMandato: b.scadenzaMandato?.toISOString() ?? null,
+    conferimentoTipo: (b as { conferimentoTipo?: string | null }).conferimentoTipo ?? null,
     fileName: b.fileName,
     nPratiche: b.nPratiche,
     createdById: b.createdById,

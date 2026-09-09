@@ -72,7 +72,7 @@ export function ImportPanels({
       </div>
 
       {open === "pratiche" ? (
-        <div className="max-w-xl">
+        <div className="w-full">
           <Card title="Pratiche">
             <ImportForm
               key={prefill ? `integra-${integraId}` : "pratiche-nuovo"}
@@ -88,7 +88,7 @@ export function ImportPanels({
       ) : null}
 
       {open === "incassi" ? (
-        <div className="max-w-xl">
+        <div className="w-full">
           <Card title="Incassi massivi">
             <ImportForm
               kind="incassi"

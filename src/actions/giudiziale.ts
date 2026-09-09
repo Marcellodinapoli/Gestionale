@@ -136,7 +136,7 @@ export async function confermaAvvioGiudizialeAction(
   if (!isGiudizialePrevistoSulLotto(praticaLotto?.conferimentoTipo)) {
     return {
       error:
-        "Gestione giudiziale non prevista sul lotto (conferimento solo stragiudiziale)",
+        "Gestione giudiziale non prevista sul lotto (conferimento solo stragiudiziale o non impostato)",
     };
   }
 

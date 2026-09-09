@@ -11,12 +11,17 @@ export type ConferimentoTipo = (typeof CONFERIMENTO_TIPI)[number]["value"];
 export const PROSSIMA_ATTIVITA_PASSAGGIO_GIUDIZIALE =
   "Passaggio a fase giudiziale";
 
+export function labelConferimentoTipo(tipo?: string | null) {
+  const t = String(tipo || "").trim().toUpperCase();
+  return CONFERIMENTO_TIPI.find((x) => x.value === t)?.label ?? (t || "Non impostato");
+}
+
 export function isConferimentoTipo(v: string): v is ConferimentoTipo {
   return CONFERIMENTO_TIPI.some((t) => t.value === v);
 }
 
-/** False solo se il lotto è esplicitamente «solo stragiudiziale». */
+/** True solo se sul lotto/perimetro è previsto mandato giudiziale (o entrambi). */
 export function isGiudizialePrevistoSulLotto(tipo?: string | null): boolean {
-  if (tipo == null || tipo === "") return true;
-  return tipo === "GIUDIZIALE" || tipo === "ENTRAMBI";
+  const t = String(tipo || "").trim().toUpperCase();
+  return t === "GIUDIZIALE" || t === "ENTRAMBI";
 }

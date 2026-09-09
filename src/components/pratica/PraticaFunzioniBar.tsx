@@ -215,7 +215,7 @@ export function PraticaFunzioniBar({
   currentUserRole?: string;
   /** Pulsante avvio giudiziale (ADMIN / LEGAL). */
   canAvviaGiudiziale?: boolean;
-  /** False se il lotto è solo stragiudiziale: tasto visibile ma disabilitato. */
+  /** False se sul perimetro/lotto non è previsto mandato giudiziale: tasto visibile ma disabilitato. */
   giudizialePrevistoSulLotto?: boolean;
   /** True se l'avvio giudiziale è già stato confermato su questa pratica. */
   giudizialeAvviato?: boolean;
@@ -564,33 +564,33 @@ export function PraticaFunzioniBar({
         {showAvviaGiudiziale ? (
           <>
             <span className={TOOL_SEP} aria-hidden />
-            {!giudizialePrevistoSulLotto ? (
-              <Hint label="Gestione giudiziale non prevista sul lotto (solo stragiudiziale)">
+            {giudizialeAvviato ? (
+              <Hint label="Fase giudiziale già avviata su questa pratica">
                 <span
-                  className={`${BTN_TOOL} inline-flex cursor-not-allowed items-center gap-1 opacity-50`}
+                  className="pointer-events-none inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-[#c4a574] bg-[#d4b896] px-2 py-1 text-xs font-semibold text-[#3d2914]"
                   aria-disabled="true"
-                  title="Gestione giudiziale non prevista sul lotto"
+                  title="Giudiziale avviato"
+                >
+                  <Scale className="h-3 w-3" />
+                  Giudiziale avviato
+                </span>
+              </Hint>
+            ) : !giudizialePrevistoSulLotto ? (
+              <Hint label="Mandato giudiziale non previsto su questo perimetro/lotto (solo stragiudiziale o non impostato)">
+                <span
+                  className="pointer-events-none inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-[#c4a574] bg-[#e8d5b5] px-2 py-1 text-xs font-semibold text-[#5c4033] opacity-45"
+                  aria-disabled="true"
+                  title="Mandato giudiziale non previsto sul perimetro"
                 >
                   <Scale className="h-3 w-3" />
                   Avvia giudiziale
-                </span>
-              </Hint>
-            ) : giudizialeAvviato ? (
-              <Hint label="Fase giudiziale già avviata su questa pratica">
-                <span
-                  className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-[#c4a574] bg-[#e8d5b5] px-2 py-1 text-xs font-semibold text-[#5c4033]"
-                  aria-disabled="true"
-                  title="Giudiziale già avviato"
-                >
-                  <Scale className="h-3 w-3" />
-                  giudiziale avviato
                 </span>
               </Hint>
             ) : (
               <Hint label="Avvia attività giudiziale (fase legale)">
                 <Link
                   href={`/pratiche/${praticaId}/avvio-giudiziale`}
-                  className={`${BTN_TOOL} inline-flex items-center gap-1`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#c4a574] bg-[#e8d5b5] px-2 py-1 text-xs font-semibold text-[#5c4033] hover:bg-[#dfc7a0] hover:text-[#3d2914]"
                 >
                   <Scale className="h-3 w-3" />
                   Avvia giudiziale

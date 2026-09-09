@@ -146,7 +146,7 @@ export default async function AvvioGiudizialePage({
             <>
               {!giudizialeSulLotto ? (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                  Sul lotto di questa pratica è previsto solo il conferimento stragiudiziale:
+                  Sul lotto/perimetro di questa pratica non è previsto il mandato giudiziale:
                   l&apos;avvio giudiziale non è disponibile.
                 </p>
               ) : null}

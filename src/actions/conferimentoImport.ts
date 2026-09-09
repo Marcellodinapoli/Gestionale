@@ -72,8 +72,10 @@ export async function salvaConferimentoImportBatchAction(input: {
 
   revalidatePath("/import");
   revalidatePath("/pratiche");
+  revalidatePath("/legal");
+  revalidatePath("/legal/avvio");
   return {
-    ok: "Conferimento salvato sul lotto",
+    ok: "Conferimento salvato sul lotto e sulle pratiche",
     updatedPratiche: result.updatedPratiche,
   };
 }

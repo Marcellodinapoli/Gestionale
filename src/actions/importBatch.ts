@@ -60,6 +60,7 @@ export async function listImportBatchPratiche(
       lotto: b.lotto,
       affidoIl: new Date(b.affidoIl).toISOString().slice(0, 10),
       scadenzaMandato: b.scadenzaMandato ? b.scadenzaMandato.slice(0, 10) : null,
+      conferimentoTipo: b.conferimentoTipo ?? null,
       fileName: b.fileName ?? null,
       nPratiche,
       createdAt: b.createdAt,

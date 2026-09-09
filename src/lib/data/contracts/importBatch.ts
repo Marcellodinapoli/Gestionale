@@ -8,6 +8,7 @@ export type ImportBatchDto = {
   lotto: string;
   affidoIl: string;
   scadenzaMandato: string | null;
+  conferimentoTipo?: string | null;
   fileName: string | null;
   nPratiche: number;
   createdById: string | null;

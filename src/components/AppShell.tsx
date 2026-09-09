@@ -696,24 +696,44 @@ function PraticheBackSync({
     const isPraticheSottopagina =
       pathname.startsWith("/pratiche/") && pathname !== "/pratiche";
 
-    if (isPraticheSottopagina) {
-      try {
-        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
-        const savedPath = saved?.split("?")[0] || "";
-        const href = saved && !isPratichePath(savedPath) ? saved : "/pratiche";
-        onChange(href, labelForNavBackHref(href));
-      } catch {
-        onChange("/pratiche", "Lista pratiche");
-      }
-    } else if (isPraticheLista) {
-      onChange(null, undefined);
-    } else {
+    if (isPraticheLista) {
       onChange(null, undefined);
       try {
+        // Così da una scheda ← torna alla lista (non a Home/altra pagina visitata prima).
         sessionStorage.setItem(PRATICHE_BACK_KEY, full);
       } catch {
         /* ignore */
       }
+      return;
+    }
+
+    if (isPraticheSottopagina) {
+      try {
+        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
+        const savedPath = saved?.split("?")[0] || "";
+        let href = "/pratiche";
+        if (saved && savedPath === "/pratiche") {
+          href = saved;
+        } else if (saved && !isPratichePath(savedPath)) {
+          // Provenienza esterna (es. Affidi): mantieni quella destinazione
+          href = saved;
+        }
+        const label =
+          href.split("?")[0] === "/pratiche"
+            ? "Pratiche"
+            : labelForNavBackHref(href);
+        onChange(href, label);
+      } catch {
+        onChange("/pratiche", "Pratiche");
+      }
+      return;
+    }
+
+    onChange(null, undefined);
+    try {
+      sessionStorage.setItem(PRATICHE_BACK_KEY, full);
+    } catch {
+      /* ignore */
     }
   }, [pathname, searchParams, onChange]);
 

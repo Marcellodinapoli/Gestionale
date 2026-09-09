@@ -12,6 +12,7 @@ export type ImportBatchListItem = {
   lotto: string;
   affidoIl: string;
   scadenzaMandato: string | null;
+  conferimentoTipo: string | null;
   fileName: string | null;
   nPratiche: number;
   createdAt: string;

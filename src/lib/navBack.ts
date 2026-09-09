@@ -1,13 +1,13 @@
-/** Torna alla pagina precedente nel browser; fallback se non c'è cronologia. */
+/** Torna alla destinazione indicata; se manca, usa la cronologia del browser. */
 export function navigateBack(
   router: { back: () => void; push: (href: string) => void },
   fallbackHref?: string | null
 ) {
-  if (typeof window !== "undefined" && window.history.length > 1) {
-    router.back();
-    return;
-  }
   if (fallbackHref) {
     router.push(fallbackHref);
+    return;
+  }
+  if (typeof window !== "undefined" && window.history.length > 1) {
+    router.back();
   }
 }

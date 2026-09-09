@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { salvaConferimentoImportBatchAction } from "@/actions/conferimentoImport";
-import { CONFERIMENTO_TIPI, type ConferimentoTipo } from "@/lib/conferimentoLegale";
+import {
+  CONFERIMENTO_TIPI,
+  isConferimentoTipo,
+  type ConferimentoTipo,
+} from "@/lib/conferimentoLegale";
 
 function formatScadenzaIt(isoDate: string | null | undefined) {
   if (!isoDate?.trim()) return "non indicata";
@@ -16,16 +20,20 @@ export type ConferimentoPopupPayload = {
   batchId: string;
   lotto: string;
   scadenzaMandato: string | null;
+  /** Valore già salvato (modifica successiva del mandato). */
+  conferimentoTipo?: string | null;
 };
 
 export function ConferimentoImportPopup({
   open,
   payload,
   onClose,
+  onSaved,
 }: {
   open: boolean;
   payload: ConferimentoPopupPayload | null;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const [tipo, setTipo] = useState<ConferimentoTipo | "">("");
   const [vuoleData, setVuoleData] = useState(false);
@@ -33,9 +41,19 @@ export function ConferimentoImportPopup({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!open || !payload) return;
+    const initial = payload.conferimentoTipo?.trim() || "";
+    setTipo(isConferimentoTipo(initial) ? initial : "");
+    setVuoleData(false);
+    setDataPassaggio("");
+    setError(null);
+  }, [open, payload]);
+
   if (!payload) return null;
 
   const scad = payload.scadenzaMandato?.slice(0, 10) || "";
+  const isEdit = Boolean(payload.conferimentoTipo);
 
   async function onSalva() {
     if (!tipo) {
@@ -56,6 +74,7 @@ export function ConferimentoImportPopup({
         setError(result.error);
         return;
       }
+      onSaved?.();
       onClose();
     } catch {
       setError("Salvataggio non riuscito. Riprova.");
@@ -70,7 +89,11 @@ export function ConferimentoImportPopup({
   }
 
   return (
-    <Modal open={open} title="Conferimento legale del lotto" onClose={onAnnulla}>
+    <Modal
+      open={open}
+      title={isEdit ? "Aggiorna conferimento legale del lotto" : "Conferimento legale del lotto"}
+      onClose={onAnnulla}
+    >
       <div className="space-y-4 p-4">
         <p className="text-sm text-[var(--navy)]">
           Lotto <strong>{payload.lotto}</strong>
@@ -78,6 +101,12 @@ export function ConferimentoImportPopup({
           Scadenza mandato intercettata:{" "}
           <strong>{formatScadenzaIt(payload.scadenzaMandato)}</strong>
         </p>
+        {isEdit ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            Usa questa modifica se il mandato giudiziale arriva dopo l&apos;import: aggiorna il
+            conferimento su tutte le pratiche del lotto e sblocca «Avvia giudiziale» dove previsto.
+          </p>
+        ) : null}
 
         <fieldset className="space-y-2">
           <legend className="text-sm font-semibold text-[var(--navy)]">
@@ -162,7 +191,7 @@ export function ConferimentoImportPopup({
             disabled={pending || !tipo}
             className="h-9 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? "Salvataggio…" : "Conferma"}
+            {pending ? "Salvataggio…" : isEdit ? "Aggiorna conferimento" : "Conferma"}
           </button>
         </div>
       </div>

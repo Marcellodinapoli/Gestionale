@@ -52,9 +52,7 @@ export function resolveAffidiBackNav(search: string): AffidiBackNav | null {
   if (!sp.toString() || isAffidiPanoramica(sp)) return null;
 
   if (sp.get("sezione") === "affida") {
-    const next = paramsFromSearch(sp);
-    delete next.sezione;
-    return back(next, "Panoramica perimetro");
+    return { href: "/affidi", label: "Panoramica affidi" };
   }
 
   if (sp.has("coda")) {
@@ -72,7 +70,7 @@ export function resolveAffidiBackNav(search: string): AffidiBackNav | null {
 
   if (sp.has("perimetro")) {
     // Salta il passaggio ?mandato=… (identico alla panoramica quando c’è un solo mandato)
-    return { href: "/affidi", label: "Tutti i perimetri" };
+    return { href: "/affidi", label: "Panoramica affidi" };
   }
 
   return null;

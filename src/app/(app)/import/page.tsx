@@ -65,7 +65,7 @@ export default async function ImportPage({
     : null;
 
   return (
-    <div className="grid max-w-5xl gap-4">
+    <div className="grid w-full gap-4">
       <PageHeader
         title="Import CSV"
         subtitle="Carichi massivi di pratiche e incassi (back office)"

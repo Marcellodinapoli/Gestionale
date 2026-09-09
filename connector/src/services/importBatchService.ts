@@ -11,6 +11,7 @@ export type ImportBatchRow = {
   lotto: string;
   affidoIl: string;
   scadenzaMandato: string | null;
+  conferimentoTipo: string | null;
   fileName: string | null;
   nPratiche: number;
   createdById: string | null;
@@ -29,6 +30,7 @@ function mapRow(r: Record<string, unknown>): ImportBatchRow {
     lotto: String(r.Lotto),
     affidoIl: new Date(String(r.AffidoIl)).toISOString(),
     scadenzaMandato: r.ScadenzaMandato ? new Date(String(r.ScadenzaMandato)).toISOString() : null,
+    conferimentoTipo: r.ConferimentoTipo != null ? String(r.ConferimentoTipo) : null,
     fileName: r.FileName != null ? String(r.FileName) : null,
     nPratiche: Number(r.NPratiche ?? 0),
     createdById: r.CreatedById != null ? String(r.CreatedById) : null,

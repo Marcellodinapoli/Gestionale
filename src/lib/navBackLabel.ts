@@ -77,13 +77,11 @@ export function labelForNavBackHref(href: string): string {
   return "Indietro";
 }
 
-/** Evita etichetta uguale alla voce di menu attiva (es. ← Affidi + Affidi). */
+/** Etichetta per ← in nav: destinazione, o nome sezione se coincide col menu. */
 export function navBackDisplayLabel(
   menuLabel: string,
   backHref: string,
   explicitLabel?: string
 ): string {
-  const label = explicitLabel || labelForNavBackHref(backHref);
-  if (label === menuLabel) return "Indietro";
-  return label;
+  return explicitLabel || labelForNavBackHref(backHref) || menuLabel;
 }

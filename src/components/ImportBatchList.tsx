@@ -2,17 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Scale, Trash2 } from "lucide-react";
 import {
   eliminaImportBatchChunkAction,
   eliminaImportBatchFinalizeAction,
   eliminaImportBatchPrepareAction,
 } from "@/actions/importBatch";
 import {
+  ConferimentoImportPopup,
+  type ConferimentoPopupPayload,
+} from "@/components/import/ConferimentoImportPopup";
+import {
   importBatchBloccato,
   motivoBloccoImportBatch,
   type ImportBatchListItem,
 } from "@/lib/importBatch";
+import { labelConferimentoTipo } from "@/lib/conferimentoLegale";
 
 const ELIMINA_IMPORT_CHUNK = 5;
 
@@ -36,11 +41,21 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
+  const [conferimento, setConferimento] = useState<ConferimentoPopupPayload | null>(null);
 
   function integra(item: ImportBatchListItem) {
     const sp = new URLSearchParams();
     sp.set("integra", item.id);
     router.push(`/import?${sp.toString()}#import-pratiche`);
+  }
+
+  function apriConferimento(item: ImportBatchListItem) {
+    setConferimento({
+      batchId: item.id,
+      lotto: item.lotto,
+      scadenzaMandato: item.scadenzaMandato,
+      conferimentoTipo: item.conferimentoTipo,
+    });
   }
 
   async function elimina(item: ImportBatchListItem) {
@@ -160,7 +175,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
       {message ? (
         <p
           className={`rounded-lg px-3 py-2 text-sm ${
-            message.startsWith("Eliminato")
+            message.startsWith("Eliminato") || message.startsWith("Conferimento")
               ? "bg-emerald-50 text-emerald-800"
               : "bg-rose-50 text-rose-800"
           }`}
@@ -169,7 +184,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
         </p>
       ) : null}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[1280px] text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--line)] text-xs font-bold uppercase tracking-wide text-[var(--muted)]">
               <th className="px-2 py-2">Data</th>
@@ -178,6 +193,7 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
               <th className="px-2 py-2">Lotto</th>
               <th className="px-2 py-2">Affido</th>
               <th className="px-2 py-2">Scadenza</th>
+              <th className="px-2 py-2">Conferimento</th>
               <th className="px-2 py-2 text-right">Pratiche</th>
               <th className="px-2 py-2">File</th>
               <th className="px-2 py-2">Utente</th>
@@ -188,62 +204,74 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
             {items.map((item) => {
               const blocco = motivoBloccoImportBatch(item.blocchi);
               return (
-              <tr
-                key={item.id}
-                className="border-b border-[var(--line)]/70 align-middle"
-              >
-                <td className="px-2 py-2 whitespace-nowrap">
-                  {formatQuando(item.createdAt)}
-                </td>
-                <td className="px-2 py-2 font-medium">{item.mandanteCodice}</td>
-                <td className="px-2 py-2">{item.perimetro}</td>
-                <td className="px-2 py-2 font-mono">{item.lotto}</td>
-                <td className="px-2 py-2 whitespace-nowrap">{item.affidoIl}</td>
-                <td className="px-2 py-2 whitespace-nowrap">
-                  {item.scadenzaMandato || "—"}
-                </td>
-                <td className="px-2 py-2 text-right tabular-nums">
-                  {item.nPratiche}
-                </td>
-                <td
-                  className="max-w-[10rem] truncate px-2 py-2 text-[var(--muted)]"
-                  title={item.fileName ?? undefined}
+                <tr
+                  key={item.id}
+                  className="border-b border-[var(--line)]/70 align-middle"
                 >
-                  {item.fileName || "—"}
-                </td>
-                <td className="px-2 py-2 text-[var(--muted)]">
-                  {item.createdByName || "—"}
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex flex-wrap items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      title="Aggiorna o aggiungi pratiche a questo lotto"
-                      onClick={() => integra(item)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] px-2 py-1 text-xs font-medium text-[var(--navy)] hover:bg-slate-50"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Integra
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!!busyId || importBatchBloccato(item)}
-                      title={blocco || "Elimina import e pratiche"}
-                      onClick={() => void elimina(item)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      {busyId === item.id ? "…" : "Elimina"}
-                    </button>
-                  </div>
-                  {blocco ? (
-                    <p className="mt-1 max-w-[16rem] text-right text-[11px] leading-snug text-rose-700">
-                      {blocco}
-                    </p>
-                  ) : null}
-                </td>
-              </tr>
-            );
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {formatQuando(item.createdAt)}
+                  </td>
+                  <td className="px-2 py-2 font-medium">{item.mandanteCodice}</td>
+                  <td className="px-2 py-2">{item.perimetro}</td>
+                  <td className="px-2 py-2 font-mono">{item.lotto}</td>
+                  <td className="px-2 py-2 whitespace-nowrap">{item.affidoIl}</td>
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {item.scadenzaMandato || "—"}
+                  </td>
+                  <td className="px-2 py-2 text-xs">
+                    {labelConferimentoTipo(item.conferimentoTipo)}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {item.nPratiche}
+                  </td>
+                  <td
+                    className="max-w-[10rem] truncate px-2 py-2 text-[var(--muted)]"
+                    title={item.fileName ?? undefined}
+                  >
+                    {item.fileName || "—"}
+                  </td>
+                  <td className="px-2 py-2 text-[var(--muted)]">
+                    {item.createdByName || "—"}
+                  </td>
+                  <td className="px-2 py-2">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        title="Aggiorna o aggiungi pratiche a questo lotto"
+                        onClick={() => integra(item)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] px-2 py-1 text-xs font-medium text-[var(--navy)] hover:bg-slate-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Integra
+                      </button>
+                      <button
+                        type="button"
+                        title="Imposta o aggiorna conferimento legale (anche se il mandato giudiziale arriva dopo)"
+                        onClick={() => apriConferimento(item)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[#c4a574] bg-[#e8d5b5] px-2 py-1 text-xs font-medium text-[#5c4033] hover:bg-[#dfc7a0]"
+                      >
+                        <Scale className="h-3.5 w-3.5" />
+                        Conferimento
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!busyId || importBatchBloccato(item)}
+                        title={blocco || "Elimina import e pratiche"}
+                        onClick={() => void elimina(item)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {busyId === item.id ? "…" : "Elimina"}
+                      </button>
+                    </div>
+                    {blocco ? (
+                      <p className="mt-1 min-w-[18rem] max-w-[22rem] text-right text-[11px] leading-snug text-rose-700">
+                        {blocco}
+                      </p>
+                    ) : null}
+                  </td>
+                </tr>
+              );
             })}
           </tbody>
         </table>
@@ -252,9 +280,20 @@ export function ImportBatchList({ items }: { items: ImportBatchListItem[] }) {
         Con <strong>Integra</strong> aggiorni pratiche già presenti (anagrafica e contabile) e
         aggiungi righe nuove, senza duplicare e senza modificare note o codici scarico. Per il
         riconoscimento delle righe usa nel CSV almeno <span className="font-mono">contratto</span>,{" "}
-        <span className="font-mono">commessa</span> o <span className="font-mono">cf</span>.{" "}
+        <span className="font-mono">commessa</span> o <span className="font-mono">cf</span>. Con{" "}
+        <strong>Conferimento</strong> puoi impostare o aggiornare il mandato legale del lotto anche
+        in un secondo momento (es. giudiziale ricevuto dopo l&apos;import).{" "}
         <strong>Elimina</strong> solo se nessuna pratica ha note, cambi codice o incassi.
       </p>
+      <ConferimentoImportPopup
+        open={!!conferimento}
+        payload={conferimento}
+        onClose={() => setConferimento(null)}
+        onSaved={() => {
+          setMessage("Conferimento aggiornato sul lotto e sulle pratiche");
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
