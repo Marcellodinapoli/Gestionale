@@ -454,6 +454,7 @@ export function PraticaSchedaOperatore({
             compact
             accent
           />
+          <AnagraficaField label="Capitale" value={euro(pratica.capitale)} compact accent />
           <AnagraficaField label="Spese" value={euro(pratica.spese)} compact accent />
           <AnagraficaField
             label="Spese di recupero"
@@ -461,7 +462,6 @@ export function PraticaSchedaOperatore({
             compact
             accent
           />
-          <AnagraficaField label="Capitale" value={euro(pratica.capitale)} compact accent />
           <AnagraficaField label="Mora" value={euro(pratica.interessi)} compact accent />
           <AnagraficaField
             label="Pagato"

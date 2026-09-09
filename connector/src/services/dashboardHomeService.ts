@@ -147,6 +147,113 @@ function parsePerimetriOpts(
   }
 }
 
+type LatoRicevuta = {
+  provvigionePerc: number | null;
+  provvigioniMetodo: Record<string, number>;
+  provvigioniCodice: Record<string, number>;
+};
+
+type PerimetroRicevuta = {
+  nomeMandante: string;
+  nomeInterno: string;
+  descrizione: string;
+  ricevuta: LatoRicevuta;
+};
+
+function parseNumMap(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+    if (!Number.isNaN(n) && n >= 0) out[k] = n;
+  }
+  return out;
+}
+
+function normalizeLatoRicevuta(raw: unknown): LatoRicevuta {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { provvigionePerc: null, provvigioniMetodo: {}, provvigioniCodice: {} };
+  }
+  const o = raw as Record<string, unknown>;
+  const percRaw = o.provvigionePerc;
+  const perc =
+    percRaw != null && percRaw !== ""
+      ? Number(String(percRaw).replace(",", "."))
+      : null;
+  return {
+    provvigionePerc: perc != null && !Number.isNaN(perc) ? perc : null,
+    provvigioniMetodo: parseNumMap(o.provvigioniMetodo),
+    provvigioniCodice: parseNumMap(o.provvigioniCodice),
+  };
+}
+
+/** Perimetri con lato «ricevuta» (ciò che la mandante paga all'agenzia). */
+function parsePerimetriRicevuta(json: string | null | undefined): PerimetroRicevuta[] {
+  if (!json?.trim()) return [];
+  try {
+    const arr = JSON.parse(json) as unknown;
+    if (!Array.isArray(arr)) return [];
+    const out: PerimetroRicevuta[] = [];
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const o = item as Record<string, unknown>;
+      const descrizione = String(o.descrizione || o.nomeMandante || "").trim();
+      const nomeMandante = String(o.nomeMandante || descrizione || "").trim();
+      const nomeInterno = String(o.nomeInterno || "").trim();
+      if (!nomeMandante && !descrizione && !nomeInterno) continue;
+      out.push({
+        nomeMandante: nomeMandante || descrizione || nomeInterno,
+        nomeInterno,
+        descrizione,
+        ricevuta: normalizeLatoRicevuta(o.ricevuta),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function matchPerimetroRicevuta(
+  elenco: PerimetroRicevuta[],
+  numeroMandante: string | null | undefined
+): PerimetroRicevuta | null {
+  if (!elenco.length) return null;
+  const key = String(numeroMandante || "").trim();
+  if (key) {
+    const hit =
+      elenco.find((p) => p.nomeMandante === key) ||
+      elenco.find((p) => p.descrizione === key) ||
+      elenco.find((p) => p.nomeInterno === key) ||
+      null;
+    if (hit) return hit;
+  }
+  return elenco.length === 1 ? elenco[0]! : null;
+}
+
+/** % ricavo agenzia da lato ricevuta; null se non configurata (non inventare un default). */
+function resolveRicevutaPercentuale(
+  lato: LatoRicevuta,
+  metodo: string,
+  codiceScarico?: string | null
+): number | null {
+  if (lato.provvigioniMetodo[metodo] != null) return lato.provvigioniMetodo[metodo]!;
+  const codice = (codiceScarico || "").trim().toUpperCase();
+  if (codice && lato.provvigioniCodice[codice] != null) {
+    return lato.provvigioniCodice[codice]!;
+  }
+  if (lato.provvigionePerc != null) return lato.provvigionePerc;
+  return null;
+}
+
+function calcolaRicavoAziendale(baseImporto: number, percentuale: number) {
+  return Math.round(baseImporto * (percentuale / 100) * 100) / 100;
+}
+
+function isModoNonProvvigionabile(modo: string | null | undefined) {
+  return String(modo || "").trim().toLowerCase() === "np";
+}
+
 function chiaviMatchPerimetroJson(
   json: string | null | undefined,
   selected: string
@@ -562,17 +669,18 @@ async function loadAdminSection(
   const riepReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
   if (sedeId) riepReq.input("sedeId", sql.UniqueIdentifier, sedeId);
   tick();
-  const ricavoLordoExpr = sedeId
-    ? `(SELECT ISNULL(SUM(pv.Importo), 0)
-        FROM dbo.Provvigioni pv
-        INNER JOIN dbo.Pratiche px ON px.Id = pv.PraticaId
+  // TotIncassato sulle pratiche può essere stantio: somma reale da dbo.Incassi.
+  const incassatoExpr = sedeId
+    ? `(SELECT ISNULL(SUM(i.Importo), 0)
+        FROM dbo.Incassi i
+        INNER JOIN dbo.Pratiche px ON px.Id = i.PraticaId
         LEFT JOIN dbo.Users uap ON uap.Id = px.AssegnatarioId
         LEFT JOIN dbo.Users utp ON utp.Id = px.OperatoreTitolareId
         WHERE px.MandanteId = m.Id AND px.TenantId = @tenantId
           AND (uap.SedeId = @sedeId OR utp.SedeId = @sedeId))`
-    : `(SELECT ISNULL(SUM(pv.Importo), 0)
-        FROM dbo.Provvigioni pv
-        INNER JOIN dbo.Pratiche px ON px.Id = pv.PraticaId
+    : `(SELECT ISNULL(SUM(i.Importo), 0)
+        FROM dbo.Incassi i
+        INNER JOIN dbo.Pratiche px ON px.Id = i.PraticaId
         WHERE px.MandanteId = m.Id AND px.TenantId = @tenantId)`;
 
   const riepRes = await riepReq.query(`
@@ -581,8 +689,7 @@ async function loadAdminSection(
       ISNULL(SUM(p.ImportoTotale), 0) AS affidato,
       ISNULL(SUM(p.Residuo), 0) AS residuo,
       ISNULL(SUM(ISNULL(p.NettoDaPagare, p.Residuo)), 0) AS insoluto,
-      ISNULL(SUM(p.TotIncassato), 0) AS incassato,
-      ${ricavoLordoExpr} AS ricavoLordo
+      ${incassatoExpr} AS incassato
     FROM dbo.Mandanti m
     LEFT JOIN dbo.Pratiche p ON p.MandanteId = m.Id AND p.TenantId = @tenantId
     ${sedeJoin}
@@ -601,7 +708,6 @@ async function loadAdminSection(
       residuo: unknown;
       insoluto: unknown;
       incassato: unknown;
-      ricavoLordo: unknown;
     }) => {
       const affidato = Number(r.affidato);
       const incassato = Number(r.incassato);
@@ -614,7 +720,7 @@ async function loadAdminSection(
         residuo: Number(r.residuo),
         insoluto: Number(r.insoluto),
         incassato,
-        ricavoLordo: Number(r.ricavoLordo),
+        ricavoLordo: 0,
         percentuale: affidato > 0 ? (incassato / affidato) * 100 : 0,
       };
     }
@@ -631,6 +737,60 @@ async function loadAdminSection(
     RagioneSociale: string;
     PerimetriJson: string | null;
   }>;
+
+  // Ricavo lordo azienda = % «ricevuta» (mandante→agenzia) sugli incassi, NON le provvigioni operatori («pagata»).
+  tick();
+  const ricavoReq = pool.request().input("tenantId", sql.UniqueIdentifier, tenantId);
+  if (sedeId) ricavoReq.input("sedeId", sql.UniqueIdentifier, sedeId);
+  const ricavoRes = await ricavoReq.query(`
+    SELECT CAST(p.MandanteId AS nvarchar(36)) AS mandanteId,
+      i.Importo AS importo,
+      i.Metodo AS metodo,
+      i.Modo AS modo,
+      p.NumeroMandante AS numeroMandante,
+      p.CodiceScarico AS codiceScarico
+    FROM dbo.Incassi i
+    INNER JOIN dbo.Pratiche p ON p.Id = i.PraticaId
+    ${
+      sedeId
+        ? "LEFT JOIN dbo.Users ua ON ua.Id = p.AssegnatarioId LEFT JOIN dbo.Users ut ON ut.Id = p.OperatoreTitolareId"
+        : ""
+    }
+    WHERE i.TenantId = @tenantId
+    ${sedeId ? "AND (ua.SedeId = @sedeId OR ut.SedeId = @sedeId)" : ""}
+  `);
+
+  const perimetriByMandante = new Map(
+    mandantiRows.map((m) => [String(m.Id), parsePerimetriRicevuta(m.PerimetriJson)])
+  );
+  const ricavoByMandante = new Map<string, number>();
+  for (const row of ricavoRes.recordset as Array<{
+    mandanteId: string;
+    importo: unknown;
+    metodo: string | null;
+    modo: string | null;
+    numeroMandante: string | null;
+    codiceScarico: string | null;
+  }>) {
+    if (isModoNonProvvigionabile(row.modo)) continue;
+    const mid = String(row.mandanteId);
+    const peri = matchPerimetroRicevuta(
+      perimetriByMandante.get(mid) || [],
+      row.numeroMandante
+    );
+    if (!peri) continue;
+    const pct = resolveRicevutaPercentuale(
+      peri.ricevuta,
+      String(row.metodo || ""),
+      row.codiceScarico
+    );
+    if (pct == null) continue;
+    const add = calcolaRicavoAziendale(Number(row.importo) || 0, pct);
+    ricavoByMandante.set(mid, (ricavoByMandante.get(mid) || 0) + add);
+  }
+  for (const r of mandantiRiepilogo) {
+    r.ricavoLordo = Math.round((ricavoByMandante.get(r.id) || 0) * 100) / 100;
+  }
 
   const numeriMandanteFiltro = (() => {
     const peri = req.incPerimetro?.trim();

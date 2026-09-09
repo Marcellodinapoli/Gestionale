@@ -393,8 +393,14 @@ export default async function HomePage({
           <DashboardKpi
             title="% Recupero"
             value={`${totPerc.toFixed(1)}%`}
+            hint="Incassato su affidato"
           />
-          <DashboardKpi title="Ricavo lordo" value={euro(totRicavoLordo)} href="/provigioni" />
+          <DashboardKpi
+            title="Ricavo lordo"
+            value={euro(totRicavoLordo)}
+            href="/mandanti"
+            hint="Provvigioni ricevute dalla mandante (non quelle agli operatori)"
+          />
           <DashboardKpi title="Operatori attivi" value={admin.operatoriCount} href="/operatori" />
         </div>
 

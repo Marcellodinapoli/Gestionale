@@ -332,12 +332,17 @@ export function AnagraficaRecapiti({
                 type="button"
                 disabled={pending}
                 onClick={() => setLegendaTargetId(id)}
-                className={`${iconBtn} mr-0.5 h-4 w-4 rounded-sm ${statoTelefonoClassi(stato)}`}
+                className="mr-0.5 h-4 w-4 shrink-0 rounded-sm border border-[var(--line)] shadow-sm disabled:opacity-50"
+                style={{
+                  background:
+                    "conic-gradient(from 180deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #ef4444)",
+                }}
                 title={
                   statoTelefonoLabel(stato)
-                    ? `Stato: ${statoTelefonoLabel(stato)} · Legenda`
-                    : "Stato numero · Legenda"
+                    ? `Stato: ${statoTelefonoLabel(stato)} · Legenda colori`
+                    : "Seleziona colore / stato numero"
                 }
+                aria-label="Seleziona colore recapito"
               />
             ) : null}
             <button

@@ -315,7 +315,13 @@ export async function registraIncasso(
       .input("residuo", sql.Decimal(18, 2), body.praticaUpdate.residuo)
       .input("stato", sql.NVarChar(30), body.praticaUpdate.stato)
       .query(`
-        UPDATE dbo.Pratiche SET Residuo = @residuo, Stato = @stato, UpdatedAt = SYSUTCDATETIME()
+        UPDATE dbo.Pratiche SET
+          Residuo = @residuo,
+          Stato = @stato,
+          TotIncassato = (
+            SELECT ISNULL(SUM(Importo), 0) FROM dbo.Incassi WHERE PraticaId = @praticaId
+          ),
+          UpdatedAt = SYSUTCDATETIME()
         WHERE Id = @praticaId
       `);
 
@@ -429,7 +435,13 @@ export async function aggiornaIncasso(
       .input("residuo", sql.Decimal(18, 2), body.praticaUpdate.residuo)
       .input("stato", sql.NVarChar(30), body.praticaUpdate.stato)
       .query(`
-        UPDATE dbo.Pratiche SET Residuo = @residuo, Stato = @stato, UpdatedAt = SYSUTCDATETIME()
+        UPDATE dbo.Pratiche SET
+          Residuo = @residuo,
+          Stato = @stato,
+          TotIncassato = (
+            SELECT ISNULL(SUM(Importo), 0) FROM dbo.Incassi WHERE PraticaId = @praticaId
+          ),
+          UpdatedAt = SYSUTCDATETIME()
         WHERE Id = @praticaId
       `);
 
@@ -474,7 +486,13 @@ export async function eliminaIncasso(
       .input("residuo", sql.Decimal(18, 2), praticaUpdate.residuo)
       .input("stato", sql.NVarChar(30), praticaUpdate.stato)
       .query(`
-        UPDATE dbo.Pratiche SET Residuo = @residuo, Stato = @stato, UpdatedAt = SYSUTCDATETIME()
+        UPDATE dbo.Pratiche SET
+          Residuo = @residuo,
+          Stato = @stato,
+          TotIncassato = (
+            SELECT ISNULL(SUM(Importo), 0) FROM dbo.Incassi WHERE PraticaId = @praticaId
+          ),
+          UpdatedAt = SYSUTCDATETIME()
         WHERE Id = @praticaId
       `);
 

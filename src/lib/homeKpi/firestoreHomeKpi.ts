@@ -27,7 +27,9 @@ import {
 import type { GruppoLavoro } from "@/lib/gruppoLavoro";
 import type { HomeKpiBundle, HomeKpiContext } from "@/lib/data/contracts/dashboard";
 import { amministrazioneRicaviFlags } from "@/lib/homeKpi/buildContext";
-import { parsePerimetriList, chiaviMatchPerimetro } from "@/lib/mandantePerimetri";
+import { parsePerimetriList, chiaviMatchPerimetro, resolvePerimetroPratica } from "@/lib/mandantePerimetri";
+import { resolveProvvigionePercentualeLato, calcolaProvvigione } from "@/lib/provvigioni";
+import { isModoNonProvvigionabile } from "@/lib/incassoFattura";
 import { prismaCount } from "@/lib/prismaCount";
 import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 
@@ -53,31 +55,24 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
       : {}),
   };
   const mandantiModel = mandantiDb({ tenantId, tenantSlug: tenantId });
-  const [mandanti, pratiche, provvigioni] = await Promise.all([
+  const [mandanti, pratiche] = await Promise.all([
     mandantiModel.findMany({
       where: { tenantId },
-      select: { id: true, codice: true, ragioneSociale: true },
+      select: { id: true, codice: true, ragioneSociale: true, perimetri: true },
       orderBy: { codice: "asc" },
     }),
     prisma.pratica.findMany({
       where: praticheWhere,
       select: {
         mandanteId: true,
+        numeroMandante: true,
+        codiceScarico: true,
         capitale: true,
         interessi: true,
         spese: true,
         residuo: true,
         nettoDaPagare: true,
-        incassi: { select: { importo: true } },
-      },
-    }),
-    prisma.provvigione.findMany({
-      where: {
-        pratica: praticheWhere,
-      },
-      select: {
-        importo: true,
-        pratica: { select: { mandanteId: true } },
+        incassi: { select: { importo: true, metodo: true, modo: true } },
       },
     }),
   ]);
@@ -92,6 +87,9 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
       ricavoLordo: number;
     }
   >();
+  const perimetriByMandante = new Map(
+    mandanti.map((m) => [m.id, m.perimetri as string | null])
+  );
   for (const p of pratiche) {
     const cur = byMandante.get(p.mandanteId) || {
       n: 0,
@@ -109,21 +107,30 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
       p.nettoDaPagare != null && Number.isFinite(p.nettoDaPagare)
         ? p.nettoDaPagare
         : residuo;
-    cur.incassato += p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
+    for (const i of p.incassi) {
+      cur.incassato += i.importo || 0;
+      if (isModoNonProvvigionabile(i.modo)) continue;
+      const peri = resolvePerimetroPratica(
+        perimetriByMandante.get(p.mandanteId),
+        p.numeroMandante
+      );
+      if (!peri) continue;
+      const pct = resolveProvvigionePercentualeLato(
+        peri.ricevuta,
+        i.metodo || "",
+        p.codiceScarico
+      );
+      // Solo se la % ricevuta è configurata sul perimetro (no default 8% inventato).
+      const lato = peri.ricevuta;
+      const configurata =
+        lato.provvigioniMetodo[i.metodo || ""] != null ||
+        (p.codiceScarico &&
+          lato.provvigioniCodice?.[p.codiceScarico.trim().toUpperCase()] != null) ||
+        lato.provvigionePerc != null;
+      if (!configurata) continue;
+      cur.ricavoLordo += calcolaProvvigione(i.importo || 0, pct).importo;
+    }
     byMandante.set(p.mandanteId, cur);
-  }
-  for (const pv of provvigioni) {
-    const mid = pv.pratica.mandanteId;
-    const cur = byMandante.get(mid) || {
-      n: 0,
-      affidato: 0,
-      residuo: 0,
-      insoluto: 0,
-      incassato: 0,
-      ricavoLordo: 0,
-    };
-    cur.ricavoLordo += pv.importo || 0;
-    byMandante.set(mid, cur);
   }
   return mandanti.map((m) => {
     const agg = byMandante.get(m.id) || {
@@ -143,7 +150,7 @@ async function riepilogoMandantiFirestore(tenantId: string, sedeId?: string | nu
       residuo: agg.residuo,
       insoluto: agg.insoluto,
       incassato: agg.incassato,
-      ricavoLordo: agg.ricavoLordo,
+      ricavoLordo: Math.round(agg.ricavoLordo * 100) / 100,
       percentuale: agg.affidato > 0 ? (agg.incassato / agg.affidato) * 100 : 0,
     };
   });
