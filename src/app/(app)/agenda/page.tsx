@@ -22,7 +22,11 @@ export default async function AgendaPage({
   }
 
   const ctx = await buildAgendaScopeContext(user);
-  const { pratiche, impegni } = await loadAgendaCalendarioAuto(ctx, user, user.id);
+  const { pratiche, impegni, giudiziali = [] } = await loadAgendaCalendarioAuto(
+    ctx,
+    user,
+    user.id
+  );
 
   const calendario = [
     ...pratiche.map((p) => ({
@@ -43,13 +47,24 @@ export default async function AgendaPage({
       nota: i.nota,
       autore: i.userName || "—",
     })),
+    ...giudiziali.map((g) => ({
+      kind: "giudiziale" as const,
+      id: g.id,
+      praticaId: g.praticaId,
+      memoAt: g.memoAt,
+      titolo: g.titolo,
+      activityLabel: g.activityLabel,
+      numero: g.numero,
+      debitore: `${g.debitore.nome} ${g.debitore.cognome}`.trim() || "—",
+      responsabile: g.responsabile ?? null,
+    })),
   ].sort((a, b) => new Date(a.memoAt).getTime() - new Date(b.memoAt).getTime());
 
   return (
     <div>
       <PageHeader
         title="Agenda"
-        subtitle="Impegni e richiami · vista giornaliera, settimanale o mensile"
+        subtitle="Impegni, richiami e scadenze legali · vista giornaliera, settimanale o mensile"
       />
       <AgendaCalendarioPanel voci={calendario} vistaRaw={sp.vista} dataRaw={sp.data} />
     </div>

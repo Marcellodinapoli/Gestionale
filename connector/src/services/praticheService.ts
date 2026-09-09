@@ -112,7 +112,8 @@ const PRATICA_COLS = `
   p.ImportoTotale, p.TotIncassato, p.Residuo, p.ImportoRata, p.RateArretrate,
   p.NettoDaPagare, p.NumeroRateScadute, p.CodiceScarico, p.CodiceScaricoAt, p.CodiceScaricoBk,
   p.CodiceScaricoBkAt,
-  p.DataAffido, p.Scadenza, p.EsitoContatto, p.TipoContatto,
+  p.DataAffido, p.Scadenza, p.ConferimentoTipo, p.DataPassaggioGiudiziale, p.ProssimaAttivitaAlloScadere,
+  p.EsitoContatto, p.TipoContatto,
   p.MemoAt, p.PromessaAt, p.PromessaImporto, p.PromessaMetodo, p.UltimaLavorazioneAt,
   p.Note, p.ImportBatchId, p.CreatedAt, p.UpdatedAt
 `;
@@ -861,6 +862,7 @@ export async function updatePratica(
     "PromessaMetodo",
     "AssegnatarioId", "OperatoreTitolareId", "Residuo", "DebitoreId", "MandanteId",
     "Numero", "NumeroMandante", "Contratto", "Commessa", "DataAffido", "Scadenza",
+    "ConferimentoTipo", "DataPassaggioGiudiziale", "ProssimaAttivitaAlloScadere",
     "Capitale", "Interessi", "Spese", "SpeseRecupero", "ImportoRata", "RateArretrate",
     "NettoDaPagare", "ImportBatchId", "Note",
   ]);
@@ -875,6 +877,9 @@ export async function updatePratica(
     residuo: "Residuo", debitoreId: "DebitoreId", mandanteId: "MandanteId",
     numero: "Numero", numeroMandante: "NumeroMandante", contratto: "Contratto",
     commessa: "Commessa", dataAffido: "DataAffido", scadenza: "Scadenza",
+    conferimentoTipo: "ConferimentoTipo",
+    dataPassaggioGiudiziale: "DataPassaggioGiudiziale",
+    prossimaAttivitaAlloScadere: "ProssimaAttivitaAlloScadere",
     capitale: "Capitale", interessi: "Interessi", spese: "Spese",
     speseRecupero: "SpeseRecupero", importoRata: "ImportoRata",
     rateArretrate: "RateArretrate", nettoDaPagare: "NettoDaPagare",
@@ -898,7 +903,10 @@ export async function updatePratica(
     } else if (
       val instanceof Date ||
       (typeof val === "string" &&
-        (col.endsWith("At") || col === "DataAffido" || col === "Scadenza") &&
+        (col.endsWith("At") ||
+          col === "DataAffido" ||
+          col === "Scadenza" ||
+          col === "DataPassaggioGiudiziale") &&
         !Number.isNaN(Date.parse(val)))
     ) {
       const d = val instanceof Date ? val : new Date(String(val));

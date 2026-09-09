@@ -4,7 +4,8 @@ export type Role =
   | "SUPERVISOR"
   | "BACK_OFFICE"
   | "OPERATOR"
-  | "MANUTENZIONE";
+  | "MANUTENZIONE"
+  | "LEGAL";
 
 export type SessionUser = {
   id: string;
@@ -42,6 +43,7 @@ export type Permission =
   | "pratiche:work"
   | "incassi:create"
   | "incassi:update"
+  | "incassi:list"
   | "import:run"
   | "report:view"
   | "statistiche:view"
@@ -53,6 +55,8 @@ export type Permission =
   | "pratiche:nota-massiva"
   | "lavorazione:view"
   | "formazione:view"
+  | "strumenti:view"
+  | "legal:view"
   | "dialer:operate"
   | "dialer:manage"
   | "dialer:admin";
@@ -66,25 +70,41 @@ const MAP: Record<Permission, Role[]> = {
   "pratiche:delete": ["ADMIN"],
   "pratiche:update:amounts": ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "pratiche:update:stato": ["ADMIN", "SUPERVISOR", "BACK_OFFICE"],
-  "pratiche:work": ["ADMIN", "SUPERVISOR", "OPERATOR"],
+  "pratiche:work": ["ADMIN", "SUPERVISOR", "OPERATOR", "LEGAL"],
   "pratiche:nota-massiva": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "incassi:create": ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE"],
   /** Modifica/elimina incassi già registrati: non operatore, supervisor, bk off. */
   "incassi:update": ["ADMIN", "AMMINISTRAZIONE"],
+  /** Elenco globale incassi: tutti tranne operatore e supervisor. */
+  "incassi:list": ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "import:run": ["ADMIN", "BACK_OFFICE"],
   "report:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE"],
   "statistiche:view": ["ADMIN", "OPERATOR", "SUPERVISOR", "AMMINISTRAZIONE"],
   "provigioni:view": ["ADMIN", "SUPERVISOR", "OPERATOR", "AMMINISTRAZIONE"],
   "audit:view": ["ADMIN", "AMMINISTRAZIONE"],
-  "agenda:view": ["ADMIN", "SUPERVISOR", "OPERATOR", "BACK_OFFICE", "AMMINISTRAZIONE"],
+  "agenda:view": ["ADMIN", "SUPERVISOR", "OPERATOR", "BACK_OFFICE", "AMMINISTRAZIONE", "LEGAL"],
   "telephony:manage": ["ADMIN"],
   "operatori:manage": ["ADMIN", "AMMINISTRAZIONE"],
   "lavorazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
   "formazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
+  /** Strumenti AI (ricerca normativa, ecc.): anche Legal. */
+  "strumenti:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR", "LEGAL"],
+  /** Area gestione legale. */
+  "legal:view": ["ADMIN", "LEGAL"],
   "dialer:operate": ["ADMIN", "SUPERVISOR", "OPERATOR"],
   "dialer:manage": ["ADMIN", "SUPERVISOR"],
   "dialer:admin": ["ADMIN"],
 };
+
+/** Ruoli con visione di tutte le pratiche del tenant (non portfolio personale). */
+export function hasTenantWidePraticheScope(role: Role | string | null | undefined) {
+  return (
+    role === "ADMIN" ||
+    role === "BACK_OFFICE" ||
+    role === "AMMINISTRAZIONE" ||
+    role === "LEGAL"
+  );
+}
 
 export function isManutenzione(user: { role: string } | null | undefined) {
   return user?.role === "MANUTENZIONE";
@@ -127,9 +147,9 @@ export function canClearCodiceScarico(role: Role | string | null | undefined) {
   return role !== "SUPERVISOR" && role !== "OPERATOR";
 }
 
-/** Back office e amministrazione possono fissare la postazione e saltare la selezione al login. */
+/** Back office, amministrazione e legal possono fissare la postazione. */
 export function canImpostarePostazioneFissa(role: Role) {
-  return role === "BACK_OFFICE" || role === "AMMINISTRAZIONE";
+  return role === "BACK_OFFICE" || role === "AMMINISTRAZIONE" || role === "LEGAL";
 }
 
 /** True se l'utente deve ancora passare dalla schermata di selezione postazione. */
@@ -149,10 +169,10 @@ export function mustChoosePostazioneAlLogin(
 /** Ruoli assegnabili in creazione account, in base al creatore. */
 export function ruoliCreabiliDa(creatorRole: Role): Role[] {
   if (creatorRole === "ADMIN") {
-    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE"];
+    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE", "LEGAL"];
   }
   if (creatorRole === "AMMINISTRAZIONE") {
-    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE"];
+    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE", "LEGAL"];
   }
   if (creatorRole === "BACK_OFFICE") {
     return ["OPERATOR"];
@@ -208,6 +228,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   OPERATOR: "Operatore",
   AMMINISTRAZIONE: "Amministrazione",
   MANUTENZIONE: "Manutenzione",
+  LEGAL: "Legal",
 };
 
 /** Re-export catalogo recovery (valori invariati). */

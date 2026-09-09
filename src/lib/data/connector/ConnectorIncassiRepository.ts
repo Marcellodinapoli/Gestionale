@@ -15,7 +15,15 @@ import type {
 function mapIncassoRow(row: Record<string, unknown>) {
   const mapped = mapSqlRow(row);
   if (row.pratica && typeof row.pratica === "object") {
-    mapped.pratica = mapSqlRow(row.pratica as Record<string, unknown>);
+    const praticaRaw = row.pratica as Record<string, unknown>;
+    const pratica = mapSqlRow(praticaRaw);
+    if (praticaRaw.mandante && typeof praticaRaw.mandante === "object") {
+      pratica.mandante = mapSqlRow(praticaRaw.mandante as Record<string, unknown>);
+    }
+    if (praticaRaw.debitore && typeof praticaRaw.debitore === "object") {
+      pratica.debitore = mapSqlRow(praticaRaw.debitore as Record<string, unknown>);
+    }
+    mapped.pratica = pratica;
   }
   if (row.user && typeof row.user === "object") {
     mapped.user = mapSqlRow(row.user as Record<string, unknown>);
@@ -40,6 +48,7 @@ export class ConnectorIncassiRepository implements IncassiRepository {
           skip: req.skip,
           take: req.take,
           includePratica: req.includePratica,
+          includeElenco: req.includeElenco,
         },
       }
     );

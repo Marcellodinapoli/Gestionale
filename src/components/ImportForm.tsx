@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 import { importIncassiCsvAction } from "@/actions/core";
 import { importPraticheCsvChunked } from "@/lib/importPraticheClient";
+import {
+  ConferimentoImportPopup,
+  type ConferimentoPopupPayload,
+} from "@/components/import/ConferimentoImportPopup";
 
 export type MandanteImportOption = {
   id: string;
@@ -39,6 +43,8 @@ export type ImportPraticheSummary = {
   updated: number;
   skipped: number;
   totale?: number;
+  batchId?: string;
+  scadenzaMandato?: string | null;
 };
 
 function formatImportPraticheFeedback(summary: ImportPraticheSummary) {
@@ -91,6 +97,9 @@ export function ImportForm({
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"ok" | "error" | null>(null);
   const [importSummary, setImportSummary] = useState<ImportPraticheSummary | null>(null);
+  const [conferimentoPopup, setConferimentoPopup] = useState<ConferimentoPopupPayload | null>(
+    null
+  );
   const [mandanteId, setMandanteId] = useState(prefill?.mandanteId ?? "");
   const [perimetro, setPerimetro] = useState(prefill?.perimetro ?? "");
   const [lotto, setLotto] = useState(prefill?.lotto ?? "");
@@ -117,6 +126,7 @@ export function ImportForm({
     setMessage(null);
     setMessageKind(null);
     setImportSummary(null);
+    setConferimentoPopup(null);
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [
     prefill?.mandanteId,
@@ -213,6 +223,14 @@ export function ImportForm({
           setMessage(result.ok);
           setImportSummary(result.importSummary);
           clearFile();
+          if (result.importSummary.batchId) {
+            setConferimentoPopup({
+              batchId: result.importSummary.batchId,
+              lotto: result.importSummary.lotto,
+              scadenzaMandato:
+                result.importSummary.scadenzaMandato || scadenzaMandato || null,
+            });
+          }
           router.replace("/import", { scroll: false });
           router.refresh();
         }
@@ -277,6 +295,7 @@ export function ImportForm({
       : buttonLabel;
 
   return (
+    <>
     <form
       ref={formTopRef}
       id={kind === "pratiche" ? "import-pratiche" : undefined}
@@ -575,5 +594,11 @@ export function ImportForm({
         </div>
       ) : null}
     </form>
+    <ConferimentoImportPopup
+      open={!!conferimentoPopup}
+      payload={conferimentoPopup}
+      onClose={() => setConferimentoPopup(null)}
+    />
+    </>
   );
 }

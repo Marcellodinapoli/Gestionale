@@ -20,7 +20,13 @@ export async function GET(req: Request) {
   end.setHours(23, 59, 59, 999);
 
   const ctx = await buildAgendaScopeContext(user);
-  const { pratiche, impegni } = await loadAgendaGiornoAuto(ctx, user, user.id, start, end);
+  const { pratiche, impegni, giudiziali = [] } = await loadAgendaGiornoAuto(
+    ctx,
+    user,
+    user.id,
+    start,
+    end
+  );
 
   const voci = [
     ...pratiche.map((p) => ({
@@ -36,6 +42,15 @@ export async function GET(req: Request) {
       memoAt: i.memoAt,
       label: i.titolo,
       dettaglio: i.nota,
+    })),
+    ...giudiziali.map((g) => ({
+      kind: "giudiziale" as const,
+      id: g.id,
+      memoAt: g.memoAt,
+      label: `Legale · ${g.activityLabel} · ${g.numero}`,
+      dettaglio: g.responsabile
+        ? `Resp. ${g.responsabile} · ${g.debitore.cognome} ${g.debitore.nome}`
+        : `${g.debitore.cognome} ${g.debitore.nome}`.trim() || null,
     })),
   ].sort((a, b) => new Date(a.memoAt).getTime() - new Date(b.memoAt).getTime());
 

@@ -90,6 +90,12 @@ export type ImportChunkResult = {
   createdPratiche?: Array<{ id: string; debitoreId: string; contratto: string | null; commessa: string | null; stato: string; codiceFiscale: string | null }>;
 };
 
+export type ConferimentoImportBatchInput = {
+  conferimentoTipo: string;
+  dataPassaggioGiudiziale?: string | Date | null;
+  prossimaAttivitaAlloScadere?: string | null;
+};
+
 export interface ImportBatchRepository {
   findByLotKey(
     tenantSlug: string,
@@ -120,4 +126,10 @@ export interface ImportBatchRepository {
     }
   ): Promise<{ totale: number }>;
   deletePraticaForImport(tenantSlug: string, tenantId: string, praticaId: string): Promise<void>;
+  applyConferimento(
+    tenantSlug: string,
+    tenantId: string,
+    batchId: string,
+    data: ConferimentoImportBatchInput
+  ): Promise<{ ok: true; updatedPratiche: number }>;
 }

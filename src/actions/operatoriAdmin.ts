@@ -178,7 +178,7 @@ export async function updateFormazioneOnlyAction(formData: FormData) {
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
-  if (["ADMIN", "AMMINISTRAZIONE"].includes(target.role)) {
+  if (["ADMIN", "AMMINISTRAZIONE", "LEGAL"].includes(target.role)) {
     fail("Non puoi limitare l'accesso a questo ruolo");
   }
 
@@ -245,7 +245,7 @@ export async function updateRuoloAction(formData: FormData) {
     where: { id: targetId },
     data: {
       role,
-      ...(role === "ADMIN" || role === "AMMINISTRAZIONE"
+      ...(role === "ADMIN" || role === "AMMINISTRAZIONE" || role === "LEGAL"
         ? { formazioneOnly: false }
         : {}),
     },

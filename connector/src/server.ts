@@ -18,6 +18,7 @@ import { createMessaggiAgendaRouter } from "./routes/messaggiAgenda.js";
 import { createMessaggiInterniRouter } from "./routes/messaggiInterni.js";
 import { createAuditRouter } from "./routes/audit.js";
 import { createImportBatchRouter } from "./routes/importBatch.js";
+import { createPraticheGiudizialiRouter } from "./routes/praticheGiudiziali.js";
 import { purgeExpiredLocksBatch } from "./services/lockService.js";
 import { createAuthRouter, createInternalRouter } from "./routes/auth.js";
 import { createSediRouter } from "./routes/sedi.js";
@@ -86,6 +87,7 @@ app.use("/api/v1/tenants/:tenantId/messaggi-agenda", createMessaggiAgendaRouter(
 app.use("/api/v1/tenants/:tenantId/messaggi-interni", createMessaggiInterniRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/audit", createAuditRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/import-batch", createImportBatchRouter(cfg));
+app.use("/api/v1/tenants/:tenantId/pratiche-giudiziali", createPraticheGiudizialiRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/provvigioni", createProvvigioniRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/registrazioni", createRegistrazioniRouter(cfg));
 app.use("/api/v1/tenants/:tenantId/fatture", createFattureRouter(cfg));

@@ -9,7 +9,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
 import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
-import { isManutenzione, type SessionUser } from "@/lib/permissions";
+import { isManutenzione, hasTenantWidePraticheScope, type SessionUser } from "@/lib/permissions";
 
 export type GruppoPerimetroContext = {
   /** Operatore/supervisor in un gruppo con supervisor configurato. */
@@ -145,11 +145,7 @@ export async function praticaCercaScopeWhere(
 ): Promise<Prisma.PraticaWhereInput> {
   if (isManutenzione(user)) return nessunDatoWhere();
   const tenantScope: Prisma.PraticaWhereInput = { tenantId: user.tenantId };
-  if (
-    user.role === "ADMIN" ||
-    user.role === "BACK_OFFICE" ||
-    user.role === "AMMINISTRAZIONE"
-  ) {
+  if (hasTenantWidePraticheScope(user.role)) {
     return tenantScope;
   }
   const ctx = await resolveGruppoPerimetroContext(user);

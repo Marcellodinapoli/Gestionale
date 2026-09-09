@@ -4,6 +4,72 @@ import { bindPraticaScope, type HomeScopeFilter } from "./dashboardScope.js";
 import { listImpegniAgenda } from "./impegniAgendaService.js";
 import { listMessaggiInterni } from "./messaggiInterniService.js";
 
+const ATTIVITA_LABELS: Record<string, string> = {
+  preparazioneDocumenti: "Preparazione documenti",
+  conferimentoIncarico: "Conferimento incarico",
+  redazioneAtto: "Redazione atto",
+  deposito: "Deposito",
+  notifica: "Notifica",
+  udienza: "Udienza",
+  opposizione: "Eventuale opposizione",
+  esecuzione: "Esecuzione",
+};
+
+function expandScadenzeFromJson(input: {
+  praticaId: string;
+  numero: string;
+  debitore: { nome: string; cognome: string };
+  assegnatarioName?: string | null;
+  attivitaProceduraJson?: string | null;
+  rangeStart?: Date | null;
+  rangeEnd?: Date | null;
+}) {
+  if (!input.attivitaProceduraJson?.trim()) return [];
+  let parsed: Record<string, { stato?: string; responsabile?: string; scadenza?: string }>;
+  try {
+    parsed = JSON.parse(input.attivitaProceduraJson) as typeof parsed;
+  } catch {
+    return [];
+  }
+  const out: Array<{
+    id: string;
+    praticaId: string;
+    activityKey: string;
+    memoAt: string;
+    titolo: string;
+    activityLabel: string;
+    numero: string;
+    debitore: { nome: string; cognome: string };
+    assegnatarioName?: string | null;
+    responsabile?: string | null;
+  }> = [];
+
+  for (const [key, label] of Object.entries(ATTIVITA_LABELS)) {
+    const row = parsed[key];
+    if (!row?.scadenza?.trim()) continue;
+    if (row.stato === "FATTO" || row.stato === "NON_APPLICABILE") continue;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(row.scadenza.trim());
+    if (!m) continue;
+    const memo = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 9, 0, 0, 0);
+    if (Number.isNaN(memo.getTime())) continue;
+    if (input.rangeStart && memo < input.rangeStart) continue;
+    if (input.rangeEnd && memo > input.rangeEnd) continue;
+    out.push({
+      id: `${input.praticaId}:${key}`,
+      praticaId: input.praticaId,
+      activityKey: key,
+      memoAt: memo.toISOString(),
+      activityLabel: label,
+      titolo: `Legale · ${label} · ${input.numero}`,
+      numero: input.numero,
+      debitore: input.debitore,
+      assegnatarioName: input.assegnatarioName ?? null,
+      responsabile: row.responsabile?.trim() || null,
+    });
+  }
+  return out;
+}
+
 export type AgendaScopeRequest = {
   tenantId: string;
   role: string;
@@ -89,8 +155,57 @@ async function queryPraticheMemo(
   return res.recordset.map((r) => mapPraticaRow(r as Record<string, unknown>));
 }
 
+async function queryGiudizialiScadenze(
+  cfg: ConnectorConfig["db"],
+  input: AgendaScopeRequest & {
+    rangeStart?: string;
+    rangeEnd?: string;
+    take?: number;
+  }
+) {
+  const pool = await getPool(cfg);
+  const req = pool.request();
+  const scope = bindPraticaScope(req, { tenantId: input.tenantId, ...input.scope }, "p");
+  const take = Math.min(input.take ?? 200, 200);
+  req.input("take", sql.Int, take);
+
+  const res = await req.query(`
+    SELECT TOP (@take) p.Id, p.Numero, g.AttivitaProceduraJson,
+      d.Nome AS DebitoreNome, d.Cognome AS DebitoreCognome,
+      u.Name AS AssegnatarioName
+    FROM dbo.Pratiche p
+    INNER JOIN dbo.PraticheGiudiziali g ON g.PraticaId = p.Id
+    INNER JOIN dbo.Debitori d ON d.Id = p.DebitoreId
+    LEFT JOIN dbo.Users u ON u.Id = p.AssegnatarioId
+    ${scope.join}
+    WHERE ${scope.where}
+      AND g.AttivitaProceduraJson IS NOT NULL
+      AND LTRIM(RTRIM(g.AttivitaProceduraJson)) <> N''
+    ORDER BY g.UpdatedAt DESC
+  `);
+
+  const rangeStart = input.rangeStart ? new Date(input.rangeStart) : null;
+  const rangeEnd = input.rangeEnd ? new Date(input.rangeEnd) : null;
+
+  return (res.recordset as Array<Record<string, unknown>>).flatMap((r) =>
+    expandScadenzeFromJson({
+      praticaId: String(r.Id),
+      numero: String(r.Numero),
+      debitore: {
+        nome: String(r.DebitoreNome ?? ""),
+        cognome: String(r.DebitoreCognome ?? ""),
+      },
+      assegnatarioName: r.AssegnatarioName != null ? String(r.AssegnatarioName) : null,
+      attivitaProceduraJson:
+        r.AttivitaProceduraJson != null ? String(r.AttivitaProceduraJson) : null,
+      rangeStart,
+      rangeEnd,
+    })
+  );
+}
+
 export async function loadAgendaCalendario(cfg: ConnectorConfig["db"], input: AgendaCalendarioRequest) {
-  const [pratiche, impegni] = await Promise.all([
+  const [pratiche, impegni, giudiziali] = await Promise.all([
     queryPraticheMemo(cfg, { ...input, memoAtNotNull: true, take: input.take ?? 200 }),
     listImpegniAgenda(
       cfg,
@@ -98,12 +213,13 @@ export async function loadAgendaCalendario(cfg: ConnectorConfig["db"], input: Ag
       { userId: input.impegniUserId, completato: false },
       input.take ?? 200
     ),
+    queryGiudizialiScadenze(cfg, { ...input, take: input.take ?? 200 }),
   ]);
-  return { pratiche, impegni };
+  return { pratiche, impegni, giudiziali };
 }
 
 export async function loadAgendaGiorno(cfg: ConnectorConfig["db"], input: AgendaGiornoRequest) {
-  const [pratiche, impegni] = await Promise.all([
+  const [pratiche, impegni, giudiziali] = await Promise.all([
     queryPraticheMemo(cfg, {
       ...input,
       memoAtGte: input.dayStart,
@@ -121,8 +237,14 @@ export async function loadAgendaGiorno(cfg: ConnectorConfig["db"], input: Agenda
       },
       100
     ),
+    queryGiudizialiScadenze(cfg, {
+      ...input,
+      rangeStart: input.dayStart,
+      rangeEnd: input.dayEnd,
+      take: 100,
+    }),
   ]);
-  return { pratiche, impegni };
+  return { pratiche, impegni, giudiziali };
 }
 
 export async function loadMemoAlertsBundle(cfg: ConnectorConfig["db"], input: MemoAlertsRequest) {
@@ -149,6 +271,15 @@ export async function loadMemoAlertsBundle(cfg: ConnectorConfig["db"], input: Me
       )
     : [];
 
+  const giudiziali = input.canAgenda
+    ? await queryGiudizialiScadenze(cfg, {
+        ...input,
+        rangeStart: input.memoAtGte,
+        rangeEnd: input.memoAtLte,
+        take: 50,
+      })
+    : [];
+
   const intern = await listMessaggiInterni(
     cfg,
     input.tenantId,
@@ -156,7 +287,7 @@ export async function loadMemoAlertsBundle(cfg: ConnectorConfig["db"], input: Me
     input.internTake ?? 30
   );
 
-  return { pratiche, impegni, intern };
+  return { pratiche, impegni, giudiziali, intern };
 }
 
 export async function listMessaggiAgendaScoped(

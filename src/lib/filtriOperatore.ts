@@ -65,6 +65,7 @@ export const OPERATORE_FILTRO_ROLES = [
   "ADMIN",
   "BACK_OFFICE",
   "AMMINISTRAZIONE",
+  "LEGAL",
 ] as const;
 
 export function canUseOperatoreFiltro(role: string) {

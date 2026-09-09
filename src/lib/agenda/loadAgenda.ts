@@ -7,13 +7,49 @@ import type {
   AgendaScopeContext,
   MemoAlertsRawBundle,
 } from "@/lib/data/contracts/agenda";
+import { expandScadenzeGiudiziali } from "@/lib/agenda/scadenzeGiudiziali";
 
-export async function loadFirestoreAgendaCalendario(
+async function loadGiudizialiScadenze(
+  user: SessionUser,
+  range?: { start?: Date; end?: Date }
+) {
+  const baseScope = await praticaScopeWhere(user);
+  const rows = await prisma.pratica.findMany({
+    where: {
+      AND: [
+        baseScope,
+        { giudiziale: { is: { attivitaProceduraJson: { not: null } } } },
+      ],
+    },
+    select: {
+      id: true,
+      numero: true,
+      debitore: { select: { nome: true, cognome: true } },
+      assegnatario: { select: { name: true } },
+      giudiziale: { select: { attivitaProceduraJson: true } },
+    },
+    take: 200,
+  });
+
+  return rows.flatMap((p) =>
+    expandScadenzeGiudiziali({
+      praticaId: p.id,
+      numero: p.numero,
+      debitore: p.debitore,
+      assegnatarioName: p.assegnatario?.name,
+      attivitaProceduraJson: p.giudiziale?.attivitaProceduraJson,
+      rangeStart: range?.start,
+      rangeEnd: range?.end,
+    })
+  );
+}
+
+export async function loadPrismaAgendaCalendario(
   user: SessionUser,
   impegniUserId: string
 ): Promise<AgendaCalendarioBundle> {
   const baseScope = await praticaScopeWhere(user);
-  const [pratiche, impegni] = await Promise.all([
+  const [pratiche, impegni, giudiziali] = await Promise.all([
     prisma.pratica.findMany({
       where: { AND: [baseScope, { memoAt: { not: null } }] },
       include: {
@@ -30,6 +66,7 @@ export async function loadFirestoreAgendaCalendario(
       orderBy: { memoAt: "asc" },
       take: 200,
     }),
+    loadGiudizialiScadenze(user),
   ]);
 
   return {
@@ -53,17 +90,18 @@ export async function loadFirestoreAgendaCalendario(
       completato: i.completato,
       userName: i.user?.name,
     })),
+    giudiziali,
   };
 }
 
-export async function loadFirestoreAgendaGiorno(
+export async function loadPrismaAgendaGiorno(
   user: SessionUser,
   impegniUserId: string,
   dayStart: Date,
   dayEnd: Date
 ): Promise<AgendaCalendarioBundle> {
   const baseScope = await praticaScopeWhere(user);
-  const [pratiche, impegni] = await Promise.all([
+  const [pratiche, impegni, giudiziali] = await Promise.all([
     prisma.pratica.findMany({
       where: { AND: [baseScope, { memoAt: { gte: dayStart, lte: dayEnd } }] },
       include: {
@@ -83,6 +121,7 @@ export async function loadFirestoreAgendaGiorno(
       orderBy: { memoAt: "asc" },
       take: 100,
     }),
+    loadGiudizialiScadenze(user, { start: dayStart, end: dayEnd }),
   ]);
 
   return {
@@ -102,10 +141,11 @@ export async function loadFirestoreAgendaGiorno(
       memoAt: i.memoAt.toISOString(),
       completato: i.completato,
     })),
+    giudiziali,
   };
 }
 
-export async function loadFirestoreMemoAlertsRaw(
+export async function loadPrismaMemoAlertsRaw(
   user: SessionUser,
   opts: {
     impegniUserId: string;
@@ -145,6 +185,13 @@ export async function loadFirestoreMemoAlertsRaw(
       })
     : [];
 
+  const giudiziali = opts.canAgenda
+    ? await loadGiudizialiScadenze(user, {
+        start: opts.memoAtGte,
+        end: opts.memoAtLte,
+      })
+    : [];
+
   const intern = await prisma.messaggioInterno.findMany({
     where: { toUserId: user.id, letto: false },
     include: {
@@ -177,11 +224,12 @@ export async function loadFirestoreMemoAlertsRaw(
       memoAt: i.memoAt.toISOString(),
       completato: i.completato,
     })),
+    giudiziali,
     intern: intern as unknown as Array<Record<string, unknown>>,
   };
 }
 
-export async function loadFirestoreMessaggiAgendaScoped(user: SessionUser) {
+export async function loadPrismaMessaggiAgendaScoped(user: SessionUser) {
   const praticaScope = await praticaScopeWhere(user);
   return prisma.messaggioAgenda.findMany({
     where: { pratica: praticaScope },
@@ -206,7 +254,7 @@ export async function loadAgendaCalendarioAuto(
   impegniUserId: string
 ) {
   const { isConnectorProvider } = await import("@/lib/data/factory");
-  if (!isConnectorProvider()) return loadFirestoreAgendaCalendario(user, impegniUserId);
+  if (!isConnectorProvider()) return loadPrismaAgendaCalendario(user, impegniUserId);
   const { createConnectorAgendaRepository } = await import(
     "@/lib/data/connector/ConnectorAgendaRepository"
   );
@@ -221,7 +269,7 @@ export async function loadAgendaGiornoAuto(
   dayEnd: Date
 ) {
   const { isConnectorProvider } = await import("@/lib/data/factory");
-  if (!isConnectorProvider()) return loadFirestoreAgendaGiorno(user, impegniUserId, dayStart, dayEnd);
+  if (!isConnectorProvider()) return loadPrismaAgendaGiorno(user, impegniUserId, dayStart, dayEnd);
   const { createConnectorAgendaRepository } = await import(
     "@/lib/data/connector/ConnectorAgendaRepository"
   );
@@ -244,7 +292,7 @@ export async function loadMemoAlertsRawAuto(
   }
 ) {
   const { isConnectorProvider } = await import("@/lib/data/factory");
-  if (!isConnectorProvider()) return loadFirestoreMemoAlertsRaw(user, opts);
+  if (!isConnectorProvider()) return loadPrismaMemoAlertsRaw(user, opts);
   const { createConnectorAgendaRepository } = await import(
     "@/lib/data/connector/ConnectorAgendaRepository"
   );
@@ -258,7 +306,7 @@ export async function loadMemoAlertsRawAuto(
 
 export async function loadMessaggiAgendaScopedAuto(ctx: AgendaScopeContext, user: SessionUser) {
   const { isConnectorProvider } = await import("@/lib/data/factory");
-  if (!isConnectorProvider()) return loadFirestoreMessaggiAgendaScoped(user);
+  if (!isConnectorProvider()) return loadPrismaMessaggiAgendaScoped(user);
   const { createConnectorAgendaRepository } = await import(
     "@/lib/data/connector/ConnectorAgendaRepository"
   );

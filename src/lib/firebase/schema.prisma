@@ -97,6 +97,7 @@ model User {
   sedeId        String?
   sede          Sede?       @relation(fields: [sedeId], references: [id], onDelete: SetNull)
   praticaLocks  PraticaLock[]
+  giudizialeReferenteInterno PraticaGiudiziale[] @relation("GiudizialeReferenteInterno")
   passwordHistory PasswordHistory[]
   dialerCampagneCreate DialerCampagna[] @relation("DialerCampagnaCreatore")
   dialerCampagneSupervise DialerCampagna[] @relation("DialerCampagnaSupervisor")
@@ -247,6 +248,12 @@ model Pratica {
   codiceScaricoBkAt DateTime?
   dataAffido      DateTime?
   scadenza        DateTime?
+  /// STRAGIUDIZIALE | GIUDIZIALE | ENTRAMBI (da popup post-import).
+  conferimentoTipo String?
+  /// Data intermedia passaggio a giudiziale (solo se ENTRAMBI + scelta data).
+  dataPassaggioGiudiziale DateTime?
+  /// Testo prossima attività allo scadere della data passaggio (es. Passaggio a fase giudiziale).
+  prossimaAttivitaAlloScadere String?
   esitoContatto   String?
   tipoContatto    String?
   memoAt          DateTime?
@@ -270,6 +277,7 @@ model Pratica {
   messaggiAgenda  MessaggioAgenda[]
   messaggiInterni MessaggioInterno[]
   lock            PraticaLock?
+  giudiziale      PraticaGiudiziale?
   dialerCampagnaItems DialerCampagnaPratica[]
   dialerEventi    DialerChiamataEvento[]
 
@@ -290,6 +298,10 @@ model ImportBatch {
   affidoIl       DateTime
   // Scadenza del mandato / affido a livello lotto.
   scadenzaMandato DateTime?
+  /// STRAGIUDIZIALE | GIUDIZIALE | ENTRAMBI.
+  conferimentoTipo String?
+  dataPassaggioGiudiziale DateTime?
+  prossimaAttivitaAlloScadere String?
   fileName       String?
   nPratiche      Int       @default(0)
   createdById    String?
@@ -309,6 +321,84 @@ model PraticaLock {
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   lastHeartbeatAt  DateTime @default(now())
   createdAt        DateTime @default(now())
+}
+
+/// Estensione 1:1 della pratica per la fase giudiziale (stessa pratica, nessun clone).
+model PraticaGiudiziale {
+  id        String  @id @default(cuid())
+  tenantId  String
+  praticaId String  @unique
+  pratica   Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+
+  /// BOZZA | ARCHIVIATA_SENZA_AZIONE | IN_ATTESA_VALUTAZIONE_LEGALE | GIUDIZIALE_AVVIATO_PROCEDURA_DA_DEFINIRE | IN_PROCEDURA | CONCLUSA_CON_ESITO
+  statoAvvio String @default("BOZZA")
+
+  dataAffidamentoGiudiziale DateTime?
+  studioLegale              String?
+  avvocatoReferente         String?
+  referenteInternoId        String?
+  referenteInterno          User?     @relation("GiudizialeReferenteInterno", fields: [referenteInternoId], references: [id], onDelete: SetNull)
+  noteAffidamento           String?
+
+  /// Mancato pagamento | Promessa non mantenuta | … | Altro
+  motivoPassaggio     String?
+  motivoAltroDettaglio String?
+
+  documentazioneDisponibile      String?
+  prescrizioneVerificata         String?
+  anagraficaDebitoreVerificata   String?
+  valutazioneRecuperabilita      String?
+  noteVerifica                   String?
+
+  /// Solo se archiviazione senza azione giudiziale
+  motivazioneArchiviazione String?
+  noteArchiviazione        String?
+
+  /// Valutazione legale
+  titoloCreditoEsistenza   String?
+  titoloCreditoValidita    String?
+  titoloCreditoEsigibilita String?
+  prescrizioneTermini      String?
+  documentazioneProve      String?
+  contestazioniDebitore    String?
+  solvibilitaRecupero      String?
+  giudiceCompetente        String?
+  foroEventuale            String?
+  /// DECRETO_INGIUNTIVO | CAUSA_ORDINARIA | ALTRA_PROCEDURA
+  tipoAzioneIpotizzata     String?
+  tipoAzioneAltroDettaglio String?
+  costiBenefici            String?
+  rischiLegali             String?
+  /// PROCEDERE | PROCEDERE_CON_RISERVA | NON_PROCEDERE
+  parereValutazione        String?
+  parereMotivazione        String?
+  valutazioneCompletataAt  DateTime?
+  valutazioneById          String?
+
+  /// Strategia / procedura
+  strategiaScelta          String?
+  proceduraDaSeguire       String?
+  professionistaIncaricato String?
+  /// JSON attività (stato, responsabile, scadenza per ciascuna)
+  attivitaProceduraJson    String?
+  agendaScadenze           String?
+  documentiDaProdurre      String?
+  statoProcedura           String?
+  eventiStorico            String?
+  costiSostenuti           String?
+  /// RECUPERATO | PARZIALMENTE_RECUPERATO | INESIGIBILE | PROCEDURA_CONCLUSA
+  esitoGiudiziale          String?
+  noteLegaliOperatori      String?
+  strategiaAggiornataAt    DateTime?
+  esitoRegistratoAt        DateTime?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  closedAt    DateTime?
+
+  @@index([tenantId])
+  @@index([statoAvvio])
 }
 
 model Garante {

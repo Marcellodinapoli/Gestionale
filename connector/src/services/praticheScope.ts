@@ -17,7 +17,7 @@ export function applyScope(
   req.input("tenantId", sql.UniqueIdentifier, scope.tenantId);
 
   const role = scope.role;
-  if (role === "ADMIN" || role === "BACK_OFFICE" || role === "AMMINISTRAZIONE") {
+  if (role === "ADMIN" || role === "BACK_OFFICE" || role === "AMMINISTRAZIONE" || role === "LEGAL") {
     return clauses;
   }
 

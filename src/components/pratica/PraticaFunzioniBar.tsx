@@ -15,6 +15,7 @@ import {
   Receipt,
   Search,
   UserRound,
+  Scale,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { InviaMessaggioCollega } from "@/components/pratica/InviaMessaggioCollega";
@@ -41,7 +42,7 @@ import {
   type PraticheStessoDebitoreClientPayload,
 } from "@/lib/praticheStessoDebitoreClient";
 import { useEscBack } from "@/lib/useEscBack";
-import { canShowIncassoPopup } from "@/lib/permissions";
+import { canShowIncassoPopup, can, type Role } from "@/lib/permissions";
 import { APRI_NOTA_F5_EVENT, NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
 import type { RecordingMode } from "@/lib/recordingMode";
@@ -172,6 +173,9 @@ export function PraticaFunzioniBar({
   initialCollegate = null,
   suppressF9Flash = false,
   currentUserRole,
+  canAvviaGiudiziale = false,
+  giudizialePrevistoSulLotto = true,
+  giudizialeAvviato = false,
   incassoRiparto,
 }: {
   praticaId: string;
@@ -209,6 +213,12 @@ export function PraticaFunzioniBar({
   /** Niente lampeggio F9 (click tra pratiche collegate). */
   suppressF9Flash?: boolean;
   currentUserRole?: string;
+  /** Pulsante avvio giudiziale (ADMIN / LEGAL). */
+  canAvviaGiudiziale?: boolean;
+  /** False se il lotto è solo stragiudiziale: tasto visibile ma disabilitato. */
+  giudizialePrevistoSulLotto?: boolean;
+  /** True se l'avvio giudiziale è già stato confermato su questa pratica. */
+  giudizialeAvviato?: boolean;
   /** Residui pratica per riparto modificabile in Inserisci incasso. */
   incassoRiparto?: IncassoRipartoPratica;
 }) {
@@ -303,6 +313,9 @@ export function PraticaFunzioniBar({
     Boolean(corrente && !isPraticaF9Aperta(corrente));
   const azioniBloccate = praticaLocked || !canEditNotes;
   const showIncassoPopup = canShowIncassoPopup(currentUserRole);
+  const showAvviaGiudiziale =
+    canAvviaGiudiziale ||
+    (!!currentUserRole && can({ role: currentUserRole as Role }, "legal:view"));
 
   useEscBack(`/pratiche/${praticaId}`, Boolean(attivo) && !popup);
 
@@ -548,6 +561,44 @@ export function PraticaFunzioniBar({
             </button>
           </Hint>
         </span>
+        {showAvviaGiudiziale ? (
+          <>
+            <span className={TOOL_SEP} aria-hidden />
+            {!giudizialePrevistoSulLotto ? (
+              <Hint label="Gestione giudiziale non prevista sul lotto (solo stragiudiziale)">
+                <span
+                  className={`${BTN_TOOL} inline-flex cursor-not-allowed items-center gap-1 opacity-50`}
+                  aria-disabled="true"
+                  title="Gestione giudiziale non prevista sul lotto"
+                >
+                  <Scale className="h-3 w-3" />
+                  Avvia giudiziale
+                </span>
+              </Hint>
+            ) : giudizialeAvviato ? (
+              <Hint label="Fase giudiziale già avviata su questa pratica">
+                <span
+                  className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-[#c4a574] bg-[#e8d5b5] px-2 py-1 text-xs font-semibold text-[#5c4033]"
+                  aria-disabled="true"
+                  title="Giudiziale già avviato"
+                >
+                  <Scale className="h-3 w-3" />
+                  giudiziale avviato
+                </span>
+              </Hint>
+            ) : (
+              <Hint label="Avvia attività giudiziale (fase legale)">
+                <Link
+                  href={`/pratiche/${praticaId}/avvio-giudiziale`}
+                  className={`${BTN_TOOL} inline-flex items-center gap-1`}
+                >
+                  <Scale className="h-3 w-3" />
+                  Avvia giudiziale
+                </Link>
+              </Hint>
+            )}
+          </>
+        ) : null}
         {showIncassoPopup ? (
           <>
             <span className={TOOL_SEP} aria-hidden />

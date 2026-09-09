@@ -27,6 +27,7 @@ import {
   Settings,
   Monitor,
   BookUser,
+  Banknote,
   UserCircle,
   MessageSquare,
   ArrowLeft,
@@ -34,6 +35,7 @@ import {
   GraduationCap,
   Wrench,
   MapPin,
+  Scale,
 } from "lucide-react";
 import { logoutAction } from "@/actions/core";
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
@@ -64,6 +66,9 @@ type NavLink = {
   icon: LucideIcon;
   moduleId: ModuleId;
   show: (u: SessionUser) => boolean;
+  /** Sfondo accento permanente (es. Legal). */
+  accentClass?: string;
+  accentActiveClass?: string;
 };
 
 const MAIN_LINKS: NavLink[] = [
@@ -74,6 +79,13 @@ const MAIN_LINKS: NavLink[] = [
     icon: Briefcase,
     moduleId: "recovery",
     show: (u) => !isFormazioneOnly(u),
+  },
+  {
+    href: "/incassi",
+    label: "Incassi",
+    icon: Banknote,
+    moduleId: "incassi",
+    show: (u) => !isFormazioneOnly(u) && can(u, "incassi:list"),
   },
   {
     href: "/affidi",
@@ -151,7 +163,16 @@ const MAIN_LINKS: NavLink[] = [
     label: "Strumenti AI",
     icon: Wrench,
     moduleId: "core",
-    show: (u) => !isFormazioneOnly(u) && can(u, "formazione:view"),
+    show: (u) => !isFormazioneOnly(u) && can(u, "strumenti:view"),
+  },
+  {
+    href: "/legal",
+    label: "Legal",
+    icon: Scale,
+    moduleId: "core",
+    show: (u) => !isFormazioneOnly(u) && can(u, "legal:view"),
+    accentClass: "bg-[#e8d5b5] text-[#5c4033] hover:bg-[#dfc7a0] hover:text-[#3d2914]",
+    accentActiveClass: "bg-[#d4b896] font-semibold text-[#3d2914]",
   },
 ];
 
@@ -249,8 +270,10 @@ function NavItem({
   const showLabel = forceLabel || compact;
   const itemClass = `flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
     active
-      ? "bg-white font-semibold text-[#132033]"
-      : "text-white/75 hover:bg-white/10 hover:text-white"
+      ? link.accentActiveClass || "bg-white font-semibold text-[#132033]"
+      : link.accentClass
+        ? link.accentClass
+        : "text-white/75 hover:bg-white/10 hover:text-white"
   }`;
 
   if (showBack) {
@@ -420,16 +443,20 @@ function NavDropdownMenu({
             {links.map((link) => {
               const ItemIcon = link.icon;
               const itemActive = navActive(pathname, link.href);
+              const accent = Boolean(link.accentClass);
               return (
                 <Link
                   key={link.href}
                   href={link.href}
                   role="menuitem"
                   onClick={() => setOpen(false)}
-                  className={`flex items-center gap-2 px-3 py-2 text-sm ${
+                  className={`mx-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
                     itemActive
-                      ? "bg-slate-100 font-semibold text-[#132033]"
-                      : "text-slate-700 hover:bg-slate-50"
+                      ? link.accentActiveClass ||
+                        "bg-slate-100 font-semibold text-[#132033]"
+                      : accent
+                        ? link.accentClass!
+                        : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
                   <ItemIcon className="h-4 w-4 shrink-0 opacity-70" />

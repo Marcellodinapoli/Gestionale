@@ -3,7 +3,7 @@ import { appendAudit } from "@/lib/auditRepo";
 import { prisma } from "@/lib/prisma";
 import { praticaDb, praticaDbFromUser, type PraticaDbContext } from "@/lib/praticheRepo";
 import type { Prisma } from "@prisma/client";
-import { isManutenzione, type SessionUser } from "@/lib/permissions";
+import { isManutenzione, hasTenantWidePraticheScope, type SessionUser } from "@/lib/permissions";
 import {
   type FiltroCollegata,
   praticaMatchFiltro,
@@ -29,7 +29,7 @@ export function nessunDatoWhere() {
 export function praticaWhere(user: SessionUser): Prisma.PraticaWhereInput {
   if (isManutenzione(user)) return nessunDatoWhere();
   const tenantScope: Prisma.PraticaWhereInput = { tenantId: user.tenantId };
-  if (user.role === "ADMIN" || user.role === "BACK_OFFICE" || user.role === "AMMINISTRAZIONE") {
+  if (hasTenantWidePraticheScope(user.role)) {
     return tenantScope;
   }
   if (user.role === "OPERATOR") {

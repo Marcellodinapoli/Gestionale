@@ -89,6 +89,22 @@ export class ConnectorImportBatchRepository implements ImportBatchRepository {
       method: "DELETE",
     });
   }
+
+  async applyConferimento(
+    tenantSlug: string,
+    _tenantId: string,
+    batchId: string,
+    data: {
+      conferimentoTipo: string;
+      dataPassaggioGiudiziale?: string | Date | null;
+      prossimaAttivitaAlloScadere?: string | null;
+    }
+  ) {
+    return connectorFetch<{ ok: true; updatedPratiche: number }>(
+      `${this.base(tenantSlug)}/${encodeURIComponent(batchId)}/conferimento`,
+      { method: "POST", body: data }
+    );
+  }
 }
 
 export function createConnectorImportBatchRepository(tenantSlug: string) {

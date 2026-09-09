@@ -7,9 +7,22 @@ export type IncassoFilter = {
   userId?: string;
   mandanteId?: string;
   numeroMandante?: string;
+  numeriMandanteIn?: string[];
   sedeId?: string;
   dataGte?: string;
   dataLte?: string;
+  metodo?: string;
+  modo?: string;
+  causaleContains?: string;
+  fatturaContains?: string;
+  cittaContains?: string;
+  clienteContains?: string;
+  capDa?: string;
+  capA?: string;
+  dataAffidoGte?: string;
+  dataAffidoLte?: string;
+  dataScaricoRicevutaGte?: string;
+  dataScaricoRicevutaLte?: string;
   none?: boolean;
 };
 
@@ -19,6 +32,7 @@ export type IncassoListRequest = {
   skip?: number;
   take?: number;
   includePratica?: boolean;
+  includeElenco?: boolean;
 };
 
 const INCASSO_COLS = `
@@ -26,11 +40,39 @@ const INCASSO_COLS = `
   i.Spese, i.SpeseRec, i.Metodo, i.Modo, i.Causale, i.Fattura, i.Data, i.DataScadenza, i.CreatedAt
 `;
 
+function needsPraticaJoin(filter?: IncassoFilter, includeElenco?: boolean) {
+  if (includeElenco) return true;
+  if (!filter) return false;
+  return Boolean(
+    filter.mandanteId ||
+      filter.numeroMandante ||
+      filter.numeriMandanteIn?.length ||
+      filter.sedeId ||
+      filter.cittaContains ||
+      filter.clienteContains ||
+      filter.capDa ||
+      filter.capA ||
+      filter.dataAffidoGte ||
+      filter.dataAffidoLte ||
+      filter.dataScaricoRicevutaGte ||
+      filter.dataScaricoRicevutaLte
+  );
+}
+
+function needsDebitoreJoin(filter?: IncassoFilter, includeElenco?: boolean) {
+  if (includeElenco) return true;
+  if (!filter) return false;
+  return Boolean(
+    filter.cittaContains || filter.clienteContains || filter.capDa || filter.capA
+  );
+}
+
 function bindIncassoFilter(
   req: sql.Request,
   tenantId: string,
   filter?: IncassoFilter,
-  alias = "i"
+  alias = "i",
+  opts?: { includeElenco?: boolean }
 ): { where: string; join: string } {
   if (filter?.none) {
     return { where: "1 = 0", join: "" };
@@ -64,10 +106,27 @@ function bindIncassoFilter(
     req.input("dataLte", sql.DateTime2, new Date(filter.dataLte));
     clauses.push(`${alias}.Data <= @dataLte`);
   }
+  if (filter?.metodo) {
+    req.input("metodo", sql.NVarChar(50), filter.metodo);
+    clauses.push(`${alias}.Metodo = @metodo`);
+  }
+  if (filter?.modo) {
+    req.input("modo", sql.NVarChar(10), filter.modo.toLowerCase());
+    clauses.push(`LOWER(LTRIM(RTRIM(${alias}.Modo))) = @modo`);
+  }
+  if (filter?.causaleContains) {
+    req.input("causaleContains", sql.NVarChar(200), `%${filter.causaleContains}%`);
+    clauses.push(`${alias}.Causale LIKE @causaleContains`);
+  }
+  if (filter?.fatturaContains) {
+    req.input("fatturaContains", sql.NVarChar(80), `%${filter.fatturaContains}%`);
+    clauses.push(`${alias}.Fattura LIKE @fatturaContains`);
+  }
 
-  const needsPraticaJoin =
-    filter?.mandanteId || filter?.numeroMandante || filter?.sedeId;
-  if (needsPraticaJoin) {
+  const joinPratica = needsPraticaJoin(filter, opts?.includeElenco);
+  const joinDebitore = needsDebitoreJoin(filter, opts?.includeElenco);
+
+  if (joinPratica) {
     join = ` INNER JOIN dbo.Pratiche p ON p.Id = ${alias}.PraticaId `;
     if (filter?.mandanteId) {
       req.input("mandanteId", sql.UniqueIdentifier, filter.mandanteId);
@@ -76,6 +135,30 @@ function bindIncassoFilter(
     if (filter?.numeroMandante) {
       req.input("numeroMandante", sql.NVarChar(100), filter.numeroMandante);
       clauses.push("p.NumeroMandante = @numeroMandante");
+    }
+    if (filter?.numeriMandanteIn?.length) {
+      filter.numeriMandanteIn.forEach((n, idx) =>
+        req.input(`nm${idx}`, sql.NVarChar(100), n)
+      );
+      clauses.push(
+        `p.NumeroMandante IN (${filter.numeriMandanteIn.map((_, idx) => `@nm${idx}`).join(", ")})`
+      );
+    }
+    if (filter?.dataAffidoGte) {
+      req.input("dataAffidoGte", sql.DateTime2, new Date(filter.dataAffidoGte));
+      clauses.push("p.DataAffido >= @dataAffidoGte");
+    }
+    if (filter?.dataAffidoLte) {
+      req.input("dataAffidoLte", sql.DateTime2, new Date(filter.dataAffidoLte));
+      clauses.push("p.DataAffido <= @dataAffidoLte");
+    }
+    if (filter?.dataScaricoRicevutaGte) {
+      req.input("dataScaricoRicevutaGte", sql.DateTime2, new Date(filter.dataScaricoRicevutaGte));
+      clauses.push("p.CodiceScaricoAt >= @dataScaricoRicevutaGte");
+    }
+    if (filter?.dataScaricoRicevutaLte) {
+      req.input("dataScaricoRicevutaLte", sql.DateTime2, new Date(filter.dataScaricoRicevutaLte));
+      clauses.push("p.CodiceScaricoAt <= @dataScaricoRicevutaLte");
     }
     if (filter?.sedeId) {
       req.input("sedeId", sql.UniqueIdentifier, filter.sedeId);
@@ -87,35 +170,83 @@ function bindIncassoFilter(
     }
   }
 
+  if (joinDebitore) {
+    if (!joinPratica) {
+      join = ` INNER JOIN dbo.Pratiche p ON p.Id = ${alias}.PraticaId `;
+    }
+    join += ` INNER JOIN dbo.Debitori d ON d.Id = p.DebitoreId `;
+    if (filter?.cittaContains) {
+      req.input("cittaContains", sql.NVarChar(100), `%${filter.cittaContains}%`);
+      clauses.push("d.Citta LIKE @cittaContains");
+    }
+    if (filter?.clienteContains) {
+      req.input("clienteContains", sql.NVarChar(200), `%${filter.clienteContains}%`);
+      clauses.push("(d.Nome LIKE @clienteContains OR d.Cognome LIKE @clienteContains OR (d.Cognome + N' ' + d.Nome) LIKE @clienteContains OR (d.Nome + N' ' + d.Cognome) LIKE @clienteContains)");
+    }
+    if (filter?.capDa) {
+      req.input("capDa", sql.NVarChar(10), filter.capDa);
+      clauses.push("d.Cap >= @capDa");
+    }
+    if (filter?.capA) {
+      req.input("capA", sql.NVarChar(10), filter.capA);
+      clauses.push("d.Cap <= @capA");
+    }
+  }
+
+  if (opts?.includeElenco) {
+    if (!join.includes("dbo.Debitori")) {
+      if (!join.includes("dbo.Pratiche")) {
+        join = ` INNER JOIN dbo.Pratiche p ON p.Id = ${alias}.PraticaId `;
+      }
+      join += ` INNER JOIN dbo.Debitori d ON d.Id = p.DebitoreId `;
+    }
+    join += `
+      INNER JOIN dbo.Mandanti m ON m.Id = p.MandanteId
+      INNER JOIN dbo.Users u ON u.Id = ${alias}.UserId
+    `;
+  }
+
   return { where: clauses.join(" AND "), join };
 }
 
 export async function listIncassi(cfg: ConnectorConfig["db"], req: IncassoListRequest) {
   const pool = await getPool(cfg);
+  const includeElenco = Boolean(req.includeElenco);
   const baseReq = pool.request();
-  const { where, join } = bindIncassoFilter(baseReq, req.tenantId, req.filter);
+  const { where, join } = bindIncassoFilter(baseReq, req.tenantId, req.filter, "i", {
+    includeElenco,
+  });
   const take = req.take ?? 5000;
   const skip = req.skip ?? 0;
 
   const countReq = pool.request();
-  bindIncassoFilter(countReq, req.tenantId, req.filter);
+  bindIncassoFilter(countReq, req.tenantId, req.filter, "i", { includeElenco });
   const countRes = await countReq.query(`
     SELECT COUNT(*) AS Total FROM dbo.Incassi i ${join} WHERE ${where}
   `);
   const total = Number(countRes.recordset[0]?.Total ?? 0);
 
   const listReq = pool.request();
-  bindIncassoFilter(listReq, req.tenantId, req.filter);
+  bindIncassoFilter(listReq, req.tenantId, req.filter, "i", { includeElenco });
   listReq.input("skip", sql.Int, skip);
   listReq.input("take", sql.Int, take);
 
   let select = INCASSO_COLS;
-  if (req.includePratica) {
+  let praticaJoin = join;
+
+  if (includeElenco) {
+    select += `,
+      p.Id AS Pratica_Id, p.Numero AS Pratica_Numero, p.NumeroMandante AS Pratica_NumeroMandante,
+      p.DataAffido AS Pratica_DataAffido, p.CodiceScaricoAt AS Pratica_CodiceScaricoAt,
+      p.MandanteId AS Pratica_MandanteId,
+      m.Codice AS Mandante_Codice, m.RagioneSociale AS Mandante_RagioneSociale, m.PerimetriJson AS Mandante_Perimetri,
+      d.Nome AS Debitore_Nome, d.Cognome AS Debitore_Cognome, d.Citta AS Debitore_Citta, d.Cap AS Debitore_Cap,
+      u.Id AS User_Id, u.Name AS User_Name
+    `;
+  } else if (req.includePratica) {
     select += `, p.MandanteId AS Pratica_MandanteId`;
+    praticaJoin = join || ` INNER JOIN dbo.Pratiche p ON p.Id = i.PraticaId `;
   }
-  const praticaJoin = req.includePratica
-    ? join || ` INNER JOIN dbo.Pratiche p ON p.Id = i.PraticaId `
-    : join;
 
   const result = await listReq.query(`
     SELECT ${select}
@@ -127,6 +258,49 @@ export async function listIncassi(cfg: ConnectorConfig["db"], req: IncassoListRe
   `);
 
   const items = result.recordset.map((row: Record<string, unknown>) => {
+    if (includeElenco) {
+      return {
+        Id: row.Id,
+        TenantId: row.TenantId,
+        PraticaId: row.PraticaId,
+        UserId: row.UserId,
+        Importo: row.Importo,
+        Capitale: row.Capitale,
+        Interessi: row.Interessi,
+        Spese: row.Spese,
+        SpeseRec: row.SpeseRec,
+        Metodo: row.Metodo,
+        Modo: row.Modo,
+        Causale: row.Causale,
+        Fattura: row.Fattura,
+        Data: row.Data,
+        DataScadenza: row.DataScadenza,
+        CreatedAt: row.CreatedAt,
+        pratica: {
+          Id: row.Pratica_Id,
+          Numero: row.Pratica_Numero,
+          NumeroMandante: row.Pratica_NumeroMandante,
+          DataAffido: row.Pratica_DataAffido,
+          CodiceScaricoAt: row.Pratica_CodiceScaricoAt,
+          MandanteId: row.Pratica_MandanteId,
+          mandante: {
+            Codice: row.Mandante_Codice,
+            RagioneSociale: row.Mandante_RagioneSociale,
+            Perimetri: row.Mandante_Perimetri,
+          },
+          debitore: {
+            Nome: row.Debitore_Nome,
+            Cognome: row.Debitore_Cognome,
+            Citta: row.Debitore_Citta,
+            Cap: row.Debitore_Cap,
+          },
+        },
+        user: {
+          Id: row.User_Id,
+          Name: row.User_Name,
+        },
+      };
+    }
     if (req.includePratica && row.Pratica_MandanteId != null) {
       return {
         ...row,

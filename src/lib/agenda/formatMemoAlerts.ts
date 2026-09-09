@@ -47,6 +47,22 @@ export function formatMemoAlertsFromBundle(raw: MemoAlertsRawBundle, now = new D
     });
   }
 
+  for (const g of raw.giudiziali ?? []) {
+    const memoAt = new Date(g.memoAt);
+    if (!memoAlertWindow(memoAt, now).active) continue;
+    const deb = `${g.debitore.cognome} ${g.debitore.nome}`.trim();
+    alerts.push({
+      kind: "agenda",
+      praticaId: g.praticaId,
+      numero: g.numero,
+      memoAtMs: memoAt.getTime(),
+      time: memoAt.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }),
+      line: `LEGALE · ${g.activityLabel} · ${g.numero}${deb ? ` ${deb}` : ""}`,
+      fromSigla: "LEG",
+      fromName: "LEGALE",
+    });
+  }
+
   for (const m of raw.intern) {
     const msg = m as {
       id: string;

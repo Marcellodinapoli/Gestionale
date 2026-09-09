@@ -166,6 +166,60 @@ export async function updateImportBatch(
   return getImportBatchById(cfg, tenantId, id);
 }
 
+/** Salva conferimento legale sul batch e su tutte le pratiche collegate. */
+export async function applyConferimentoImportBatch(
+  cfg: ConnectorConfig["db"],
+  tenantId: string,
+  input: {
+    batchId: string;
+    conferimentoTipo: string;
+    dataPassaggioGiudiziale?: string | Date | null;
+    prossimaAttivitaAlloScadere?: string | null;
+  }
+) {
+  const pool = await getPool(cfg);
+  const dataPassaggio = input.dataPassaggioGiudiziale
+    ? new Date(input.dataPassaggioGiudiziale)
+    : null;
+  const prossima = input.prossimaAttivitaAlloScadere?.trim() || null;
+
+  const batchReq = pool
+    .request()
+    .input("tenantId", sql.UniqueIdentifier, tenantId)
+    .input("id", sql.UniqueIdentifier, input.batchId)
+    .input("conferimentoTipo", sql.NVarChar(30), input.conferimentoTipo)
+    .input("dataPassaggio", sql.DateTime2, dataPassaggio)
+    .input("prossimaAttivita", sql.NVarChar(200), prossima);
+  await batchReq.query(`
+    UPDATE dbo.ImportBatch
+    SET ConferimentoTipo = @conferimentoTipo,
+        DataPassaggioGiudiziale = @dataPassaggio,
+        ProssimaAttivitaAlloScadere = @prossimaAttivita
+    WHERE TenantId = @tenantId AND Id = @id
+  `);
+
+  const pratReq = pool
+    .request()
+    .input("tenantId", sql.UniqueIdentifier, tenantId)
+    .input("batchId", sql.UniqueIdentifier, input.batchId)
+    .input("conferimentoTipo", sql.NVarChar(30), input.conferimentoTipo)
+    .input("dataPassaggio", sql.DateTime2, dataPassaggio)
+    .input("prossimaAttivita", sql.NVarChar(200), prossima);
+  const pratRes = await pratReq.query(`
+    UPDATE dbo.Pratiche
+    SET ConferimentoTipo = @conferimentoTipo,
+        DataPassaggioGiudiziale = @dataPassaggio,
+        ProssimaAttivitaAlloScadere = @prossimaAttivita,
+        UpdatedAt = SYSUTCDATETIME()
+    WHERE TenantId = @tenantId AND ImportBatchId = @batchId
+  `);
+
+  return {
+    ok: true as const,
+    updatedPratiche: Number(pratRes.rowsAffected?.[0] ?? 0),
+  };
+}
+
 export async function deleteImportBatch(cfg: ConnectorConfig["db"], tenantId: string, id: string) {
   const pool = await getPool(cfg);
   await pool

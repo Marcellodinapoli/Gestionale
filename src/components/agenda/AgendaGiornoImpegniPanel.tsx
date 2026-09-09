@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { formatDataAgenda } from "@/lib/agendaVista";
 
 type AgendaGiornoVoce = {
-  kind: "pratica" | "libero";
+  kind: "pratica" | "libero" | "giudiziale";
   id: string;
   memoAt: string;
   label: string;
@@ -77,19 +77,30 @@ export function AgendaGiornoImpegniPanel({
           <ul className="divide-y divide-[var(--line)] text-xs">
             {voci.map((v) => {
               const isCurrent =
-                v.kind === "pratica" && excludePraticaId && v.id === excludePraticaId;
+                excludePraticaId &&
+                ((v.kind === "pratica" && v.id === excludePraticaId) ||
+                  (v.kind === "giudiziale" &&
+                    v.id.startsWith(`${excludePraticaId}:`)));
               return (
                 <li
                   key={`${v.kind}-${v.id}`}
                   className={`flex gap-2 px-2.5 py-2 ${
-                    isCurrent ? "bg-[#eef4f8]" : "bg-white"
+                    isCurrent
+                      ? "bg-[#eef4f8]"
+                      : v.kind === "giudiziale"
+                        ? "bg-[#fffbeb]"
+                        : "bg-white"
                   }`}
                 >
                   <span className="shrink-0 tabular-nums font-semibold text-[var(--navy)]">
                     {formatOra(v.memoAt)}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-[var(--navy)]">
+                    <p
+                      className={`truncate font-medium ${
+                        v.kind === "giudiziale" ? "text-[#9a3412]" : "text-[var(--navy)]"
+                      }`}
+                    >
                       {v.label}
                       {isCurrent ? (
                         <span className="ml-1 text-[10px] font-normal text-[var(--muted)]">

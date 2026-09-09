@@ -10,6 +10,7 @@ import {
   linkPraticheToImportBatch,
   listImportBatches,
   updateImportBatch,
+  applyConferimentoImportBatch,
   deletePraticaForImport,
 } from "../services/importBatchService.js";
 import { processImportPraticheChunk } from "../services/importPraticheService.js";
@@ -76,6 +77,20 @@ export function createImportBatchRouter(cfg: ConnectorConfig) {
     try {
       await deleteImportBatch(cfg.db, req.tenant!.tenantId, String(req.params.id));
       res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/:id/conferimento", resolveTenant, async (req, res, next) => {
+    try {
+      const result = await applyConferimentoImportBatch(cfg.db, req.tenant!.tenantId, {
+        batchId: String(req.params.id),
+        conferimentoTipo: String(req.body?.conferimentoTipo || ""),
+        dataPassaggioGiudiziale: req.body?.dataPassaggioGiudiziale ?? null,
+        prossimaAttivitaAlloScadere: req.body?.prossimaAttivitaAlloScadere ?? null,
+      });
+      res.json(result);
     } catch (err) {
       next(err);
     }

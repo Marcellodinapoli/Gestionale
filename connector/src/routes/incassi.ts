@@ -24,6 +24,7 @@ export function createIncassiRouter(cfg: ConnectorConfig) {
         skip: req.body?.skip,
         take: req.body?.take,
         includePratica: Boolean(req.body?.includePratica),
+        includeElenco: Boolean(req.body?.includeElenco),
       });
       res.json(result);
     } catch (err) {

@@ -223,6 +223,39 @@ export class PrismaImportBatchRepository implements ImportBatchRepository {
     const praticaModel = praticaDb({ tenantId, tenantSlug, role: "ADMIN", userId: "" });
     await praticaModel.delete({ where: { id: praticaId } });
   }
+
+  async applyConferimento(
+    _tenantSlug: string,
+    tenantId: string,
+    batchId: string,
+    data: {
+      conferimentoTipo: string;
+      dataPassaggioGiudiziale?: string | Date | null;
+      prossimaAttivitaAlloScadere?: string | null;
+    }
+  ) {
+    const dataPassaggio = data.dataPassaggioGiudiziale
+      ? new Date(data.dataPassaggioGiudiziale)
+      : null;
+    const prossima = data.prossimaAttivitaAlloScadere?.trim() || null;
+    await prisma.importBatch.update({
+      where: { id: batchId },
+      data: {
+        conferimentoTipo: data.conferimentoTipo,
+        dataPassaggioGiudiziale: dataPassaggio,
+        prossimaAttivitaAlloScadere: prossima,
+      },
+    });
+    const result = await prisma.pratica.updateMany({
+      where: { tenantId, importBatchId: batchId },
+      data: {
+        conferimentoTipo: data.conferimentoTipo,
+        dataPassaggioGiudiziale: dataPassaggio,
+        prossimaAttivitaAlloScadere: prossima,
+      },
+    });
+    return { ok: true as const, updatedPratiche: result.count };
+  }
 }
 
 export const prismaImportBatchRepository = new PrismaImportBatchRepository();

@@ -31,9 +31,24 @@ export type AgendaImpegnoVoce = {
   userName?: string;
 };
 
+/** Scadenze attività strategia/procedura giudiziale (virtuali in calendario). */
+export type AgendaGiudizialeVoce = {
+  id: string;
+  praticaId: string;
+  activityKey: string;
+  memoAt: string;
+  titolo: string;
+  activityLabel: string;
+  numero: string;
+  debitore: { nome: string; cognome: string };
+  assegnatarioName?: string | null;
+  responsabile?: string | null;
+};
+
 export type AgendaCalendarioBundle = {
   pratiche: AgendaPraticaVoce[];
   impegni: AgendaImpegnoVoce[];
+  giudiziali?: AgendaGiudizialeVoce[];
 };
 
 export type MemoAlertsRawBundle = AgendaCalendarioBundle & {

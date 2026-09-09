@@ -5,10 +5,26 @@ export type IncassoFilter = {
   userId?: string;
   mandanteId?: string;
   numeroMandante?: string;
+  /** Match lotto / chiavi perimetro (OR). */
+  numeriMandanteIn?: string[];
   sedeId?: string;
   dataGte?: string;
   dataLte?: string;
   metodo?: string;
+  /** ve | np */
+  modo?: string;
+  causaleContains?: string;
+  /** Numero ricevuta / fattura. */
+  fatturaContains?: string;
+  cittaContains?: string;
+  clienteContains?: string;
+  capDa?: string;
+  capA?: string;
+  dataAffidoGte?: string;
+  dataAffidoLte?: string;
+  /** Data scarico ricevuta → pratica.codiceScaricoAt */
+  dataScaricoRicevutaGte?: string;
+  dataScaricoRicevutaLte?: string;
   /** Se true, filtro impossibile (nessun dato) */
   none?: boolean;
 };
@@ -20,6 +36,8 @@ export type IncassoListRequest = {
   skip?: number;
   take?: number;
   includePratica?: boolean;
+  /** Join pratica/debitore/mandante/user per elenco globale. */
+  includeElenco?: boolean;
 };
 
 export type IncassoDto = Record<string, unknown>;

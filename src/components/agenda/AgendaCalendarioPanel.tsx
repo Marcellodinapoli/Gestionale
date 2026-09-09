@@ -44,6 +44,17 @@ export type CalendarioVoceSerialized =
       titolo: string;
       nota: string | null;
       autore: string;
+    }
+  | {
+      kind: "giudiziale";
+      id: string;
+      praticaId: string;
+      memoAt: string;
+      titolo: string;
+      activityLabel: string;
+      numero: string;
+      debitore: string;
+      responsabile: string | null;
     };
 
 function formatOraBreve(iso: string) {
@@ -73,6 +84,9 @@ function buildHref(vista: VistaAgenda, data: string) {
 
 function etichettaVoce(voce: CalendarioVoceSerialized) {
   if (voce.kind === "pratica") return `${voce.numero} · ${voce.debitore}`;
+  if (voce.kind === "giudiziale") {
+    return `${voce.activityLabel} · ${voce.numero}`;
+  }
   return voce.titolo;
 }
 
@@ -95,6 +109,19 @@ function VoceChip({
         title={`${ora} · ${label}`}
       >
         <span className="tabular-nums text-[var(--muted)]">{ora}</span> {label}
+      </Link>
+    );
+  }
+  if (voce.kind === "giudiziale") {
+    return (
+      <Link
+        href={`/pratiche/${voce.praticaId}/strategia-giudiziale`}
+        className={`block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight text-[#7c2d12] hover:bg-white/80 ${
+          compact ? "bg-[#fde68a]" : "bg-[#fbbf24]"
+        }`}
+        title={`Legale · ${ora} · ${label}`}
+      >
+        <span className="tabular-nums text-[#9a3412]">{ora}</span> {label}
       </Link>
     );
   }
@@ -189,6 +216,18 @@ export function AgendaCalendarioPanel({
         >
           Oggi
         </Link>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--muted)]">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#bfdbfe]" /> Richiamo pratica
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#c7d2fe]" /> Impegno libero
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#fbbf24]" /> Scadenza legale
+        </span>
       </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -350,6 +389,36 @@ export function AgendaCalendarioPanel({
                     <SegnaPraticaAgendaLettoButton praticaId={voce.id} />
                     <CompletaRichiamoButton praticaId={voce.id} />
                   </div>
+                </li>
+              ) : voce.kind === "giudiziale" ? (
+                <li
+                  key={`list-g-${voce.id}`}
+                  className="flex flex-wrap items-center justify-between gap-3 bg-[#fffbeb] px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[#9a3412]">
+                      Scadenza legale
+                    </p>
+                    <Link
+                      href={`/pratiche/${voce.praticaId}/strategia-giudiziale`}
+                      className="font-medium text-[#9a3412] underline"
+                    >
+                      {voce.activityLabel}
+                    </Link>{" "}
+                    <span className="text-[var(--navy)]">
+                      · {voce.numero} · {voce.debitore}
+                    </span>
+                    {voce.responsabile ? (
+                      <p className="text-xs text-[var(--muted)]">
+                        Responsabile: {voce.responsabile}
+                      </p>
+                    ) : null}
+                  </div>
+                  <p className="text-right text-sm tabular-nums text-[#7c2d12]">
+                    {vista === "giorno"
+                      ? formatOraBreve(voce.memoAt)
+                      : formatOraLunga(voce.memoAt)}
+                  </p>
                 </li>
               ) : (
                 <li

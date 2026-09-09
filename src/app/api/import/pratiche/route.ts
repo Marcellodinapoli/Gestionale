@@ -173,6 +173,10 @@ export async function POST(request: Request) {
         updated: totals.updated,
         skipped: totals.skipped,
         totale,
+        batchId: ctx.batchId,
+        scadenzaMandato: ctx.scadenzaMandato
+          ? new Date(ctx.scadenzaMandato).toISOString().slice(0, 10)
+          : null,
       },
     });
   }

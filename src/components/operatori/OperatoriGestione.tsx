@@ -241,7 +241,7 @@ function RigaOperatore({
         )}
       </td>
       <td>
-        {["ADMIN", "AMMINISTRAZIONE"].includes(utente.role) ? (
+        {["ADMIN", "AMMINISTRAZIONE", "LEGAL"].includes(utente.role) ? (
           <span className="text-xs text-[var(--muted)]">Completo</span>
         ) : (
           <select

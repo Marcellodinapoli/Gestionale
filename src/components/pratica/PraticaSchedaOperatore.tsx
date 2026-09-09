@@ -225,6 +225,9 @@ export function PraticaSchedaOperatore({
   nav,
   currentUserName,
   currentUserRole,
+  canAvviaGiudiziale = false,
+  giudizialePrevistoSulLotto = true,
+  giudizialeAvviato = false,
   prefissoChiamata,
   recordingMode,
   elencoAperto,
@@ -257,6 +260,12 @@ export function PraticaSchedaOperatore({
   };
   currentUserName?: string;
   currentUserRole?: string;
+  /** Mostra ingresso fase giudiziale (permesso legal:view). */
+  canAvviaGiudiziale?: boolean;
+  /** False se il conferimento lotto è solo stragiudiziale. */
+  giudizialePrevistoSulLotto?: boolean;
+  /** True se l'avvio giudiziale è già stato confermato. */
+  giudizialeAvviato?: boolean;
   prefissoChiamata?: string | null;
   recordingMode?: RecordingMode;
   elencoAperto?: boolean;
@@ -528,6 +537,9 @@ export function PraticaSchedaOperatore({
           }
           recordingMode={recordingMode}
           currentUserRole={currentUserRole}
+          canAvviaGiudiziale={canAvviaGiudiziale}
+          giudizialePrevistoSulLotto={giudizialePrevistoSulLotto}
+          giudizialeAvviato={giudizialeAvviato}
           incassoRiparto={{
             capitale: pratica.capitale,
             interessi: pratica.interessi,
@@ -556,7 +568,7 @@ export function PraticaSchedaOperatore({
         <RegistroNoteLazy
           praticaId={pratica.id}
           canEdit={canEditNotes}
-          canSblocca={["ADMIN", "SUPERVISOR", "BACK_OFFICE", "AMMINISTRAZIONE"].includes(
+          canSblocca={["ADMIN", "SUPERVISOR", "BACK_OFFICE", "AMMINISTRAZIONE", "LEGAL"].includes(
             currentUserRole || ""
           )}
         />

@@ -75,7 +75,7 @@ export async function registrazioneAccessible(
 ): Promise<boolean> {
   if (rec.pratica.tenantId !== user.tenantId) return false;
 
-  if (user.role === "BACK_OFFICE" || user.role === "ADMIN" || user.role === "AMMINISTRAZIONE") {
+  if (user.role === "BACK_OFFICE" || user.role === "ADMIN" || user.role === "AMMINISTRAZIONE" || user.role === "LEGAL") {
     return true;
   }
 

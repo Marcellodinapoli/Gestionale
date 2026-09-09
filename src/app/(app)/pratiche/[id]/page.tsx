@@ -37,6 +37,9 @@ import { smsPreimpostatiEffettivi } from "@/lib/smsPreimpostati";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
 import { PraticaSchedaOperatore } from "@/components/pratica/PraticaSchedaOperatore";
 import { PraticaLockWatcher } from "@/components/pratica/PraticaLockWatcher";
+import { isGiudizialePrevistoSulLotto } from "@/lib/conferimentoLegale";
+import { getPraticaGiudizialeByPraticaId } from "@/lib/giudiziale/praticaGiudizialeRepo";
+import { isGiudizialeAvviato } from "@/lib/giudiziale/avvioGiudiziale";
 
 export default async function PraticaDetailPage({
   params,
@@ -105,7 +108,7 @@ export default async function PraticaDetailPage({
 
   // Include leggero: anagrafica + rate. Note/incassi dettaglio via /extra.
   // Solo somma importi per il campo «Pagato» in scheda.
-  const [pratica, workCtx, originePratica, incassiSum] = await Promise.all([
+  const [pratica, workCtx, originePratica, incassiSum, giudiziale] = await Promise.all([
     praticaModel.findUnique({
       where: { id },
       include: {
@@ -137,6 +140,7 @@ export default async function PraticaDetailPage({
       where: { praticaId: id },
       _sum: { importo: true },
     }),
+    getPraticaGiudizialeByPraticaId(user, id),
   ]);
   if (!pratica) notFound();
 
@@ -246,6 +250,11 @@ export default async function PraticaDetailPage({
             nav={nav}
             currentUserName={user.name}
             currentUserRole={user.role}
+            canAvviaGiudiziale={can(user, "legal:view")}
+            giudizialePrevistoSulLotto={isGiudizialePrevistoSulLotto(
+              (pratica as { conferimentoTipo?: string | null }).conferimentoTipo
+            )}
+            giudizialeAvviato={isGiudizialeAvviato(giudiziale?.statoAvvio)}
             prefissoChiamata={user.prefissoChiamata}
             recordingMode={recordingMode}
             elencoAperto={showElenco}
