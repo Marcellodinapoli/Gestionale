@@ -140,8 +140,13 @@ export default async function StrategiaGiudizialePage({
           {conclusa ? (
             <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
               Procedura conclusa
-              {giudiziale?.esitoRegistratoAt
-                ? ` il ${dataIt(new Date(giudiziale.esitoRegistratoAt))}`
+              {giudiziale?.dataEsito
+                ? ` (esito del ${dataIt(new Date(giudiziale.dataEsito))})`
+                : giudiziale?.esitoRegistratoAt
+                  ? ` il ${dataIt(new Date(giudiziale.esitoRegistratoAt))}`
+                  : ""}
+              {giudiziale?.importoRecuperato != null
+                ? ` · Importo recuperato (info): ${euro(giudiziale.importoRecuperato)}`
                 : ""}
               . Solo consultazione.
             </p>
@@ -173,7 +178,10 @@ export default async function StrategiaGiudizialePage({
               statoProcedura: giudiziale?.statoProcedura,
               eventiStorico: giudiziale?.eventiStorico,
               costiSostenuti: giudiziale?.costiSostenuti,
+              speseGiudizialiJson: giudiziale?.speseGiudizialiJson,
               esitoGiudiziale: giudiziale?.esitoGiudiziale,
+              dataEsito: giudiziale?.dataEsito,
+              importoRecuperato: giudiziale?.importoRecuperato,
               noteLegaliOperatori: giudiziale?.noteLegaliOperatori,
             }}
           />

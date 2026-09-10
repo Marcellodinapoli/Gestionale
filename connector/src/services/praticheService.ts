@@ -108,7 +108,7 @@ export type ListRequest = {
 const PRATICA_COLS = `
   p.Id, p.TenantId, p.Numero, p.NumeroMandante, p.Contratto, p.Commessa,
   p.MandanteId, p.DebitoreId, p.AssegnatarioId, p.OperatoreTitolareId,
-  p.Stato, p.Capitale, p.Interessi, p.Spese, p.SpeseRecupero,
+  p.Stato, p.Capitale, p.Interessi, p.Spese, p.SpeseRecupero, p.SpeseGiudiziali,
   p.ImportoTotale, p.TotIncassato, p.Residuo, p.ImportoRata, p.RateArretrate,
   p.NettoDaPagare, p.NumeroRateScadute, p.CodiceScarico, p.CodiceScaricoAt, p.CodiceScaricoBk,
   p.CodiceScaricoBkAt,
@@ -863,7 +863,7 @@ export async function updatePratica(
     "AssegnatarioId", "OperatoreTitolareId", "Residuo", "DebitoreId", "MandanteId",
     "Numero", "NumeroMandante", "Contratto", "Commessa", "DataAffido", "Scadenza",
     "ConferimentoTipo", "DataPassaggioGiudiziale", "ProssimaAttivitaAlloScadere",
-    "Capitale", "Interessi", "Spese", "SpeseRecupero", "ImportoRata", "RateArretrate",
+    "Capitale", "Interessi", "Spese", "SpeseRecupero", "SpeseGiudiziali", "ImportoRata", "RateArretrate",
     "NettoDaPagare", "ImportBatchId", "Note",
   ]);
   const map: Record<string, string> = {
@@ -881,7 +881,8 @@ export async function updatePratica(
     dataPassaggioGiudiziale: "DataPassaggioGiudiziale",
     prossimaAttivitaAlloScadere: "ProssimaAttivitaAlloScadere",
     capitale: "Capitale", interessi: "Interessi", spese: "Spese",
-    speseRecupero: "SpeseRecupero", importoRata: "ImportoRata",
+    speseRecupero: "SpeseRecupero", speseGiudiziali: "SpeseGiudiziali",
+    importoRata: "ImportoRata",
     rateArretrate: "RateArretrate", nettoDaPagare: "NettoDaPagare",
     importBatchId: "ImportBatchId", note: "Note",
   };

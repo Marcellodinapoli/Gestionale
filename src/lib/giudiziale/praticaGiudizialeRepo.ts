@@ -6,6 +6,10 @@ import { resolveTenantSlug } from "@/lib/praticheRepo";
 import { mapSqlRow } from "@/lib/data/mapSqlRow";
 import type { SessionUser } from "@/lib/permissions";
 import type { StatoAvvioGiudiziale } from "@/lib/giudiziale/avvioGiudiziale";
+import {
+  costiSostenutiDaTotale,
+  normalizeSpeseGiudizialiInput,
+} from "@/lib/giudiziale/speseGiudiziali";
 
 export type PraticaGiudizialeRecord = {
   id: string;
@@ -52,7 +56,10 @@ export type PraticaGiudizialeRecord = {
   statoProcedura: string | null;
   eventiStorico: string | null;
   costiSostenuti: string | null;
+  speseGiudizialiJson: string | null;
   esitoGiudiziale: string | null;
+  dataEsito: Date | string | null;
+  importoRecuperato: number | null;
   noteLegaliOperatori: string | null;
   strategiaAggiornataAt: Date | string | null;
   esitoRegistratoAt: Date | string | null;
@@ -115,7 +122,11 @@ export type StrategiaProceduraInput = {
   statoProcedura?: string | null;
   eventiStorico?: string | null;
   costiSostenuti?: string | null;
+  /** JSON voci spesa; se valorizzato aggiorna anche Pratica.speseGiudiziali. */
+  speseGiudizialiJson?: string | null;
   esitoGiudiziale?: string | null;
+  dataEsito?: string | Date | null;
+  importoRecuperato?: number | null;
   noteLegaliOperatori?: string | null;
   strategiaAggiornataAt?: string | Date | null;
   esitoRegistratoAt?: string | Date | null;
@@ -175,7 +186,13 @@ function mapRow(row: Record<string, unknown>): PraticaGiudizialeRecord {
     statoProcedura: str(m.statoProcedura),
     eventiStorico: str(m.eventiStorico),
     costiSostenuti: str(m.costiSostenuti),
+    speseGiudizialiJson: str(m.speseGiudizialiJson),
     esitoGiudiziale: str(m.esitoGiudiziale),
+    dataEsito: (m.dataEsito as Date | string | null) ?? null,
+    importoRecuperato:
+      m.importoRecuperato != null && m.importoRecuperato !== ""
+        ? Number(m.importoRecuperato)
+        : null,
     noteLegaliOperatori: str(m.noteLegaliOperatori),
     strategiaAggiornataAt: (m.strategiaAggiornataAt as Date | string | null) ?? null,
     esitoRegistratoAt: (m.esitoRegistratoAt as Date | string | null) ?? null,
@@ -334,6 +351,10 @@ export async function saveValutazioneLegale(
 }
 
 function strategiaData(input: StrategiaProceduraInput) {
+  const speseNorm =
+    input.speseGiudizialiJson != null
+      ? normalizeSpeseGiudizialiInput(input.speseGiudizialiJson)
+      : null;
   return {
     statoAvvio: input.statoAvvio,
     strategiaScelta: input.strategiaScelta || null,
@@ -344,8 +365,16 @@ function strategiaData(input: StrategiaProceduraInput) {
     documentiDaProdurre: input.documentiDaProdurre?.trim() || null,
     statoProcedura: input.statoProcedura || null,
     eventiStorico: input.eventiStorico?.trim() || null,
-    costiSostenuti: input.costiSostenuti?.trim() || null,
+    costiSostenuti: speseNorm
+      ? costiSostenutiDaTotale(speseNorm.totale)
+      : input.costiSostenuti?.trim() || null,
+    speseGiudizialiJson: speseNorm ? speseNorm.json : undefined,
     esitoGiudiziale: input.esitoGiudiziale || null,
+    dataEsito: input.dataEsito ? new Date(input.dataEsito) : null,
+    importoRecuperato:
+      input.importoRecuperato != null && Number.isFinite(Number(input.importoRecuperato))
+        ? Math.round(Number(input.importoRecuperato) * 100) / 100
+        : null,
     noteLegaliOperatori: input.noteLegaliOperatori?.trim() || null,
     strategiaAggiornataAt: input.strategiaAggiornataAt
       ? new Date(input.strategiaAggiornataAt)
@@ -354,6 +383,7 @@ function strategiaData(input: StrategiaProceduraInput) {
       ? new Date(input.esitoRegistratoAt)
       : null,
     closedAt: input.closedAt ? new Date(input.closedAt) : null,
+    _totaleSpeseGiudiziali: speseNorm?.totale ?? null,
   };
 }
 
@@ -364,17 +394,40 @@ export async function saveStrategiaProcedura(
 ): Promise<PraticaGiudizialeRecord> {
   if (isConnectorProvider()) {
     const slug = resolveTenantSlug(user);
+    const speseNorm =
+      input.speseGiudizialiJson != null
+        ? normalizeSpeseGiudizialiInput(input.speseGiudizialiJson)
+        : null;
+    const body = {
+      praticaId,
+      tenantId: user.tenantId,
+      ...input,
+      ...(speseNorm
+        ? {
+            speseGiudizialiJson: speseNorm.json,
+            costiSostenuti: costiSostenutiDaTotale(speseNorm.totale),
+            totaleSpeseGiudiziali: speseNorm.totale,
+          }
+        : {}),
+    };
     const data = await connectorFetch<{ item: Record<string, unknown> }>(
       `/api/v1/tenants/${encodeURIComponent(slug)}/pratiche-giudiziali/strategia`,
       {
         method: "POST",
-        body: { praticaId, tenantId: user.tenantId, ...input },
+        body,
       }
     );
     return mapRow(data.item);
   }
 
-  const data = strategiaData(input);
+  const raw = strategiaData(input);
+  const { _totaleSpeseGiudiziali, speseGiudizialiJson, ...rest } = raw;
+  const data = {
+    ...rest,
+    ...(speseGiudizialiJson !== undefined
+      ? { speseGiudizialiJson }
+      : {}),
+  };
   const row = await prisma.praticaGiudiziale.upsert({
     where: { praticaId },
     create: {
@@ -385,6 +438,14 @@ export async function saveStrategiaProcedura(
     },
     update: data,
   });
+
+  if (_totaleSpeseGiudiziali != null) {
+    await prisma.pratica.update({
+      where: { id: praticaId },
+      data: { speseGiudiziali: _totaleSpeseGiudiziali },
+    });
+  }
+
   return mapRow(row as unknown as Record<string, unknown>);
 }
 

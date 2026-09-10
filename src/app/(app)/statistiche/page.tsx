@@ -351,7 +351,7 @@ export default async function StatistichePage({
       : `Gruppo · ${user.name}`;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto pb-2">
+    <div className="h-full min-h-0 min-w-0 max-w-full overflow-x-hidden overflow-y-auto pb-2">
       <PageHeader title="Statistiche" subtitle={subtitle} />
 
       {user.role === "ADMIN" || user.role === "AMMINISTRAZIONE" ? (

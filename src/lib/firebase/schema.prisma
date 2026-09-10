@@ -233,6 +233,8 @@ model Pratica {
   spese           Float       @default(0)
   // Spese di recupero da CSV.
   speseRecupero   Float       @default(0)
+  /// Totale sintetico spese giudiziali (fonte dettaglio = PraticaGiudiziale.speseGiudizialiJson).
+  speseGiudiziali Float       @default(0)
   residuo         Float       @default(0)
   // Importo rata da CSV.
   importoRata     Float?
@@ -386,8 +388,14 @@ model PraticaGiudiziale {
   statoProcedura           String?
   eventiStorico            String?
   costiSostenuti           String?
-  /// RECUPERATO | PARZIALMENTE_RECUPERATO | INESIGIBILE | PROCEDURA_CONCLUSA
+  /// JSON voci spesa giudiziale (dettaglio solo Legal).
+  speseGiudizialiJson      String?
+  /// POSITIVO | PARZIALE | NEGATIVO | CHIUSA | ALTRO
   esitoGiudiziale          String?
+  /// Data esito dichiarata dall'operatore (informativa).
+  dataEsito                DateTime?
+  /// Importo eventualmente recuperato (informativo; non crea Incasso).
+  importoRecuperato        Float?
   noteLegaliOperatori      String?
   strategiaAggiornataAt    DateTime?
   esitoRegistratoAt        DateTime?

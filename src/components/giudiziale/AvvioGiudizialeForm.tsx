@@ -374,17 +374,9 @@ export function AvvioGiudizialeForm({
             type="button"
             disabled={disabled}
             onClick={() => submit("RICHIEDI_VALUTAZIONE")}
-            className="h-10 rounded-lg border-2 border-[var(--navy)] bg-[#eef4f8] px-4 text-sm font-semibold text-[var(--navy)] hover:bg-[#dce8f0] disabled:opacity-50"
-          >
-            Richiedi valutazione legale
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => submit("AVVIA_PROCEDURA")}
             className="h-10 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
-            Avvia procedura giudiziale
+            Richiedi valutazione legale
           </button>
         </div>
       ) : null}

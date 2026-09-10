@@ -18,6 +18,12 @@ import {
   type AttivitaProceduraMap,
   type EsitoGiudiziale,
 } from "@/lib/giudiziale/strategiaGiudiziale";
+import {
+  parseSpeseGiudizialiJson,
+  serializeSpeseGiudizialiJson,
+  type SpesaGiudizialeVoce,
+} from "@/lib/giudiziale/speseGiudiziali";
+import { SpeseGiudizialiEditor } from "@/components/giudiziale/SpeseGiudizialiEditor";
 
 const fieldCls =
   "h-9 w-full rounded-lg border border-[#7d94a8] bg-white px-2 text-sm text-[var(--navy)]";
@@ -37,7 +43,10 @@ export type StrategiaProceduraInitial = {
   statoProcedura?: string | null;
   eventiStorico?: string | null;
   costiSostenuti?: string | null;
+  speseGiudizialiJson?: string | null;
   esitoGiudiziale?: string | null;
+  dataEsito?: string | Date | null;
+  importoRecuperato?: number | null;
   noteLegaliOperatori?: string | null;
 };
 
@@ -69,8 +78,24 @@ export function StrategiaProceduraForm({
     initial?.statoProcedura || "DA_AVVIARE"
   );
   const [eventi, setEventi] = useState(initial?.eventiStorico || "");
-  const [costi, setCosti] = useState(initial?.costiSostenuti || "");
+  const [spese, setSpese] = useState<SpesaGiudizialeVoce[]>(() =>
+    parseSpeseGiudizialiJson(initial?.speseGiudizialiJson)
+  );
   const [esito, setEsito] = useState(initial?.esitoGiudiziale || "");
+  const [dataEsito, setDataEsito] = useState(() => {
+    const raw = initial?.dataEsito;
+    if (!raw) return "";
+    const d = raw instanceof Date ? raw : new Date(raw);
+    if (Number.isNaN(d.getTime())) return String(raw).slice(0, 10);
+    return d.toISOString().slice(0, 10);
+  });
+  const [importoRecuperato, setImportoRecuperato] = useState(
+    initial?.importoRecuperato != null && Number(initial.importoRecuperato) !== 0
+      ? String(initial.importoRecuperato)
+      : initial?.importoRecuperato === 0
+        ? "0"
+        : ""
+  );
   const [note, setNote] = useState(initial?.noteLegaliOperatori || "");
 
   const disabled = readOnly || pending;
@@ -96,8 +121,13 @@ export function StrategiaProceduraForm({
       documentiDaProdurre: documenti,
       statoProcedura: statoProcedura || null,
       eventiStorico: eventi,
-      costiSostenuti: costi,
+      speseGiudizialiJson: serializeSpeseGiudizialiJson(spese),
       esitoGiudiziale: (esito as EsitoGiudiziale) || null,
+      dataEsito: dataEsito || null,
+      importoRecuperato:
+        importoRecuperato.trim() === ""
+          ? null
+          : Number(importoRecuperato),
       noteLegaliOperatori: note,
     }),
     [
@@ -110,8 +140,10 @@ export function StrategiaProceduraForm({
       documenti,
       statoProcedura,
       eventi,
-      costi,
+      spese,
       esito,
+      dataEsito,
+      importoRecuperato,
       note,
     ]
   );
@@ -133,6 +165,14 @@ export function StrategiaProceduraForm({
   function onRegistraEsito() {
     setError(null);
     setOk(null);
+    if (!esito) {
+      setError("Seleziona l'esito");
+      return;
+    }
+    if (!dataEsito) {
+      setError("Indica la data esito");
+      return;
+    }
     startTransition(async () => {
       const result = await registraEsitoGiudizialeAction(payload);
       if (result.error) {
@@ -288,16 +328,6 @@ export function StrategiaProceduraForm({
               ))}
             </select>
           </div>
-          <div>
-            <label className={labelCls}>Costi sostenuti</label>
-            <input
-              className={fieldCls}
-              value={costi}
-              disabled={disabled}
-              onChange={(e) => setCosti(e.target.value)}
-              placeholder="Es. € 450 (bolli + onorari)"
-            />
-          </div>
         </div>
         <div>
           <label className={labelCls}>Agenda / scadenze</label>
@@ -333,26 +363,63 @@ export function StrategiaProceduraForm({
         </div>
       </section>
 
+      <SpeseGiudizialiEditor
+        voci={spese}
+        onChange={setSpese}
+        disabled={disabled}
+      />
+
       <section className={sectionCls}>
-        <h3 className="text-sm font-bold text-[var(--navy)]">Esito e note</h3>
-        <div>
-          <label className={labelCls}>Esito</label>
-          <select
-            className={fieldCls}
-            value={esito}
-            disabled={disabled}
-            onChange={(e) => setEsito(e.target.value)}
-          >
-            <option value="">— Non ancora definito —</option>
-            {ESITI_GIUDIZIALI.map((e) => (
-              <option key={e.value} value={e.value}>
-                {e.label}
-              </option>
-            ))}
-          </select>
+        <h3 className="text-sm font-bold text-[var(--navy)]">
+          Esito / chiusura procedura
+        </h3>
+        <p className="text-[11px] text-[var(--muted)]">
+          L&apos;importo recuperato è informativo. Gli incassi si registrano nella
+          gestione Incassi della pratica.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label className={labelCls}>Esito</label>
+            <select
+              className={fieldCls}
+              value={esito}
+              disabled={disabled}
+              onChange={(e) => setEsito(e.target.value)}
+            >
+              <option value="">— Non ancora definito —</option>
+              {ESITI_GIUDIZIALI.map((e) => (
+                <option key={e.value} value={e.value}>
+                  {e.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Data esito</label>
+            <input
+              type="date"
+              className={fieldCls}
+              value={dataEsito}
+              disabled={disabled}
+              onChange={(e) => setDataEsito(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Importo eventualmente recuperato €</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              className={fieldCls}
+              value={importoRecuperato}
+              disabled={disabled}
+              onChange={(e) => setImportoRecuperato(e.target.value)}
+              placeholder="Opzionale"
+            />
+          </div>
         </div>
         <div>
-          <label className={labelCls}>Note del legale / operatori</label>
+          <label className={labelCls}>Note finali</label>
           <textarea
             className={areaCls}
             rows={3}
@@ -378,11 +445,11 @@ export function StrategiaProceduraForm({
             onClick={onSalva}
             className="inline-flex h-9 items-center rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? "Salvataggio…" : "Salva strategia / procedura"}
+            {pending ? "Salvataggio…" : "Salva strategia / spese"}
           </button>
           <button
             type="button"
-            disabled={disabled || !esito}
+            disabled={disabled || !esito || !dataEsito}
             onClick={onRegistraEsito}
             className="inline-flex h-9 items-center rounded-lg border border-[var(--navy)] bg-white px-4 text-sm font-semibold text-[var(--navy)] hover:bg-[#eef4f8] disabled:opacity-50"
           >

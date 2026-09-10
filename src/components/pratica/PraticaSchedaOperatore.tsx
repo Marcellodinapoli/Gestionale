@@ -59,6 +59,8 @@ type PraticaData = {
   interessi: number;
   spese: number;
   speseRecupero?: number | null;
+  /** Totale sintetico spese giudiziali (dettaglio solo in Legal). */
+  speseGiudiziali?: number | null;
   residuo: number;
   importoRata?: number | null;
   rateArretrate?: number | null;
@@ -468,6 +470,12 @@ export function PraticaSchedaOperatore({
           <AnagraficaField
             label="Spese di recupero"
             value={euro(speseRecupero)}
+            compact
+            accent
+          />
+          <AnagraficaField
+            label="Spese giudiziali"
+            value={euro(pratica.speseGiudiziali || 0)}
             compact
             accent
           />

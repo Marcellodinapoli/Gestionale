@@ -843,7 +843,9 @@ export function AppShell({
       ) : null}
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-[1cm] py-2 print:h-auto print:overflow-visible print:p-0">
-        <div className="h-full min-h-0 flex-1 overflow-y-auto print:h-auto print:overflow-visible">{children}</div>
+        <div className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto print:h-auto print:overflow-visible">
+          {children}
+        </div>
         <MemoPopupWatcher userName={user.name} />
       </main>
     </div>

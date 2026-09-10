@@ -15,7 +15,8 @@ const COLS = `
   g.ValutazioneCompletataAt, g.ValutazioneById,
   g.StrategiaScelta, g.ProceduraDaSeguire, g.ProfessionistaIncaricato, g.AttivitaProceduraJson,
   g.AgendaScadenze, g.DocumentiDaProdurre, g.StatoProcedura, g.EventiStorico, g.CostiSostenuti,
-  g.EsitoGiudiziale, g.NoteLegaliOperatori, g.StrategiaAggiornataAt, g.EsitoRegistratoAt,
+  g.SpeseGiudizialiJson, g.EsitoGiudiziale, g.DataEsito, g.ImportoRecuperato,
+  g.NoteLegaliOperatori, g.StrategiaAggiornataAt, g.EsitoRegistratoAt,
   g.CreatedById, g.CreatedAt, g.UpdatedAt, g.ClosedAt
 `;
 
@@ -316,7 +317,12 @@ export async function saveStrategiaProcedura(
     statoProcedura?: string | null;
     eventiStorico?: string | null;
     costiSostenuti?: string | null;
+    speseGiudizialiJson?: string | null;
+    /** Totale sintetico da scrivere su dbo.Pratiche.SpeseGiudiziali */
+    totaleSpeseGiudiziali?: number | null;
     esitoGiudiziale?: string | null;
+    dataEsito?: string | Date | null;
+    importoRecuperato?: number | null;
     noteLegaliOperatori?: string | null;
     strategiaAggiornataAt?: string | Date | null;
     esitoRegistratoAt?: string | Date | null;
@@ -333,6 +339,11 @@ export async function saveStrategiaProcedura(
     ? new Date(input.esitoRegistratoAt)
     : null;
   const closedAt = input.closedAt ? new Date(input.closedAt) : null;
+  const dataEsito = input.dataEsito ? new Date(input.dataEsito) : null;
+  const importoRec =
+    input.importoRecuperato != null && Number.isFinite(Number(input.importoRecuperato))
+      ? Number(input.importoRecuperato)
+      : null;
 
   const bindCommon = (req: {
     input: (name: string, type: unknown, value: unknown) => typeof req;
@@ -351,7 +362,10 @@ export async function saveStrategiaProcedura(
       .input("statoProc", sql.NVarChar(40), input.statoProcedura ?? null)
       .input("eventi", sql.NVarChar(sql.MAX), input.eventiStorico ?? null)
       .input("costi", sql.NVarChar(500), input.costiSostenuti ?? null)
+      .input("speseJson", sql.NVarChar(sql.MAX), input.speseGiudizialiJson ?? null)
       .input("esito", sql.NVarChar(40), input.esitoGiudiziale ?? null)
+      .input("dataEsito", sql.DateTime2, dataEsito)
+      .input("importoRec", sql.Float, importoRec)
       .input("note", sql.NVarChar(sql.MAX), input.noteLegaliOperatori ?? null)
       .input("stratAt", sql.DateTime2, stratAt)
       .input("esitoAt", sql.DateTime2, esitoAt)
@@ -370,7 +384,10 @@ export async function saveStrategiaProcedura(
         StatoProcedura = @statoProc,
         EventiStorico = @eventi,
         CostiSostenuti = @costi,
+        SpeseGiudizialiJson = @speseJson,
         EsitoGiudiziale = @esito,
+        DataEsito = @dataEsito,
+        ImportoRecuperato = @importoRec,
         NoteLegaliOperatori = @note,
         StrategiaAggiornataAt = @stratAt,
         EsitoRegistratoAt = @esitoAt,
@@ -386,15 +403,30 @@ export async function saveStrategiaProcedura(
           TenantId, PraticaId, StatoAvvio,
           StrategiaScelta, ProceduraDaSeguire, ProfessionistaIncaricato, AttivitaProceduraJson,
           AgendaScadenze, DocumentiDaProdurre, StatoProcedura, EventiStorico, CostiSostenuti,
-          EsitoGiudiziale, NoteLegaliOperatori, StrategiaAggiornataAt, EsitoRegistratoAt,
+          SpeseGiudizialiJson, EsitoGiudiziale, DataEsito, ImportoRecuperato,
+          NoteLegaliOperatori, StrategiaAggiornataAt, EsitoRegistratoAt,
           CreatedById, CreatedAt, UpdatedAt, ClosedAt
         ) VALUES (
           @tenantId, @praticaId, @statoAvvio,
           @strategia, @procedura, @prof, @attJson,
           @agenda, @docs, @statoProc, @eventi, @costi,
-          @esito, @note, @stratAt, @esitoAt,
+          @speseJson, @esito, @dataEsito, @importoRec,
+          @note, @stratAt, @esitoAt,
           @createdById, SYSUTCDATETIME(), SYSUTCDATETIME(), @closedAt
         )
+      `);
+  }
+
+  if (input.totaleSpeseGiudiziali != null && Number.isFinite(input.totaleSpeseGiudiziali)) {
+    await pool
+      .request()
+      .input("tenantId", sql.UniqueIdentifier, tenantId)
+      .input("praticaId", sql.UniqueIdentifier, input.praticaId)
+      .input("totale", sql.Float, input.totaleSpeseGiudiziali)
+      .query(`
+        UPDATE dbo.Pratiche
+        SET SpeseGiudiziali = @totale, UpdatedAt = SYSUTCDATETIME()
+        WHERE TenantId = @tenantId AND Id = @praticaId
       `);
   }
 
@@ -431,8 +463,8 @@ export async function listPratichePerAvvio(
     praticaId: String(r.PraticaId),
     praticaNumero: String(r.PraticaNumero),
     residuo: Number(r.Residuo || 0),
-    debitoreNome: String(r.DebitoreNome || "—"),
-    mandanteCodice: String(r.MandanteCodice || "—"),
+    debitoreNome: String(r.DebitoreNome || "?"),
+    mandanteCodice: String(r.MandanteCodice || "?"),
     statoAvvio: r.StatoAvvio != null ? String(r.StatoAvvio) : null,
     motivoPassaggio: r.MotivoPassaggio != null ? String(r.MotivoPassaggio) : null,
   }));

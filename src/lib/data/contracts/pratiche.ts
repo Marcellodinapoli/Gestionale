@@ -176,6 +176,8 @@ export type PraticaUpdateInput = {
   interessi?: number;
   spese?: number;
   speseRecupero?: number;
+  /** Totale sintetico da Legal (non dettaglio). */
+  speseGiudiziali?: number;
   importoRata?: number | null;
   rateArretrate?: number | null;
   nettoDaPagare?: number | null;

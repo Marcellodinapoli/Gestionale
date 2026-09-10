@@ -10,7 +10,7 @@ export function tabReachable(
   return true;
 }
 
-/** Tab fase giudiziale su pratica: stesse 4 voci del menu Legal. */
+/** Tab fase giudiziale su pratica (include Avvio; hub Legal no). */
 export function GiudizialeNavTabs({
   praticaId,
   attivo,

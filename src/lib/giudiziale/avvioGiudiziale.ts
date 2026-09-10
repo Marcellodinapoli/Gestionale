@@ -52,8 +52,7 @@ export type StatoAvvioGiudiziale = (typeof STATI_AVVIO_GIUDIZIALE)[number]["valu
 
 export type AzioneAvvioGiudiziale =
   | "ARCHIVIA_SENZA_AZIONE"
-  | "RICHIEDI_VALUTAZIONE"
-  | "AVVIA_PROCEDURA";
+  | "RICHIEDI_VALUTAZIONE";
 
 export function statoFromAzione(azione: AzioneAvvioGiudiziale): StatoAvvioGiudiziale {
   switch (azione) {
@@ -61,8 +60,6 @@ export function statoFromAzione(azione: AzioneAvvioGiudiziale): StatoAvvioGiudiz
       return "ARCHIVIATA_SENZA_AZIONE";
     case "RICHIEDI_VALUTAZIONE":
       return "IN_ATTESA_VALUTAZIONE_LEGALE";
-    case "AVVIA_PROCEDURA":
-      return "GIUDIZIALE_AVVIATO_PROCEDURA_DA_DEFINIRE";
   }
 }
 

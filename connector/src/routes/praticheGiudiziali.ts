@@ -127,7 +127,15 @@ export function createPraticheGiudizialiRouter(cfg: ConnectorConfig) {
         statoProcedura: body.statoProcedura ?? null,
         eventiStorico: body.eventiStorico ?? null,
         costiSostenuti: body.costiSostenuti ?? null,
+        speseGiudizialiJson: body.speseGiudizialiJson ?? null,
+        totaleSpeseGiudiziali:
+          body.totaleSpeseGiudiziali != null
+            ? Number(body.totaleSpeseGiudiziali)
+            : null,
         esitoGiudiziale: body.esitoGiudiziale ?? null,
+        dataEsito: body.dataEsito ?? null,
+        importoRecuperato:
+          body.importoRecuperato != null ? Number(body.importoRecuperato) : null,
         noteLegaliOperatori: body.noteLegaliOperatori ?? null,
         strategiaAggiornataAt: body.strategiaAggiornataAt ?? null,
         esitoRegistratoAt: body.esitoRegistratoAt ?? null,

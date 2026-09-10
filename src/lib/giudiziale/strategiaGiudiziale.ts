@@ -84,16 +84,30 @@ export const STATI_PROCEDURA = [
 ] as const;
 
 export const ESITI_GIUDIZIALI = [
-  { value: "RECUPERATO", label: "Recuperato" },
-  { value: "PARZIALMENTE_RECUPERATO", label: "Parzialmente recuperato" },
-  { value: "INESIGIBILE", label: "Inesigibile" },
-  { value: "PROCEDURA_CONCLUSA", label: "Procedura conclusa" },
+  { value: "POSITIVO", label: "Esito positivo" },
+  { value: "PARZIALE", label: "Esito parziale" },
+  { value: "NEGATIVO", label: "Esito negativo" },
+  { value: "CHIUSA", label: "Procedura chiusa/archiviata" },
+  { value: "ALTRO", label: "Altra definizione" },
 ] as const;
 
 export type EsitoGiudiziale = (typeof ESITI_GIUDIZIALI)[number]["value"];
 
+/** Valori legacy ancora presenti in DB — solo display. */
+const ESITO_LEGACY_LABELS: Record<string, string> = {
+  RECUPERATO: "Esito positivo",
+  PARZIALMENTE_RECUPERATO: "Esito parziale",
+  INESIGIBILE: "Esito negativo",
+  PROCEDURA_CONCLUSA: "Procedura chiusa/archiviata",
+};
+
 export function labelEsitoGiudiziale(value?: string | null) {
-  return ESITI_GIUDIZIALI.find((e) => e.value === value)?.label ?? value ?? "—";
+  if (!value) return "—";
+  return (
+    ESITI_GIUDIZIALI.find((e) => e.value === value)?.label ||
+    ESITO_LEGACY_LABELS[value] ||
+    value
+  );
 }
 
 export function labelStatoProcedura(value?: string | null) {

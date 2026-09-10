@@ -111,6 +111,13 @@ function FragmentRow({
   );
 }
 
+/** Larghezza minima tabella: cresce con i codici scarico del perimetro. */
+function tableMinWidthPx(codiciCount: number) {
+  const fixed = 8 * 92;
+  const perCodice = 3 * 88;
+  return Math.max(1200, fixed + Math.max(codiciCount, 1) * perCodice);
+}
+
 function Intestazione({ codiciScarico }: { codiciScarico: string[] }) {
   const thBase =
     "border border-[#b8c4d0] px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight text-[#132033]";
@@ -173,6 +180,35 @@ function Intestazione({ codiciScarico }: { codiciScarico: string[] }) {
   );
 }
 
+function TabellaScroll({
+  codiciScarico,
+  children,
+  className,
+  titleClassName,
+  title,
+}: {
+  codiciScarico: string[];
+  children: React.ReactNode;
+  className: string;
+  titleClassName: string;
+  title: React.ReactNode;
+}) {
+  return (
+    <div className={`min-w-0 max-w-full ${className}`}>
+      <div className={titleClassName}>{title}</div>
+      <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+        <table
+          className="w-max max-w-none border-collapse"
+          style={{ minWidth: tableMinWidthPx(codiciScarico.length) }}
+        >
+          <Intestazione codiciScarico={codiciScarico} />
+          {children}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function StatisticheGriglia({
   sezioni,
   totale,
@@ -196,7 +232,7 @@ export function StatisticheGriglia({
   ].sort();
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-[#b8c4d0] bg-[#f5f7fa] px-3 py-2 text-xs text-[#132033]">
         <span>
           <span className="font-semibold">Data:</span> {dataReport}
@@ -208,51 +244,47 @@ export function StatisticheGriglia({
       </div>
 
       {sezioni.map((sez) => (
-        <div
+        <TabellaScroll
           key={sez.perimetro}
-          className="overflow-auto rounded border border-[#b8c4d0] bg-white shadow-sm"
+          codiciScarico={sez.codiciScarico}
+          className="rounded border border-[#b8c4d0] bg-white shadow-sm"
+          titleClassName="border-b border-[#b8c4d0] bg-[#e8eef4] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#132033]"
+          title={<>Perimetro {sez.perimetro}</>}
         >
-          <div className="border-b border-[#b8c4d0] bg-[#e8eef4] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#132033]">
-            Perimetro {sez.perimetro}
-          </div>
-          <table className="w-full min-w-[1200px] border-collapse">
-            <Intestazione codiciScarico={sez.codiciScarico} />
-            <tbody>
-              {sez.righe.map((riga, i) => (
-                <Riga
-                  key={`${riga.esa}-${riga.mandato}-${riga.perimetro}-${riga.lotto}-${i}`}
-                  riga={riga}
-                  nascondiImporti={nascondiImporti}
-                />
-              ))}
-              {!sez.righe.length ? (
-                <tr>
-                  <td
-                    colSpan={colspanTabellaStatistiche(sez.codiciScarico)}
-                    className="border border-[#b8c4d0] bg-white px-3 py-4 text-center text-xs text-[var(--muted)]"
-                  >
-                    Nessuna pratica nel periodo · tutti gli operatori del gruppo
-                  </td>
-                </tr>
-              ) : null}
-              <Riga riga={sez.subtotale} nascondiImporti={nascondiImporti} />
-            </tbody>
-          </table>
-        </div>
+          <tbody>
+            {sez.righe.map((riga, i) => (
+              <Riga
+                key={`${riga.esa}-${riga.mandato}-${riga.perimetro}-${riga.lotto}-${i}`}
+                riga={riga}
+                nascondiImporti={nascondiImporti}
+              />
+            ))}
+            {!sez.righe.length ? (
+              <tr>
+                <td
+                  colSpan={colspanTabellaStatistiche(sez.codiciScarico)}
+                  className="border border-[#b8c4d0] bg-white px-3 py-4 text-center text-xs text-[var(--muted)]"
+                >
+                  Nessuna pratica nel periodo · tutti gli operatori del gruppo
+                </td>
+              </tr>
+            ) : null}
+            <Riga riga={sez.subtotale} nascondiImporti={nascondiImporti} />
+          </tbody>
+        </TabellaScroll>
       ))}
 
       {mostraTotaliAzienda && sezioni.length > 1 ? (
-        <div className="overflow-auto rounded border-2 border-[#132033] bg-white shadow-sm">
-          <div className="border-b border-[#132033] bg-[#132033] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white">
-            Totale agenzia · tutti i perimetri
-          </div>
-          <table className="w-full min-w-[1200px] border-collapse">
-            <Intestazione codiciScarico={codiciTotaleAgenzia} />
-            <tbody>
-              <Riga riga={totale} nascondiImporti={nascondiImporti} />
-            </tbody>
-          </table>
-        </div>
+        <TabellaScroll
+          codiciScarico={codiciTotaleAgenzia}
+          className="rounded border-2 border-[#132033] bg-white shadow-sm"
+          titleClassName="border-b border-[#132033] bg-[#132033] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"
+          title="Totale agenzia · tutti i perimetri"
+        >
+          <tbody>
+            <Riga riga={totale} nascondiImporti={nascondiImporti} />
+          </tbody>
+        </TabellaScroll>
       ) : null}
 
       <p className="text-[10px] text-[var(--muted)]">

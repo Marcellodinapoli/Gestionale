@@ -100,11 +100,6 @@ function notaStorico(
         `GIUDIZIALE · Richiesta valutazione legale (stato: In attesa di valutazione legale). ` +
         `Motivo passaggio: ${motivoLabel}.`
       );
-    case "AVVIA_PROCEDURA":
-      return (
-        `GIUDIZIALE · Giudiziale avviato – procedura da definire. ` +
-        `Motivo passaggio: ${motivoLabel}.`
-      );
   }
 }
 
@@ -114,8 +109,6 @@ function redirectForAzione(azione: AzioneAvvioGiudiziale, praticaId: string): st
       return `/pratiche/${praticaId}`;
     case "RICHIEDI_VALUTAZIONE":
       return `/pratiche/${praticaId}/valutazione-legale`;
-    case "AVVIA_PROCEDURA":
-      return `/pratiche/${praticaId}/strategia-giudiziale`;
   }
 }
 
@@ -222,8 +215,6 @@ export async function confermaAvvioGiudizialeAction(
     ok = "Fase giudiziale archiviata senza azione (pratica consultabile)";
   } else if (input.azione === "RICHIEDI_VALUTAZIONE") {
     ok = "Richiesta valutazione legale registrata";
-  } else if (input.azione === "AVVIA_PROCEDURA") {
-    ok = "Fase giudiziale avviata – procedura da definire";
   }
 
   return { ok, redirectTo };
@@ -358,7 +349,13 @@ export type StrategiaProceduraFormPayload = {
   statoProcedura?: string | null;
   eventiStorico?: string | null;
   costiSostenuti?: string | null;
+  /** JSON voci spesa giudiziale (fonte dettaglio Legal). */
+  speseGiudizialiJson?: string | null;
   esitoGiudiziale?: string | null;
+  /** Data esito YYYY-MM-DD o ISO. */
+  dataEsito?: string | null;
+  /** Importo recuperato informativo (non crea Incasso). */
+  importoRecuperato?: number | null;
   noteLegaliOperatori?: string | null;
 };
 
@@ -424,7 +421,10 @@ export async function salvaStrategiaProceduraAction(
     statoProcedura: input.statoProcedura || "IN_CORSO",
     eventiStorico: input.eventiStorico,
     costiSostenuti: input.costiSostenuti,
+    speseGiudizialiJson: input.speseGiudizialiJson,
     esitoGiudiziale: input.esitoGiudiziale || null,
+    dataEsito: input.dataEsito || null,
+    importoRecuperato: input.importoRecuperato ?? null,
     noteLegaliOperatori: input.noteLegaliOperatori,
     strategiaAggiornataAt: now,
     createdById: user.id,
@@ -494,6 +494,9 @@ export async function registraEsitoGiudizialeAction(
   if (!ESITI_GIUDIZIALI.some((e) => e.value === input.esitoGiudiziale)) {
     return { error: "Esito non valido" };
   }
+  if (!input.dataEsito?.trim()) {
+    return { error: "Indica la data esito" };
+  }
 
   const now = new Date();
   await saveStrategiaProcedura(user, praticaId, {
@@ -507,7 +510,10 @@ export async function registraEsitoGiudizialeAction(
     statoProcedura: "CONCLUSA",
     eventiStorico: input.eventiStorico,
     costiSostenuti: input.costiSostenuti,
+    speseGiudizialiJson: input.speseGiudizialiJson,
     esitoGiudiziale: input.esitoGiudiziale,
+    dataEsito: input.dataEsito,
+    importoRecuperato: input.importoRecuperato ?? null,
     noteLegaliOperatori: input.noteLegaliOperatori,
     strategiaAggiornataAt: now,
     esitoRegistratoAt: now,
@@ -515,9 +521,15 @@ export async function registraEsitoGiudizialeAction(
     createdById: user.id,
   });
 
+  const importoNota =
+    input.importoRecuperato != null && Number.isFinite(Number(input.importoRecuperato))
+      ? ` Importo recuperato (info): € ${Number(input.importoRecuperato).toFixed(2)}.`
+      : "";
   const nota =
-    `GIUDIZIALE · Esito registrato: ${labelEsitoGiudiziale(input.esitoGiudiziale)}. ` +
-    `Strategia: ${labelStrategiaScelta(input.strategiaScelta)}.`;
+    `GIUDIZIALE · Esito registrato: ${labelEsitoGiudiziale(input.esitoGiudiziale)}` +
+    ` (data ${input.dataEsito.trim()}).` +
+    importoNota +
+    ` Strategia: ${labelStrategiaScelta(input.strategiaScelta)}.`;
 
   await attivitaDbFromUser(user).create({
     data: {

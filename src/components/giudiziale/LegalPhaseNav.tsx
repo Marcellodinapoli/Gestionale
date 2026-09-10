@@ -9,9 +9,8 @@ const LABELS: Record<LegalPhaseKey, string> = {
   strategia: "Strategia",
 };
 
-const HUB_HREFS: Record<LegalPhaseKey, string> = {
+const HUB_HREFS: Record<Exclude<LegalPhaseKey, "avvio">, string> = {
   panoramica: "/legal",
-  avvio: "/legal/avvio",
   valutazione: "/legal/valutazione",
   strategia: "/legal/strategia",
 };
@@ -29,7 +28,15 @@ function praticaHref(praticaId: string, key: LegalPhaseKey): string {
   }
 }
 
-const ORDER: LegalPhaseKey[] = [
+/** Da menu Legal: senza Avvio (si avvia solo dalla pratica). */
+const ORDER_HUB: Exclude<LegalPhaseKey, "avvio">[] = [
+  "panoramica",
+  "valutazione",
+  "strategia",
+];
+
+/** Da pratica: include Avvio. */
+const ORDER_PRATICA: LegalPhaseKey[] = [
   "panoramica",
   "avvio",
   "valutazione",
@@ -37,7 +44,8 @@ const ORDER: LegalPhaseKey[] = [
 ];
 
 /**
- * Navigazione unica fase Legal — stesse 4 sezioni da menu e da pratica.
+ * Navigazione fase Legal.
+ * Avvio compare solo nel contesto pratica (dopo «Avvia giudiziale»).
  */
 export function LegalPhaseNav({
   attivo,
@@ -47,14 +55,17 @@ export function LegalPhaseNav({
   /** Se valorizzato, Avvio/Valutazione/Strategia puntano alla pratica corrente. */
   praticaId?: string;
 }) {
+  const keys = praticaId ? ORDER_PRATICA : ORDER_HUB;
   return (
     <nav
       className="flex flex-wrap gap-1 rounded-lg border border-[var(--line)] bg-[#dce4ec] p-1"
       aria-label="Sezioni Legal"
     >
-      {ORDER.map((key) => {
+      {keys.map((key) => {
         const on = key === attivo;
-        const href = praticaId ? praticaHref(praticaId, key) : HUB_HREFS[key];
+        const href = praticaId
+          ? praticaHref(praticaId, key)
+          : HUB_HREFS[key as Exclude<LegalPhaseKey, "avvio">];
         if (on) {
           return (
             <span
