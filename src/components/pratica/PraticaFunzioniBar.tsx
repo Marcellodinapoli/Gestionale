@@ -753,7 +753,7 @@ export function PraticaFunzioniBar({
 
       <Modal
         open={popup === "incasso"}
-        title="Inserisci incasso"
+        title="Inserisci incasso / piano effetti"
         onClose={() => setPopup(null)}
       >
         <IncassoPopup

@@ -14,6 +14,11 @@ import { documentiDbFromUser } from "@/lib/documentiRepo";
 import { createManyPianoRate, pianoRateDbFromUser } from "@/lib/pianoRateRepo";
 import { attivitaDbFromUser, toggleFissaAttivita } from "@/lib/attivitaRepo";
 import { aggiornaIncassoWithSideEffects, eliminaIncassoWithSideEffects, registraIncassoWithSideEffects } from "@/lib/incassiRepo";
+import {
+  buildPianoEffettiSchedule,
+  splitImportiPianoEffetti,
+} from "@/lib/incassoPianoEffetti";
+import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
 import { assertCan, can, canClearCodiceScarico, canEditCodiceScaricoBk, canManageMandantePerimetri, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
@@ -1667,6 +1672,91 @@ export async function addIncassoAction(formData: FormData) {
         }
       : {}),
   });
+  revalidatePath("/provigioni");
+  revalidatePath("/");
+}
+
+/**
+ * Registra un piano di effetti (cambiali / assegni) come serie di incassi.
+ * Distribuzione: tutte nel mese di competenza oppure una al mese (come CreditCalc).
+ */
+export async function addIncassiPianoEffettiAction(formData: FormData) {
+  const user = await requireWritablePermission("incassi:create");
+  const praticaId = String(formData.get("praticaId") || "");
+  await assertPraticaEditable(user, praticaId);
+
+  const n = Math.floor(Number(formData.get("numeroEffetti") || 0));
+  const totale = Number(formData.get("importoTotale") || 0);
+  const metodoRaw = String(formData.get("metodo") || "").trim();
+  const metodo =
+    metodoRaw === "assegni" || metodoRaw === "pdr_cambiali"
+      ? metodoRaw
+      : "";
+  const distribuzioneRaw = String(formData.get("distribuzione") || "").trim();
+  const distribuzione =
+    distribuzioneRaw === "mensile" ? "mensile" : "mese_corrente";
+  const modo = String(formData.get("modo") || "ve").trim() || "ve";
+  const dataInizio =
+    parseDateOnly(String(formData.get("dataInizio") || "")) || new Date();
+  const causaleBase = String(formData.get("causale") || "").trim();
+
+  if (!metodo) fail("Seleziona cambiali o assegni");
+  if (!Number.isFinite(n) || n < 2 || n > 360) {
+    fail("Indica da 2 a 360 effetti");
+  }
+  if (!Number.isFinite(totale) || totale <= 0) fail("Importo totale non valido");
+
+  const importi = splitImportiPianoEffetti(totale, n);
+  const lines = buildPianoEffettiSchedule({
+    dataInizio,
+    n,
+    importi,
+    distribuzione,
+  });
+  if (!lines.length) fail("Piano effetti non valido");
+
+  for (const line of lines) {
+    await registraIncassoSuPratica({
+      userId: user.id,
+      praticaId,
+      importo: line.importo,
+      metodo,
+      modo,
+      data: line.data,
+      dataScadenza: line.dataScadenza,
+      causale:
+        (causaleBase ? `${causaleBase} · ` : "") +
+        `${metodoIncassoLabel(metodo)} ${line.numero}/${lines.length}`,
+    });
+  }
+
+  const distLabel =
+    distribuzione === "mensile" ? "una al mese" : "tutte nel mese corrente";
+  const nota =
+    `Piano effetti registrato · ${metodoIncassoLabel(metodo)} · ` +
+    `${lines.length} effetti · totale ${totale.toFixed(2)} · ${distLabel}`;
+
+  await attivitaDbFromUser(user).create({
+    data: {
+      praticaId,
+      userId: user.id,
+      tipo: "NOTA",
+      nota,
+    },
+  });
+
+  await writeAudit({
+    userId: user.id,
+    tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug,
+    action: "incassi_piano_effetti",
+    entity: "pratica",
+    entityId: praticaId,
+    dettaglio: nota,
+  });
+
+  revalidatePath(`/pratiche/${praticaId}`);
+  revalidatePath("/incassi");
   revalidatePath("/provigioni");
   revalidatePath("/");
 }
