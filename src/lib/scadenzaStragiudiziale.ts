@@ -1,4 +1,5 @@
 import { addWorkingDays, startOfLocalDay } from "@/lib/workingDays";
+import { isStragiudizialePrevistoSulLotto } from "@/lib/conferimentoLegale";
 
 /** Anticipo per avvio giudiziale (giorni lavorativi). */
 export const PREAVVISO_STRAGIUDIZIALE_GG_LAVORATIVI = 10;
@@ -7,12 +8,15 @@ export const PREAVVISO_STRAGIUDIZIALE_PARAM = "preavvisoStragiudiziale";
 
 /**
  * Scadenza stragiudiziale effettiva:
- * dataPassaggioGiudiziale se valorizzata, altrimenti scadenza mandato.
+ * - se attività stragiudiziale non prevista (solo giudiziale) → null (resta solo scadenza mandato)
+ * - altrimenti dataPassaggioGiudiziale se valorizzata, altrimenti scadenza mandato
  */
 export function scadenzaStragiudizialeEffettiva(input: {
   scadenza?: Date | string | null;
   dataPassaggioGiudiziale?: Date | string | null;
+  conferimentoTipo?: string | null;
 }): Date | null {
+  if (!isStragiudizialePrevistoSulLotto(input.conferimentoTipo)) return null;
   const passaggio = toDate(input.dataPassaggioGiudiziale);
   if (passaggio) return startOfLocalDay(passaggio);
   const scad = toDate(input.scadenza);
@@ -70,22 +74,34 @@ export const STATI_GIUDIZIALE_ESCLUSI_PREAVVISO = [
   "CONCLUSA_CON_ESITO",
 ] as const;
 
+/** Esclude lotti solo giudiziali dalla scadenza/preavviso stragiudiziale. */
+function whereStragiudizialePrevisto(): Record<string, unknown> {
+  return {
+    NOT: { conferimentoTipo: "GIUDIZIALE" },
+  };
+}
+
 /**
  * Where Prisma: scadenza stragiudiziale effettiva in intervallo (Da/A inclusivo).
- * effective = coalesce(dataPassaggioGiudiziale, scadenza).
+ * effective = coalesce(dataPassaggioGiudiziale, scadenza); escluso solo-giudiziale.
  */
 export function whereScadenzaStragiudizialeRange(range: {
   gte?: Date;
   lt?: Date;
 }): Record<string, unknown> {
   return {
-    OR: [
+    AND: [
+      whereStragiudizialePrevisto(),
       {
-        dataPassaggioGiudiziale: { not: null, ...range },
-      },
-      {
-        dataPassaggioGiudiziale: null,
-        scadenza: { not: null, ...range },
+        OR: [
+          {
+            dataPassaggioGiudiziale: { not: null, ...range },
+          },
+          {
+            dataPassaggioGiudiziale: null,
+            scadenza: { not: null, ...range },
+          },
+        ],
       },
     ],
   };

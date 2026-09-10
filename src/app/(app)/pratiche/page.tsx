@@ -380,6 +380,7 @@ export default async function PratichePage({
     const scadStrag = scadenzaStragiudizialeEffettiva({
       scadenza: p.scadenza,
       dataPassaggioGiudiziale: p.dataPassaggioGiudiziale,
+      conferimentoTipo: p.conferimentoTipo,
     });
     return {
       id: p.id,

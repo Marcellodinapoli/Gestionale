@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 import { importIncassiCsvAction } from "@/actions/core";
+import { salvaConferimentoImportBatchAction } from "@/actions/conferimentoImport";
 import { importPraticheCsvChunked } from "@/lib/importPraticheClient";
+import {
+  CONFERIMENTO_TIPI,
+  isConferimentoTipo,
+  type ConferimentoTipo,
+} from "@/lib/conferimentoLegale";
 import {
   ConferimentoImportPopup,
   type ConferimentoPopupPayload,
@@ -25,6 +31,7 @@ export type LottoEsistenteOption = {
   lotto: string;
   affidoIl: string;
   scadenzaMandato?: string | null;
+  conferimentoTipo?: string | null;
   nPratiche: number;
 };
 
@@ -90,6 +97,7 @@ export function ImportForm({
     lotto: string;
     affidoIl: string;
     scadenzaMandato?: string | null;
+    conferimentoTipo?: string | null;
   } | null;
   onClose?: () => void;
 }) {
@@ -109,6 +117,13 @@ export function ImportForm({
   const [scadenzaMandato, setScadenzaMandato] = useState(
     prefill?.scadenzaMandato ?? ""
   );
+  const [conferimentoTipo, setConferimentoTipo] = useState<ConferimentoTipo | "">(
+    prefill?.conferimentoTipo && isConferimentoTipo(prefill.conferimentoTipo)
+      ? prefill.conferimentoTipo
+      : ""
+  );
+  const [vuoleDataPassaggio, setVuoleDataPassaggio] = useState(false);
+  const [dataPassaggioGiudiziale, setDataPassaggioGiudiziale] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -123,6 +138,10 @@ export function ImportForm({
     setLotto(prefill.lotto);
     setAffidoIl(prefill.affidoIl);
     setScadenzaMandato(prefill.scadenzaMandato ?? "");
+    const ct = prefill.conferimentoTipo?.trim() || "";
+    setConferimentoTipo(isConferimentoTipo(ct) ? ct : "");
+    setVuoleDataPassaggio(false);
+    setDataPassaggioGiudiziale("");
     setMessage(null);
     setMessageKind(null);
     setImportSummary(null);
@@ -134,6 +153,7 @@ export function ImportForm({
     prefill?.lotto,
     prefill?.affidoIl,
     prefill?.scadenzaMandato,
+    prefill?.conferimentoTipo,
   ]);
 
   const mandante = useMemo(
@@ -165,6 +185,13 @@ export function ImportForm({
   }, [kind, mandanteId, perimetro, lotto, lottiEsistenti]);
 
   useEffect(() => {
+    if (kind !== "pratiche" || !lottoMatch?.conferimentoTipo) return;
+    const ct = lottoMatch.conferimentoTipo.trim();
+    if (!isConferimentoTipo(ct)) return;
+    setConferimentoTipo((prev) => prev || ct);
+  }, [kind, lottoMatch?.id, lottoMatch?.conferimentoTipo]);
+
+  useEffect(() => {
     if (!pending || kind === "pratiche") return;
     setProgress(4);
     const id = window.setInterval(() => {
@@ -191,6 +218,12 @@ export function ImportForm({
     if (!file) {
       setMessage("Seleziona un file CSV da importare");
       fileRef.current?.focus();
+      return;
+    }
+
+    if (kind === "pratiche" && !conferimentoTipo) {
+      setMessageKind("error");
+      setMessage("Seleziona il tipo di conferimento (stragiudiziale / giudiziale / entrambi)");
       return;
     }
 
@@ -223,7 +256,33 @@ export function ImportForm({
           setMessage(result.ok);
           setImportSummary(result.importSummary);
           clearFile();
-          if (result.importSummary.batchId) {
+          if (result.importSummary.batchId && conferimentoTipo) {
+            const scad =
+              result.importSummary.scadenzaMandato || scadenzaMandato || null;
+            const conf = await salvaConferimentoImportBatchAction({
+              batchId: result.importSummary.batchId,
+              conferimentoTipo,
+              dataPassaggioGiudiziale:
+                conferimentoTipo === "ENTRAMBI" &&
+                vuoleDataPassaggio &&
+                dataPassaggioGiudiziale
+                  ? dataPassaggioGiudiziale
+                  : null,
+              scadenzaMandato: scad,
+            });
+            if (conf.error) {
+              setConferimentoPopup({
+                batchId: result.importSummary.batchId,
+                lotto: result.importSummary.lotto,
+                scadenzaMandato: scad,
+                conferimentoTipo,
+              });
+              setMessageKind("error");
+              setMessage(
+                `${result.ok} — Conferimento non salvato: ${conf.error}. Completalo dal popup.`
+              );
+            }
+          } else if (result.importSummary.batchId) {
             setConferimentoPopup({
               batchId: result.importSummary.batchId,
               lotto: result.importSummary.lotto,
@@ -276,6 +335,9 @@ export function ImportForm({
     setLotto("");
     setAffidoIl(todayInputValue());
     setScadenzaMandato("");
+    setConferimentoTipo("");
+    setVuoleDataPassaggio(false);
+    setDataPassaggioGiudiziale("");
     clearFile();
     setProgress(0);
     setProgressDetail("");
@@ -435,6 +497,77 @@ export function ImportForm({
           className={fieldCls}
         />
       </label>
+
+      {kind === "pratiche" ? (
+        <fieldset className="space-y-2 rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2.5">
+          <legend className="px-1 text-xs font-semibold text-[var(--navy)]">
+            Conferimento legale del lotto
+          </legend>
+          <p className="text-[11px] text-[var(--muted)]">
+            Obbligatorio. Determina se le pratiche del lotto hanno attività stragiudiziale,
+            giudiziale o entrambe.
+          </p>
+          {CONFERIMENTO_TIPI.map((t) => (
+            <label key={t.value} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="conferimentoTipo"
+                value={t.value}
+                checked={conferimentoTipo === t.value}
+                disabled={pending}
+                onChange={() => {
+                  setConferimentoTipo(t.value);
+                  if (t.value !== "ENTRAMBI") {
+                    setVuoleDataPassaggio(false);
+                    setDataPassaggioGiudiziale("");
+                  }
+                }}
+              />
+              {t.label}
+            </label>
+          ))}
+          {conferimentoTipo === "ENTRAMBI" ? (
+            <div className="mt-1 space-y-2 border-t border-[var(--line)] pt-2">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={vuoleDataPassaggio}
+                  disabled={pending}
+                  onChange={(e) => {
+                    setVuoleDataPassaggio(e.target.checked);
+                    if (!e.target.checked) setDataPassaggioGiudiziale("");
+                    else if (!dataPassaggioGiudiziale && scadenzaMandato) {
+                      setDataPassaggioGiudiziale(scadenzaMandato);
+                    }
+                  }}
+                />
+                <span>
+                  Data intermedia di passaggio a giudiziale
+                  <span className="block text-xs text-[var(--muted)]">
+                    Opzionale. Se compilata, sulle pratiche compare come prossima attività.
+                  </span>
+                </span>
+              </label>
+              {vuoleDataPassaggio ? (
+                <label className="block text-sm">
+                  <span className="mb-0.5 block text-xs font-semibold text-[var(--danger)]">
+                    Data passaggio a giudiziale
+                  </span>
+                  <input
+                    type="date"
+                    value={dataPassaggioGiudiziale}
+                    max={scadenzaMandato || undefined}
+                    disabled={pending}
+                    onChange={(e) => setDataPassaggioGiudiziale(e.target.value)}
+                    className={fieldCls}
+                  />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+        </fieldset>
+      ) : null}
 
       {kind === "pratiche" ? (
         <div className="rounded-lg border border-[var(--line)] bg-[#f5f7fa] px-3 py-2.5 text-xs leading-relaxed text-[var(--navy)]">

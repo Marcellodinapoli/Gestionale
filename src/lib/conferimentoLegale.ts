@@ -25,3 +25,10 @@ export function isGiudizialePrevistoSulLotto(tipo?: string | null): boolean {
   const t = String(tipo || "").trim().toUpperCase();
   return t === "GIUDIZIALE" || t === "ENTRAMBI";
 }
+
+/** True se sul lotto è prevista attività stragiudiziale (o entrambi). Solo giudiziale = no. */
+export function isStragiudizialePrevistoSulLotto(tipo?: string | null): boolean {
+  const t = String(tipo || "").trim().toUpperCase();
+  if (t === "GIUDIZIALE") return false;
+  return true;
+}

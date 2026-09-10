@@ -48,6 +48,7 @@ export default async function ImportPage({
     lotto: b.lotto,
     affidoIl: b.affidoIl,
     scadenzaMandato: b.scadenzaMandato,
+    conferimentoTipo: b.conferimentoTipo,
     nPratiche: b.nPratiche,
   }));
 
@@ -61,6 +62,7 @@ export default async function ImportPage({
         lotto: integraBatch.lotto,
         affidoIl: integraBatch.affidoIl,
         scadenzaMandato: integraBatch.scadenzaMandato,
+        conferimentoTipo: integraBatch.conferimentoTipo,
       }
     : null;
 
