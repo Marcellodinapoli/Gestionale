@@ -57,6 +57,16 @@ import {
   STATI_FILTRO_PRATICHE,
   statoOperativoPratica,
 } from "@/lib/statoOperativoPratica";
+import {
+  PREAVVISO_STRAGIUDIZIALE_PARAM,
+  isPreavvisoStragiudiziale,
+  scadenzaStragiudizialeEffettiva,
+  wherePreavvisoStragiudiziale,
+} from "@/lib/scadenzaStragiudiziale";
+import {
+  ATTIVITA_GIUDIZIALE_PARAM,
+  whereAttivitaGiudiziale,
+} from "@/lib/giudiziale/avvioGiudiziale";
 
 /** Stato predefinito all’apertura dell’elenco pratiche. */
 const STATO_DEFAULT = "IN_LAVORAZIONE";
@@ -84,8 +94,12 @@ export default async function PratichePage({
   const sp = await searchParams;
 
   const isOperatore = user.role === "OPERATOR";
-  const needsStatoDefault =
-    isOperatore
+  const preavvisoAttivo = sp[PREAVVISO_STRAGIUDIZIALE_PARAM] === "1";
+  const attivitaGiudizialeAttivo = sp[ATTIVITA_GIUDIZIALE_PARAM] === "1";
+  const elencoSpecialeAttivo = preavvisoAttivo || attivitaGiudizialeAttivo;
+  const needsStatoDefault = elencoSpecialeAttivo
+    ? false
+    : isOperatore
       ? sp.stato !== STATO_DEFAULT
       : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
   const needsOperatoreDefault =
@@ -104,7 +118,15 @@ export default async function PratichePage({
     redirect(`/pratiche?${params.toString()}`);
   }
 
-  const codaNav = parseCodaNav(sp);
+  const codaNavRaw = parseCodaNav(sp);
+  const codaNav = elencoSpecialeAttivo
+    ? {
+        ...codaNavRaw,
+        filtro: codaNavRaw.filtro
+          ? { ...codaNavRaw.filtro, stato: undefined }
+          : codaNavRaw.filtro,
+      }
+    : codaNavRaw;
   const altri = parseAltriFiltri(sp);
   const { page, pageSize } = paginateParams(sp.page);
   const periCtx = await resolveGruppoPerimetroContext(user);
@@ -247,6 +269,12 @@ export default async function PratichePage({
       baseScope,
       ...(codaNav.filtro ? [codaFiltroWhere(codaNav.filtro)] : []),
       ...(Object.keys(altriWhere).length ? [altriWhere] : []),
+      ...(sp[PREAVVISO_STRAGIUDIZIALE_PARAM] === "1"
+        ? [wherePreavvisoStragiudiziale()]
+        : []),
+      ...(sp[ATTIVITA_GIUDIZIALE_PARAM] === "1"
+        ? [whereAttivitaGiudiziale()]
+        : []),
     ],
   };
 
@@ -316,6 +344,12 @@ export default async function PratichePage({
     sort: codaNav.sort,
     dir: codaNav.dir,
     ...(altri || {}),
+    ...(sp[PREAVVISO_STRAGIUDIZIALE_PARAM] === "1"
+      ? { [PREAVVISO_STRAGIUDIZIALE_PARAM]: "1" }
+      : {}),
+    ...(sp[ATTIVITA_GIUDIZIALE_PARAM] === "1"
+      ? { [ATTIVITA_GIUDIZIALE_PARAM]: "1" }
+      : {}),
   };
 
   const sortBase = { ...queryBase };
@@ -343,6 +377,10 @@ export default async function PratichePage({
     const g = p.garanti[0];
     const primaRataAperta = p.rate.find((r) => !r.pagata);
     const nRateScadute = countRateScadute(p.rate);
+    const scadStrag = scadenzaStragiudizialeEffettiva({
+      scadenza: p.scadenza,
+      dataPassaggioGiudiziale: p.dataPassaggioGiudiziale,
+    });
     return {
       id: p.id,
       numero: p.numero,
@@ -366,6 +404,8 @@ export default async function PratichePage({
       lotto: p.numeroMandante,
       dataAffidoLabel: dataIt(p.dataAffido),
       scadenzaLabel: dataIt(p.scadenza),
+      scadenzaStragiudizialeLabel: dataIt(scadStrag),
+      preavvisoStragiudiziale: isPreavvisoStragiudiziale(scadStrag),
       codScarico: codiceScaricoPratica(p.stato, p.codiceScarico),
       affidoProvvisorio: isAffidoTemporaneo(p),
       importoRataLabel: primaRataAperta ? euro(primaRataAperta.importo) : "—",
@@ -407,9 +447,26 @@ export default async function PratichePage({
           .
         </p>
       ) : null}
+      {preavvisoAttivo ? (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Elenco filtrato: pratiche in dirittura di scadenza stragiudiziale (entro 10
+          giorni lavorativi) o già scadute, ancora aperte.{" "}
+          <Link href="/pratiche" className="font-semibold underline">
+            Torna all&apos;elenco completo
+          </Link>
+        </p>
+      ) : null}
+      {attivitaGiudizialeAttivo ? (
+        <p className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+          Elenco filtrato: pratiche già in attività giudiziale (valutazione / strategia).{" "}
+          <Link href="/pratiche" className="font-semibold underline">
+            Torna all&apos;elenco completo
+          </Link>
+        </p>
+      ) : null}
       <PraticheFiltriBar
         q={sp.q}
-        stato={sp.stato}
+        stato={elencoSpecialeAttivo ? undefined : sp.stato}
         nascondiFiltroStato={user.role === "OPERATOR"}
         operatoreDefaultId={defaultOperatoreFiltroId(user.role, user.id)}
         lavorate={codaNav.filtro?.lavorate}

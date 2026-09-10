@@ -25,6 +25,7 @@ import { statoOperativoPratica } from "@/lib/statoOperativoPratica";
 import { canClearCodiceScarico, canEditCodiceScaricoBk } from "@/lib/permissions";
 import type {
   CodiceScaricoPerimetro,
+  PagamentiIntestazioniPerimetro,
   PdrConfigPerimetro,
   StralcioConfigPerimetro,
 } from "@/lib/mandantePerimetri";
@@ -216,6 +217,7 @@ export function PraticaSchedaOperatore({
   codiciScaricoOperatore = [],
   codiciScaricoBkOff = [],
   smsPresets = [],
+  smsPagamenti,
   pdrDisponibile = false,
   pdrConfig,
   stralcioConfig,
@@ -243,6 +245,8 @@ export function PraticaSchedaOperatore({
   codiciScaricoOperatore?: CodiceScaricoPerimetro[];
   codiciScaricoBkOff?: CodiceScaricoPerimetro[];
   smsPresets?: SmsPreset[];
+  /** Coordinate pagamento del perimetro (per placeholder SMS). */
+  smsPagamenti?: PagamentiIntestazioniPerimetro | null;
   /** Fasce PDR configurate sul perimetro mandante. */
   pdrDisponibile?: boolean;
   pdrConfig?: PdrConfigPerimetro;
@@ -411,6 +415,8 @@ export function PraticaSchedaOperatore({
                 operatoreName={currentUserName}
                 prefissoChiamata={prefissoChiamata}
                 smsPresets={smsPresets}
+                smsPagamenti={smsPagamenti}
+                numeroPratica={pratica.numero}
                 importoNetto={nettoDaPagare}
                 importoConcordatoIniziale={pratica.promessaImporto}
               />
@@ -424,6 +430,8 @@ export function PraticaSchedaOperatore({
             operatoreName={currentUserName}
             prefissoChiamata={prefissoChiamata}
             smsPresets={smsPresets}
+            smsPagamenti={smsPagamenti}
+            numeroPratica={pratica.numero}
             importoNetto={nettoDaPagare}
             importoConcordatoIniziale={pratica.promessaImporto}
           />
@@ -443,8 +451,8 @@ export function PraticaSchedaOperatore({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-[var(--line)] bg-white">
-        <div className="grid grid-cols-2 gap-0 sm:grid-cols-3 lg:grid-cols-9">
+      <div className="shrink-0 overflow-x-auto border-t border-[var(--line)] bg-white">
+        <div className="grid min-w-[640px] grid-cols-10 gap-0">
           <AnagraficaField
             label="Debito residuo"
             value={

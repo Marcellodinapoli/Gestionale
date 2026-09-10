@@ -24,6 +24,7 @@ import { parsePerimetri, perimetroPerNome } from "@/lib/mandantePerimetri";
 import { aggiuntivoFiltroWhere } from "@/lib/filtriAggiuntivoWhere";
 import { hasAggiuntivoFiltro } from "@/lib/filtriAggiuntivoUi";
 import type { MandantePerimetriRef } from "@/lib/filtriCodScaricoPerimetro";
+import { whereScadenzaStragiudizialeRange } from "@/lib/scadenzaStragiudiziale";
 
 function applyEqNe(
   cond: Prisma.PraticaWhereInput,
@@ -208,6 +209,14 @@ export function altriFiltriWhere(
 
   const scadenza = dateRange(f.scadenzaDa, f.scadenzaA);
   if (scadenza) and.push({ scadenza });
+
+  const scadenzaStrag = dateRange(
+    f.scadenzaStragiudizialeDa,
+    f.scadenzaStragiudizialeA
+  );
+  if (scadenzaStrag) {
+    and.push(whereScadenzaStragiudizialeRange(scadenzaStrag) as Prisma.PraticaWhereInput);
+  }
 
   if (f.mandato) {
     and.push(applyEqNe({ mandanteId: f.mandato }, f.mandatoOp));

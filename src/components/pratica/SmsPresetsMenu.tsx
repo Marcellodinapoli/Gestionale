@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { euro } from "@/lib/domainFormat";
+import type { PagamentiIntestazioniPerimetro } from "@/lib/mandantePerimetri";
 import {
-  compilaSmsConImporto,
+  compilaSmsTesto,
   importoSmsEffettivo,
   smsRichiedeImporto,
   type SmsPreset,
@@ -17,6 +18,8 @@ export function SmsPresetsMenu({
   presets,
   importoNetto,
   importoConcordatoIniziale,
+  numeroPratica,
+  pagamenti,
   onPick,
   onClose,
 }: {
@@ -26,6 +29,8 @@ export function SmsPresetsMenu({
   presets: SmsPreset[];
   importoNetto: number;
   importoConcordatoIniziale?: number | null;
+  numeroPratica?: string | null;
+  pagamenti?: PagamentiIntestazioniPerimetro | null;
   onPick: (testo: string, titolo: string) => void;
   onClose: () => void;
 }) {
@@ -68,7 +73,17 @@ export function SmsPresetsMenu({
     [importoNetto, importoConcordato]
   );
 
-  const anteprima = compose ? compilaSmsConImporto(compose.testo, importoEffettivo) : "";
+  const ctxBase = useMemo(
+    () => ({
+      numeroPratica: numeroPratica ?? undefined,
+      pagamenti: pagamenti ?? undefined,
+    }),
+    [numeroPratica, pagamenti]
+  );
+
+  const anteprima = compose
+    ? compilaSmsTesto(compose.testo, { ...ctxBase, importo: importoEffettivo })
+    : "";
 
   const wide = Boolean(compose);
   const left = Math.min(
@@ -90,7 +105,7 @@ export function SmsPresetsMenu({
       setCompose(preset);
       return;
     }
-    invia(preset.testo, preset.titolo);
+    invia(compilaSmsTesto(preset.testo, ctxBase), preset.titolo);
   }
 
   return createPortal(

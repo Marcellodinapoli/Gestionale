@@ -29,6 +29,10 @@ export type PraticaListaRow = {
   lotto: string | null;
   dataAffidoLabel: string;
   scadenzaLabel: string;
+  /** Scadenza stragiudiziale effettiva (passaggio o mandato). */
+  scadenzaStragiudizialeLabel: string;
+  /** True se entro 10 gg lav. o già scaduta (non chiusa). */
+  preavvisoStragiudiziale?: boolean;
   codScarico: string | null;
   affidoProvvisorio: boolean;
   importoRataLabel: string;
@@ -57,6 +61,7 @@ const LIST_COLS = [
   { key: "telefono", label: "Telefono", sortKey: "telefono" },
   { key: "dataAffido", label: "Data affido", sortKey: "dataAffido" },
   { key: "scadenza", label: "Scad. mandato", sortKey: "scadenza" },
+  { key: "scadenzaStragiud", label: "Scad. stragiud.", sortKey: "scadenzaStragiud" },
   { key: "mandante", label: "Mandante", sortKey: "mandante" },
   { key: "lotto", label: "Perimetro", sortKey: "lotto" },
   { key: "assegnatario", label: "Assegnatario", sortKey: "assegnatario" },
@@ -98,6 +103,18 @@ function cellData(p: PraticaListaRow, key: ColKey): ReactNode {
       return p.dataAffidoLabel;
     case "scadenza":
       return p.scadenzaLabel;
+    case "scadenzaStragiud":
+      return (
+        <span
+          className={
+            p.preavvisoStragiudiziale
+              ? "font-semibold text-amber-800"
+              : undefined
+          }
+        >
+          {p.scadenzaStragiudizialeLabel}
+        </span>
+      );
     case "mandante":
       return p.mandanteCodice;
     case "lotto":

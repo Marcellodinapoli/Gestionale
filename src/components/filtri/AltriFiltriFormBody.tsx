@@ -434,6 +434,13 @@ export function AltriFiltriFormBody({
         </SelectFiltroField>
         <DaA label="Data affido da / a" keyDa="affidoDa" keyA="affidoA" value={value} onChange={onChange} />
         <DaA label="Scad. mandato da / a" keyDa="scadenzaDa" keyA="scadenzaA" value={value} onChange={onChange} />
+        <DaA
+          label="Scad. stragiudiziale da / a"
+          keyDa="scadenzaStragiudizialeDa"
+          keyA="scadenzaStragiudizialeA"
+          value={value}
+          onChange={onChange}
+        />
         <Field label="Cod. scarico">
           <CodScaricoFiltroControls
             codScarico={value.codScarico}

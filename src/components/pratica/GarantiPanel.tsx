@@ -4,6 +4,7 @@
 
 import { AnagraficaRecapiti } from "@/components/pratica/AnagraficaRecapiti";
 import type { SmsPreset } from "@/lib/smsPreimpostati";
+import type { PagamentiIntestazioniPerimetro } from "@/lib/mandantePerimetri";
 
 import {
 
@@ -54,6 +55,8 @@ export function GarantiPanel({
   smsPresets = [],
   importoNetto = 0,
   importoConcordatoIniziale,
+  numeroPratica,
+  smsPagamenti,
 }: {
   praticaId: string;
   garanti: Garante[];
@@ -63,6 +66,8 @@ export function GarantiPanel({
   smsPresets?: SmsPreset[];
   importoNetto?: number;
   importoConcordatoIniziale?: number | null;
+  numeroPratica?: string | null;
+  smsPagamenti?: PagamentiIntestazioniPerimetro | null;
 }) {
 
   return (
@@ -143,6 +148,8 @@ export function GarantiPanel({
                     smsPresets={smsPresets}
                     importoNetto={importoNetto}
                     importoConcordatoIniziale={importoConcordatoIniziale}
+                    numeroPratica={numeroPratica}
+                    smsPagamenti={smsPagamenti}
                   />
 
                 </div>

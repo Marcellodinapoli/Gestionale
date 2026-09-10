@@ -28,6 +28,7 @@ import {
   emptyStralcioConfig,
   emptyLatoEconomico,
 } from "@/lib/mandantePerimetri";
+import { SMS_PLACEHOLDERS } from "@/lib/smsPreimpostati";
 
 const inputCls = "h-9 w-full rounded border border-[var(--line)] px-2 text-sm";
 const smallInputCls = "h-8 w-full rounded border border-[var(--line)] px-2 text-xs";
@@ -1351,12 +1352,35 @@ function SmsPerimetroEditor({
     setNuovoTesto("");
   }
 
+  function insertPlaceholder(key: string) {
+    if (editingIdx != null) {
+      setEditTesto((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${key}`);
+      return;
+    }
+    setNuovoTesto((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${key}`);
+  }
+
   return (
     <div className="rounded border border-[var(--line)] bg-white p-3">
       <p className="text-xs font-bold uppercase text-[#1a365d]">Messaggi SMS preimpostati</p>
-      <p className="mb-3 text-[10px] text-[var(--muted)]">
-        Messaggi SMS disponibili sulle pratiche di questo perimetro.
+      <p className="mb-2 text-[10px] text-[var(--muted)]">
+        Messaggi SMS disponibili sulle pratiche di questo perimetro. Usa i placeholder
+        per importo, n. pratica e coordinate pagamento (compilate nella sezione
+        intestazioni sopra).
       </p>
+      <div className="mb-3 flex flex-wrap gap-1">
+        {SMS_PLACEHOLDERS.map((ph) => (
+          <button
+            key={ph.key}
+            type="button"
+            title={ph.hint}
+            onClick={() => insertPlaceholder(ph.key)}
+            className="rounded border border-[var(--line)] bg-[#f4f7fa] px-1.5 py-0.5 font-mono text-[10px] text-[var(--navy)] hover:bg-[#e8eef4]"
+          >
+            {ph.key}
+          </button>
+        ))}
+      </div>
       {sms.length > 0 ? (
         <div className="mb-2 space-y-1.5">
           {sms.map((item, idx) => (
@@ -1716,6 +1740,10 @@ export function PerimetriMandanteSection({
                     value={p.stralcio}
                     onChange={(stralcio) => updatePerimetro(p.id, { stralcio })}
                   />
+                  <SmsPerimetroEditor
+                    sms={p.smsPreimpostati}
+                    onChange={(smsPreimpostati) => updatePerimetro(p.id, { smsPreimpostati })}
+                  />
                   {p.codiciScarico.length > 0 && !perimetroProvvigioniUnlocked(p) ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
                       <p className="text-sm font-semibold text-amber-950">
@@ -1723,8 +1751,7 @@ export function PerimetriMandanteSection({
                       </p>
                       <p className="mt-1 text-xs text-amber-900">
                         Hai creato o modificato i codici scarico. Salva la mandante per
-                        sbloccare provvigioni, scaglioni e messaggi SMS con i codici
-                        appena definiti.
+                        sbloccare provvigioni e scaglioni con i codici appena definiti.
                       </p>
                       <button
                         type="submit"
@@ -1775,10 +1802,6 @@ export function PerimetriMandanteSection({
                       </>
                     );
                   })()}
-                  <SmsPerimetroEditor
-                    sms={p.smsPreimpostati}
-                    onChange={(smsPreimpostati) => updatePerimetro(p.id, { smsPreimpostati })}
-                  />
                     </>
                   ) : null}
                 </div>
@@ -1797,7 +1820,7 @@ export function PerimetriMandanteSection({
               : `${perimetriPendingCodiciSave.length} perimetri in attesa di salvataggio`}
           </p>
           <p className="mt-1 text-xs text-amber-900">
-            Salva la mandante per sbloccare provvigioni e SMS sui perimetri con codici
+            Salva la mandante per sbloccare provvigioni sui perimetri con codici
             scarico appena creati o modificati.
           </p>
           <button

@@ -32,6 +32,7 @@ import {
   resolvePerimetroPratica,
   stralcioConfigPerPratica,
   smsPreimpostatiPerPratica,
+  pagamentiConfigPerPratica,
 } from "@/lib/mandantePerimetri";
 import { smsPreimpostatiEffettivi } from "@/lib/smsPreimpostati";
 import { PraticaCollegatePanel } from "@/components/pratica/PraticaCollegatePanel";
@@ -175,6 +176,11 @@ export default async function PraticaDetailPage({
       pratica.mandante.smsPreimpostati
     )
   );
+  const smsPagamenti = pagamentiConfigPerPratica(
+    pratica.mandante.perimetri,
+    pratica.numeroMandante,
+    perimetroAlt
+  );
   const pdrConfig = pdrConfigPerPratica(
     pratica.mandante.perimetri,
     pratica.numeroMandante,
@@ -239,6 +245,7 @@ export default async function PraticaDetailPage({
             codiciScaricoOperatore={codiciScaricoOperatore}
             codiciScaricoBkOff={codiciScaricoBkOff}
             smsPresets={smsPresets}
+            smsPagamenti={smsPagamenti}
             pdrDisponibile={pdrDisponibile}
             pdrConfig={pdrConfig}
             stralcioConfig={stralcioConfig}

@@ -53,6 +53,8 @@ export function buildPraticheQuery(params: {
     "affidoA",
     "scadenzaDa",
     "scadenzaA",
+    "scadenzaStragiudizialeDa",
+    "scadenzaStragiudizialeA",
     "mandato",
     "mandatoOp",
     "perimetro",
@@ -94,6 +96,8 @@ export function buildPraticheQuery(params: {
     "aggiuntivoCampo",
     "aggiuntivoValore",
     "aggiuntivoOp",
+    "preavvisoStragiudiziale",
+    "attivitaGiudiziale",
   ] as const;
   for (const k of altriKeys) {
     const v = params[k];

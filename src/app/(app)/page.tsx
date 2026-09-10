@@ -36,6 +36,8 @@ import { CodiciMandantePerimetroTable } from "@/components/home/CodiciMandantePe
 import { InLavorazionePerimetroCard } from "@/components/home/InLavorazionePerimetroCard";
 import { DaAffidarePerimetroCard } from "@/components/home/DaAffidarePerimetroCard";
 import { IncassiTipologiaFiltri } from "@/components/home/IncassiTipologiaFiltri";
+import { HomeGiudizialeStragiudCards } from "@/components/home/HomeGiudizialeStragiudCards";
+import { loadHomeGiudizialeStragiudKpi } from "@/lib/homeKpi/loadHomeGiudizialeStragiud";
 import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 import type { RiepilogoMandanteDto } from "@/lib/data/contracts/dashboard";
 
@@ -227,6 +229,12 @@ export default async function HomePage({
     incPerimetro,
   });
 
+  const showGiudizialeStragiudHome =
+    user.role === "ADMIN" || user.role === "AMMINISTRAZIONE";
+  const giudizialeStragiudKpi = showGiudizialeStragiudHome
+    ? await loadHomeGiudizialeStragiudKpi(user)
+    : null;
+
   const {
     totali,
     scadute,
@@ -298,6 +306,15 @@ export default async function HomePage({
           <DashboardKpi title="Mandanti" value={amm.mandantiCount} href="/mandanti" />
           <DashboardKpi title="Operatori attivi" value={amm.operatoriCount} href="/operatori" />
         </div>
+
+        {giudizialeStragiudKpi ? (
+          <div>
+            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Stragiudiziale e giudiziale
+            </h2>
+            <HomeGiudizialeStragiudCards kpi={giudizialeStragiudKpi} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -403,6 +420,15 @@ export default async function HomePage({
           />
           <DashboardKpi title="Operatori attivi" value={admin.operatoriCount} href="/operatori" />
         </div>
+
+        {giudizialeStragiudKpi ? (
+          <div>
+            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Stragiudiziale e giudiziale
+            </h2>
+            <HomeGiudizialeStragiudCards kpi={giudizialeStragiudKpi} />
+          </div>
+        ) : null}
 
         {/* Incassi per tipologia */}
         <div>

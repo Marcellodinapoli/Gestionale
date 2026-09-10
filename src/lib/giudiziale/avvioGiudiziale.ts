@@ -90,3 +90,24 @@ export function isStatoAvvioChiuso(stato?: string | null) {
 export function isGiudizialeAvviato(stato?: string | null) {
   return isStatoAvvioChiuso(stato);
 }
+
+/** Stati giudiziale “in attività” (esclusi bozza, archiviata, conclusa). */
+export const STATI_ATTIVITA_GIUDIZIALE = [
+  "IN_ATTESA_VALUTAZIONE_LEGALE",
+  "GIUDIZIALE_AVVIATO_PROCEDURA_DA_DEFINIRE",
+  "IN_PROCEDURA",
+  "PROCEDURA_AVVIATA", // legacy
+] as const;
+
+export const ATTIVITA_GIUDIZIALE_PARAM = "attivitaGiudiziale";
+
+/** Where Prisma: pratica con fascicolo giudiziale in attività. */
+export function whereAttivitaGiudiziale(): Record<string, unknown> {
+  return {
+    giudiziale: {
+      is: {
+        statoAvvio: { in: [...STATI_ATTIVITA_GIUDIZIALE] },
+      },
+    },
+  };
+}

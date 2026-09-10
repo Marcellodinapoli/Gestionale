@@ -21,6 +21,7 @@ export type SortField =
   | "telefono"
   | "dataAffido"
   | "scadenza"
+  | "scadenzaStragiud"
   | "mandante"
   | "lotto"
   | "assegnatario"
@@ -48,6 +49,7 @@ export const SORT_COLUMNS: { key: SortField; label: string }[] = [
   { key: "telefono", label: "Telefono" },
   { key: "dataAffido", label: "Data affido" },
   { key: "scadenza", label: "Scad. mandato" },
+  { key: "scadenzaStragiud", label: "Scad. stragiud." },
   { key: "mandante", label: "Mandante" },
   { key: "lotto", label: "Perimetro" },
   { key: "assegnatario", label: "Assegnatario" },
@@ -101,6 +103,8 @@ export function buildOrderBy(
       return { dataAffido: dir };
     case "scadenza":
       return { scadenza: dir };
+    case "scadenzaStragiud":
+      return { dataPassaggioGiudiziale: dir };
     case "mandante":
       return { mandante: { codice: dir } };
     case "lotto":

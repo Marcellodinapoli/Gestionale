@@ -774,6 +774,13 @@ export function PraticheFiltriBar({
                 defaultDa={a.scadenzaDa}
                 defaultA={a.scadenzaA}
               />
+              <DaA
+                label="Scad. stragiudiziale da / a"
+                nameDa="scadenzaStragiudizialeDa"
+                nameA="scadenzaStragiudizialeA"
+                defaultDa={a.scadenzaStragiudizialeDa}
+                defaultA={a.scadenzaStragiudizialeA}
+              />
               <Field label="Cod. scarico">
                 <CodScaricoFiltroControls
                   codScarico={a.codScarico}

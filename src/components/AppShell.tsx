@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { logoutAction } from "@/actions/core";
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
+import { PreavvisoStragiudizialeWatcher } from "@/components/agenda/PreavvisoStragiudizialeWatcher";
 import {
   PrivacyLockButton,
   PrivacyLockProvider,
@@ -847,6 +848,7 @@ export function AppShell({
           {children}
         </div>
         <MemoPopupWatcher userName={user.name} />
+        <PreavvisoStragiudizialeWatcher />
       </main>
     </div>
     </PrivacyLockProvider>

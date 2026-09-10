@@ -35,6 +35,8 @@ export const ALTRI_FILTRI_KEYS = [
   "affidoA",
   "scadenzaDa",
   "scadenzaA",
+  "scadenzaStragiudizialeDa",
+  "scadenzaStragiudizialeA",
   "mandato",
   "perimetro",
   "lotto",
@@ -90,6 +92,8 @@ export type AltriFiltri = {
   affidoA?: string;
   scadenzaDa?: string;
   scadenzaA?: string;
+  scadenzaStragiudizialeDa?: string;
+  scadenzaStragiudizialeA?: string;
   mandato?: string;
   mandatoOp?: TextFilterOp;
   perimetro?: string;
@@ -165,6 +169,8 @@ export function parseAltriFiltri(
     affidoA: trimOrUndef(sp.affidoA),
     scadenzaDa: trimOrUndef(sp.scadenzaDa),
     scadenzaA: trimOrUndef(sp.scadenzaA),
+    scadenzaStragiudizialeDa: trimOrUndef(sp.scadenzaStragiudizialeDa),
+    scadenzaStragiudizialeA: trimOrUndef(sp.scadenzaStragiudizialeA),
     mandato: trimOrUndef(sp.mandato),
     mandatoOp: parseTextOpForField(sp, "mandato", "mandatoOp"),
     perimetro: trimOrUndef(sp.perimetro),
@@ -534,6 +540,16 @@ export function vociAltriFiltriAttivi(
       valore: fmtIntervalloData(f.scadenzaDa, f.scadenzaA),
     });
   }
+  if (f.scadenzaStragiudizialeDa || f.scadenzaStragiudizialeA) {
+    push({
+      id: "scadenza-stragiudiziale",
+      campo: "scad. stragiudiziale",
+      valore: fmtIntervalloData(
+        f.scadenzaStragiudizialeDa,
+        f.scadenzaStragiudizialeA
+      ),
+    });
+  }
   if (f.codScarico) {
     const codes = parseCodScaricoList(f.codScarico);
     push({
@@ -605,7 +621,11 @@ const FILTRI_DESCRIZIONI: Partial<
       : undefined,
   scadenzaDa: (f) =>
     f.scadenzaDa || f.scadenzaA
-      ? `Scadenza ${fmtDataFiltro(f.scadenzaDa)}–${fmtDataFiltro(f.scadenzaA)}`
+      ? `Scad. mandato ${fmtDataFiltro(f.scadenzaDa)}–${fmtDataFiltro(f.scadenzaA)}`
+      : undefined,
+  scadenzaStragiudizialeDa: (f) =>
+    f.scadenzaStragiudizialeDa || f.scadenzaStragiudizialeA
+      ? `Scad. stragiud. ${fmtDataFiltro(f.scadenzaStragiudizialeDa)}–${fmtDataFiltro(f.scadenzaStragiudizialeA)}`
       : undefined,
   codScarico: (f) => {
     const v = vociAltriFiltriAttivi(f).find((x) => x.id === "cod-scarico");

@@ -1,12 +1,54 @@
 import { euro } from "@/lib/domainFormat";
+import type { PagamentiIntestazioniPerimetro } from "@/lib/mandantePerimetri";
 
 /** Placeholder da inserire nei testi SMS configurati sulla committente. */
 export const SMS_IMPORTO_PLACEHOLDER = "{importo}";
+
+export type SmsPlaceholderDef = {
+  key: string;
+  label: string;
+  /** Descrizione breve in editor mandante. */
+  hint: string;
+};
+
+/** Placeholder disponibili nei testi SMS del perimetro (ordine UI). */
+export const SMS_PLACEHOLDERS: SmsPlaceholderDef[] = [
+  { key: "{importo}", label: "Importo", hint: "Netto / importo concordato" },
+  { key: "{numero}", label: "N. pratica", hint: "Numero pratica" },
+  { key: "{iban}", label: "IBAN", hint: "IBAN bonifico del perimetro" },
+  {
+    key: "{bonifico_intestato}",
+    label: "Bonifico intestato",
+    hint: "Intestatario bonifico",
+  },
+  { key: "{ccp}", label: "CCP", hint: "CCP / CCN bollettino" },
+  {
+    key: "{bollettino_intestato}",
+    label: "Bollettino intestato",
+    hint: "Intestatario bollettino",
+  },
+  {
+    key: "{bollettino_indirizzo}",
+    label: "Indirizzo bollettino",
+    hint: "Indirizzo bollettino",
+  },
+  {
+    key: "{assegno_intestato}",
+    label: "Assegno intestato",
+    hint: "Intestatario assegno",
+  },
+];
 
 export type SmsPreset = {
   id: string;
   titolo: string;
   testo: string;
+};
+
+export type SmsCompilaCtx = {
+  importo?: number;
+  numeroPratica?: string | null;
+  pagamenti?: PagamentiIntestazioniPerimetro | null;
 };
 
 export const SMS_PREIMPOSTATI = [
@@ -51,8 +93,51 @@ export function smsRichiedeImporto(testo: string): boolean {
   return testo.includes(SMS_IMPORTO_PLACEHOLDER);
 }
 
+function replaceAll(testo: string, placeholder: string, value: string): string {
+  if (!testo.includes(placeholder)) return testo;
+  return testo.split(placeholder).join(value);
+}
+
+/** Compila placeholder SMS (importo, n. pratica, coordinate pagamento perimetro). */
+export function compilaSmsTesto(testo: string, ctx: SmsCompilaCtx = {}): string {
+  let out = testo;
+  if (ctx.importo != null) {
+    out = replaceAll(out, "{importo}", euro(ctx.importo));
+  }
+  if (ctx.numeroPratica != null && String(ctx.numeroPratica).trim()) {
+    out = replaceAll(out, "{numero}", String(ctx.numeroPratica).trim());
+  }
+  const p = ctx.pagamenti;
+  if (p) {
+    out = replaceAll(out, "{iban}", (p.bonificoIban || "").trim());
+    out = replaceAll(
+      out,
+      "{bonifico_intestato}",
+      (p.bonificoIntestatoA || "").trim()
+    );
+    out = replaceAll(out, "{ccp}", (p.bollettinoCcp || "").trim());
+    out = replaceAll(
+      out,
+      "{bollettino_intestato}",
+      (p.bollettinoIntestatoA || "").trim()
+    );
+    out = replaceAll(
+      out,
+      "{bollettino_indirizzo}",
+      (p.bollettinoIndirizzo || "").trim()
+    );
+    out = replaceAll(
+      out,
+      "{assegno_intestato}",
+      (p.assegnoIntestatoA || "").trim()
+    );
+  }
+  return out;
+}
+
+/** @deprecated preferisci compilaSmsTesto — mantenuto per compatibilità. */
 export function compilaSmsConImporto(testo: string, importo: number): string {
-  return testo.split(SMS_IMPORTO_PLACEHOLDER).join(euro(importo));
+  return compilaSmsTesto(testo, { importo });
 }
 
 export function importoSmsEffettivo(
