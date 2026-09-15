@@ -2,8 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { CONDIZIONI_ECONOMICHE, type CondizioneEconomica } from "@/lib/condizioneEconomica";
-import { annoNascitaDaCodiceFiscale, normalizeCf } from "@/lib/codiceFiscale";
+import { normalizeCf } from "@/lib/codiceFiscale";
 import { updateOperatoreAction } from "@/actions/operatoriAdmin";
+import { NavVisibilityFlagsEditor } from "@/components/operatori/NavVisibilityFlagsEditor";
+import { OperatoreAnagraficaExtraFields } from "@/components/operatori/OperatoreAnagraficaExtraFields";
+import { AcronimoField } from "@/components/operatori/AcronimoField";
+import type { NavVisibilityMap } from "@/lib/navVisibility/catalog";
+import type { Role } from "@/lib/permissions";
 
 type SedeOpt = { id: string; nome: string };
 type SupervisorOpt = { id: string; name: string };
@@ -22,6 +27,7 @@ export type OperatoreModifica = {
   supervisorId: string | null;
   codiceFiscale: string | null;
   residenza: string | null;
+  qualificheScolastiche: string | null;
   condizioneEconomica: CondizioneEconomica;
   importoFisso: number | null;
 };
@@ -30,15 +36,23 @@ export function ModificaOperatoreForm({
   utente,
   sedi,
   supervisori,
+  roleDefaults,
+  userOverrides,
+  acronimiUsati,
   onSuccess,
   onCancel,
 }: {
   utente: OperatoreModifica;
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
+  roleDefaults: NavVisibilityMap;
+  userOverrides?: NavVisibilityMap | null;
+  acronimiUsati: string[];
   onSuccess?: () => void;
   onCancel?: () => void;
 }) {
+  const [nome, setNome] = useState(utente.name);
+  const [cognome, setCognome] = useState(utente.cognome || "");
   const [codiceFiscale, setCodiceFiscale] = useState(utente.codiceFiscale || "");
   const [condizioneEconomica, setCondizioneEconomica] = useState<CondizioneEconomica>(
     utente.condizioneEconomica
@@ -50,7 +64,6 @@ export function ModificaOperatoreForm({
 
   const mostraCondizione =
     utente.role === "OPERATOR" && !utente.formazioneOnly;
-  const annoNascita = annoNascitaDaCodiceFiscale(codiceFiscale);
   const inputCls = "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
 
   function onSubmit(formData: FormData) {
@@ -71,14 +84,21 @@ export function ModificaOperatoreForm({
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-[130px] flex-1">
           <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Nome</span>
-          <input name="name" required defaultValue={utente.name} className={inputCls} />
+          <input
+            name="name"
+            required
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            className={inputCls}
+          />
         </label>
         <label className="min-w-[130px] flex-1">
           <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Cognome</span>
           <input
             name="cognome"
             required
-            defaultValue={utente.cognome || ""}
+            value={cognome}
+            onChange={(e) => setCognome(e.target.value)}
             className={inputCls}
           />
         </label>
@@ -92,15 +112,14 @@ export function ModificaOperatoreForm({
             className={inputCls}
           />
         </label>
-        <label className="w-28">
-          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Acronimo</span>
-          <input
-            name="acronimo"
-            maxLength={6}
-            defaultValue={utente.acronimo || ""}
-            className={`${inputCls} uppercase`}
-          />
-        </label>
+        <AcronimoField
+          nome={nome}
+          cognome={cognome}
+          acronimiUsati={acronimiUsati}
+          defaultValue={utente.acronimo || ""}
+          ignoreAcronimo={utente.acronimo}
+          inputCls={inputCls}
+        />
         <label className="w-44">
           <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Sede</span>
           <select name="sedeId" className={inputCls} required defaultValue={utente.sedeId || ""}>
@@ -186,30 +205,11 @@ export function ModificaOperatoreForm({
             className={`${inputCls} font-mono uppercase`}
           />
         </label>
-        <label className="w-28">
-          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-            Anno nascita
-          </span>
-          <input
-            readOnly
-            value={annoNascita ?? ""}
-            placeholder="—"
-            className={`${inputCls} bg-[#f4f6f8] text-[var(--muted)]`}
-            tabIndex={-1}
-          />
-          {annoNascita != null ? (
-            <input type="hidden" name="annoNascita" value={String(annoNascita)} />
-          ) : null}
-        </label>
-        <label className="min-w-[220px] flex-[2]">
-          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Residenza</span>
-          <input
-            name="residenza"
-            defaultValue={utente.residenza || ""}
-            className={inputCls}
-            placeholder="Via, città, CAP"
-          />
-        </label>
+        <OperatoreAnagraficaExtraFields
+          codiceFiscale={codiceFiscale}
+          residenzaDefault={utente.residenza || ""}
+          qualificheDefault={utente.qualificheScolastiche || ""}
+        />
       </div>
 
       {utente.role === "OPERATOR" ? (
@@ -257,6 +257,16 @@ export function ModificaOperatoreForm({
               </span>
             </span>
           </label>
+        </div>
+      ) : null}
+
+      {!utente.formazioneOnly && utente.role !== "MANUTENZIONE" ? (
+        <div className="border-t border-[var(--line)] pt-3">
+          <NavVisibilityFlagsEditor
+            roleDefaults={roleDefaults}
+            userOverrides={userOverrides}
+            role={utente.role as Role}
+          />
         </div>
       ) : null}
 

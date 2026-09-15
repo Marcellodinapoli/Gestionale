@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireModule, requirePermission } from "@/lib/guard";
+import { requireModule, requireNavPage } from "@/lib/guard";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
@@ -30,7 +30,7 @@ export default async function IncassiElencoPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   await requireModule("incassi");
-  const user = await requirePermission("incassi:list");
+  const user = await requireNavPage("incassi");
   const sp = await searchParams;
   const filtri = parseIncassiElencoFiltri(sp);
   const { page, pageSize, skip } = paginateParams(sp.page);

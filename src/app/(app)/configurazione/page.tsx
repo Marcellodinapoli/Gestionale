@@ -1,12 +1,12 @@
 import { configurazioneDbFromUser } from "@/lib/configurazioneRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { ConfigurazioneEditor } from "@/components/configurazione/ConfigurazioneEditor";
 import { SECRET_CONFIG_KEYS } from "@/lib/configSecrets";
 import { writeAudit } from "@/lib/domain";
 
 export default async function ConfigurazionePage() {
-  const user = await requirePermission("users:manage");
+  const user = await requireNavPage("configurazione");
 
   const configModel = configurazioneDbFromUser(user);
 

@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { PageHeader, Card } from "@/components/ui";
 import { ImportPanels } from "@/components/ImportPanels";
 import { ImportBatchList } from "@/components/ImportBatchList";
@@ -13,7 +13,7 @@ export default async function ImportPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await requirePermission("import:run");
+  const user = await requireNavPage("import");
   const sp = (await searchParams) ?? {};
   const integraId = typeof sp.integra === "string" ? sp.integra : "";
 

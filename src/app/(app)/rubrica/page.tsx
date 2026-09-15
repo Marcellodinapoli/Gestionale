@@ -1,11 +1,11 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
-import { requireUser } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui";
 import { RubricaGriglia } from "@/components/rubrica/RubricaGriglia";
 
 export default async function RubricaPage() {
-  const user = await requireUser();
+  const user = await requireNavPage("rubrica");
 
   const utenti = await usersDbFromUser(user).findMany({
     where: {

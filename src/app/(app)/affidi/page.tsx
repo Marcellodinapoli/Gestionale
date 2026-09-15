@@ -1,7 +1,7 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
-import { requireModule, requirePermission } from "@/lib/guard";
+import { requireModule, requireNavPage } from "@/lib/guard";
 import { praticaScopeWhere, resolveGruppoPerimetroContext } from "@/lib/gruppoPerimetroScope";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { isManutenzione } from "@/lib/permissions";
@@ -108,7 +108,7 @@ export default async function AffidiPage({
   }>;
 }) {
   await requireModule("affidi");
-  const user = await requirePermission("pratiche:assign");
+  const user = await requireNavPage("affidi");
   const {
     operatore: operatoreRaw,
     coda: codaRaw,

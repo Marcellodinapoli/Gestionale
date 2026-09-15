@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { Card, PageHeader } from "@/components/ui";
 import { LegalPhaseNav } from "@/components/giudiziale/LegalPhaseNav";
 import { listPraticheGiudiziali } from "@/lib/giudiziale/praticaGiudizialeRepo";
@@ -8,7 +8,7 @@ import { loadHomeGiudizialeStragiudKpi } from "@/lib/homeKpi/loadHomeGiudizialeS
 import { HomeGiudizialeStragiudCards } from "@/components/home/HomeGiudizialeStragiudCards";
 
 export default async function LegalPage() {
-  const user = await requirePermission("legal:view");
+  const user = await requireNavPage("legal");
   const [items, giudizialeStragiudKpi] = await Promise.all([
     listPraticheGiudiziali(user),
     loadHomeGiudizialeStragiudKpi(user),

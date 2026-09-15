@@ -4,7 +4,7 @@ import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { provvigioniDbFromUser } from "@/lib/provvigioniRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { dataIt, euro } from "@/lib/domain";
 import { provvigioneStatoLabel, provvigioniWhere } from "@/lib/provvigioni";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
@@ -144,7 +144,7 @@ export default async function ProvigioniPage({
     sede?: string;
   }>;
 }) {
-  const user = await requirePermission("provigioni:view");
+  const user = await requireNavPage("provigioni");
   const provvigioniModel = provvigioniDbFromUser(user);
   const {
     mese: meseRaw,

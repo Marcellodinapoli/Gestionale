@@ -1,11 +1,11 @@
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { dataOraIt } from "@/lib/domain";
 import { Card, PageHeader } from "@/components/ui";
 import { isManutenzione } from "@/lib/permissions";
 import { auditRepoFromUser } from "@/lib/auditRepo";
 
 export default async function LogPage() {
-  const user = await requirePermission("audit:view");
+  const user = await requireNavPage("log");
   const logs = await auditRepoFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
     take: 100,
     includeUser: true,

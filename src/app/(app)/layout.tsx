@@ -4,6 +4,7 @@ import { getCurrentUser, isCurrentUserPasswordExpired } from "@/lib/auth";
 import { mustChoosePostazioneAlLogin, richiedeInternoPerChiamata } from "@/lib/permissions";
 import { AppShell } from "@/components/AppShell";
 import { NavPrefetch } from "@/components/NavPrefetch";
+import { NavAccessGuard } from "@/components/NavAccessGuard";
 import { SoftRefresh } from "@/components/SoftRefresh";
 import { TelephonyDialProvider } from "@/components/telefonia/TelephonyDialProvider";
 
@@ -28,8 +29,11 @@ export default async function AppLayout({
   const dialConfig = await getDialClientConfig(user.tenantId, user.tenantSlug);
   const { getTenantPlatformConfig } = await import("@/lib/platform/tenantProfile");
   const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const { getEffectiveNavVisibilityForUser } = await import("@/lib/navVisibility");
+  const navVisibility = await getEffectiveNavVisibilityForUser(user, user);
   return (
-    <AppShell user={user} platform={platform}>
+    <AppShell user={user} platform={platform} navVisibility={navVisibility}>
+      <NavAccessGuard navVisibility={navVisibility} />
       <NavPrefetch />
       <SoftRefresh intervalMs={180_000} />
       <TelephonyDialProvider

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { isFormazioneOnly } from "@/lib/permissions";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import {
@@ -10,7 +10,7 @@ import {
 import { StrumentiNav } from "@/components/strumenti/StrumentiNav";
 
 export default async function StrumentiLayout({ children }: { children: ReactNode }) {
-  const user = await requirePermission("strumenti:view");
+  const user = await requireNavPage("strumenti");
   if (isFormazioneOnly(user)) redirect(homePathForUser(user));
 
   return (

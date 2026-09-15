@@ -47,6 +47,33 @@ export async function requirePermission(permission: Permission) {
   return user;
 }
 
+/** Accesso pagina basato su preferenze visibilità (default ruolo + eccezioni). */
+export async function requireNavPage(pageId: import("@/lib/navVisibility/catalog").NavPageId) {
+  const user = await requireUser();
+  const { getEffectiveNavVisibilityForUser } = await import("@/lib/navVisibility");
+  const visible = await getEffectiveNavVisibilityForUser(user, user);
+  if (!visible[pageId]) {
+    if (user.formazioneOnly) {
+      const { homePathForUser } = await import("@/lib/formazioneOnlyAccess");
+      redirect(homePathForUser(user));
+    }
+    // Evita loop se Home stessa non è visibile.
+    if (pageId === "home") {
+      const fallback =
+        (Object.entries(visible).find(
+          ([id, on]) => on && id !== "home" && id !== "account"
+        )?.[0] as import("@/lib/navVisibility/catalog").NavPageId | undefined) ||
+        "account";
+      const { NAV_PAGES } = await import("@/lib/navVisibility/catalog");
+      const href =
+        NAV_PAGES.find((p) => p.id === fallback)?.pathPrefix || "/account";
+      redirect(href);
+    }
+    redirect("/");
+  }
+  return user;
+}
+
 /**
  * Blocca l'accesso se il modulo non è abilitato per il tenant.
  * Default tenant senza config KV = moduli recovery → nessun cambio di comportamento.

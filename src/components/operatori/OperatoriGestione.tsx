@@ -17,33 +17,10 @@ import {
   type OperatoreModifica,
 } from "@/components/operatori/ModificaOperatoreForm";
 import { ROLE_LABELS, ruoliCreabiliDa, type Role } from "@/lib/permissions";
-import type { CondizioneEconomica } from "@/lib/condizioneEconomica";
+import type { NavRoleDefaults, NavUserOverrides } from "@/lib/navVisibility/catalog";
+import type { OperatoreListaItem } from "@/lib/operatoriFiltri";
 
-type Utente = {
-  id: string;
-  name: string;
-  cognome: string | null;
-  email: string;
-  role: string;
-  roleLabel: string;
-  acronimo: string | null;
-  formazioneOnly: boolean;
-  consulenteEsterno: boolean;
-  creditCalcEnabled: boolean;
-  lastLoginAt: string | null;
-  lastLogoutAt: string | null;
-  postazione: string | null;
-  interno: string | null;
-  supervisorName: string | null;
-  sedeId: string | null;
-  sedeNome: string | null;
-  condizioneEconomica: string;
-  condizioneEconomicaValue: CondizioneEconomica;
-  importoFisso: number | null;
-  supervisorId: string | null;
-  codiceFiscale: string | null;
-  residenza: string | null;
-};
+type Utente = OperatoreListaItem;
 
 type SedeOpt = { id: string; nome: string };
 type SupervisorOpt = { id: string; name: string };
@@ -64,11 +41,17 @@ export function OperatoriGestione({
   sedi,
   supervisori,
   creatorRole,
+  roleDefaults,
+  userOverrides,
+  acronimiUsati,
 }: {
   utenti: Utente[];
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
   creatorRole: Role;
+  roleDefaults: NavRoleDefaults;
+  userOverrides: NavUserOverrides;
+  acronimiUsati: string[];
 }) {
   const ruoliAssegnabili = [
     ...ruoliCreabiliDa(creatorRole),
@@ -106,6 +89,9 @@ export function OperatoriGestione({
               sedi={sedi}
               supervisori={supervisori}
               ruoliAssegnabili={ruoliAssegnabili}
+              roleDefaults={roleDefaults[u.role as Role] || {}}
+              userOverrides={userOverrides[u.id] || {}}
+              acronimiUsati={acronimiUsati}
             />
           ))}
         </tbody>
@@ -119,11 +105,17 @@ function RigaOperatore({
   sedi,
   supervisori,
   ruoliAssegnabili,
+  roleDefaults,
+  userOverrides,
+  acronimiUsati,
 }: {
   utente: Utente;
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
   ruoliAssegnabili: Role[];
+  roleDefaults: import("@/lib/navVisibility/catalog").NavVisibilityMap;
+  userOverrides: import("@/lib/navVisibility/catalog").NavVisibilityMap;
+  acronimiUsati: string[];
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -186,6 +178,7 @@ function RigaOperatore({
     supervisorId: utente.supervisorId,
     codiceFiscale: utente.codiceFiscale,
     residenza: utente.residenza,
+    qualificheScolastiche: utente.qualificheScolastiche,
     condizioneEconomica: utente.condizioneEconomicaValue,
     importoFisso: utente.importoFisso,
   };
@@ -434,6 +427,9 @@ function RigaOperatore({
           utente={operatoreModifica}
           sedi={sedi}
           supervisori={supervisori}
+          roleDefaults={roleDefaults}
+          userOverrides={userOverrides}
+          acronimiUsati={acronimiUsati}
           onSuccess={() => {
             setEditOpen(false);
             router.refresh();

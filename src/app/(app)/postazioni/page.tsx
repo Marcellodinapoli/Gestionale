@@ -1,6 +1,6 @@
 import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { Card, PageHeader } from "@/components/ui";
 import {
   FILTRI_APPLY_BUTTON_CLASS,
@@ -14,7 +14,7 @@ export default async function PostazioniPage({
 }: {
   searchParams: Promise<{ sede?: string }>;
 }) {
-  const user = await requirePermission("operatori:manage");
+  const user = await requireNavPage("postazioni");
   const sp = await searchParams;
   const sedeFiltro = String(sp.sede || "").trim() || null;
 

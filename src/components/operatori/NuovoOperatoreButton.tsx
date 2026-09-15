@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { NuovoOperatoreForm } from "@/components/operatori/NuovoOperatoreForm";
 import type { Role } from "@/lib/permissions";
+import type { NavRoleDefaults } from "@/lib/navVisibility/catalog";
 
 type SedeOpt = { id: string; nome: string };
 type SupervisorOpt = { id: string; name: string };
@@ -14,10 +15,14 @@ export function NuovoOperatoreButton({
   creatorRole,
   sedi,
   supervisori,
+  roleDefaults,
+  acronimiUsati,
 }: {
   creatorRole: Role;
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
+  roleDefaults: NavRoleDefaults;
+  acronimiUsati: string[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -45,6 +50,8 @@ export function NuovoOperatoreButton({
             creatorRole={creatorRole}
             sedi={sedi}
             supervisori={supervisori}
+            roleDefaults={roleDefaults}
+            acronimiUsati={acronimiUsati}
             onSuccess={() => {
               setOpen(false);
               router.refresh();

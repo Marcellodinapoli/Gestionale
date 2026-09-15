@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { AgendaCalendarioPanel } from "@/components/agenda/AgendaCalendarioPanel";
 import { buildAgendaScopeContext } from "@/lib/agenda/buildAgendaScope";
@@ -15,7 +15,7 @@ export default async function AgendaPage({
     filtro?: string;
   }>;
 }) {
-  const user = await requirePermission("agenda:view");
+  const user = await requireNavPage("agenda");
   const sp = await searchParams;
   if (sp.tab === "messaggi") {
     redirect(sp.filtro ? `/messaggi?filtro=${encodeURIComponent(sp.filtro)}` : "/messaggi");

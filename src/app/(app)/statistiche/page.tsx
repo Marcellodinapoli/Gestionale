@@ -5,7 +5,7 @@ import { praticaDbFromUser } from "@/lib/praticheRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
 import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { dataIt } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
@@ -62,7 +62,7 @@ export default async function StatistichePage({
     sede?: string;
   }>;
 }) {
-  const user = await requirePermission("statistiche:view");
+  const user = await requireNavPage("statistiche");
   const sp = await searchParams;
   const affidoDaStr = sp.affidoDa || defaultAffidoDa();
   const affidoAStr = sp.affidoA || defaultAffidoA();

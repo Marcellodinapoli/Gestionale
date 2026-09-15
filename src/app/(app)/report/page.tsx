@@ -1,7 +1,7 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { prisma } from "@/lib/prisma";
 import { registrazioniDbFromUser } from "@/lib/registrazioniRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { dataOraIt } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { registrazioniWhere } from "@/lib/registrazioniScope";
@@ -25,7 +25,7 @@ export default async function ReportPage({
 }: {
   searchParams: Promise<{ operatore?: string; q?: string; da?: string; a?: string }>;
 }) {
-  const user = await requirePermission("report:view");
+  const user = await requireNavPage("report");
   const { operatore, q, da, a } = await searchParams;
   const query = (q || "").trim();
 

@@ -1,17 +1,19 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { condizioneEconomicaLabel, parseCondizioneEconomica } from "@/lib/condizioneEconomica";
-import { Card, PageHeader } from "@/components/ui";
-import { OperatoriGestione } from "@/components/operatori/OperatoriGestione";
+import { OperatoriWorkspace } from "@/components/operatori/OperatoriWorkspace";
 import { NuovoOperatoreButton } from "@/components/operatori/NuovoOperatoreButton";
+import { loadNavRoleDefaults, loadNavUserOverridesAll } from "@/lib/navVisibility/store";
+import { loadOperatoriProfiliAll } from "@/lib/operatoriProfilo";
+import Link from "next/link";
 
 export default async function OperatoriPage() {
-  const user = await requirePermission("operatori:manage");
+  const user = await requireNavPage("operatori");
 
   const userModel = usersDbFromUser(user);
-  const [users, supervisori, sedi] = await Promise.all([
+  const [users, supervisori, sedi, roleDefaults, userOverrides, profili] = await Promise.all([
     userModel.findMany({
       where: { active: true, tenantId: user.tenantId },
       orderBy: { name: "asc" },
@@ -48,6 +50,9 @@ export default async function OperatoriPage() {
       orderBy: { nome: "asc" },
       select: { id: true, nome: true },
     }),
+    loadNavRoleDefaults(user),
+    loadNavUserOverridesAll(user),
+    loadOperatoriProfiliAll(user),
   ]);
 
   const lista = users.map((u) => ({
@@ -74,30 +79,39 @@ export default async function OperatoriPage() {
     supervisorId: u.supervisorId,
     codiceFiscale: u.codiceFiscale,
     residenza: u.residenza,
+    qualificheScolastiche: profili[u.id]?.qualificheScolastiche || null,
   }));
 
+  const acronimiUsati = lista
+    .map((u) => u.acronimo)
+    .filter((a): a is string => Boolean(a?.trim()));
+
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Gestione operatori"
-        subtitle="Anagrafica, condizione economica, accesso, sede e password"
-        action={
+    <OperatoriWorkspace
+      utenti={lista}
+      sedi={sedi}
+      supervisori={supervisori}
+      creatorRole={user.role}
+      roleDefaults={roleDefaults}
+      userOverrides={userOverrides}
+      acronimiUsati={acronimiUsati}
+      headerActions={
+        <>
+          <Link
+            href="/configurazione/visibilita"
+            className="inline-flex h-9 items-center rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-medium text-[var(--navy)] hover:bg-slate-50"
+          >
+            Default pagine per ruolo
+          </Link>
           <NuovoOperatoreButton
             creatorRole={user.role}
             sedi={sedi}
             supervisori={supervisori}
+            roleDefaults={roleDefaults}
+            acronimiUsati={acronimiUsati}
           />
-        }
-      />
-
-      <Card>
-        <OperatoriGestione
-          utenti={lista}
-          sedi={sedi}
-          supervisori={supervisori}
-          creatorRole={user.role}
-        />
-      </Card>
-    </div>
+        </>
+      }
+    />
   );
 }

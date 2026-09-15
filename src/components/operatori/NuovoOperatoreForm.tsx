@@ -4,7 +4,11 @@ import { useState, useTransition } from "react";
 import { ruoliCreabiliDa, ROLE_LABELS, type Role } from "@/lib/permissions";
 import { CONDIZIONI_ECONOMICHE } from "@/lib/condizioneEconomica";
 import { createOperatoreAction } from "@/actions/operatoriAdmin";
-import { annoNascitaDaCodiceFiscale, normalizeCf } from "@/lib/codiceFiscale";
+import { normalizeCf } from "@/lib/codiceFiscale";
+import { NavVisibilityFlagsEditor } from "@/components/operatori/NavVisibilityFlagsEditor";
+import { OperatoreAnagraficaExtraFields } from "@/components/operatori/OperatoreAnagraficaExtraFields";
+import { AcronimoField } from "@/components/operatori/AcronimoField";
+import type { NavRoleDefaults, NavVisibilityMap } from "@/lib/navVisibility/catalog";
 
 type SedeOpt = { id: string; nome: string };
 type SupervisorOpt = { id: string; name: string };
@@ -13,18 +17,24 @@ export function NuovoOperatoreForm({
   creatorRole,
   sedi,
   supervisori,
+  roleDefaults,
+  acronimiUsati,
   onSuccess,
   onCancel,
 }: {
   creatorRole: Role;
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
+  roleDefaults: NavRoleDefaults;
+  acronimiUsati: string[];
   onSuccess?: () => void;
   onCancel?: () => void;
 }) {
   const ruoli = ruoliCreabiliDa(creatorRole);
   const [accesso, setAccesso] = useState<"completo" | "formazione">("completo");
   const [role, setRole] = useState<Role>("OPERATOR");
+  const [nome, setNome] = useState("");
+  const [cognome, setCognome] = useState("");
   const [condizioneEconomica, setCondizioneEconomica] = useState<"SOLO_PROVV" | "FISSO_PROVV">(
     "SOLO_PROVV"
   );
@@ -36,7 +46,7 @@ export function NuovoOperatoreForm({
   const soloFormazione = accesso === "formazione";
   const mostraCondizioneEconomica = !soloFormazione && role === "OPERATOR";
   const mostraCreditCalc = !soloFormazione && role === "OPERATOR";
-  const annoNascita = annoNascitaDaCodiceFiscale(codiceFiscale);
+  const defaultsForRole: NavVisibilityMap = roleDefaults[role] || {};
 
   const inputCls = "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
 
@@ -57,11 +67,23 @@ export function NuovoOperatoreForm({
       <div className="flex flex-wrap items-end gap-3">
       <label className="min-w-[130px] flex-1">
         <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Nome</span>
-        <input name="name" required className={inputCls} />
+        <input
+          name="name"
+          required
+          className={inputCls}
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+        />
       </label>
       <label className="min-w-[130px] flex-1">
         <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Cognome</span>
-        <input name="cognome" required className={inputCls} />
+        <input
+          name="cognome"
+          required
+          className={inputCls}
+          value={cognome}
+          onChange={(e) => setCognome(e.target.value)}
+        />
       </label>
       <label className="min-w-[180px] flex-1">
         <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Email</span>
@@ -71,15 +93,12 @@ export function NuovoOperatoreForm({
         <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Password</span>
         <input name="password" type="password" required minLength={6} className={inputCls} />
       </label>
-      <label className="w-28">
-        <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Acronimo</span>
-        <input
-          name="acronimo"
-          maxLength={6}
-          className={`${inputCls} uppercase`}
-          placeholder="es. MR"
-        />
-      </label>
+      <AcronimoField
+        nome={nome}
+        cognome={cognome}
+        acronimiUsati={acronimiUsati}
+        inputCls={inputCls}
+      />
       <label className="w-44">
         <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Accesso</span>
         <select
@@ -191,30 +210,7 @@ export function NuovoOperatoreForm({
             placeholder="RSSMRA80A01H501U"
           />
         </label>
-        <label className="w-28">
-          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-            Anno nascita
-          </span>
-          <input
-            name="annoNascitaDisplay"
-            readOnly
-            value={annoNascita ?? ""}
-            placeholder="—"
-            className={`${inputCls} bg-[#f4f6f8] text-[var(--muted)]`}
-            tabIndex={-1}
-          />
-          {annoNascita != null ? (
-            <input type="hidden" name="annoNascita" value={String(annoNascita)} />
-          ) : null}
-        </label>
-        <label className="min-w-[220px] flex-[2]">
-          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Residenza</span>
-          <input
-            name="residenza"
-            className={inputCls}
-            placeholder="Via, città, CAP"
-          />
-        </label>
+        <OperatoreAnagraficaExtraFields codiceFiscale={codiceFiscale} />
       </div>
 
       {mostraCreditCalc ? (
@@ -261,6 +257,12 @@ export function NuovoOperatoreForm({
               </span>
             </span>
           </label>
+        </div>
+      ) : null}
+
+      {!soloFormazione ? (
+        <div className="border-t border-[var(--line)] pt-3">
+          <NavVisibilityFlagsEditor key={role} roleDefaults={defaultsForRole} role={role} />
         </div>
       ) : null}
 

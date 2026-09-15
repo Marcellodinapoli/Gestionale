@@ -3,7 +3,7 @@ import { usersDbFromUser } from "@/lib/usersRepo";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
-import { requireModule, requirePermission } from "@/lib/guard";
+import { requireModule, requireNavPage } from "@/lib/guard";
 import { praticaWhere } from "@/lib/domain";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
@@ -37,7 +37,7 @@ export default async function LavorazionePage({
   searchParams: Promise<{ gruppo?: string; giorno?: string; modifica?: string; nuovo?: string }>;
 }) {
   await requireModule("lavorazione");
-  const user = await requirePermission("lavorazione:view");
+  const user = await requireNavPage("lavorazione");
   const praticaModel = praticaDbFromUser(user);
   const { gruppo: gruppoId, giorno: giornoRaw, modifica, nuovo } = await searchParams;
   const inModifica = modifica === "1";

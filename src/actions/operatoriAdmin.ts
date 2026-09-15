@@ -7,6 +7,10 @@ import { writeAudit } from "@/lib/domain";
 import { requireWritablePermission } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
 import { ruoliCreabiliDa, type Role } from "@/lib/permissions";
+import {
+  isAcronimoPatternValido,
+  normalizeAcronimo,
+} from "@/lib/acronimoOperatore";
 import { annoNascitaDaCodiceFiscale, normalizeCf } from "@/lib/codiceFiscale";
 import {
   assertCondizioneEconomica,
@@ -17,6 +21,35 @@ import bcrypt from "bcryptjs";
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+async function assertAcronimoLibero(
+  userModel: ReturnType<typeof usersDbFromUser>,
+  tenantId: string,
+  acronimo: string | null,
+  excludeUserId?: string,
+  currentAcronimo?: string | null
+) {
+  if (!acronimo) return;
+  const sameAsCurrent =
+    normalizeAcronimo(currentAcronimo) === normalizeAcronimo(acronimo);
+  if (!sameAsCurrent && !isAcronimoPatternValido(acronimo)) {
+    fail(
+      "Acronimo non valido: 3 lettere, 1 consonante + 2 vocali oppure 1 vocale + 2 consonanti"
+    );
+  }
+  const others = await userModel.findMany({
+    where: {
+      tenantId,
+      active: true,
+      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+    },
+    select: { acronimo: true },
+  });
+  const taken = others.some(
+    (u) => normalizeAcronimo(u.acronimo) === normalizeAcronimo(acronimo)
+  );
+  if (taken) fail("Acronimo già in uso da un altro utente");
 }
 
 function parseAccesso(formData: FormData) {
@@ -34,7 +67,7 @@ function assertRuoloCreabile(creatorRole: Role, role: string) {
 export async function updateAcronimoAction(formData: FormData) {
   const user = await requireWritablePermission("operatori:manage");
   const targetId = String(formData.get("userId") || "").trim();
-  const acronimo = String(formData.get("acronimo") || "").trim().toUpperCase() || null;
+  const acronimo = normalizeAcronimo(String(formData.get("acronimo") || ""));
   if (!targetId) fail("Utente mancante");
 
   const userModel = usersDbFromUser(user);
@@ -42,6 +75,8 @@ export async function updateAcronimoAction(formData: FormData) {
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
+
+  await assertAcronimoLibero(userModel, user.tenantId, acronimo, targetId, target.acronimo);
 
   await userModel.update({
     where: { id: targetId },
@@ -65,7 +100,7 @@ export async function createOperatoreAction(formData: FormData) {
   const cognome = String(formData.get("cognome") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const password = String(formData.get("password") || "").trim();
-  const acronimo = String(formData.get("acronimo") || "").trim().toUpperCase() || null;
+  const acronimo = normalizeAcronimo(String(formData.get("acronimo") || ""));
   const codiceFiscaleRaw = String(formData.get("codiceFiscale") || "").trim();
   const codiceFiscale = normalizeCf(codiceFiscaleRaw) || null;
   const residenza = String(formData.get("residenza") || "").trim() || null;
@@ -91,6 +126,7 @@ export async function createOperatoreAction(formData: FormData) {
   if (!name || !cognome || !email || !password) fail("Nome, cognome, email e password obbligatori");
   if (password.length < 6) fail("La password deve avere almeno 6 caratteri");
   if (!sedeId) fail("Sede obbligatoria");
+  if (!acronimo) fail("Acronimo obbligatorio");
   if (codiceFiscale && codiceFiscale.length !== 16) {
     fail("Codice fiscale non valido (16 caratteri)");
   }
@@ -116,6 +152,8 @@ export async function createOperatoreAction(formData: FormData) {
     where: { tenantId_email: { tenantId: user.tenantId, email } },
   });
   if (exists) fail("Email già in uso in questa azienda");
+
+  await assertAcronimoLibero(userModel, user.tenantId, acronimo);
 
   if (supervisorId) {
     const sup = await userModel.findFirst({
@@ -156,6 +194,33 @@ export async function createOperatoreAction(formData: FormData) {
       importoFisso,
     },
   });
+
+  const created = await userModel.findUnique({
+    where: { tenantId_email: { tenantId: user.tenantId, email } },
+    select: { id: true },
+  });
+  if (created && !formazioneOnly) {
+    const rawNav = String(formData.get("navVisibilityJson") || "").trim();
+    if (rawNav) {
+      try {
+        const flags = JSON.parse(rawNav) as Record<string, boolean>;
+        const { applyNavFlagsForNewUser } = await import("@/lib/navVisibility/apply");
+        await applyNavFlagsForNewUser(user, created.id, role as Role, flags);
+      } catch {
+        /* ignore payload nav */
+      }
+    }
+  }
+
+  if (created) {
+    const qualificheScolastiche =
+      String(formData.get("qualificheScolastiche") || "").trim() || null;
+    if (qualificheScolastiche) {
+      const { saveOperatoreProfiloExtra } = await import("@/lib/operatoriProfilo");
+      await saveOperatoreProfiloExtra(user, created.id, { qualificheScolastiche });
+    }
+  }
+
   await writeAudit({
     userId: user.id,
     tenantId: user.tenantId,
@@ -328,7 +393,7 @@ export async function updateOperatoreAction(formData: FormData) {
   const name = String(formData.get("name") || "").trim();
   const cognome = String(formData.get("cognome") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
-  const acronimo = String(formData.get("acronimo") || "").trim().toUpperCase() || null;
+  const acronimo = normalizeAcronimo(String(formData.get("acronimo") || ""));
   const sedeId = String(formData.get("sedeId") || "").trim() || null;
   const supervisorId = String(formData.get("supervisorId") || "").trim() || null;
   const codiceFiscaleRaw = String(formData.get("codiceFiscale") || "").trim();
@@ -358,6 +423,8 @@ export async function updateOperatoreAction(formData: FormData) {
     where: { tenantId_email: { tenantId: user.tenantId, email } },
   });
   if (dup && dup.id !== targetId) fail("Email già in uso in questa azienda");
+
+  await assertAcronimoLibero(userModel, user.tenantId, acronimo, targetId, target.acronimo);
 
   const sede = await sediDbFromUser(user).findFirst({
     where: { id: sedeId, tenantId: user.tenantId, active: true },
@@ -422,6 +489,26 @@ export async function updateOperatoreAction(formData: FormData) {
     where: { id: targetId },
     data,
   });
+
+  if (!target.formazioneOnly) {
+    const rawNav = String(formData.get("navVisibilityJson") || "").trim();
+    if (rawNav) {
+      try {
+        const flags = JSON.parse(rawNav) as Record<string, boolean>;
+        const { applyNavFlagsForNewUser } = await import("@/lib/navVisibility/apply");
+        await applyNavFlagsForNewUser(user, targetId, target.role as Role, flags);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  {
+    const qualificheScolastiche =
+      String(formData.get("qualificheScolastiche") || "").trim() || null;
+    const { saveOperatoreProfiloExtra } = await import("@/lib/operatoriProfilo");
+    await saveOperatoreProfiloExtra(user, targetId, { qualificheScolastiche });
+  }
 
   await writeAudit({
     userId: user.id,

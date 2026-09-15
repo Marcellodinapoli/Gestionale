@@ -4,7 +4,7 @@ import { buildHomeKpiContext } from "@/lib/homeKpi/buildContext";
 import { loadHomeKpiAuto } from "@/lib/homeKpi/loadHomeKpi";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { can, isManutenzione } from "@/lib/permissions";
 import { euro, dataIt } from "@/lib/domain";
 import {
@@ -152,7 +152,7 @@ export default async function HomePage({
     sede?: string;
   }>;
 }) {
-  const user = await requireUser();
+  const user = await requireNavPage("home");
   const sp = await searchParams;
   const {
     lavorateData: lavorateDataRaw,

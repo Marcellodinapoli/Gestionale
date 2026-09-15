@@ -1,14 +1,11 @@
 import { sediDbFromUser } from "@/lib/sediRepo";
-import { requireUser } from "@/lib/guard";
-import { canManageSedi } from "@/lib/permissions";
-import { redirect } from "next/navigation";
+import { requireNavPage } from "@/lib/guard";
 import { Card, PageHeader } from "@/components/ui";
 import { SediTable } from "@/components/sedi/SediTable";
 import { NuovaSedeButton } from "@/components/sedi/NuovaSedeButton";
 
 export default async function SediPage() {
-  const user = await requireUser();
-  if (!canManageSedi(user)) redirect("/");
+  const user = await requireNavPage("sedi");
 
   const sedi = await sediDbFromUser(user).findMany({
     where: { tenantId: user.tenantId },

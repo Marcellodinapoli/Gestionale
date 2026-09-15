@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
-import { requireUser } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { euro, dataIt } from "@/lib/domain";
 import {
   filtraIdsPraticaScope,
@@ -89,7 +89,7 @@ export default async function PratichePage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const user = await requireUser();
+  const user = await requireNavPage("pratiche");
   const praticaModel = praticaDbFromUser(user);
   const sp = await searchParams;
 

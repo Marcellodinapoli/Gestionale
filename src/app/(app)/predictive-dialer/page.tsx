@@ -1,9 +1,9 @@
 import { PageHeader } from "@/components/ui";
 import { DialerOperatorPanel } from "@/components/predictive-dialer/DialerOperatorPanel";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 
 export default async function PredictiveDialerOperatorePage() {
-  await requirePermission("dialer:operate");
+  await requireNavPage("dialer");
 
   return (
     <>

@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { AgendaMessaggiPanel } from "@/components/agenda/AgendaMessaggiPanel";
 import { buildAgendaScopeContext } from "@/lib/agenda/buildAgendaScope";
@@ -10,7 +10,7 @@ export default async function MessaggiPage({
 }: {
   searchParams: Promise<{ filtro?: string }>;
 }) {
-  const user = await requirePermission("agenda:view");
+  const user = await requireNavPage("messaggi");
   const sp = await searchParams;
   const ctx = await buildAgendaScopeContext(user);
 
