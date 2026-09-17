@@ -6,10 +6,11 @@ import { isSqliteProvider } from "@/lib/data/config";
 import { createFirebasePrisma } from "@/lib/firebase/firebasePrisma";
 
 /** Bump per forzare reload dello shim dopo HMR (evita client stale in globalThis). */
-const FIREBASE_PRISMA_VERSION = 6;
+const FIREBASE_PRISMA_VERSION = 14;
 
 const globalForPrisma = globalThis as unknown as {
   sqlitePrisma?: PrismaClient;
+  sqlitePrismaVersion?: number;
   firebasePrisma?: PrismaClientType;
   firebasePrismaVersion?: number;
 };
@@ -19,9 +20,14 @@ function getSqliteClient(): PrismaClient {
     throw new Error("SQLite ops solo lato server");
   }
   assertOperationalBackendReady();
-  if (!globalForPrisma.sqlitePrisma) {
-    globalForPrisma.sqlitePrisma = new PrismaClient();
+  if (
+    globalForPrisma.sqlitePrisma &&
+    globalForPrisma.sqlitePrismaVersion === FIREBASE_PRISMA_VERSION
+  ) {
+    return globalForPrisma.sqlitePrisma;
   }
+  globalForPrisma.sqlitePrisma = new PrismaClient();
+  globalForPrisma.sqlitePrismaVersion = FIREBASE_PRISMA_VERSION;
   return globalForPrisma.sqlitePrisma;
 }
 

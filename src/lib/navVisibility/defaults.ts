@@ -57,6 +57,8 @@ export function baselinePageVisible(
       return !user.formazioneOnly && can(u, "strumenti:view");
     case "legal":
       return !user.formazioneOnly && can(u, "legal:view");
+    case "recruiting":
+      return !user.formazioneOnly && can(u, "recruiting:view");
     case "import":
       return can(u, "import:run");
     case "mandanti":

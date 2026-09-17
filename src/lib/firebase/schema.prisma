@@ -26,6 +26,11 @@ model Tenant {
   auditLogs AuditLog[]
   importBatch ImportBatch[]
   dialerCampagne DialerCampagna[]
+  offerteLavoro OffertaLavoro[]
+  recruitingReceiverConfig RecruitingReceiverConfig?
+  recruitingCandidature RecruitingCandidatura[]
+  recruitingAttivita RecruitingAttivita[]
+  recruitingColloqui RecruitingColloquio[]
 }
 
 model Sede {
@@ -103,6 +108,9 @@ model User {
   dialerCampagneSupervise DialerCampagna[] @relation("DialerCampagnaSupervisor")
   dialerSessioni DialerCampagnaOperatore[]
   dialerEventi  DialerChiamataEvento[]
+  recruitingAttivitaCreate RecruitingAttivita[] @relation("RecruitingAttivitaAutore")
+  recruitingColloquiCreate RecruitingColloquio[] @relation("RecruitingColloquioAutore")
+  recruitingColloquiIntervistatore RecruitingColloquio[] @relation("RecruitingColloquioIntervistatore")
   lastLoginAt   DateTime?
   lastLogoutAt  DateTime?
   createdAt     DateTime   @default(now())
@@ -607,6 +615,140 @@ model ConfigurazioneSistema {
 
   @@unique([tenantId, chiave])
   @@index([tenantId])
+}
+
+// ============================================================
+// Recruiting (modulo isolato — offerte, nessun candidato/CV)
+// ============================================================
+
+model OffertaLavoro {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  titolo      String
+  // Indeed location.cityRegionPostal
+  luogo       String   @default("")
+  // PRESENZA | IBRIDO | REMOTO — Indeed remoteType (REMOTO → Fully Remote)
+  modalitaLavoro String @default("PRESENZA")
+  // TEMPO_INDETERMINATO | TEMPO_DETERMINATO | APPRENDISTATO | STAGE | COLLABORAZIONE
+  tipoContratto String @default("")
+  // FULL_TIME | PART_TIME | TURNO
+  orario      String   @default("")
+  numeroPosizioni Int  @default(1)
+  descrizione String   @default("")
+  attivitaPrincipali String @default("")
+  requisiti   String   @default("")
+  competenze  String   @default("")
+  retribuzione String  @default("")
+  benefit     String   @default("")
+  // Indeed location.country
+  paese       String   @default("IT")
+  // BOZZA | PUBBLICATA | CHIUSA
+  stato       String   @default("BOZZA")
+  // Riservato alla futura sync Indeed; non valorizzato in questo blocco.
+  indeedJobId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  candidature RecruitingCandidatura[]
+
+  @@index([tenantId])
+  @@index([tenantId, stato])
+  @@unique([id, tenantId])
+}
+
+// Configurazione tecnica del ricevitore aziendale (1 per tenant).
+// Nessun candidato, CV, secret Indeed o credenziale SQL.
+model RecruitingReceiverConfig {
+  id         String   @id @default(cuid())
+  tenantId   String   @unique
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baseUrl    String
+  // DISCONNECTED | ACTIVE | ERROR
+  status     String   @default("DISCONNECTED")
+  sourceName String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Metadati tecnici candidatura (nessun PII/CV). Collegata a OffertaLavoro dello stesso tenant.
+model RecruitingCandidatura {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  offertaId             String
+  offerta               OffertaLavoro @relation(fields: [offertaId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  externalApplicationId String?
+  receiverCandidateId   String?
+  // RICEVUTA | IN_VALUTAZIONE | COLLOQUIO | PROVA | ARCHIVIATA | ASSUNTA
+  stato                 String    @default("RICEVUTA")
+  source                String?
+  receivedAt            DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  lastSyncAt            DateTime?
+  attivita              RecruitingAttivita[]
+  colloqui              RecruitingColloquio[]
+
+  @@index([tenantId])
+  @@index([tenantId, offertaId])
+  @@index([tenantId, stato])
+  @@unique([id, tenantId])
+}
+
+// Storico append-only della scheda candidatura (unica fonte della timeline).
+model RecruitingAttivita {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidaturaId String
+  candidatura   RecruitingCandidatura @relation(fields: [candidaturaId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  // RICEZIONE | CONTATTO | NOTA | COLLOQUIO_PROGRAMMATO | COLLOQUIO_SVOLTO | COLLOQUIO_ESITO | COLLOQUIO_ANNULLATO | CAMBIO_STATO
+  tipo          String
+  occurredAt    DateTime
+  note          String   @default("")
+  esito         String?
+  statoDa       String?
+  statoA        String?
+  colloquioId   String?
+  // TELEFONO | VIDEO | ALTRO — solo CONTATTO
+  canale        String?
+  createdAt     DateTime @default(now())
+  createdById   String
+  createdBy     User     @relation("RecruitingAttivitaAutore", fields: [createdById], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, candidaturaId, occurredAt])
+}
+
+// Documento operativo colloquio. Gli eventi di timeline restano su RecruitingAttivita.
+model RecruitingColloquio {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidaturaId         String
+  candidatura           RecruitingCandidatura @relation(fields: [candidaturaId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  round                 Int
+  // PROGRAMMATO | SVOLTO | ESITATO | ANNULLATO
+  stato                 String    @default("PROGRAMMATO")
+  scheduledAt           DateTime
+  // PRESENZA | VIDEO | TELEFONO
+  modalita              String
+  intervistatoreUserId  String?
+  intervistatore        User?     @relation("RecruitingColloquioIntervistatore", fields: [intervistatoreUserId], references: [id])
+  intervistatoreLabel   String    @default("")
+  notePreliminari       String    @default("")
+  noteSvolgimento       String    @default("")
+  // POSITIVO | NEGATIVO | DA_RIVALUTARE | ASSENTE
+  esito                 String?
+  valutazione           String    @default("")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  createdById           String
+  createdBy             User      @relation("RecruitingColloquioAutore", fields: [createdById], references: [id])
+
+  @@unique([tenantId, candidaturaId, round])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, candidaturaId])
 }
 
 // ============================================================

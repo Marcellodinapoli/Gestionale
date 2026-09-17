@@ -57,6 +57,8 @@ export type Permission =
   | "formazione:view"
   | "strumenti:view"
   | "legal:view"
+  | "recruiting:view"
+  | "recruiting:manage"
   | "dialer:operate"
   | "dialer:manage"
   | "dialer:admin";
@@ -91,6 +93,9 @@ const MAP: Record<Permission, Role[]> = {
   "strumenti:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR", "LEGAL"],
   /** Area gestione legale. */
   "legal:view": ["ADMIN", "LEGAL"],
+  /** Recruiting: offerte di lavoro (metadati). Nessun CV / candidato. */
+  "recruiting:view": ["ADMIN", "AMMINISTRAZIONE"],
+  "recruiting:manage": ["ADMIN", "AMMINISTRAZIONE"],
   "dialer:operate": ["ADMIN", "SUPERVISOR", "OPERATOR"],
   "dialer:manage": ["ADMIN", "SUPERVISOR"],
   "dialer:admin": ["ADMIN"],

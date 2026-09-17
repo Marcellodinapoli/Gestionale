@@ -191,6 +191,14 @@ const MAIN_LINKS: NavLink[] = [
     accentClass: "bg-[#e8d5b5] text-[#5c4033] hover:bg-[#dfc7a0] hover:text-[#3d2914]",
     accentActiveClass: "bg-[#d4b896] font-semibold text-[#3d2914]",
   },
+  {
+    href: "/recruiting",
+    label: "Recruiting",
+    icon: Briefcase,
+    moduleId: "core",
+    navPageId: "recruiting",
+    show: (u) => !isFormazioneOnly(u) && can(u, "recruiting:view"),
+  },
 ];
 
 const ADMIN_LINKS: NavLink[] = [

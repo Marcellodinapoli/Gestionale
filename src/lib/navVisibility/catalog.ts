@@ -18,6 +18,7 @@ export type NavPageId =
   | "formazione"
   | "strumenti"
   | "legal"
+  | "recruiting"
   | "import"
   | "mandanti"
   | "telefonia"
@@ -54,6 +55,7 @@ export const NAV_PAGES: NavPageDef[] = [
   { id: "formazione", label: "Formazione", pathPrefix: "/formazione", group: "main" },
   { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main" },
   { id: "legal", label: "Legal", pathPrefix: "/legal", group: "main" },
+  { id: "recruiting", label: "Recruiting", pathPrefix: "/recruiting", group: "main" },
   { id: "import", label: "Import", pathPrefix: "/import", group: "admin" },
   { id: "mandanti", label: "Mandanti", pathPrefix: "/mandanti", group: "admin" },
   { id: "telefonia", label: "Telefonia", pathPrefix: "/telefonia", group: "admin" },
