@@ -24,10 +24,18 @@ import {
   getCandidatura,
   updateCandidaturaStato,
 } from "@/lib/recruiting/candidatureRepo";
-import { validaContattoInput, validaNotaInput } from "@/lib/recruiting/attivita";
+import {
+  validaContattoInput,
+  validaNotaInput,
+  validaProvaInput,
+  hasContattoRegistrato,
+} from "@/lib/recruiting/attivita";
 import {
   createContattoAttivita,
   createNotaAttivita,
+  createProvaProgrammata,
+  listAttivitaByCandidatura,
+  updateContattoAttivita,
 } from "@/lib/recruiting/attivitaRepo";
 import {
   validaColloquioCreateInput,
@@ -129,6 +137,8 @@ export async function creaCandidaturaAction(formData: FormData) {
   const user = await requireWritablePermission("recruiting:manage");
   const input = validaCandidaturaInput({
     offertaId: String(formData.get("offertaId") || ""),
+    cognome: String(formData.get("cognome") || ""),
+    nome: String(formData.get("nome") || ""),
     source: String(formData.get("source") || ""),
   });
   const created = await createCandidatura(user.tenantId, input, user.id);
@@ -144,6 +154,18 @@ export async function aggiornaStatoCandidaturaAction(formData: FormData) {
   if (!current) throw new Error("Candidatura non trovata");
   const stato = parseStatoCandidatura(String(formData.get("stato") || ""));
   assertTransizioneCandidatura(current.stato, stato);
+  if (stato === "COLLOQUIO") {
+    throw new Error("Per passare a Colloquio è obbligatorio programmare il colloquio con data e ora");
+  }
+  if (stato === "PROVA") {
+    throw new Error("Per passare a Prova è obbligatorio programmare la prova con data e ora");
+  }
+  if (current.stato === "RICEVUTA" && stato === "IN_VALUTAZIONE") {
+    const attivita = await listAttivitaByCandidatura(user.tenantId, current.id);
+    if (!hasContattoRegistrato(attivita)) {
+      throw new Error("Nella fase Ricevuta è obbligatorio registrare un contatto");
+    }
+  }
   const updated = await updateCandidaturaStato(user.tenantId, id, stato, user.id);
   revalidateRecruiting(updated.offertaId);
   revalidatePath(`/recruiting/offerte/${updated.offertaId}/${updated.id}`);
@@ -166,6 +188,23 @@ export async function registraContattoCandidaturaAction(formData: FormData) {
   const candidatura = await getCandidatura(user.tenantId, input.candidaturaId);
   if (!candidatura) throw new Error("Candidatura non trovata");
   await createContattoAttivita(user.tenantId, user.id, input);
+  revalidateCandidatura(candidatura.offertaId, candidatura.id);
+}
+
+export async function modificaContattoCandidaturaAction(formData: FormData) {
+  const user = await requireWritablePermission("recruiting:manage");
+  const id = String(formData.get("id") || "").trim();
+  if (!id) throw new Error("Contatto non indicato");
+  const input = validaContattoInput({
+    candidaturaId: String(formData.get("candidaturaId") || ""),
+    canale: String(formData.get("canale") || ""),
+    esito: String(formData.get("esito") || ""),
+    occurredAt: String(formData.get("occurredAt") || ""),
+    note: String(formData.get("note") || ""),
+  });
+  const candidatura = await getCandidatura(user.tenantId, input.candidaturaId);
+  if (!candidatura) throw new Error("Candidatura non trovata");
+  await updateContattoAttivita(user.tenantId, user.id, { id, ...input });
   revalidateCandidatura(candidatura.offertaId, candidatura.id);
 }
 
@@ -194,7 +233,24 @@ export async function creaColloquioAction(formData: FormData) {
   });
   const created = await createColloquio(user.tenantId, user.id, input);
   const candidatura = await getCandidatura(user.tenantId, created.candidaturaId);
+  if (candidatura?.stato === "IN_VALUTAZIONE") {
+    await updateCandidaturaStato(user.tenantId, candidatura.id, "COLLOQUIO", user.id);
+  }
   if (candidatura) revalidateCandidatura(candidatura.offertaId, candidatura.id);
+}
+
+export async function creaProvaAction(formData: FormData) {
+  const user = await requireWritablePermission("recruiting:manage");
+  const input = validaProvaInput({
+    candidaturaId: String(formData.get("candidaturaId") || ""),
+    scheduledAt: String(formData.get("scheduledAt") || ""),
+    note: String(formData.get("note") || ""),
+  });
+  const candidatura = await getCandidatura(user.tenantId, input.candidaturaId);
+  if (!candidatura) throw new Error("Candidatura non trovata");
+  await createProvaProgrammata(user.tenantId, user.id, input);
+  await updateCandidaturaStato(user.tenantId, candidatura.id, "PROVA", user.id);
+  revalidateCandidatura(candidatura.offertaId, candidatura.id);
 }
 
 export async function svolgiColloquioAction(formData: FormData) {

@@ -3,16 +3,31 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
-import { aggiornaStatoCandidaturaAction } from "@/actions/recruiting";
+import {
+  aggiornaStatoCandidaturaAction,
+  aggiungiNotaCandidaturaAction,
+  creaColloquioAction,
+  creaProvaAction,
+  modificaContattoCandidaturaAction,
+  registraContattoCandidaturaAction,
+} from "@/actions/recruiting";
 import {
   STATO_CANDIDATURA_LABELS,
   transizioniConsentiteCandidatura,
   type StatoCandidatura,
 } from "@/lib/recruiting/candidature";
 import {
+  CANALE_CONTATTO_LABELS,
+  CANALI_CONTATTO,
+  ESITI_CONTATTO,
+  ESITO_CONTATTO_LABELS,
   messaggioConfermaStatoTerminale,
   type SuggerimentoTransizione,
 } from "@/lib/recruiting/attivita";
+import {
+  MODALITA_COLLOQUIO,
+  MODALITA_COLLOQUIO_LABELS,
+} from "@/lib/recruiting/colloqui";
 
 const STEPS_PRINCIPALI: StatoCandidatura[] = [
   "RICEVUTA",
@@ -22,17 +37,17 @@ const STEPS_PRINCIPALI: StatoCandidatura[] = [
   "ASSUNTA",
 ];
 
-const PASSI_PROCEDURA = [
-  "Ricezione della candidatura",
-  "Registra contatto o nota",
-  "Passa a In valutazione",
-  "Programma colloquio",
-  "Passa a Colloquio",
-  "Segna come svolto",
-  "Registra esito",
-  "Passa a Prova",
-  "Assunto/a",
-] as const;
+const inputCls = "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
+const labelCls = "text-[10px] font-semibold uppercase text-[var(--muted)]";
+const btnOutline =
+  "h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-semibold disabled:opacity-50";
+
+function datetimeLocalValue(iso?: string) {
+  const parsed = iso ? new Date(iso) : new Date();
+  const d = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function etichettaAzioneStato(stato: StatoCandidatura): string {
   if (stato === "IN_VALUTAZIONE") return "Passa a In valutazione";
@@ -43,24 +58,20 @@ function etichettaAzioneStato(stato: StatoCandidatura): string {
   return STATO_CANDIDATURA_LABELS[stato];
 }
 
-function ProceduraOperativa({
-  passoCorrente,
-  archiviata,
-}: {
-  passoCorrente: number;
-  archiviata: boolean;
-}) {
+function ProceduraOperativa({ stato }: { stato: StatoCandidatura }) {
+  const currentIdx = STEPS_PRINCIPALI.indexOf(stato);
+  const archiviata = stato === "ARCHIVIATA";
   return (
     <div className="mt-4 border-t border-[var(--line)] pt-3">
       <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">Procedura</p>
       <ol className="mt-2 space-y-1 text-sm">
-        {PASSI_PROCEDURA.map((label, i) => {
+        {STEPS_PRINCIPALI.map((step, i) => {
           const n = i + 1;
-          const done = !archiviata && n < passoCorrente;
-          const current = !archiviata && n === passoCorrente;
+          const current = !archiviata && currentIdx === i;
+          const done = !archiviata && currentIdx > i;
           return (
             <li
-              key={label}
+              key={step}
               className={
                 current
                   ? "font-semibold text-[var(--navy)]"
@@ -69,7 +80,7 @@ function ProceduraOperativa({
                     : "text-[var(--muted)]"
               }
             >
-              <span className="tabular-nums">{n}.</span> {label}
+              <span className="tabular-nums">{n}.</span> {STATO_CANDIDATURA_LABELS[step]}
               {current ? " ← adesso" : done ? " ✓" : ""}
             </li>
           );
@@ -162,26 +173,68 @@ function classeBottoneStato(stato: StatoCandidatura, primaria: boolean): string 
 export function CandidaturaDettaglioClient({
   candidatura,
   canManage,
+  operabile,
+  canCreateColloquio,
+  utenti,
   suggerimento,
   hasColloquiAperti,
-  passoProcedura,
+  contatto,
 }: {
   candidatura: {
     id: string;
     stato: StatoCandidatura;
+    cognome: string;
+    nome: string;
   };
   canManage: boolean;
+  operabile: boolean;
+  canCreateColloquio: boolean;
+  utenti: Array<{ id: string; name: string }>;
   suggerimento: SuggerimentoTransizione | null;
   hasColloquiAperti: boolean;
-  passoProcedura: number;
+  contatto: {
+    id: string;
+    canale: string;
+    esito: string;
+    occurredAt: string;
+    note: string;
+  } | null;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [confirmTo, setConfirmTo] = useState<"ASSUNTA" | "ARCHIVIATA" | null>(null);
+  const [modal, setModal] = useState<"contatto" | "colloquio" | "prova" | "nota" | null>(null);
+  const inRicevuta = candidatura.stato === "RICEVUTA";
+  const hasContatto = Boolean(contatto);
+  const modificaContatto = !inRicevuta && hasContatto;
+  const contattoObbligatorio = inRicevuta && !hasContatto;
+  const colloquioObbligatorio = candidatura.stato === "IN_VALUTAZIONE";
+  const provaObbligatoria = candidatura.stato === "COLLOQUIO";
   const next = transizioniConsentiteCandidatura(candidatura.stato);
-  const primaria = suggerimento?.to && next.includes(suggerimento.to) ? suggerimento.to : null;
-  const secondarie = next.filter((s) => s !== primaria);
+  const passaA = next.filter((s) => s !== "ARCHIVIATA" && s !== "COLLOQUIO" && s !== "PROVA");
+  const canArchivia = next.includes("ARCHIVIATA");
+  const primaria =
+    suggerimento?.to &&
+    passaA.includes(suggerimento.to) &&
+    suggerimento.to !== "IN_VALUTAZIONE"
+      ? suggerimento.to
+      : null;
+  const secondarie = passaA.filter((s) => s !== primaria);
+  const showAzioni = canManage && (operabile || next.length > 0);
+
+  function runAction(fd: FormData, action: (data: FormData) => Promise<void>, onOk: () => void) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await action(fd);
+        onOk();
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Operazione non riuscita");
+      }
+    });
+  }
 
   function submitStato(stato: StatoCandidatura) {
     const fd = new FormData();
@@ -210,6 +263,16 @@ export function CandidaturaDettaglioClient({
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+        <div className="mb-4 flex flex-wrap items-end gap-x-8 gap-y-2">
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">Cognome</p>
+            <p className="text-lg font-semibold text-[var(--navy)]">{candidatura.cognome}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">Nome</p>
+            <p className="text-lg font-semibold text-[var(--navy)]">{candidatura.nome}</p>
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--navy)]">Stato</h2>
           <span
@@ -233,47 +296,365 @@ export function CandidaturaDettaglioClient({
         <div className="mt-3">
           <PercorsoCandidatura stato={candidatura.stato} />
         </div>
-        <ProceduraOperativa
-          passoCorrente={passoProcedura}
-          archiviata={candidatura.stato === "ARCHIVIATA"}
-        />
+        <ProceduraOperativa stato={candidatura.stato} />
       </div>
 
-      {canManage && (suggerimento || next.length > 0) ? (
-        <div className="grid max-w-xl gap-3 rounded-xl border border-[var(--line)] bg-white p-4 text-sm">
+      {showAzioni ? (
+        <div className="grid gap-3 rounded-xl border border-[var(--line)] bg-white p-4 text-sm">
           {suggerimento ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
               {suggerimento.messaggio}
             </p>
           ) : null}
-          {next.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {primaria ? (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => onClickStato(primaria)}
-                  className={classeBottoneStato(primaria, true)}
-                >
-                  {pending ? "Salvataggio…" : etichettaAzioneStato(primaria)}
-                </button>
-              ) : null}
-              {secondarie.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={pending}
-                  onClick={() => onClickStato(s)}
-                  className={classeBottoneStato(s, false)}
-                >
-                  {pending ? "Salvataggio…" : etichettaAzioneStato(s)}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {operabile && canCreateColloquio ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setError(null);
+                  setModal("colloquio");
+                }}
+                className={btnOutline}
+              >
+                Programma colloquio
+                {colloquioObbligatorio ? " *" : ""}
+              </button>
+            ) : null}
+            {operabile && provaObbligatoria ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setError(null);
+                  setModal("prova");
+                }}
+                className={btnOutline}
+              >
+                Programma prova *
+              </button>
+            ) : null}
+            {operabile ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setError(null);
+                  setModal("contatto");
+                }}
+                className={btnOutline}
+              >
+                {modificaContatto ? "Modifica contatto" : "Registra contatto"}
+                {contattoObbligatorio ? " *" : ""}
+              </button>
+            ) : null}
+            {operabile ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setError(null);
+                  setModal("nota");
+                }}
+                className={btnOutline}
+              >
+                Aggiungi nota
+              </button>
+            ) : null}
+            {primaria ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => onClickStato(primaria)}
+                className={classeBottoneStato(primaria, true)}
+              >
+                {pending ? "Salvataggio…" : etichettaAzioneStato(primaria)}
+              </button>
+            ) : null}
+            {secondarie.map((s) => (
+              <button
+                key={s}
+                type="button"
+                disabled={pending}
+                onClick={() => onClickStato(s)}
+                className={classeBottoneStato(s, false)}
+              >
+                {pending ? "Salvataggio…" : etichettaAzioneStato(s)}
+              </button>
+            ))}
+            {canArchivia ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => onClickStato("ARCHIVIATA")}
+                className={classeBottoneStato("ARCHIVIATA", false)}
+              >
+                Archivia candidatura
+              </button>
+            ) : null}
+          </div>
           {error ? <p className="text-sm text-rose-800">{error}</p> : null}
         </div>
       ) : null}
+
+      <Modal
+        open={modal === "contatto"}
+        title={modificaContatto ? "Modifica contatto" : "Registra contatto"}
+        onClose={() => !pending && setModal(null)}
+      >
+        <form
+          key={modificaContatto ? contatto?.id ?? "edit" : "new"}
+          className="grid gap-3 p-4 text-sm"
+          action={(fd) =>
+            runAction(
+              fd,
+              modificaContatto ? modificaContattoCandidaturaAction : registraContattoCandidaturaAction,
+              () => setModal(null)
+            )
+          }
+        >
+          <input type="hidden" name="candidaturaId" value={candidatura.id} />
+          {modificaContatto && contatto ? <input type="hidden" name="id" value={contatto.id} /> : null}
+          {contattoObbligatorio ? (
+            <p className="text-xs font-medium text-amber-900">
+              Obbligatorio in fase Ricevuta: senza contatto non si può passare a In valutazione.
+            </p>
+          ) : null}
+          <p className="text-xs text-[var(--muted)]">
+            Nessun numero, email o recapito. Solo canale, esito e nota operativa.
+          </p>
+          <label>
+            <span className={labelCls}>Canale</span>
+            <select
+              name="canale"
+              defaultValue={modificaContatto && contatto ? contatto.canale : "TELEFONO"}
+              className={inputCls}
+            >
+              {CANALI_CONTATTO.map((c) => (
+                <option key={c} value={c}>
+                  {CANALE_CONTATTO_LABELS[c]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className={labelCls}>Esito</span>
+            <select
+              name="esito"
+              defaultValue={modificaContatto && contatto ? contatto.esito : "RAGGIUNTO"}
+              className={inputCls}
+            >
+              {ESITI_CONTATTO.map((e) => (
+                <option key={e} value={e}>
+                  {ESITO_CONTATTO_LABELS[e]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className={labelCls}>Data e ora</span>
+            <input
+              type="datetime-local"
+              name="occurredAt"
+              defaultValue={datetimeLocalValue(
+                modificaContatto && contatto ? contatto.occurredAt : undefined
+              )}
+              className={inputCls}
+            />
+          </label>
+          <label>
+            <span className={labelCls}>Nota</span>
+            <textarea
+              name="note"
+              maxLength={2000}
+              rows={3}
+              defaultValue={modificaContatto && contatto ? contatto.note : ""}
+              className={`${inputCls} h-auto py-2`}
+            />
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setModal(null)}
+              className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm"
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              disabled={pending}
+              className="h-9 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {pending ? "Salvataggio…" : modificaContatto ? "Salva" : "Registra"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modal === "nota"}
+        title="Aggiungi nota"
+        onClose={() => !pending && setModal(null)}
+      >
+        <form
+          className="grid gap-3 p-4 text-sm"
+          action={(fd) => runAction(fd, aggiungiNotaCandidaturaAction, () => setModal(null))}
+        >
+          <input type="hidden" name="candidaturaId" value={candidatura.id} />
+          <label>
+            <span className={labelCls}>Data e ora</span>
+            <input
+              type="datetime-local"
+              name="occurredAt"
+              defaultValue={datetimeLocalValue()}
+              className={inputCls}
+            />
+          </label>
+          <label>
+            <span className={labelCls}>Testo</span>
+            <textarea name="note" required maxLength={2000} rows={4} className={`${inputCls} h-auto py-2`} />
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setModal(null)}
+              className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm"
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              disabled={pending}
+              className="h-9 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {pending ? "Salvataggio…" : "Aggiungi"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modal === "colloquio"}
+        title="Programma colloquio"
+        onClose={() => !pending && setModal(null)}
+      >
+        <form
+          className="grid gap-3 p-4 text-sm"
+          action={(fd) => runAction(fd, creaColloquioAction, () => setModal(null))}
+        >
+          <input type="hidden" name="candidaturaId" value={candidatura.id} />
+          {colloquioObbligatorio ? (
+            <p className="text-xs font-medium text-amber-900">
+              Data e ora obbligatorie: programmare il colloquio fa passare la candidatura a Colloquio.
+            </p>
+          ) : null}
+          <label>
+            <span className={labelCls}>Data e ora</span>
+            <input
+              type="datetime-local"
+              name="scheduledAt"
+              required
+              defaultValue={datetimeLocalValue()}
+              className={inputCls}
+            />
+          </label>
+          <label>
+            <span className={labelCls}>Modalità</span>
+            <select name="modalita" defaultValue="PRESENZA" className={inputCls}>
+              {MODALITA_COLLOQUIO.map((m) => (
+                <option key={m} value={m}>
+                  {MODALITA_COLLOQUIO_LABELS[m]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className={labelCls}>Intervistatore</span>
+            <select name="intervistatoreUserId" defaultValue="" className={inputCls}>
+              <option value="">—</option>
+              {utenti.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className={labelCls}>Referente</span>
+            <input name="intervistatoreLabel" maxLength={120} className={inputCls} />
+          </label>
+          <label>
+            <span className={labelCls}>Note preliminari</span>
+            <textarea name="notePreliminari" maxLength={2000} rows={3} className={`${inputCls} h-auto py-2`} />
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setModal(null)}
+              className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm"
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              disabled={pending}
+              className="h-9 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {pending ? "Salvataggio…" : "Programma"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modal === "prova"}
+        title="Programma prova"
+        onClose={() => !pending && setModal(null)}
+      >
+        <form
+          className="grid gap-3 p-4 text-sm"
+          action={(fd) => runAction(fd, creaProvaAction, () => setModal(null))}
+        >
+          <input type="hidden" name="candidaturaId" value={candidatura.id} />
+          <p className="text-xs font-medium text-amber-900">
+            Data e ora obbligatorie: programmare la prova fa passare la candidatura a Prova.
+          </p>
+          <label>
+            <span className={labelCls}>Data e ora</span>
+            <input
+              type="datetime-local"
+              name="scheduledAt"
+              required
+              defaultValue={datetimeLocalValue()}
+              className={inputCls}
+            />
+          </label>
+          <label>
+            <span className={labelCls}>Nota</span>
+            <textarea name="note" maxLength={2000} rows={3} className={`${inputCls} h-auto py-2`} />
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setModal(null)}
+              className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm"
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              disabled={pending}
+              className="h-9 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {pending ? "Salvataggio…" : "Programma"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         open={!!confirmTo}

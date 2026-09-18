@@ -15,11 +15,9 @@ export default async function StrumentiLayout({ children }: { children: ReactNod
 
   return (
     <FormazioneProvider>
-      <div className="mx-auto w-full max-w-[1300px] px-4 sm:px-6">
+      <div className="space-y-4">
         <StrumentiNav />
-        <div className="mt-4">
-          <FormazioneGate>{children}</FormazioneGate>
-        </div>
+        <FormazioneGate>{children}</FormazioneGate>
       </div>
     </FormazioneProvider>
   );

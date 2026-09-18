@@ -1,6 +1,5 @@
 import { requirePermission } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
-import { LegalPhaseNav } from "@/components/giudiziale/LegalPhaseNav";
 import { GiudizialeElencoTable } from "@/components/giudiziale/GiudizialeElencoTable";
 import {
   listPraticheGiudiziali,
@@ -21,7 +20,6 @@ export default async function LegalValutazionePage() {
         title="Valutazione"
         subtitle="Elenco pratiche in attesa di valutazione legale — stesso percorso della pratica."
       />
-      <LegalPhaseNav attivo="valutazione" />
       <GiudizialeElencoTable
         items={items}
         emptyMessage="Nessuna pratica in attesa di valutazione legale. Usa «Avvia giudiziale» sulla pratica e conferma «Richiedi valutazione legale»."

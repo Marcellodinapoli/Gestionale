@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireNavPage } from "@/lib/guard";
 import { can } from "@/lib/permissions";
-import { PageHeader } from "@/components/ui";
 import { listOfferteLavoro } from "@/lib/recruiting/offerteRepo";
 import { getReceiverConfig } from "@/lib/recruiting/receiverRepo";
-import { countCandidatureByOfferta, listCandidatureRecenti } from "@/lib/recruiting/candidatureRepo";
+import { countCandidatureByOfferta, listCandidaturePerHome } from "@/lib/recruiting/candidatureRepo";
 import { listColloquiRecenti } from "@/lib/recruiting/colloquiRepo";
 import { OfferteLavoroClient } from "./OfferteLavoroClient";
 import { RecruitingReceiverClient } from "./RecruitingReceiverClient";
@@ -19,7 +18,7 @@ export default async function RecruitingPage() {
     listOfferteLavoro(user.tenantId),
     getReceiverConfig(user.tenantId),
     countCandidatureByOfferta(user.tenantId),
-    listCandidatureRecenti(user.tenantId),
+    listCandidaturePerHome(user.tenantId),
     listColloquiRecenti(user.tenantId),
   ]);
   const offerte = offerteRows.map((o) => ({
@@ -50,10 +49,6 @@ export default async function RecruitingPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Recruiting"
-        subtitle="Offerte di lavoro, candidature e colloqui ricevuti."
-      />
       <OfferteLavoroClient
         offerte={offerte}
         canManage={canManage}
@@ -63,6 +58,8 @@ export default async function RecruitingPage() {
           stato: c.stato,
           source: c.source,
           receivedAt: c.receivedAt.toISOString(),
+          cognome: c.cognome,
+          nome: c.nome,
         }))}
         colloqui={colloquiRecenti.map((c) => ({
           id: c.id,

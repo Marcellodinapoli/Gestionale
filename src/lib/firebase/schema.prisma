@@ -670,7 +670,7 @@ model RecruitingReceiverConfig {
   updatedAt  DateTime @updatedAt
 }
 
-// Metadati tecnici candidatura (nessun PII/CV). Collegata a OffertaLavoro dello stesso tenant.
+// Candidatura: anagrafica (cognome/nome) + metadati tecnici. Nessun CV.
 model RecruitingCandidatura {
   id                    String    @id @default(cuid())
   tenantId              String
@@ -679,6 +679,8 @@ model RecruitingCandidatura {
   offerta               OffertaLavoro @relation(fields: [offertaId, tenantId], references: [id, tenantId], onDelete: Cascade)
   externalApplicationId String?
   receiverCandidateId   String?
+  cognome               String    @default("")
+  nome                  String    @default("")
   // RICEVUTA | IN_VALUTAZIONE | COLLOQUIO | PROVA | ARCHIVIATA | ASSUNTA
   stato                 String    @default("RICEVUTA")
   source                String?
@@ -701,7 +703,7 @@ model RecruitingAttivita {
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   candidaturaId String
   candidatura   RecruitingCandidatura @relation(fields: [candidaturaId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  // RICEZIONE | CONTATTO | NOTA | COLLOQUIO_PROGRAMMATO | COLLOQUIO_SVOLTO | COLLOQUIO_ESITO | COLLOQUIO_ANNULLATO | CAMBIO_STATO
+  // RICEZIONE | CONTATTO | NOTA | COLLOQUIO_PROGRAMMATO | COLLOQUIO_SVOLTO | COLLOQUIO_ESITO | COLLOQUIO_ANNULLATO | PROVA_PROGRAMMATA | CAMBIO_STATO
   tipo          String
   occurredAt    DateTime
   note          String   @default("")

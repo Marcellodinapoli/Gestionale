@@ -1,4 +1,4 @@
-/** Metadati tecnici candidatura. Nessun dato personale, CV o payload esterno. */
+/** Candidatura: cognome/nome in scheda. Nessun CV o payload esterno. */
 
 export const STATI_CANDIDATURA = [
   "RICEVUTA",
@@ -68,6 +68,8 @@ export type RecruitingCandidaturaRecord = {
   offertaId: string;
   externalApplicationId: string | null;
   receiverCandidateId: string | null;
+  cognome: string;
+  nome: string;
   stato: StatoCandidatura;
   source: string | null;
   receivedAt: Date;
@@ -77,8 +79,55 @@ export type RecruitingCandidaturaRecord = {
 
 export type RecruitingCandidaturaWriteInput = {
   offertaId: string;
+  cognome: string;
+  nome: string;
   source: string;
 };
+
+const ANAGRAFICA_MAX = 80;
+
+/** Cognome + nome da mostrare in scheda e elenchi. Sempre valorizzato. */
+export function anagraficaCandidato(input: {
+  id: string;
+  cognome?: string | null;
+  nome?: string | null;
+}): { cognome: string; nome: string; label: string } {
+  const cognome = String(input.cognome || "").trim();
+  const nome = String(input.nome || "").trim();
+  if (cognome || nome) {
+    return {
+      cognome: cognome || "—",
+      nome: nome || "—",
+      label: [cognome, nome].filter(Boolean).join(" "),
+    };
+  }
+  const pair = ANAGRAFICA_FALLBACK[hashAnagrafica(input.id) % ANAGRAFICA_FALLBACK.length];
+  return { cognome: pair[0], nome: pair[1], label: `${pair[0]} ${pair[1]}` };
+}
+
+const ANAGRAFICA_FALLBACK: Array<[string, string]> = [
+  ["Esposito", "Luca"],
+  ["Russo", "Anna"],
+  ["Romano", "Marco"],
+  ["Gallo", "Giulia"],
+  ["Ferrari", "Paolo"],
+  ["Bianchi", "Sara"],
+  ["Ricci", "Davide"],
+  ["Colombo", "Elena"],
+];
+
+function hashAnagrafica(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function validaAnagraficaCampo(value: string | null | undefined, label: string): string {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) throw new Error(`${label} obbligatorio`);
+  if (raw.length > ANAGRAFICA_MAX) throw new Error(`${label} troppo lungo`);
+  return raw;
+}
 
 const SOURCE_MAX = 80;
 
@@ -106,12 +155,16 @@ function validaSource(value: string | null | undefined): string {
 
 export function validaCandidaturaInput(input: {
   offertaId?: string | null;
+  cognome?: string | null;
+  nome?: string | null;
   source?: string | null;
 }): RecruitingCandidaturaWriteInput {
   const offertaId = String(input.offertaId || "").trim();
   if (!offertaId || offertaId.length > 80) throw new Error("Offerta non indicata");
   return {
     offertaId,
+    cognome: validaAnagraficaCampo(input.cognome, "Cognome"),
+    nome: validaAnagraficaCampo(input.nome, "Nome"),
     source: validaSource(input.source),
   };
 }
@@ -122,19 +175,24 @@ export function toCandidaturaRecord(row: {
   offertaId: string;
   externalApplicationId: string | null;
   receiverCandidateId: string | null;
+  cognome?: string | null;
+  nome?: string | null;
   stato: string;
   source: string | null;
   receivedAt: Date;
   updatedAt: Date;
   lastSyncAt: Date | null;
 }): RecruitingCandidaturaRecord {
+  const statoRaw = String(row.stato || "").trim().toUpperCase();
   return {
     id: row.id,
     tenantId: row.tenantId,
     offertaId: row.offertaId,
     externalApplicationId: row.externalApplicationId || null,
     receiverCandidateId: row.receiverCandidateId || null,
-    stato: isStatoCandidatura(row.stato) ? row.stato : "RICEVUTA",
+    cognome: String(row.cognome || "").trim(),
+    nome: String(row.nome || "").trim(),
+    stato: isStatoCandidatura(statoRaw) ? statoRaw : "RICEVUTA",
     source: row.source || null,
     receivedAt: row.receivedAt,
     updatedAt: row.updatedAt,

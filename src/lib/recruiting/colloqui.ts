@@ -118,6 +118,8 @@ export function validaColloquioCreateInput(input: {
 } {
   const candidaturaId = String(input.candidaturaId || "").trim();
   if (!candidaturaId || candidaturaId.length > 80) throw new Error("Candidatura non indicata");
+  const scheduledRaw = String(input.scheduledAt || "").trim();
+  if (!scheduledRaw) throw new Error("Data e ora del colloquio obbligatorie");
   const modalitaRaw = String(input.modalita || "").trim().toUpperCase();
   if (!isModalitaColloquio(modalitaRaw)) throw new Error("Modalità non valida");
   const intervistatoreUserId = String(input.intervistatoreUserId || "").trim();
@@ -126,7 +128,7 @@ export function validaColloquioCreateInput(input: {
   if (intervistatoreLabel.length > LABEL_MAX) throw new Error("Referente troppo lungo");
   return {
     candidaturaId,
-    scheduledAt: parseOccurredAt(input.scheduledAt),
+    scheduledAt: parseOccurredAt(scheduledRaw),
     modalita: modalitaRaw,
     intervistatoreUserId,
     intervistatoreLabel,

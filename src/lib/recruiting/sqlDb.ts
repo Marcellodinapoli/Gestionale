@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import sql from "mssql";
 import { isConnectorProvider } from "@/lib/data/factory";
+import { isSqliteProvider } from "@/lib/data/config";
+import { prisma } from "@/lib/prisma";
 
 function loadEnvFile(filePath: string) {
   if (!existsSync(filePath)) return;
@@ -52,6 +54,59 @@ export async function recruitingPool(): Promise<sql.ConnectionPool> {
 
 export { sql };
 
+let candidatoAnagraficaCols: boolean | null = null;
+
+/** True se le colonne Cognome/Nome esistono (migration 033 / SQLite locale). */
+export async function recruitingHasCandidatoAnagrafica(): Promise<boolean> {
+  if (candidatoAnagraficaCols != null) return candidatoAnagraficaCols;
+  if (!recruitingUsesSql()) {
+    if (!isSqliteProvider()) {
+      candidatoAnagraficaCols = true;
+      return true;
+    }
+    try {
+      const rows = await prisma.$transaction((tx) =>
+        tx.$queryRaw<Array<{ name: string }>>`
+          PRAGMA table_info("RecruitingCandidatura")
+        `
+      );
+      const names = new Set(rows.map((r) => String(r.name || "").toLowerCase()));
+      candidatoAnagraficaCols = names.has("cognome") && names.has("nome");
+    } catch {
+      candidatoAnagraficaCols = false;
+    }
+    return candidatoAnagraficaCols;
+  }
+  const pool = await recruitingPool();
+  const res = await pool.request().query(`
+    SELECT CASE
+      WHEN COL_LENGTH('dbo.RecruitingCandidature', 'Cognome') IS NULL THEN 0
+      WHEN COL_LENGTH('dbo.RecruitingCandidature', 'Nome') IS NULL THEN 0
+      ELSE 1
+    END AS Ok
+  `);
+  candidatoAnagraficaCols = Number(res.recordset[0]?.Ok) === 1;
+  return candidatoAnagraficaCols;
+}
+
+export async function candidaturaSelectSql(alias?: string): Promise<string> {
+  const p = alias ? `${alias}.` : "";
+  const cols = [
+    "Id",
+    "TenantId",
+    "OffertaId",
+    "ExternalApplicationId",
+    "ReceiverCandidateId",
+    "Stato",
+    "Source",
+    "ReceivedAt",
+    "UpdatedAt",
+    "LastSyncAt",
+  ];
+  if (await recruitingHasCandidatoAnagrafica()) cols.push("Cognome", "Nome");
+  return cols.map((c) => `${p}${c}`).join(", ");
+}
+
 export function mapOffertaRow(r: Record<string, unknown>) {
   return {
     id: String(r.Id),
@@ -83,6 +138,8 @@ export function mapCandidaturaRow(r: Record<string, unknown>) {
     offertaId: String(r.OffertaId),
     externalApplicationId: r.ExternalApplicationId != null ? String(r.ExternalApplicationId) : null,
     receiverCandidateId: r.ReceiverCandidateId != null ? String(r.ReceiverCandidateId) : null,
+    cognome: r.Cognome != null ? String(r.Cognome) : "",
+    nome: r.Nome != null ? String(r.Nome) : "",
     stato: String(r.Stato),
     source: r.Source != null ? String(r.Source) : null,
     receivedAt: new Date(String(r.ReceivedAt)),

@@ -165,6 +165,7 @@ export async function createContattoAttivita(
     note: input.note,
     esito: input.esito,
     canale: input.canale,
+    statoA: candidatura.stato,
   });
 }
 
@@ -182,5 +183,93 @@ export async function createNotaAttivita(
     occurredAt: input.occurredAt,
     createdById,
     note: input.note,
+    statoA: candidatura.stato,
   });
+}
+
+export async function createProvaProgrammata(
+  tenantId: string,
+  createdById: string,
+  input: { candidaturaId: string; scheduledAt: Date; note: string }
+): Promise<RecruitingAttivitaRecord> {
+  const candidatura = await assertCandidaturaDelTenant(tenantId, input.candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+  if (candidatura.stato !== "COLLOQUIO") {
+    throw new Error("Prova non programmabile in questo stato");
+  }
+  return insertAttivita({
+    tenantId: candidatura.tenantId,
+    candidaturaId: candidatura.id,
+    tipo: "PROVA_PROGRAMMATA",
+    occurredAt: input.scheduledAt,
+    createdById,
+    note: input.note,
+    statoA: candidatura.stato,
+  });
+}
+
+export async function updateContattoAttivita(
+  tenantId: string,
+  createdById: string,
+  input: {
+    id: string;
+    candidaturaId: string;
+    canale: CanaleContatto;
+    esito: EsitoContatto;
+    occurredAt: Date;
+    note: string;
+  }
+): Promise<RecruitingAttivitaRecord> {
+  void createdById;
+  const candidatura = await assertCandidaturaDelTenant(tenantId, input.candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+  if (candidatura.stato === "RICEVUTA") {
+    throw new Error("In Ricevuta registra un nuovo contatto");
+  }
+  const list = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
+  const current = list.find((a) => a.id === input.id && a.tipo === "CONTATTO");
+  if (!current) throw new Error("Contatto non trovato");
+  if (!recruitingUsesSql()) {
+    const result = await prisma.recruitingAttivita.updateMany({
+      where: {
+        id: input.id,
+        tenantId: candidatura.tenantId,
+        candidaturaId: candidatura.id,
+        tipo: "CONTATTO",
+      },
+      data: {
+        canale: input.canale,
+        esito: input.esito,
+        occurredAt: input.occurredAt,
+        note: input.note,
+      },
+    });
+    if (result.count !== 1) throw new Error("Contatto non trovato");
+    const row = await prisma.recruitingAttivita.findFirst({
+      where: { id: input.id, tenantId: candidatura.tenantId },
+      include: { createdBy: { select: { name: true, cognome: true } } },
+    });
+    if (!row) throw new Error("Contatto non aggiornato");
+    return toAttivitaRecord(row);
+  }
+  const pool = await recruitingPool();
+  const upd = await pool
+    .request()
+    .input("id", sql.NVarChar(64), input.id)
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .input("canale", sql.NVarChar(20), input.canale)
+    .input("esito", sql.NVarChar(30), input.esito)
+    .input("occurredAt", sql.DateTime2, input.occurredAt)
+    .input("note", sql.NVarChar(2000), input.note)
+    .query(`
+      UPDATE dbo.RecruitingAttivita
+      SET Canale = @canale, Esito = @esito, OccurredAt = @occurredAt, Note = @note
+      WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Tipo = N'CONTATTO'
+    `);
+  if (upd.rowsAffected[0] !== 1) throw new Error("Contatto non trovato");
+  const refreshed = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
+  const updated = refreshed.find((a) => a.id === input.id);
+  if (!updated) throw new Error("Contatto non aggiornato");
+  return updated;
 }

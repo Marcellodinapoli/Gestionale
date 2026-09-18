@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useFormazioneIntro } from "@/components/formazione/FormazioneIntro";
 import { navigateBack } from "@/lib/navBack";
+import { SectionTabNav, sectionTabClass } from "@/components/ui/SectionTabNav";
 
 const BASE_ITEMS = [
   {
@@ -77,67 +78,63 @@ export function FormazioneNav({ canMonitor = false }: { canMonitor?: boolean }) 
   const items = getFormazioneMenuItems(canMonitor);
 
   return (
-    <nav className="mt-6 border-b border-[var(--line)]">
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <div className="flex flex-wrap gap-6">
-          {items.map(({ href, label, icon: Icon }) => {
-            const active = isActive(pathname, href);
-            const showBack =
-              (href === "/formazione/corsi" && courseDetail) ||
-              (href === "/formazione/collaboratori" && collaboratorBackHref != null);
-            const fallbackHref =
-              href === "/formazione/corsi" && courseDetail
-                ? "/formazione/corsi"
-                : href === "/formazione/collaboratori" && collaboratorBackHref
-                  ? collaboratorBackHref
-                  : href;
-            const itemClass = `-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
-              active
-                ? "border-[#FB8C00] text-[var(--navy)]"
-                : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
-            }`;
-
-            if (showBack && active) {
-              return (
-                <button
-                  key={href}
-                  type="button"
-                  onClick={() => navigateBack(router, fallbackHref)}
-                  title="Torna indietro"
-                  aria-label={`Indietro · ${label}`}
-                  className={itemClass}
-                >
-                  <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" />
-                  {label}
-                </button>
-              );
-            }
-
-            return (
-              <Link
-                key={href}
-                href={href}
-                title={label}
-                aria-label={label}
-                className={itemClass}
-              >
-                <Icon className="h-4 w-4 shrink-0 opacity-80" />
-                {label}
-              </Link>
-            );
-          })}
-        </div>
+    <SectionTabNav
+      label="Sezioni Formazione"
+      end={
         <button
           type="button"
           onClick={openIntro}
           title="Riapri il percorso di formazione"
-          className="-mb-px inline-flex items-center gap-1.5 border-b-2 border-transparent pb-3 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--navy)]"
+          className={sectionTabClass(false)}
         >
           <CircleHelp className="h-4 w-4 shrink-0 opacity-80" />
           Percorso
         </button>
-      </div>
-    </nav>
+      }
+    >
+      {items.map(({ href, label, icon: Icon }) => {
+        const active = isActive(pathname, href);
+        const showBack =
+          (href === "/formazione/corsi" && courseDetail) ||
+          (href === "/formazione/collaboratori" && collaboratorBackHref != null);
+        const fallbackHref =
+          href === "/formazione/corsi" && courseDetail
+            ? "/formazione/corsi"
+            : href === "/formazione/collaboratori" && collaboratorBackHref
+              ? collaboratorBackHref
+              : href;
+        const itemClass = sectionTabClass(active);
+
+        if (showBack && active) {
+          return (
+            <button
+              key={href}
+              type="button"
+              onClick={() => navigateBack(router, fallbackHref)}
+              title="Torna indietro"
+              aria-label={`Indietro · ${label}`}
+              className={itemClass}
+            >
+              <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" />
+              {label}
+            </button>
+          );
+        }
+
+        return (
+          <Link
+            key={href}
+            href={href}
+            title={label}
+            aria-label={label}
+            className={itemClass}
+          >
+            <Icon className="h-4 w-4 shrink-0 opacity-80" />
+            {label}
+          </Link>
+        );
+      })}
+    </SectionTabNav>
   );
 }
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, PhoneForwarded, Settings, Target } from "lucide-react";
+import { SectionTabNav, sectionTabClass } from "@/components/ui/SectionTabNav";
 
 type NavItem = {
   href: string;
@@ -47,28 +48,22 @@ export function DialerNav({
   }
 
   return (
-    <nav className="border-b border-[var(--line)]">
-      <div className="flex flex-wrap gap-6">
-        {items.map(({ href, label, icon: Icon }) => {
-          const active = isActive(pathname, href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              title={label}
-              aria-current={active ? "page" : undefined}
-              className={`-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-semibold transition ${
-                active
-                  ? "border-[#FB8C00] text-[var(--navy)]"
-                  : "border-transparent text-[var(--muted)] hover:text-[var(--navy)]"
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0 opacity-80" />
-              {label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+    <SectionTabNav label="Sezioni Dialer">
+      {items.map(({ href, label, icon: Icon }) => {
+        const active = isActive(pathname, href);
+        return (
+          <Link
+            key={href}
+            href={href}
+            title={label}
+            aria-current={active ? "page" : undefined}
+            className={sectionTabClass(active)}
+          >
+            <Icon className="h-4 w-4 shrink-0 opacity-80" />
+            {label}
+          </Link>
+        );
+      })}
+    </SectionTabNav>
   );
 }

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ClipboardCheck, LayoutDashboard, PlayCircle, Waypoints } from "lucide-react";
+import { SectionTabNav, sectionTabClass } from "@/components/ui/SectionTabNav";
 
 export type LegalPhaseKey = "panoramica" | "avvio" | "valutazione" | "strategia";
 
@@ -7,6 +9,13 @@ const LABELS: Record<LegalPhaseKey, string> = {
   avvio: "Avvio",
   valutazione: "Valutazione",
   strategia: "Strategia",
+};
+
+const ICONS: Record<LegalPhaseKey, typeof LayoutDashboard> = {
+  panoramica: LayoutDashboard,
+  avvio: PlayCircle,
+  valutazione: ClipboardCheck,
+  strategia: Waypoints,
 };
 
 const HUB_HREFS: Record<Exclude<LegalPhaseKey, "avvio">, string> = {
@@ -57,36 +66,32 @@ export function LegalPhaseNav({
 }) {
   const keys = praticaId ? ORDER_PRATICA : ORDER_HUB;
   return (
-    <nav
-      className="flex flex-wrap gap-1 rounded-lg border border-[var(--line)] bg-[#dce4ec] p-1"
-      aria-label="Sezioni Legal"
-    >
+    <SectionTabNav label="Sezioni Legal" flush={Boolean(praticaId)}>
       {keys.map((key) => {
         const on = key === attivo;
         const href = praticaId
           ? praticaHref(praticaId, key)
           : HUB_HREFS[key as Exclude<LegalPhaseKey, "avvio">];
+        const Icon = ICONS[key];
         if (on) {
           return (
             <span
               key={key}
-              className="rounded-md bg-[var(--navy)] px-3 py-2 text-sm font-bold text-white"
+              className={sectionTabClass(true)}
               aria-current="page"
             >
+              <Icon className="h-4 w-4 shrink-0 opacity-80" />
               {LABELS[key]}
             </span>
           );
         }
         return (
-          <Link
-            key={key}
-            href={href}
-            className="rounded-md px-3 py-2 text-sm font-semibold text-[var(--navy)] hover:bg-white"
-          >
+          <Link key={key} href={href} className={sectionTabClass(false)}>
+            <Icon className="h-4 w-4 shrink-0 opacity-80" />
             {LABELS[key]}
           </Link>
         );
       })}
-    </nav>
+    </SectionTabNav>
   );
 }

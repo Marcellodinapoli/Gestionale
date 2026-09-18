@@ -5,9 +5,9 @@ import { can } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui";
 import { getOffertaLavoro } from "@/lib/recruiting/offerteRepo";
 import { getCandidatura } from "@/lib/recruiting/candidatureRepo";
-import { isStatoCandidaturaTerminale } from "@/lib/recruiting/candidature";
+import { isStatoCandidaturaTerminale, anagraficaCandidato } from "@/lib/recruiting/candidature";
 import { listAttivitaByCandidatura } from "@/lib/recruiting/attivitaRepo";
-import { suggerimentoTransizioneCandidatura } from "@/lib/recruiting/attivita";
+import { suggerimentoTransizioneCandidatura, etichettaSezioneAttivita } from "@/lib/recruiting/attivita";
 import { canCreateColloquio } from "@/lib/recruiting/colloqui";
 import { listColloquiByCandidatura, listUtentiTenantRecruiting } from "@/lib/recruiting/colloquiRepo";
 import { CandidaturaDettaglioClient } from "../../../CandidaturaDettaglioClient";
@@ -45,33 +45,40 @@ export default async function CandidaturaDettaglioPage({
   const hasColloquiAperti = colloqui.some(
     (c) => c.stato === "PROGRAMMATO" || c.stato === "SVOLTO"
   );
-  const hasContattoONota = attivita.some((a) => a.tipo === "CONTATTO" || a.tipo === "NOTA");
-  const hasColloquio = colloqui.length > 0;
-  const hasSvolto = colloqui.some((c) => c.stato === "SVOLTO" || c.stato === "ESITATO");
-  const hasEsito = colloqui.some((c) => c.stato === "ESITATO");
-  let passoProcedura = 1;
-  if (candidatura.stato === "ASSUNTA") passoProcedura = 10;
-  else if (candidatura.stato === "ARCHIVIATA") passoProcedura = 0;
-  else if (candidatura.stato === "RICEVUTA") passoProcedura = hasContattoONota ? 3 : 2;
-  else if (candidatura.stato === "IN_VALUTAZIONE") passoProcedura = hasColloquio ? 5 : 4;
-  else if (candidatura.stato === "COLLOQUIO") {
-    if (hasEsito) passoProcedura = 8;
-    else if (hasSvolto) passoProcedura = 7;
-    else passoProcedura = 6;
-  } else if (candidatura.stato === "PROVA") passoProcedura = 9;
+
+  const lastContatto = [...attivita].reverse().find((a) => a.tipo === "CONTATTO");
+  const candidato = anagraficaCandidato(candidatura);
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Candidatura" subtitle={offerta.titolo} />
+      <PageHeader title={candidato.label} subtitle={offerta.titolo} />
       <Link href="/recruiting" className="text-sm underline">
         ← Recruiting
       </Link>
       <CandidaturaDettaglioClient
-        candidatura={{ id: candidatura.id, stato: candidatura.stato }}
+        candidatura={{
+          id: candidatura.id,
+          stato: candidatura.stato,
+          cognome: candidato.cognome,
+          nome: candidato.nome,
+        }}
         canManage={canManage}
+        operabile={operabile}
+        canCreateColloquio={operabile && canCreateColloquio(candidatura.stato)}
+        utenti={utenti}
         suggerimento={suggerimento}
         hasColloquiAperti={hasColloquiAperti}
-        passoProcedura={passoProcedura}
+        contatto={
+          lastContatto
+            ? {
+                id: lastContatto.id,
+                canale: lastContatto.canale || "TELEFONO",
+                esito: lastContatto.esito || "RAGGIUNTO",
+                occurredAt: lastContatto.occurredAt.toISOString(),
+                note: lastContatto.note,
+              }
+            : null
+        }
       />
       <CandidaturaAttivitaClient
         candidaturaId={candidatura.id}
@@ -86,6 +93,7 @@ export default async function CandidaturaDettaglioPage({
             esito: a.esito,
             canale: a.canale,
             createdByName: a.createdByName,
+            sezione: etichettaSezioneAttivita(attivita, a),
           }))}
       />
       <CandidaturaColloquiClient
@@ -111,6 +119,14 @@ export default async function CandidaturaDettaglioPage({
       <section className="rounded-xl border border-dashed border-[var(--line)] bg-slate-50/70 px-4 py-3 text-xs text-[var(--muted)]">
         <p className="font-semibold uppercase tracking-wide">Riferimenti</p>
         <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
+          <div>
+            <dt className="uppercase tracking-wide">Cognome</dt>
+            <dd className="text-sm font-semibold text-slate-800">{candidato.cognome}</dd>
+          </div>
+          <div>
+            <dt className="uppercase tracking-wide">Nome</dt>
+            <dd className="text-sm font-semibold text-slate-800">{candidato.nome}</dd>
+          </div>
           <div>
             <dt className="uppercase tracking-wide">Identificativo</dt>
             <dd className="font-mono text-[11px] text-slate-600">{candidatura.id}</dd>

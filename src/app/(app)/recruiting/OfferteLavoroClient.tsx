@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Briefcase, Plus, UserRound } from "lucide-react";
+import { Briefcase, ChevronDown, ChevronRight, Inbox, MessagesSquare, Plus, Search, Timer, UserCheck, UserRound, Users } from "lucide-react";
 import { Modal } from "@/components/Modal";
+import { PageHeader } from "@/components/ui";
+import { SectionTabNav, sectionTabClass } from "@/components/ui/SectionTabNav";
 import {
   aggiornaOffertaLavoroAction,
   chiudiOffertaLavoroAction,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/recruiting/offerte";
 import {
   STATO_CANDIDATURA_LABELS,
+  anagraficaCandidato,
   type StatoCandidatura,
 } from "@/lib/recruiting/candidature";
 import {
@@ -58,6 +61,8 @@ type CandidaturaHome = {
   stato: StatoCandidatura;
   source: string | null;
   receivedAt: string;
+  cognome: string;
+  nome: string;
 };
 
 type ColloquioHome = {
@@ -96,12 +101,12 @@ const STATO_COLL_COLORS: Record<StatoColloquio, string> = {
 
 /** Percorso in home: Candidature (tutte) + stati principali. */
 const PERCORSO_HOME = [
-  { id: "CANDIDATURE", label: "Candidature" },
-  { id: "RICEVUTA", label: STATO_CANDIDATURA_LABELS.RICEVUTA },
-  { id: "IN_VALUTAZIONE", label: STATO_CANDIDATURA_LABELS.IN_VALUTAZIONE },
-  { id: "COLLOQUIO", label: STATO_CANDIDATURA_LABELS.COLLOQUIO },
-  { id: "PROVA", label: STATO_CANDIDATURA_LABELS.PROVA },
-  { id: "ASSUNTA", label: STATO_CANDIDATURA_LABELS.ASSUNTA },
+  { id: "CANDIDATURE", label: "Candidature", icon: Users },
+  { id: "RICEVUTA", label: STATO_CANDIDATURA_LABELS.RICEVUTA, icon: Inbox },
+  { id: "IN_VALUTAZIONE", label: STATO_CANDIDATURA_LABELS.IN_VALUTAZIONE, icon: Search },
+  { id: "COLLOQUIO", label: STATO_CANDIDATURA_LABELS.COLLOQUIO, icon: MessagesSquare },
+  { id: "PROVA", label: STATO_CANDIDATURA_LABELS.PROVA, icon: Timer },
+  { id: "ASSUNTA", label: STATO_CANDIDATURA_LABELS.ASSUNTA, icon: UserCheck },
 ] as const;
 
 type PercorsoHomeId = (typeof PERCORSO_HOME)[number]["id"];
@@ -120,53 +125,26 @@ function PercorsoHomeMenu({
   counts: Record<PercorsoHomeId, number>;
 }) {
   return (
-    <div className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm">
-      <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">Percorso</p>
-      <ol className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-        {PERCORSO_HOME.map((step, idx) => {
-          const current = step.id === active;
-          return (
-            <li key={step.id} className="flex items-center gap-1.5">
-              {idx > 0 ? (
-                <span className="text-slate-300" aria-hidden>
-                  →
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => onSelect(step.id)}
-                aria-current={current ? "step" : undefined}
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold transition ${
-                  current
-                    ? "bg-[var(--navy)] text-white ring-2 ring-[var(--navy)] ring-offset-2"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {step.label}
-                <span
-                  className={`tabular-nums text-[10px] ${
-                    current ? "text-white/80" : "text-slate-400"
-                  }`}
-                >
-                  {counts[step.id]}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+    <SectionTabNav label="Percorso candidature">
+      {PERCORSO_HOME.map((step) => {
+        const current = step.id === active;
+        const Icon = step.icon;
+        return (
+          <button
+            key={step.id}
+            type="button"
+            onClick={() => onSelect(step.id)}
+            aria-current={current ? "page" : undefined}
+            className={sectionTabClass(current)}
+          >
+            <Icon className="h-4 w-4 shrink-0 opacity-80" />
+            {step.label}
+            <span className="tabular-nums opacity-70">{counts[step.id]}</span>
+          </button>
+        );
+      })}
+    </SectionTabNav>
   );
-}
-
-function progressivi(rows: CandidaturaHome[]): Map<string, number> {
-  const sorted = [...rows].sort((a, b) => {
-    const da = new Date(a.receivedAt).getTime();
-    const db = new Date(b.receivedAt).getTime();
-    if (da !== db) return da - db;
-    return a.id.localeCompare(b.id);
-  });
-  return new Map(sorted.map((row, i) => [row.id, i + 1]));
 }
 
 function MockBadge() {
@@ -195,6 +173,7 @@ export function OfferteLavoroClient({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [percorso, setPercorso] = useState<PercorsoHomeId>("CANDIDATURE");
+  const [aperte, setAperte] = useState<Record<string, boolean>>({});
 
   const percorsoCounts: Record<PercorsoHomeId, number> = {
     CANDIDATURE: candidature.length,
@@ -224,11 +203,18 @@ export function OfferteLavoroClient({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <PercorsoHomeMenu
         active={percorso}
-        onSelect={setPercorso}
+        onSelect={(id) => {
+          setPercorso(id);
+          setAperte({});
+        }}
         counts={percorsoCounts}
+      />
+      <PageHeader
+        title="Recruiting"
+        subtitle="Offerte di lavoro, candidature e colloqui ricevuti."
       />
 
       {canManage ? (
@@ -268,13 +254,32 @@ export function OfferteLavoroClient({
             const tutte = candidature.filter((c) => c.offertaId === o.id);
             const cands = candidatureFiltrate(tutte);
             if (percorso !== "CANDIDATURE" && cands.length === 0) return null;
-            const ranks = progressivi(tutte);
             const ordered = [...cands].sort((a, b) => {
               const db = new Date(b.receivedAt).getTime();
               const da = new Date(a.receivedAt).getTime();
               if (db !== da) return db - da;
               return b.id.localeCompare(a.id);
             });
+            const open =
+              percorso !== "CANDIDATURE"
+                ? aperte[o.id] !== false
+                : Boolean(aperte[o.id]);
+            const nCandidature =
+              percorso === "CANDIDATURE" ? o.candidatureCount : cands.length;
+            const etichettaElenco =
+              percorso === "CANDIDATURE"
+                ? "Candidature"
+                : PERCORSO_HOME.find((s) => s.id === percorso)?.label || "Candidature";
+            const hrefOfferta = `/recruiting/offerte/${o.id}`;
+            function toggleElenco() {
+              setAperte((prev) => {
+                const isOpen =
+                  percorso !== "CANDIDATURE"
+                    ? prev[o.id] !== false
+                    : Boolean(prev[o.id]);
+                return { ...prev, [o.id]: !isOpen };
+              });
+            }
             return (
               <article
                 key={o.id}
@@ -282,7 +287,9 @@ export function OfferteLavoroClient({
               >
                 <div
                   className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10"
-                  onClick={() => router.push(`/recruiting/offerte/${o.id}`)}
+                  onClick={() => {
+                    router.push(`/recruiting/offerte/${o.id}`);
+                  }}
                 >
                   <div className="min-w-[14rem] flex-1">
                     <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--navy)]">
@@ -290,7 +297,7 @@ export function OfferteLavoroClient({
                       Inserzione
                     </p>
                     <Link
-                      href={`/recruiting/offerte/${o.id}`}
+                      href={hrefOfferta}
                       className="text-base font-semibold text-[var(--navy)] hover:underline"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -321,10 +328,10 @@ export function OfferteLavoroClient({
                   </div>
                   <div className="min-w-[6rem] text-sm">
                     <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-                      Candidature
+                      {percorso === "CANDIDATURE" ? "Candidature" : etichettaElenco}
                     </p>
                     <p className="tabular-nums font-semibold text-[var(--navy)]">
-                      {o.candidatureCount}
+                      {nCandidature}
                     </p>
                   </div>
                   <div className="min-w-[6rem] text-sm text-[var(--muted)]">
@@ -360,24 +367,39 @@ export function OfferteLavoroClient({
                       </button>
                     </div>
                   ) : null}
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-label={open ? "Chiudi elenco candidature" : "Apri elenco candidature"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleElenco();
+                    }}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--navy)] hover:bg-slate-50"
+                  >
+                    {open ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
 
+                {open ? (
                 <div className="border-t border-[var(--line)] bg-slate-50 px-4 py-3">
                   <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--muted)]">
                     <UserRound className="h-3.5 w-3.5" />
-                    Candidature
+                    {etichettaElenco}
                   </p>
                   {ordered.length === 0 ? (
                     <p className="ml-6 text-sm text-[var(--muted)]">
-                      Nessuna candidatura.
+                      Nessuna candidatura
+                      {percorso === "CANDIDATURE" ? "." : ` in «${etichettaElenco}».`}
                     </p>
                   ) : (
                     <ul className="ml-2 space-y-1.5 border-l-2 border-slate-300 pl-4">
                       {ordered.map((c) => {
-                        const n = ranks.get(c.id) ?? 0;
-                        const ricevutaGiorno = new Date(c.receivedAt).toLocaleDateString(
-                          "it-IT"
-                        );
+                        const candidato = anagraficaCandidato(c);
                         const mock = c.source === "mock" || c.source === "percorso";
                         const coll = colloqui
                           .filter((x) => x.candidaturaId === c.id)
@@ -396,7 +418,7 @@ export function OfferteLavoroClient({
                                 href={`/recruiting/offerte/${o.id}/${c.id}`}
                                 className="font-medium text-slate-700 hover:underline"
                               >
-                                Candidatura {n} · {ricevutaGiorno}
+                                {candidato.label}
                               </Link>
                               {mock ? <MockBadge /> : null}
                               <span
@@ -442,6 +464,7 @@ export function OfferteLavoroClient({
                     </ul>
                   )}
                 </div>
+                ) : null}
               </article>
             );
           })}

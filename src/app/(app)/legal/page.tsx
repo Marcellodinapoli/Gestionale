@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { requireNavPage } from "@/lib/guard";
 import { Card, PageHeader } from "@/components/ui";
-import { LegalPhaseNav } from "@/components/giudiziale/LegalPhaseNav";
 import { listPraticheGiudiziali } from "@/lib/giudiziale/praticaGiudizialeRepo";
 import { ATTIVITA_GIUDIZIALE_PARAM } from "@/lib/giudiziale/avvioGiudiziale";
 import { loadHomeGiudizialeStragiudKpi } from "@/lib/homeKpi/loadHomeGiudizialeStragiud";
@@ -37,7 +36,6 @@ export default async function LegalPage() {
         title="Gestione legale"
         subtitle="L'avvio giudiziale parte dalla pratica. Da qui: Valutazione e Strategia."
       />
-      <LegalPhaseNav attivo="panoramica" />
 
       <div>
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">

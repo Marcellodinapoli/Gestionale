@@ -18,11 +18,9 @@ export default async function FormazioneLayout({
   return (
     <FormazioneProvider>
       <FormazioneIntroHost canMonitor={canMonitor}>
-        <div className="mx-auto w-full max-w-[1300px] px-4 sm:px-6">
+        <div className="space-y-4">
           <FormazioneNav canMonitor={canMonitor} />
-          <div className="mt-4">
-            <FormazioneGate>{children}</FormazioneGate>
-          </div>
+          <FormazioneGate>{children}</FormazioneGate>
         </div>
       </FormazioneIntroHost>
     </FormazioneProvider>

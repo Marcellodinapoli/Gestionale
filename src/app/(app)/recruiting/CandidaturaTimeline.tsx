@@ -3,6 +3,7 @@ import {
   ESITO_CONTATTO_LABELS,
   TIPO_ATTIVITA_LABELS,
   etichettaCambioStato,
+  etichettaSezioneAttivita,
   type RecruitingAttivitaRecord,
 } from "@/lib/recruiting/attivita";
 import { ESITO_COLLOQUIO_LABELS, isEsitoColloquio } from "@/lib/recruiting/colloqui";
@@ -41,6 +42,10 @@ export function CandidaturaTimeline({ attivita }: { attivita: RecruitingAttivita
             ]
               .filter(Boolean)
               .join(" · ");
+            const sezione =
+              a.tipo === "NOTA" || a.tipo === "CONTATTO"
+                ? etichettaSezioneAttivita(attivita, a)
+                : null;
             return (
               <li key={a.id} className="border-b border-[var(--line)] pb-2 last:border-0 last:pb-0">
                 <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
@@ -48,7 +53,9 @@ export function CandidaturaTimeline({ attivita }: { attivita: RecruitingAttivita
                 </p>
                 {testo ? <p className="text-sm">{testo}</p> : null}
                 <p className="text-xs text-[var(--muted)]">
-                  {a.occurredAt.toLocaleString("it-IT")} · {a.createdByName}
+                  {a.occurredAt.toLocaleString("it-IT")}
+                  {sezione ? ` · ${sezione}` : ""}
+                  {` · ${a.createdByName}`}
                   {extra ? ` · ${extra}` : ""}
                 </p>
                 {a.colloquioId ? (

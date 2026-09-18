@@ -15,6 +15,7 @@ export const TIPI_ATTIVITA = [
   "COLLOQUIO_SVOLTO",
   "COLLOQUIO_ESITO",
   "COLLOQUIO_ANNULLATO",
+  "PROVA_PROGRAMMATA",
   "CAMBIO_STATO",
 ] as const;
 
@@ -28,6 +29,7 @@ export const TIPO_ATTIVITA_LABELS: Record<TipoAttivita, string> = {
   COLLOQUIO_SVOLTO: "Colloquio svolto",
   COLLOQUIO_ESITO: "Esito colloquio",
   COLLOQUIO_ANNULLATO: "Colloquio annullato",
+  PROVA_PROGRAMMATA: "Prova programmata",
   CAMBIO_STATO: "Cambio stato",
 };
 
@@ -145,6 +147,30 @@ export function validaNotaInput(input: {
   };
 }
 
+export function validaProvaInput(input: {
+  candidaturaId?: string | null;
+  scheduledAt?: string | null;
+  note?: string | null;
+}): { candidaturaId: string; scheduledAt: Date; note: string } {
+  const candidaturaId = String(input.candidaturaId || "").trim();
+  if (!candidaturaId || candidaturaId.length > 80) throw new Error("Candidatura non indicata");
+  const raw = String(input.scheduledAt || "").trim();
+  if (!raw) throw new Error("Data e ora della prova obbligatorie");
+  return {
+    candidaturaId,
+    scheduledAt: parseOccurredAt(raw),
+    note: validaNoteAttivita(input.note),
+  };
+}
+
+export function canCreateProva(statoCandidatura: StatoCandidatura): boolean {
+  return statoCandidatura === "COLLOQUIO";
+}
+
+export function hasContattoRegistrato(attivita: Array<{ tipo: string }>): boolean {
+  return attivita.some((a) => a.tipo === "CONTATTO");
+}
+
 export function toAttivitaRecord(row: {
   id: string;
   tenantId: string;
@@ -186,6 +212,46 @@ export function formatAutore(user?: { name: string; cognome?: string | null } | 
   return [user.name, user.cognome].filter(Boolean).join(" ").trim() || "—";
 }
 
+/** Stato del percorso al momento dell’attività (sezione della scheda). */
+export function statoCandidaturaAlMomento(
+  attivita: Array<{
+    id: string;
+    tipo: string;
+    occurredAt: Date;
+    statoA: StatoCandidatura | null;
+  }>,
+  evento: { id: string; occurredAt: Date; statoA?: StatoCandidatura | null }
+): StatoCandidatura {
+  if (evento.statoA) return evento.statoA;
+  const t = evento.occurredAt.getTime();
+  const ordered = [...attivita].sort((a, b) => {
+    const da = a.occurredAt.getTime();
+    const db = b.occurredAt.getTime();
+    if (da !== db) return da - db;
+    return a.id.localeCompare(b.id);
+  });
+  let stato: StatoCandidatura = "RICEVUTA";
+  for (const a of ordered) {
+    const ta = a.occurredAt.getTime();
+    if (ta > t || (ta === t && a.id.localeCompare(evento.id) >= 0)) break;
+    if (a.tipo === "RICEZIONE") stato = "RICEVUTA";
+    else if (a.tipo === "CAMBIO_STATO" && a.statoA) stato = a.statoA;
+  }
+  return stato;
+}
+
+export function etichettaSezioneAttivita(
+  attivita: Array<{
+    id: string;
+    tipo: string;
+    occurredAt: Date;
+    statoA: StatoCandidatura | null;
+  }>,
+  evento: { id: string; occurredAt: Date; statoA?: StatoCandidatura | null }
+): string {
+  return STATO_CANDIDATURA_LABELS[statoCandidaturaAlMomento(attivita, evento)];
+}
+
 export type SuggerimentoTransizione = {
   to?: StatoCandidatura;
   messaggio: string;
@@ -217,42 +283,33 @@ export function suggerimentoTransizioneCandidatura(input: {
     return { to: "ASSUNTA", messaggio: "Passare ad Assunto/a?" };
   }
 
-  if (stato === "COLLOQUIO" && lastEsitoColloquio === "POSITIVO") {
-    return { to: "PROVA", messaggio: "Passare a Prova?" };
-  }
-
-  if (stato === "IN_VALUTAZIONE" && lastEsitoColloquio === "POSITIVO") {
+  if (stato === "COLLOQUIO") {
+    if (lastEsitoColloquio === "DA_RIVALUTARE") {
+      return { messaggio: "Esito da rivalutare. Puoi programmare un nuovo colloquio oppure la prova." };
+    }
     return {
-      to: "COLLOQUIO",
-      messaggio:
-        "Il colloquio ha esito positivo. Passa prima a Colloquio; poi potrai impostare Prova e Assunto/a.",
+      messaggio: "Per passare a Prova è obbligatorio programmare la prova con data e ora.",
     };
   }
 
-  if (
-    (stato === "IN_VALUTAZIONE" || stato === "COLLOQUIO") &&
-    lastEsitoColloquio === "DA_RIVALUTARE"
-  ) {
-    return { messaggio: "Esito da rivalutare. Puoi programmare un nuovo colloquio." };
-  }
-
-  if (stato === "IN_VALUTAZIONE" && attivita.some((a) => a.tipo === "COLLOQUIO_PROGRAMMATO")) {
+  if (stato === "IN_VALUTAZIONE") {
     return {
-      to: "COLLOQUIO",
-      messaggio: "Il colloquio è stato programmato. Vuoi passare la candidatura a Colloquio?",
+      messaggio: "Per passare a Colloquio è obbligatorio programmare il colloquio con data e ora.",
     };
   }
 
   if (stato === "RICEVUTA") {
     const lastContatto = [...attivita].reverse().find((a) => a.tipo === "CONTATTO");
-    const hasNota = attivita.some((a) => a.tipo === "NOTA");
-    if (lastContatto?.esito === "RIFIUTA") {
+    if (!lastContatto) {
+      return {
+        messaggio: "Nella fase Ricevuta è obbligatorio registrare un contatto prima di procedere.",
+      };
+    }
+    if (lastContatto.esito === "RIFIUTA") {
       return { to: "ARCHIVIATA", messaggio: "Archiviare la candidatura?" };
     }
-    if (hasNota || lastContatto?.esito === "RAGGIUNTO" || lastContatto?.esito === "NON_RAGGIUNTO") {
-      return { to: "IN_VALUTAZIONE", messaggio: "Passare a In valutazione?" };
-    }
-    if (lastContatto?.esito === "DA_RICHIAMARE") return null;
+    if (lastContatto.esito === "DA_RICHIAMARE") return null;
+    return { to: "IN_VALUTAZIONE", messaggio: "Passare a In valutazione?" };
   }
 
   return null;

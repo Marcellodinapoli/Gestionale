@@ -12,6 +12,8 @@ import {
 import {
   mapCandidaturaRow,
   newRecruitingId,
+  recruitingHasCandidatoAnagrafica,
+  candidaturaSelectSql,
   recruitingPool,
   recruitingUsesSql,
   sql,
@@ -27,6 +29,24 @@ function idOrThrow(id: string, label: string) {
   const value = String(id || "").trim();
   if (!value || value.length > 80) throw new Error(`${label} non indicata`);
   return value;
+}
+
+async function prismaCandidaturaSelect(includeOfferta = false) {
+  const hasAnagrafica = await recruitingHasCandidatoAnagrafica();
+  return {
+    id: true,
+    tenantId: true,
+    offertaId: true,
+    externalApplicationId: true,
+    receiverCandidateId: true,
+    stato: true,
+    source: true,
+    receivedAt: true,
+    updatedAt: true,
+    lastSyncAt: true,
+    ...(hasAnagrafica ? { cognome: true, nome: true } : {}),
+    ...(includeOfferta ? { offerta: { select: { titolo: true } } } : {}),
+  };
 }
 
 async function assertOffertaDelTenant(tenantId: string, offertaId: string) {
@@ -67,6 +87,42 @@ export async function countCandidatureByOfferta(
   return counts;
 }
 
+/** Tutte le candidature del tenant (home Recruiting, filtri per stato). */
+export async function listCandidaturePerHome(
+  tenantId: string
+): Promise<Array<RecruitingCandidaturaRecord & { offertaTitolo: string }>> {
+  const tid = tenantIdOrThrow(tenantId);
+  if (!recruitingUsesSql()) {
+    const rows = await prisma.recruitingCandidatura.findMany({
+      where: { tenantId: tid },
+      orderBy: { receivedAt: "desc" },
+      select: await prismaCandidaturaSelect(true),
+    });
+    return rows.map((row) => ({
+      ...toCandidaturaRecord(row),
+      offertaTitolo: row.offerta?.titolo || "",
+    }));
+  }
+  const pool = await recruitingPool();
+  const cols = await candidaturaSelectSql("c");
+  const res = await pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), tid)
+    .query(`
+      SELECT
+        ${cols},
+        o.Titolo AS OffertaTitolo
+      FROM dbo.RecruitingCandidature c
+      INNER JOIN dbo.OfferteLavoro o ON o.Id = c.OffertaId AND o.TenantId = c.TenantId
+      WHERE c.TenantId = @tenantId
+      ORDER BY c.ReceivedAt DESC
+    `);
+  return res.recordset.map((row) => ({
+    ...toCandidaturaRecord(mapCandidaturaRow(row)),
+    offertaTitolo: String(row.OffertaTitolo || ""),
+  }));
+}
+
 export async function listCandidatureRecenti(
   tenantId: string,
   limit = 50
@@ -78,7 +134,7 @@ export async function listCandidatureRecenti(
       where: { tenantId: tid },
       orderBy: { receivedAt: "desc" },
       take,
-      include: { offerta: { select: { titolo: true } } },
+      select: await prismaCandidaturaSelect(true),
     });
     return rows.map((row) => ({
       ...toCandidaturaRecord(row),
@@ -86,14 +142,14 @@ export async function listCandidatureRecenti(
     }));
   }
   const pool = await recruitingPool();
+  const cols = await candidaturaSelectSql("c");
   const res = await pool
     .request()
     .input("tenantId", sql.NVarChar(64), tid)
     .input("take", sql.Int, take)
     .query(`
       SELECT TOP (@take)
-        c.Id, c.TenantId, c.OffertaId, c.ExternalApplicationId, c.ReceiverCandidateId,
-        c.Stato, c.Source, c.ReceivedAt, c.UpdatedAt, c.LastSyncAt,
+        ${cols},
         o.Titolo AS OffertaTitolo
       FROM dbo.RecruitingCandidature c
       INNER JOIN dbo.OfferteLavoro o ON o.Id = c.OffertaId AND o.TenantId = c.TenantId
@@ -117,17 +173,18 @@ export async function listCandidatureByOfferta(
     const rows = await prisma.recruitingCandidatura.findMany({
       where: { tenantId: tid, offertaId: oid },
       orderBy: { receivedAt: "desc" },
+      select: await prismaCandidaturaSelect(),
     });
     return rows.map(toCandidaturaRecord);
   }
   const pool = await recruitingPool();
+  const cols = await candidaturaSelectSql();
   const res = await pool
     .request()
     .input("tenantId", sql.NVarChar(64), tid)
     .input("offertaId", sql.NVarChar(64), oid)
     .query(`
-      SELECT Id, TenantId, OffertaId, ExternalApplicationId, ReceiverCandidateId,
-             Stato, Source, ReceivedAt, UpdatedAt, LastSyncAt
+      SELECT ${cols}
       FROM dbo.RecruitingCandidature
       WHERE TenantId = @tenantId AND OffertaId = @offertaId
       ORDER BY ReceivedAt DESC
@@ -149,14 +206,15 @@ export async function getCandidatura(
       where: oid
         ? { id: cid, tenantId: tid, offertaId: oid }
         : { id: cid, tenantId: tid },
+      select: await prismaCandidaturaSelect(),
     });
     return row ? toCandidaturaRecord(row) : null;
   }
   const pool = await recruitingPool();
+  const cols = await candidaturaSelectSql();
   const req = pool.request().input("tenantId", sql.NVarChar(64), tid).input("id", sql.NVarChar(64), cid);
   let q = `
-    SELECT Id, TenantId, OffertaId, ExternalApplicationId, ReceiverCandidateId,
-           Stato, Source, ReceivedAt, UpdatedAt, LastSyncAt
+    SELECT ${cols}
     FROM dbo.RecruitingCandidature
     WHERE Id = @id AND TenantId = @tenantId
   `;
@@ -180,11 +238,13 @@ export async function createCandidatura(
   const offerta = await assertOffertaDelTenant(tid, input.offertaId);
   assertOffertaApertaPerCandidature(offerta.stato);
   if (!recruitingUsesSql()) {
+    const hasAnagrafica = await recruitingHasCandidatoAnagrafica();
     const row = await prisma.$transaction(async (tx) => {
       const created = await tx.recruitingCandidatura.create({
         data: {
           tenantId: tid,
           offertaId: input.offertaId,
+          ...(hasAnagrafica ? { cognome: input.cognome, nome: input.nome } : {}),
           stato: "RICEVUTA",
           source: input.source || null,
           externalApplicationId: null,
@@ -209,15 +269,28 @@ export async function createCandidatura(
   }
   const id = newRecruitingId();
   const pool = await recruitingPool();
+  const hasAnagrafica = await recruitingHasCandidatoAnagrafica();
   const tx = new sql.Transaction(pool);
   await tx.begin();
   try {
-    await new sql.Request(tx)
+    const ins = new sql.Request(tx)
       .input("id", sql.NVarChar(64), id)
       .input("tenantId", sql.NVarChar(64), tid)
       .input("offertaId", sql.NVarChar(64), input.offertaId)
-      .input("source", sql.NVarChar(80), input.source || null)
-      .query(`
+      .input("source", sql.NVarChar(80), input.source || null);
+    if (hasAnagrafica) {
+      ins.input("cognome", sql.NVarChar(80), input.cognome).input("nome", sql.NVarChar(80), input.nome);
+      await ins.query(`
+        INSERT INTO dbo.RecruitingCandidature (
+          Id, TenantId, OffertaId, ExternalApplicationId, ReceiverCandidateId,
+          Cognome, Nome, Stato, Source, ReceivedAt, UpdatedAt, LastSyncAt
+        ) VALUES (
+          @id, @tenantId, @offertaId, NULL, NULL,
+          @cognome, @nome, N'RICEVUTA', @source, SYSUTCDATETIME(), SYSUTCDATETIME(), NULL
+        )
+      `);
+    } else {
+      await ins.query(`
         INSERT INTO dbo.RecruitingCandidature (
           Id, TenantId, OffertaId, ExternalApplicationId, ReceiverCandidateId,
           Stato, Source, ReceivedAt, UpdatedAt, LastSyncAt
@@ -226,6 +299,7 @@ export async function createCandidatura(
           N'RICEVUTA', @source, SYSUTCDATETIME(), SYSUTCDATETIME(), NULL
         )
       `);
+    }
     await new sql.Request(tx)
       .input("aid", sql.NVarChar(64), newRecruitingId())
       .input("tenantId", sql.NVarChar(64), tid)

@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
     "google-auth-library",
     "jwks-rsa",
     "jose",
+    "mssql",
+    "tedious",
+    "@azure/identity",
   ],
 };
 

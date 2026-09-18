@@ -59,7 +59,7 @@ function getClient(): PrismaClientType {
  */
 export const prisma: PrismaClientType = new Proxy({} as PrismaClientType, {
   get(_target, prop, receiver) {
-    if (prop === "$transaction" || prop === "$connect" || prop === "$disconnect") {
+    if (prop === "$transaction" || prop === "$connect" || prop === "$disconnect" || prop === "$queryRaw" || prop === "$executeRaw" || prop === "$executeRawUnsafe") {
       return (...args: unknown[]) => {
         const client = getClient();
         const value = Reflect.get(client, prop, receiver) as

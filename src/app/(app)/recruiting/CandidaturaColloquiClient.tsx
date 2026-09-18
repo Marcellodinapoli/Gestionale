@@ -2,18 +2,15 @@
 
 import { useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import {
   annullaColloquioAction,
   chiudiColloquioAction,
-  creaColloquioAction,
   svolgiColloquioAction,
 } from "@/actions/recruiting";
 import {
   ESITI_COLLOQUIO,
   ESITO_COLLOQUIO_LABELS,
-  MODALITA_COLLOQUIO,
   MODALITA_COLLOQUIO_LABELS,
   STATO_COLLOQUIO_LABELS,
   type EsitoColloquio,
@@ -50,20 +47,10 @@ function etichettaRound(round: number) {
   return `${round}° colloquio`;
 }
 
-function datetimeLocalValue(iso?: string) {
-  const d = iso ? new Date(iso) : new Date();
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export function CandidaturaColloquiClient({
-  candidaturaId,
   statoCandidatura,
   colloqui,
-  utenti,
   canManage,
-  canCreate,
 }: {
   candidaturaId: string;
   statoCandidatura: StatoCandidatura;
@@ -73,7 +60,6 @@ export function CandidaturaColloquiClient({
   canCreate: boolean;
 }) {
   const router = useRouter();
-  const [createOpen, setCreateOpen] = useState(false);
   const [svolgi, setSvolgi] = useState<ColloquioRow | null>(null);
   const [chiudi, setChiudi] = useState<ColloquioRow | null>(null);
   const [annulla, setAnnulla] = useState<ColloquioRow | null>(null);
@@ -97,19 +83,6 @@ export function CandidaturaColloquiClient({
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-[var(--navy)]">Colloqui</h2>
-        {canManage && canCreate ? (
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setCreateOpen(true);
-            }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white"
-          >
-            <Plus className="h-4 w-4" />
-            Programma colloquio
-          </button>
-        ) : null}
       </div>
       {error ? (
         <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
@@ -255,71 +228,6 @@ export function CandidaturaColloquiClient({
           </table>
         </div>
       )}
-
-      <Modal open={createOpen} title="Programma colloquio" onClose={() => !pending && setCreateOpen(false)}>
-        <form
-          className="grid gap-3 p-4 text-sm"
-          action={(fd) => run(fd, creaColloquioAction, () => setCreateOpen(false))}
-        >
-          <input type="hidden" name="candidaturaId" value={candidaturaId} />
-          <label>
-            <span className={labelCls}>Data e ora</span>
-            <input
-              type="datetime-local"
-              name="scheduledAt"
-              required
-              defaultValue={datetimeLocalValue()}
-              className={inputCls}
-            />
-          </label>
-          <label>
-            <span className={labelCls}>Modalità</span>
-            <select name="modalita" defaultValue="PRESENZA" className={inputCls}>
-              {MODALITA_COLLOQUIO.map((m) => (
-                <option key={m} value={m}>
-                  {MODALITA_COLLOQUIO_LABELS[m]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className={labelCls}>Intervistatore</span>
-            <select name="intervistatoreUserId" defaultValue="" className={inputCls}>
-              <option value="">—</option>
-              {utenti.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className={labelCls}>Referente</span>
-            <input name="intervistatoreLabel" maxLength={120} className={inputCls} />
-          </label>
-          <label>
-            <span className={labelCls}>Note preliminari</span>
-            <textarea name="notePreliminari" maxLength={2000} rows={3} className={`${inputCls} h-auto py-2`} />
-          </label>
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => setCreateOpen(false)}
-              className="h-9 rounded-lg border border-[var(--line)] px-3 text-sm"
-            >
-              Annulla
-            </button>
-            <button
-              type="submit"
-              disabled={pending}
-              className="h-9 rounded-lg bg-[var(--navy)] px-3 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {pending ? "Salvataggio…" : "Crea"}
-            </button>
-          </div>
-        </form>
-      </Modal>
 
       <Modal
         open={!!annulla}

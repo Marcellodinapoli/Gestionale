@@ -8,6 +8,7 @@ import { Modal } from "@/components/Modal";
 import { creaCandidaturaAction } from "@/actions/recruiting";
 import {
   STATO_CANDIDATURA_LABELS,
+  anagraficaCandidato,
   type StatoCandidatura,
 } from "@/lib/recruiting/candidature";
 
@@ -16,6 +17,8 @@ type CandidaturaRow = {
   stato: StatoCandidatura;
   source: string | null;
   receivedAt: string;
+  cognome: string;
+  nome: string;
 };
 
 const inputCls =
@@ -44,11 +47,15 @@ function progressivi(rows: CandidaturaRow[]): Map<string, number> {
 export function CandidatureOffertaClient({
   offertaId,
   candidature,
+  filtroStato = null,
+  mostraElenco = true,
   canManage,
   offertaChiusa,
 }: {
   offertaId: string;
   candidature: CandidaturaRow[];
+  filtroStato?: StatoCandidatura | null;
+  mostraElenco?: boolean;
   canManage: boolean;
   offertaChiusa: boolean;
 }) {
@@ -57,6 +64,9 @@ export function CandidatureOffertaClient({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const ranks = useMemo(() => progressivi(candidature), [candidature]);
+  const visibili = filtroStato
+    ? candidature.filter((c) => c.stato === filtroStato)
+    : candidature;
 
   return (
     <div className="space-y-3">
@@ -88,11 +98,13 @@ export function CandidatureOffertaClient({
         </p>
       ) : null}
 
-      {candidature.length === 0 ? (
+      {mostraElenco && visibili.length === 0 ? (
         <p className="rounded-xl border border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-[var(--muted)]">
-          Nessuna candidatura per questa offerta.
+          {filtroStato
+            ? `Nessuna candidatura in «${STATO_CANDIDATURA_LABELS[filtroStato]}».`
+            : "Nessuna candidatura per questa offerta."}
         </p>
-      ) : (
+      ) : mostraElenco ? (
         <div className="overflow-x-auto rounded-xl border border-[var(--line)] bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-[var(--muted)]">
@@ -104,10 +116,11 @@ export function CandidatureOffertaClient({
               </tr>
             </thead>
             <tbody>
-              {candidature.map((c) => {
+              {visibili.map((c) => {
                 const n = ranks.get(c.id) ?? 0;
                 const ricevutaGiorno = new Date(c.receivedAt).toLocaleDateString("it-IT");
                 const ricevuta = new Date(c.receivedAt).toLocaleString("it-IT");
+                const candidato = anagraficaCandidato(c);
                 return (
                   <tr key={c.id} className="border-t border-[var(--line)]">
                     <td className="px-3 py-2">
@@ -115,9 +128,11 @@ export function CandidatureOffertaClient({
                         href={`/recruiting/offerte/${offertaId}/${c.id}`}
                         className="font-semibold text-[var(--navy)] hover:underline"
                       >
-                        Candidatura {n} · {ricevutaGiorno}
+                        {candidato.label}
                       </Link>
-                      <p className="mt-0.5 font-mono text-[11px] text-[var(--muted)]">{c.id}</p>
+                      <p className="mt-0.5 text-[11px] text-[var(--muted)]">
+                        Candidatura {n} · {ricevutaGiorno}
+                      </p>
                     </td>
                     <td className="px-3 py-2">
                       <span
@@ -136,7 +151,7 @@ export function CandidatureOffertaClient({
             </tbody>
           </table>
         </div>
-      )}
+      ) : null}
 
       <Modal
         open={open}
@@ -160,8 +175,18 @@ export function CandidatureOffertaClient({
         >
           <input type="hidden" name="offertaId" value={offertaId} />
           <p className="text-xs text-[var(--muted)]">
-            Lo stato iniziale è Ricevuta. Nessun dato personale o CV.
+            Lo stato iniziale è Ricevuta. Cognome e nome sono obbligatori.
           </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className={labelCls}>Cognome</span>
+              <input name="cognome" required maxLength={80} className={inputCls} />
+            </label>
+            <label>
+              <span className={labelCls}>Nome</span>
+              <input name="nome" required maxLength={80} className={inputCls} />
+            </label>
+          </div>
           <label>
             <span className={labelCls}>Origine (opzionale)</span>
             <input name="source" maxLength={80} className={inputCls} placeholder="es. manuale" />
