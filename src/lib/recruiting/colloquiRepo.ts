@@ -1,8 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import {
-  assertCandidaturaOperabile,
-} from "@/lib/recruiting/candidature";
+import { assertCandidaturaOperabile } from "@/lib/recruiting/candidature";
 import {
   assertCanCreateColloquio,
   assertTransizioneColloquio,
@@ -12,6 +10,13 @@ import {
   type RecruitingColloquioRecord,
 } from "@/lib/recruiting/colloqui";
 import { assertCandidaturaDelTenant } from "@/lib/recruiting/attivitaRepo";
+import {
+  mapColloquioRow,
+  newRecruitingId,
+  recruitingPool,
+  recruitingUsesSql,
+  sql,
+} from "@/lib/recruiting/sqlDb";
 
 function tenantIdOrThrow(tenantId: string) {
   const id = String(tenantId || "").trim();
@@ -22,11 +27,21 @@ function tenantIdOrThrow(tenantId: string) {
 async function assertIntervistatoreDelTenant(tenantId: string, userId: string) {
   const uid = String(userId || "").trim();
   if (!uid) return;
-  const user = await prisma.user.findFirst({
-    where: { id: uid, tenantId },
-    select: { id: true },
-  });
-  if (!user) throw new Error("Intervistatore non valido");
+  if (!recruitingUsesSql()) {
+    const user = await prisma.user.findFirst({
+      where: { id: uid, tenantId },
+      select: { id: true },
+    });
+    if (!user) throw new Error("Intervistatore non valido");
+    return;
+  }
+  const pool = await recruitingPool();
+  const res = await pool
+    .request()
+    .input("tenantId", sql.UniqueIdentifier, tenantId)
+    .input("id", sql.UniqueIdentifier, uid)
+    .query(`SELECT TOP 1 Id FROM dbo.Users WHERE Id = @id AND TenantId = @tenantId AND Active = 1`);
+  if (!res.recordset[0]) throw new Error("Intervistatore non valido");
 }
 
 async function getColloquioDelTenant(
@@ -38,13 +53,36 @@ async function getColloquioDelTenant(
   const cid = String(id || "").trim();
   if (!cid) return null;
   const oid = String(candidaturaId || "").trim();
-  const row = await prisma.recruitingColloquio.findFirst({
-    where: oid
-      ? { id: cid, tenantId: tid, candidaturaId: oid }
-      : { id: cid, tenantId: tid },
-    include: { intervistatore: { select: { name: true, cognome: true } } },
-  });
-  return row ? toColloquioRecord(row) : null;
+  if (!recruitingUsesSql()) {
+    const row = await prisma.recruitingColloquio.findFirst({
+      where: oid
+        ? { id: cid, tenantId: tid, candidaturaId: oid }
+        : { id: cid, tenantId: tid },
+      include: { intervistatore: { select: { name: true, cognome: true } } },
+    });
+    return row ? toColloquioRecord(row) : null;
+  }
+  const pool = await recruitingPool();
+  const req = pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), tid)
+    .input("id", sql.NVarChar(64), cid);
+  let q = `
+    SELECT c.Id, c.TenantId, c.CandidaturaId, c.Round, c.Stato, c.ScheduledAt, c.Modalita,
+           c.IntervistatoreUserId, c.IntervistatoreLabel, c.NotePreliminari, c.NoteSvolgimento,
+           c.Esito, c.Valutazione, c.CreatedAt, c.UpdatedAt, c.CreatedById,
+           u.Name AS IntervistatoreName, u.Cognome AS IntervistatoreCognome
+    FROM dbo.RecruitingColloqui c
+    LEFT JOIN dbo.Users u ON CONVERT(NVARCHAR(64), u.Id) = c.IntervistatoreUserId
+    WHERE c.Id = @id AND c.TenantId = @tenantId
+  `;
+  if (oid) {
+    req.input("candidaturaId", sql.NVarChar(64), oid);
+    q += ` AND c.CandidaturaId = @candidaturaId`;
+  }
+  const res = await req.query(q);
+  const row = res.recordset[0];
+  return row ? toColloquioRecord(mapColloquioRow(row)) : null;
 }
 
 export async function listColloquiByCandidatura(
@@ -52,12 +90,30 @@ export async function listColloquiByCandidatura(
   candidaturaId: string
 ): Promise<RecruitingColloquioRecord[]> {
   const candidatura = await assertCandidaturaDelTenant(tenantId, candidaturaId);
-  const rows = await prisma.recruitingColloquio.findMany({
-    where: { tenantId: candidatura.tenantId, candidaturaId: candidatura.id },
-    include: { intervistatore: { select: { name: true, cognome: true } } },
-    orderBy: { round: "asc" },
-  });
-  return rows.map(toColloquioRecord);
+  if (!recruitingUsesSql()) {
+    const rows = await prisma.recruitingColloquio.findMany({
+      where: { tenantId: candidatura.tenantId, candidaturaId: candidatura.id },
+      include: { intervistatore: { select: { name: true, cognome: true } } },
+      orderBy: { round: "asc" },
+    });
+    return rows.map(toColloquioRecord);
+  }
+  const pool = await recruitingPool();
+  const res = await pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .query(`
+      SELECT c.Id, c.TenantId, c.CandidaturaId, c.Round, c.Stato, c.ScheduledAt, c.Modalita,
+             c.IntervistatoreUserId, c.IntervistatoreLabel, c.NotePreliminari, c.NoteSvolgimento,
+             c.Esito, c.Valutazione, c.CreatedAt, c.UpdatedAt, c.CreatedById,
+             u.Name AS IntervistatoreName, u.Cognome AS IntervistatoreCognome
+      FROM dbo.RecruitingColloqui c
+      LEFT JOIN dbo.Users u ON CONVERT(NVARCHAR(64), u.Id) = c.IntervistatoreUserId
+      WHERE c.TenantId = @tenantId AND c.CandidaturaId = @candidaturaId
+      ORDER BY c.Round ASC
+    `);
+  return res.recordset.map((r) => toColloquioRecord(mapColloquioRow(r)));
 }
 
 export async function listColloquiRecenti(
@@ -73,25 +129,51 @@ export async function listColloquiRecenti(
 > {
   const tid = tenantIdOrThrow(tenantId);
   const take = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 30;
-  const rows = await prisma.recruitingColloquio.findMany({
-    where: { tenantId: tid },
-    orderBy: { scheduledAt: "desc" },
-    take,
-    include: {
-      intervistatore: { select: { name: true, cognome: true } },
-      candidatura: {
-        select: {
-          id: true,
-          offertaId: true,
-          offerta: { select: { titolo: true } },
+  if (!recruitingUsesSql()) {
+    const rows = await prisma.recruitingColloquio.findMany({
+      where: { tenantId: tid },
+      orderBy: { scheduledAt: "desc" },
+      take,
+      include: {
+        intervistatore: { select: { name: true, cognome: true } },
+        candidatura: {
+          select: {
+            id: true,
+            offertaId: true,
+            offerta: { select: { titolo: true } },
+          },
         },
       },
-    },
-  });
-  return rows.map((row) => ({
-    ...toColloquioRecord(row),
-    offertaId: row.candidatura.offertaId,
-    offertaTitolo: row.candidatura.offerta?.titolo || "",
+    });
+    return rows.map((row) => ({
+      ...toColloquioRecord(row),
+      offertaId: row.candidatura.offertaId,
+      offertaTitolo: row.candidatura.offerta?.titolo || "",
+    }));
+  }
+  const pool = await recruitingPool();
+  const res = await pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), tid)
+    .input("take", sql.Int, take)
+    .query(`
+      SELECT TOP (@take)
+        c.Id, c.TenantId, c.CandidaturaId, c.Round, c.Stato, c.ScheduledAt, c.Modalita,
+        c.IntervistatoreUserId, c.IntervistatoreLabel, c.NotePreliminari, c.NoteSvolgimento,
+        c.Esito, c.Valutazione, c.CreatedAt, c.UpdatedAt, c.CreatedById,
+        u.Name AS IntervistatoreName, u.Cognome AS IntervistatoreCognome,
+        cand.OffertaId AS OffertaId, o.Titolo AS OffertaTitolo
+      FROM dbo.RecruitingColloqui c
+      INNER JOIN dbo.RecruitingCandidature cand ON cand.Id = c.CandidaturaId AND cand.TenantId = c.TenantId
+      INNER JOIN dbo.OfferteLavoro o ON o.Id = cand.OffertaId AND o.TenantId = c.TenantId
+      LEFT JOIN dbo.Users u ON CONVERT(NVARCHAR(64), u.Id) = c.IntervistatoreUserId
+      WHERE c.TenantId = @tenantId
+      ORDER BY c.ScheduledAt DESC
+    `);
+  return res.recordset.map((row) => ({
+    ...toColloquioRecord(mapColloquioRow(row)),
+    offertaId: String(row.OffertaId),
+    offertaTitolo: String(row.OffertaTitolo || ""),
   }));
 }
 
@@ -99,14 +181,30 @@ export async function listUtentiTenantRecruiting(
   tenantId: string
 ): Promise<Array<{ id: string; name: string }>> {
   const tid = tenantIdOrThrow(tenantId);
-  const rows = await prisma.user.findMany({
-    where: { tenantId: tid, active: true },
-    select: { id: true, name: true, cognome: true },
-    orderBy: { name: "asc" },
-  });
-  return rows.map((u) => ({
-    id: u.id,
-    name: [u.name, u.cognome].filter(Boolean).join(" ").trim() || u.name,
+  if (!recruitingUsesSql()) {
+    const rows = await prisma.user.findMany({
+      where: { tenantId: tid, active: true },
+      select: { id: true, name: true, cognome: true },
+      orderBy: { name: "asc" },
+    });
+    return rows.map((u) => ({
+      id: u.id,
+      name: [u.name, u.cognome].filter(Boolean).join(" ").trim() || u.name,
+    }));
+  }
+  const pool = await recruitingPool();
+  const res = await pool
+    .request()
+    .input("tenantId", sql.UniqueIdentifier, tid)
+    .query(`
+      SELECT CONVERT(NVARCHAR(64), Id) AS Id, Name, Cognome
+      FROM dbo.Users
+      WHERE TenantId = @tenantId AND Active = 1
+      ORDER BY Name ASC
+    `);
+  return res.recordset.map((u) => ({
+    id: String(u.Id),
+    name: [u.Name, u.Cognome].filter(Boolean).join(" ").trim() || String(u.Name),
   }));
 }
 
@@ -127,43 +225,107 @@ export async function createColloquio(
   assertCanCreateColloquio(candidatura.stato);
   await assertIntervistatoreDelTenant(candidatura.tenantId, input.intervistatoreUserId);
 
-  const last = await prisma.recruitingColloquio.findFirst({
-    where: { tenantId: candidatura.tenantId, candidaturaId: candidatura.id },
-    orderBy: { round: "desc" },
-    select: { round: true },
-  });
-  const round = (last?.round || 0) + 1;
+  if (!recruitingUsesSql()) {
+    const last = await prisma.recruitingColloquio.findFirst({
+      where: { tenantId: candidatura.tenantId, candidaturaId: candidatura.id },
+      orderBy: { round: "desc" },
+      select: { round: true },
+    });
+    const round = (last?.round || 0) + 1;
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.recruitingColloquio.create({
+        data: {
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          round,
+          stato: "PROGRAMMATO",
+          scheduledAt: input.scheduledAt,
+          modalita: input.modalita,
+          intervistatoreUserId: input.intervistatoreUserId || null,
+          intervistatoreLabel: input.intervistatoreLabel,
+          notePreliminari: input.notePreliminari,
+          createdById,
+        },
+        include: { intervistatore: { select: { name: true, cognome: true } } },
+      });
+      await tx.recruitingAttivita.create({
+        data: {
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          tipo: "COLLOQUIO_PROGRAMMATO",
+          occurredAt: input.scheduledAt,
+          note: input.notePreliminari,
+          colloquioId: row.id,
+          createdById,
+        },
+      });
+      return row;
+    });
+    return toColloquioRecord(created);
+  }
 
-  const created = await prisma.$transaction(async (tx) => {
-    const row = await tx.recruitingColloquio.create({
-      data: {
-        tenantId: candidatura.tenantId,
-        candidaturaId: candidatura.id,
-        round,
-        stato: "PROGRAMMATO",
-        scheduledAt: input.scheduledAt,
-        modalita: input.modalita,
-        intervistatoreUserId: input.intervistatoreUserId || null,
-        intervistatoreLabel: input.intervistatoreLabel,
-        notePreliminari: input.notePreliminari,
-        createdById,
-      },
-      include: { intervistatore: { select: { name: true, cognome: true } } },
-    });
-    await tx.recruitingAttivita.create({
-      data: {
-        tenantId: candidatura.tenantId,
-        candidaturaId: candidatura.id,
-        tipo: "COLLOQUIO_PROGRAMMATO",
-        occurredAt: input.scheduledAt,
-        note: input.notePreliminari,
-        colloquioId: row.id,
-        createdById,
-      },
-    });
-    return row;
-  });
-  return toColloquioRecord(created);
+  const pool = await recruitingPool();
+  const lastRes = await pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .query(`
+      SELECT TOP 1 Round FROM dbo.RecruitingColloqui
+      WHERE TenantId = @tenantId AND CandidaturaId = @candidaturaId
+      ORDER BY Round DESC
+    `);
+  const round = Number(lastRes.recordset[0]?.Round || 0) + 1;
+  const id = newRecruitingId();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await new sql.Request(tx)
+      .input("id", sql.NVarChar(64), id)
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .input("round", sql.Int, round)
+      .input("scheduledAt", sql.DateTime2, input.scheduledAt)
+      .input("modalita", sql.NVarChar(20), input.modalita)
+      .input("intUser", sql.NVarChar(64), input.intervistatoreUserId || null)
+      .input("intLabel", sql.NVarChar(120), input.intervistatoreLabel)
+      .input("notePre", sql.NVarChar(2000), input.notePreliminari)
+      .input("createdById", sql.NVarChar(64), createdById)
+      .query(`
+        INSERT INTO dbo.RecruitingColloqui (
+          Id, TenantId, CandidaturaId, Round, Stato, ScheduledAt, Modalita,
+          IntervistatoreUserId, IntervistatoreLabel, NotePreliminari, NoteSvolgimento,
+          Esito, Valutazione, CreatedAt, UpdatedAt, CreatedById
+        ) VALUES (
+          @id, @tenantId, @candidaturaId, @round, N'PROGRAMMATO', @scheduledAt, @modalita,
+          @intUser, @intLabel, @notePre, N'', NULL, N'',
+          SYSUTCDATETIME(), SYSUTCDATETIME(), @createdById
+        )
+      `);
+    await new sql.Request(tx)
+      .input("aid", sql.NVarChar(64), newRecruitingId())
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .input("occurredAt", sql.DateTime2, input.scheduledAt)
+      .input("note", sql.NVarChar(2000), input.notePreliminari)
+      .input("colloquioId", sql.NVarChar(64), id)
+      .input("createdById", sql.NVarChar(64), createdById)
+      .query(`
+        INSERT INTO dbo.RecruitingAttivita (
+          Id, TenantId, CandidaturaId, Tipo, OccurredAt, Note, Esito,
+          StatoDa, StatoA, ColloquioId, Canale, CreatedAt, CreatedById
+        ) VALUES (
+          @aid, @tenantId, @candidaturaId, N'COLLOQUIO_PROGRAMMATO', @occurredAt, @note, NULL,
+          NULL, NULL, @colloquioId, NULL, SYSUTCDATETIME(), @createdById
+        )
+      `);
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+  const created = await getColloquioDelTenant(candidatura.tenantId, id, candidatura.id);
+  if (!created) throw new Error("Colloquio non creato");
+  return created;
 }
 
 async function transizioneColloquio(input: {
@@ -182,53 +344,118 @@ async function transizioneColloquio(input: {
   assertCandidaturaOperabile(candidatura.stato);
   assertTransizioneColloquio(current.stato, input.to);
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.recruitingColloquio.updateMany({
-      where: {
-        id: current.id,
-        tenantId: candidatura.tenantId,
-        candidaturaId: candidatura.id,
-        stato: current.stato,
-      },
-      data: {
-        stato: input.to,
-        ...(input.noteSvolgimento !== undefined ? { noteSvolgimento: input.noteSvolgimento } : {}),
-        ...(input.esito ? { esito: input.esito } : {}),
-        ...(input.valutazione !== undefined ? { valutazione: input.valutazione } : {}),
-      },
+  if (!recruitingUsesSql()) {
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.recruitingColloquio.updateMany({
+        where: {
+          id: current.id,
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          stato: current.stato,
+        },
+        data: {
+          stato: input.to,
+          ...(input.noteSvolgimento !== undefined ? { noteSvolgimento: input.noteSvolgimento } : {}),
+          ...(input.esito ? { esito: input.esito } : {}),
+          ...(input.valutazione !== undefined ? { valutazione: input.valutazione } : {}),
+        },
+      });
+      if (result.count !== 1) throw new Error("Colloquio non trovato");
+      const tipo =
+        input.to === "SVOLTO"
+          ? "COLLOQUIO_SVOLTO"
+          : input.to === "ESITATO"
+            ? "COLLOQUIO_ESITO"
+            : "COLLOQUIO_ANNULLATO";
+      await tx.recruitingAttivita.create({
+        data: {
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          tipo,
+          occurredAt: new Date(),
+          note:
+            input.to === "SVOLTO"
+              ? input.noteSvolgimento || ""
+              : input.to === "ESITATO"
+                ? input.valutazione || ""
+                : "",
+          esito: input.esito || null,
+          colloquioId: current.id,
+          createdById: input.createdById,
+        },
+      });
+      const row = await tx.recruitingColloquio.findFirst({
+        where: { id: current.id, tenantId: candidatura.tenantId, candidaturaId: candidatura.id },
+        include: { intervistatore: { select: { name: true, cognome: true } } },
+      });
+      if (!row) throw new Error("Colloquio non trovato");
+      return row;
     });
-    if (result.count !== 1) throw new Error("Colloquio non trovato");
-    const tipo =
-      input.to === "SVOLTO"
-        ? "COLLOQUIO_SVOLTO"
-        : input.to === "ESITATO"
-          ? "COLLOQUIO_ESITO"
-          : "COLLOQUIO_ANNULLATO";
-    await tx.recruitingAttivita.create({
-      data: {
-        tenantId: candidatura.tenantId,
-        candidaturaId: candidatura.id,
-        tipo,
-        occurredAt: new Date(),
-        note:
-          input.to === "SVOLTO"
-            ? input.noteSvolgimento || ""
-            : input.to === "ESITATO"
-              ? input.valutazione || ""
-              : "",
-        esito: input.esito || null,
-        colloquioId: current.id,
-        createdById: input.createdById,
-      },
-    });
-    const row = await tx.recruitingColloquio.findFirst({
-      where: { id: current.id, tenantId: candidatura.tenantId, candidaturaId: candidatura.id },
-      include: { intervistatore: { select: { name: true, cognome: true } } },
-    });
-    if (!row) throw new Error("Colloquio non trovato");
-    return row;
-  });
-  return toColloquioRecord(updated);
+    return toColloquioRecord(updated);
+  }
+
+  const tipo =
+    input.to === "SVOLTO"
+      ? "COLLOQUIO_SVOLTO"
+      : input.to === "ESITATO"
+        ? "COLLOQUIO_ESITO"
+        : "COLLOQUIO_ANNULLATO";
+  const note =
+    input.to === "SVOLTO"
+      ? input.noteSvolgimento || ""
+      : input.to === "ESITATO"
+        ? input.valutazione || ""
+        : "";
+
+  const pool = await recruitingPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const upd = await new sql.Request(tx)
+      .input("id", sql.NVarChar(64), current.id)
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .input("fromStato", sql.NVarChar(30), current.stato)
+      .input("toStato", sql.NVarChar(30), input.to)
+      .input("noteSvo", sql.NVarChar(2000), input.noteSvolgimento ?? null)
+      .input("esito", sql.NVarChar(30), input.esito ?? null)
+      .input("val", sql.NVarChar(2000), input.valutazione ?? null)
+      .query(`
+        UPDATE dbo.RecruitingColloqui SET
+          Stato = @toStato,
+          NoteSvolgimento = COALESCE(@noteSvo, NoteSvolgimento),
+          Esito = COALESCE(@esito, Esito),
+          Valutazione = COALESCE(@val, Valutazione),
+          UpdatedAt = SYSUTCDATETIME()
+        WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Stato = @fromStato
+      `);
+    if (upd.rowsAffected[0] !== 1) throw new Error("Colloquio non trovato");
+    await new sql.Request(tx)
+      .input("aid", sql.NVarChar(64), newRecruitingId())
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .input("tipo", sql.NVarChar(40), tipo)
+      .input("note", sql.NVarChar(2000), note)
+      .input("esito", sql.NVarChar(30), input.esito ?? null)
+      .input("colloquioId", sql.NVarChar(64), current.id)
+      .input("createdById", sql.NVarChar(64), input.createdById)
+      .query(`
+        INSERT INTO dbo.RecruitingAttivita (
+          Id, TenantId, CandidaturaId, Tipo, OccurredAt, Note, Esito,
+          StatoDa, StatoA, ColloquioId, Canale, CreatedAt, CreatedById
+        ) VALUES (
+          @aid, @tenantId, @candidaturaId, @tipo, SYSUTCDATETIME(), @note, @esito,
+          NULL, NULL, @colloquioId, NULL, SYSUTCDATETIME(), @createdById
+        )
+      `);
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+  const updated = await getColloquioDelTenant(candidatura.tenantId, current.id, candidatura.id);
+  if (!updated) throw new Error("Colloquio non trovato");
+  return updated;
 }
 
 export async function svolgiColloquio(

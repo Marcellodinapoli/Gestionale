@@ -26,11 +26,6 @@ export const OPS_MODEL_COLLECTION: Record<string, string> = {
   AuditLog: "auditLogs",
   PasswordHistory: "passwordHistory",
   ImportBatch: "importBatch",
-  OffertaLavoro: "offerteLavoro",
-  RecruitingReceiverConfig: "recruitingReceiverConfig",
-  RecruitingCandidatura: "recruitingCandidature",
-  RecruitingAttivita: "recruitingAttivita",
-  RecruitingColloquio: "recruitingColloqui",
   DialerCampagna: "dialerCampagne",
   DialerCampagnaOperatore: "dialerCampagnaOperatori",
   DialerCampagnaPratica: "dialerCampagnaPratiche",
@@ -63,11 +58,6 @@ export const PRISMA_DELEGATE_TO_MODEL: Record<string, string> = {
   auditLog: "AuditLog",
   passwordHistory: "PasswordHistory",
   importBatch: "ImportBatch",
-  offertaLavoro: "OffertaLavoro",
-  recruitingReceiverConfig: "RecruitingReceiverConfig",
-  recruitingCandidatura: "RecruitingCandidatura",
-  recruitingAttivita: "RecruitingAttivita",
-  recruitingColloquio: "RecruitingColloquio",
   dialerCampagna: "DialerCampagna",
   dialerCampagnaOperatore: "DialerCampagnaOperatore",
   dialerCampagnaPratica: "DialerCampagnaPratica",
@@ -89,24 +79,6 @@ export const MODEL_RELATIONS: Record<
       model: "PasswordHistory",
       local: "id",
       foreign: "userId",
-      many: true,
-    },
-    recruitingAttivitaCreate: {
-      model: "RecruitingAttivita",
-      local: "id",
-      foreign: "createdById",
-      many: true,
-    },
-    recruitingColloquiCreate: {
-      model: "RecruitingColloquio",
-      local: "id",
-      foreign: "createdById",
-      many: true,
-    },
-    recruitingColloquiIntervistatore: {
-      model: "RecruitingColloquio",
-      local: "id",
-      foreign: "intervistatoreUserId",
       many: true,
     },
   },
@@ -173,45 +145,6 @@ export const MODEL_RELATIONS: Record<
     operatore: { model: "User", local: "operatoreId", foreign: "id" },
     pratica: { model: "Pratica", local: "praticaId", foreign: "id" },
   },
-  OffertaLavoro: {
-    tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
-    candidature: {
-      model: "RecruitingCandidatura",
-      local: "id",
-      foreign: "offertaId",
-      many: true,
-    },
-  },
-  RecruitingReceiverConfig: {
-    tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
-  },
-  RecruitingCandidatura: {
-    tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
-    offerta: { model: "OffertaLavoro", local: "offertaId", foreign: "id" },
-    attivita: {
-      model: "RecruitingAttivita",
-      local: "id",
-      foreign: "candidaturaId",
-      many: true,
-    },
-    colloqui: {
-      model: "RecruitingColloquio",
-      local: "id",
-      foreign: "candidaturaId",
-      many: true,
-    },
-  },
-  RecruitingAttivita: {
-    tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
-    candidatura: { model: "RecruitingCandidatura", local: "candidaturaId", foreign: "id" },
-    createdBy: { model: "User", local: "createdById", foreign: "id" },
-  },
-  RecruitingColloquio: {
-    tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
-    candidatura: { model: "RecruitingCandidatura", local: "candidaturaId", foreign: "id" },
-    createdBy: { model: "User", local: "createdById", foreign: "id" },
-    intervistatore: { model: "User", local: "intervistatoreUserId", foreign: "id" },
-  },
   DialerCampagna: {
     tenant: { model: "Tenant", local: "tenantId", foreign: "id" },
     createdBy: { model: "User", local: "createdById", foreign: "id" },
@@ -243,32 +176,7 @@ export const MODEL_RELATIONS: Record<
     postazioni: { model: "Postazione", local: "id", foreign: "sedeId", many: true },
     users: { model: "User", local: "id", foreign: "sedeId", many: true },
   },
-  Tenant: {
-    offerteLavoro: { model: "OffertaLavoro", local: "id", foreign: "tenantId", many: true },
-    recruitingReceiverConfig: {
-      model: "RecruitingReceiverConfig",
-      local: "id",
-      foreign: "tenantId",
-    },
-    recruitingCandidature: {
-      model: "RecruitingCandidatura",
-      local: "id",
-      foreign: "tenantId",
-      many: true,
-    },
-    recruitingAttivita: {
-      model: "RecruitingAttivita",
-      local: "id",
-      foreign: "tenantId",
-      many: true,
-    },
-    recruitingColloqui: {
-      model: "RecruitingColloquio",
-      local: "id",
-      foreign: "tenantId",
-      many: true,
-    },
-  },
+  Tenant: {},
 };
 
 export function collectionForOpsModel(model: string) {

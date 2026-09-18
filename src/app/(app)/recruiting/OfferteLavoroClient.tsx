@@ -94,8 +94,69 @@ const STATO_COLL_COLORS: Record<StatoColloquio, string> = {
   ANNULLATO: "bg-stone-200 text-stone-700",
 };
 
+/** Percorso in home: Candidature (tutte) + stati principali. */
+const PERCORSO_HOME = [
+  { id: "CANDIDATURE", label: "Candidature" },
+  { id: "RICEVUTA", label: STATO_CANDIDATURA_LABELS.RICEVUTA },
+  { id: "IN_VALUTAZIONE", label: STATO_CANDIDATURA_LABELS.IN_VALUTAZIONE },
+  { id: "COLLOQUIO", label: STATO_CANDIDATURA_LABELS.COLLOQUIO },
+  { id: "PROVA", label: STATO_CANDIDATURA_LABELS.PROVA },
+  { id: "ASSUNTA", label: STATO_CANDIDATURA_LABELS.ASSUNTA },
+] as const;
+
+type PercorsoHomeId = (typeof PERCORSO_HOME)[number]["id"];
+
 function formatData(iso: string) {
   return new Date(iso).toLocaleDateString("it-IT");
+}
+
+function PercorsoHomeMenu({
+  active,
+  onSelect,
+  counts,
+}: {
+  active: PercorsoHomeId;
+  onSelect: (id: PercorsoHomeId) => void;
+  counts: Record<PercorsoHomeId, number>;
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm">
+      <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">Percorso</p>
+      <ol className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+        {PERCORSO_HOME.map((step, idx) => {
+          const current = step.id === active;
+          return (
+            <li key={step.id} className="flex items-center gap-1.5">
+              {idx > 0 ? (
+                <span className="text-slate-300" aria-hidden>
+                  →
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onSelect(step.id)}
+                aria-current={current ? "step" : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold transition ${
+                  current
+                    ? "bg-[var(--navy)] text-white ring-2 ring-[var(--navy)] ring-offset-2"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {step.label}
+                <span
+                  className={`tabular-nums text-[10px] ${
+                    current ? "text-white/80" : "text-slate-400"
+                  }`}
+                >
+                  {counts[step.id]}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
 }
 
 function progressivi(rows: CandidaturaHome[]): Map<string, number> {
@@ -133,6 +194,21 @@ export function OfferteLavoroClient({
   const [chiudi, setChiudi] = useState<OffertaRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [percorso, setPercorso] = useState<PercorsoHomeId>("CANDIDATURE");
+
+  const percorsoCounts: Record<PercorsoHomeId, number> = {
+    CANDIDATURE: candidature.length,
+    RICEVUTA: candidature.filter((c) => c.stato === "RICEVUTA").length,
+    IN_VALUTAZIONE: candidature.filter((c) => c.stato === "IN_VALUTAZIONE").length,
+    COLLOQUIO: candidature.filter((c) => c.stato === "COLLOQUIO").length,
+    PROVA: candidature.filter((c) => c.stato === "PROVA").length,
+    ASSUNTA: candidature.filter((c) => c.stato === "ASSUNTA").length,
+  };
+
+  function candidatureFiltrate(list: CandidaturaHome[]) {
+    if (percorso === "CANDIDATURE") return list;
+    return list.filter((c) => c.stato === percorso);
+  }
 
   function run(fn: () => Promise<void>, onOk?: () => void) {
     setError(null);
@@ -149,6 +225,12 @@ export function OfferteLavoroClient({
 
   return (
     <div className="space-y-3">
+      <PercorsoHomeMenu
+        active={percorso}
+        onSelect={setPercorso}
+        counts={percorsoCounts}
+      />
+
       {canManage ? (
         <div className="flex justify-end">
           <button
@@ -175,11 +257,18 @@ export function OfferteLavoroClient({
         <p className="rounded-xl border border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-[var(--muted)]">
           Nessuna offerta di lavoro.
         </p>
+      ) : percorso !== "CANDIDATURE" && percorsoCounts[percorso] === 0 ? (
+        <p className="rounded-xl border border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-[var(--muted)]">
+          Nessuna candidatura in «
+          {PERCORSO_HOME.find((s) => s.id === percorso)?.label}».
+        </p>
       ) : (
         <div className="space-y-3">
           {offerte.map((o) => {
-            const cands = candidature.filter((c) => c.offertaId === o.id);
-            const ranks = progressivi(cands);
+            const tutte = candidature.filter((c) => c.offertaId === o.id);
+            const cands = candidatureFiltrate(tutte);
+            if (percorso !== "CANDIDATURE" && cands.length === 0) return null;
+            const ranks = progressivi(tutte);
             const ordered = [...cands].sort((a, b) => {
               const db = new Date(b.receivedAt).getTime();
               const da = new Date(a.receivedAt).getTime();

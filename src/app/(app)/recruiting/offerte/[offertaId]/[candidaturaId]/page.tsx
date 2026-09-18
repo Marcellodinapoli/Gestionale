@@ -63,8 +63,8 @@ export default async function CandidaturaDettaglioPage({
   return (
     <div className="space-y-4">
       <PageHeader title="Candidatura" subtitle={offerta.titolo} />
-      <Link href={`/recruiting/offerte/${offerta.id}`} className="text-sm underline">
-        ← Candidature
+      <Link href="/recruiting" className="text-sm underline">
+        ← Recruiting
       </Link>
       <CandidaturaDettaglioClient
         candidatura={{ id: candidatura.id, stato: candidatura.stato }}
