@@ -1,3 +1,5 @@
+"use client";
+
 import {
   CANALE_CONTATTO_LABELS,
   ESITO_CONTATTO_LABELS,
@@ -19,7 +21,25 @@ function esitoLabel(attivita: RecruitingAttivitaRecord): string | null {
   return attivita.esito;
 }
 
-export function CandidaturaTimeline({ attivita }: { attivita: RecruitingAttivitaRecord[] }) {
+function apriColloquio(colloquioId: string) {
+  const el = document.getElementById(`colloquio-${colloquioId}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ring-2", "ring-[var(--navy)]", "ring-offset-2");
+  window.setTimeout(() => {
+    el.classList.remove("ring-2", "ring-[var(--navy)]", "ring-offset-2");
+  }, 1600);
+}
+
+export function CandidaturaTimeline({
+  attivita,
+  colloquioIds = [],
+}: {
+  attivita: RecruitingAttivitaRecord[];
+  colloquioIds?: string[];
+}) {
+  const known = new Set(colloquioIds);
+
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-[var(--navy)]">Timeline</h2>
@@ -46,6 +66,7 @@ export function CandidaturaTimeline({ attivita }: { attivita: RecruitingAttivita
               a.tipo === "NOTA" || a.tipo === "CONTATTO"
                 ? etichettaSezioneAttivita(attivita, a)
                 : null;
+            const canJump = Boolean(a.colloquioId && known.has(a.colloquioId));
             return (
               <li key={a.id} className="border-b border-[var(--line)] pb-2 last:border-0 last:pb-0">
                 <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
@@ -53,15 +74,19 @@ export function CandidaturaTimeline({ attivita }: { attivita: RecruitingAttivita
                 </p>
                 {testo ? <p className="text-sm">{testo}</p> : null}
                 <p className="text-xs text-[var(--muted)]">
-                  {a.occurredAt.toLocaleString("it-IT")}
+                  {new Date(a.occurredAt).toLocaleString("it-IT")}
                   {sezione ? ` · ${sezione}` : ""}
                   {` · ${a.createdByName}`}
                   {extra ? ` · ${extra}` : ""}
                 </p>
-                {a.colloquioId ? (
-                  <a href={`#colloquio-${a.colloquioId}`} className="text-xs font-semibold underline">
+                {canJump ? (
+                  <button
+                    type="button"
+                    onClick={() => apriColloquio(a.colloquioId!)}
+                    className="mt-0.5 text-xs font-semibold text-[var(--accent)] underline"
+                  >
                     Apri colloquio
-                  </a>
+                  </button>
                 ) : null}
               </li>
             );

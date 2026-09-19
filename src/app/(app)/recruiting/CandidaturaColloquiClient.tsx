@@ -121,7 +121,7 @@ export function CandidaturaColloquiClient({
                   <Fragment key={c.id}>
                     <tr
                       id={`colloquio-${c.id}`}
-                      className={`border-t border-[var(--line)] ${aperto ? "bg-amber-50" : ""}`}
+                      className={`scroll-mt-24 border-t border-[var(--line)] ${aperto ? "bg-amber-50" : ""}`}
                     >
                       <td className="px-3 py-2 font-medium">{etichettaRound(c.round)}</td>
                       <td className="px-3 py-2 tabular-nums">

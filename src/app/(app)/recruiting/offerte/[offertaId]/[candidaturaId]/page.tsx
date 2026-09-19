@@ -115,7 +115,10 @@ export default async function CandidaturaDettaglioPage({
         canManage={operabile}
         canCreate={operabile && canCreateColloquio(candidatura.stato)}
       />
-      <CandidaturaTimeline attivita={attivita} />
+      <CandidaturaTimeline
+        attivita={attivita}
+        colloquioIds={colloqui.map((c) => c.id)}
+      />
       <section className="rounded-xl border border-dashed border-[var(--line)] bg-slate-50/70 px-4 py-3 text-xs text-[var(--muted)]">
         <p className="font-semibold uppercase tracking-wide">Riferimenti</p>
         <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
