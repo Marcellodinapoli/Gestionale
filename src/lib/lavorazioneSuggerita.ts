@@ -10,6 +10,7 @@ import {
 } from "@/lib/codiciMandantePerimetro";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import {
+  CODICI_SCARICO,
   codiceScaricoPratica,
   descrizioneDaCodiceScaricoVoce,
   parseCodiceScaricoVoce,
@@ -613,7 +614,11 @@ export async function conteggiAffidatePerCodicePerimetro(
   const map = new Map<string, number>();
   for (const p of pratiche) {
     const perimetro = p.numeroMandante?.trim() || "—";
-    const slot: CodiceConteggioKey = codiceScaricoPratica(p.stato, p.codiceScarico) ?? "ND";
+    const rawSlot = codiceScaricoPratica(p.stato, p.codiceScarico);
+    const slot: CodiceConteggioKey =
+      rawSlot != null && (CODICI_SCARICO as readonly string[]).includes(rawSlot)
+        ? (rawSlot as CodiceConteggioKey)
+        : "ND";
     const key = chiavePerimetroCodice(p.mandanteId, perimetro, slot);
     map.set(key, (map.get(key) ?? 0) + 1);
   }

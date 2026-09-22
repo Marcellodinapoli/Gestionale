@@ -10,7 +10,7 @@ import {
   gruppoMandantiPraticaWhere,
   type GruppoMandanteAssegnazione,
 } from "@/lib/gruppoMandanti";
-import { codiceScaricoPratica } from "@/lib/scarico";
+import { CODICI_SCARICO, codiceScaricoPratica } from "@/lib/scarico";
 
 export {
   COLONNE_CODICI,
@@ -141,7 +141,10 @@ export async function codiciPerMandantePerimetro(
     }
     if (p.assegnatarioId) row.affidate += 1;
     const codice = codiceScaricoPratica(p.stato, p.codiceScarico);
-    const slot: CodiceConteggioKey = codice ?? "ND";
+    const slot: CodiceConteggioKey =
+      codice != null && (CODICI_SCARICO as readonly string[]).includes(codice)
+        ? (codice as CodiceConteggioKey)
+        : "ND";
     row.conteggi[slot] += 1;
     row.totale += 1;
   }

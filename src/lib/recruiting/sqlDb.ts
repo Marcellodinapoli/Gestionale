@@ -30,7 +30,22 @@ function loadEnvFile(filePath: string) {
 loadEnvFile(resolve(process.cwd(), "connector/.env"));
 loadEnvFile(resolve(process.cwd(), ".env"));
 
-let mssqlPool: sql.ConnectionPool | null = null;
+type RecruitingQueryResult = {
+  recordset: Record<string, unknown>[];
+  rowsAffected: number[];
+};
+
+type RecruitingRequest = {
+  input(name: string, type: unknown, value: unknown): RecruitingRequest;
+  query(tsql: string): Promise<RecruitingQueryResult>;
+};
+
+type RecruitingPool = {
+  readonly connected: boolean;
+  request(): RecruitingRequest;
+};
+
+let mssqlPool: RecruitingPool | null = null;
 
 /** Recruiting su SQL Server (connector) o Postgres (neon). */
 export function recruitingUsesSql() {
@@ -116,12 +131,10 @@ function tsqlRecruitingToPg(
   return { text, values };
 }
 
-type RecruitingQueryResult = { recordset: Record<string, unknown>[] };
-
-class NeonRecruitingRequest {
+class NeonRecruitingRequest implements RecruitingRequest {
   private inputs: Record<string, unknown> = {};
 
-  input(name: string, _type: unknown, value: unknown) {
+  input(name: string, _type: unknown, value: unknown): RecruitingRequest {
     this.inputs[name] = value;
     return this;
   }
@@ -143,11 +156,11 @@ class NeonRecruitingRequest {
       const { text, values } = tsqlRecruitingToPg(stmt, this.inputs);
       last = (await neonQuery(text, values)) as Record<string, unknown>[];
     }
-    return { recordset: last };
+    return { recordset: last, rowsAffected: [last.length] };
   }
 }
 
-const neonPoolShim = {
+const neonPoolShim: RecruitingPool = {
   get connected() {
     return true;
   },
@@ -156,19 +169,17 @@ const neonPoolShim = {
   },
 };
 
-export async function recruitingPool(): Promise<
-  sql.ConnectionPool | typeof neonPoolShim
-> {
+export async function recruitingPool(): Promise<RecruitingPool> {
   if (isNeonProvider()) return neonPoolShim;
   if (mssqlPool?.connected) return mssqlPool;
-  mssqlPool = await sql.connect({
+  mssqlPool = (await sql.connect({
     server: process.env.DB_HOST || "localhost",
     port: Number(process.env.DB_PORT || 1433),
     database: process.env.DB_NAME || "CredixaDev",
     user: process.env.DB_USER || "credixa_dev",
     password: process.env.DB_PASSWORD || "",
     options: { encrypt: false, trustServerCertificate: true },
-  });
+  })) as RecruitingPool;
   return mssqlPool;
 }
 

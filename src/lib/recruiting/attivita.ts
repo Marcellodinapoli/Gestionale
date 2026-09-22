@@ -218,7 +218,7 @@ export function validaEsitoProvaInput(input: {
   provaId: string;
   esito: EsitoProva;
   parere: string;
-  valutazioneStelle: number | null;
+  valutazioneStelle: number;
 } {
   const provaId = String(input.provaId || "").trim();
   if (!provaId || provaId.length > 80) throw new Error("Prova non indicata");
@@ -236,7 +236,7 @@ export function validaEsitoProvaInput(input: {
     }
     valutazioneStelle = n;
   }
-  if (!valutazioneStelle) throw new Error("Valutazione obbligatoria");
+  if (valutazioneStelle == null) throw new Error("Valutazione obbligatoria");
   return { provaId, esito: esitoRaw, parere, valutazioneStelle };
 }
 

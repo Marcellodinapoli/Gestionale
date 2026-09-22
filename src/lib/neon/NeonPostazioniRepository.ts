@@ -11,12 +11,12 @@ import type {
 } from "@/lib/data/contracts/postazioni";
 
 function mapPostazione(row: Record<string, unknown>): PostazioneDto {
-  const mapped = mapSqlRow(row);
+  const mapped = mapSqlRow(row) as PostazioneDto;
   if (row.SedeNome != null) {
-    mapped.sedeRef = { nome: row.SedeNome };
+    mapped.sedeRef = { id: String(row.SedeId ?? mapped.sedeId ?? ""), nome: String(row.SedeNome) };
   }
   if (Array.isArray(row.occupanti)) {
-    mapped.occupanti = row.occupanti;
+    mapped.occupanti = row.occupanti as Array<{ id: string; name: string }>;
   }
   return mapped;
 }
@@ -83,7 +83,7 @@ export class NeonPostazioniRepository implements PostazioniRepository {
         const occ = await neonQuery(occSql, occParams);
         item.occupanti = occ.map((o) => {
           const m = mapSqlRow(o as Record<string, unknown>);
-          return { id: m.id, name: m.name };
+          return { id: String(m.id ?? ""), name: String(m.name ?? "") };
         });
       }
     }

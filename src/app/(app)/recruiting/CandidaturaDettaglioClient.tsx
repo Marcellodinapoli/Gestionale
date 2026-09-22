@@ -907,7 +907,11 @@ export function CandidaturaDettaglioClient({
             </p>
           ) : inPreColloquio && !canProgrammareColloquio ? (
             <p className="text-xs font-medium text-amber-900">
-              Con esito «{ESITO_CONTATTO_LABELS[esitoContattoForm]}» il colloquio non può
+              Con esito «
+              {esitoContattoForm
+                ? ESITO_CONTATTO_LABELS[esitoContattoForm]
+                : "—"}
+              » il colloquio non può
               essere fissato. Salva il contatto: l’esito resterà indicato sulla scheda.
             </p>
           ) : colloquioObbligatorio && canProgrammareColloquio ? (
@@ -1127,7 +1131,11 @@ export function CandidaturaDettaglioClient({
             </p>
           ) : !canProgrammareProva ? (
             <p className="text-xs font-medium text-amber-900">
-              Con esito «{ESITO_CONTATTO_LABELS[esitoContattoForm]}» la prova non può
+              Con esito «
+              {esitoContattoForm
+                ? ESITO_CONTATTO_LABELS[esitoContattoForm]
+                : "—"}
+              » la prova non può
               essere fissata. Salva il contatto: l’esito resterà indicato sulla scheda.
             </p>
           ) : (

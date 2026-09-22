@@ -134,7 +134,7 @@ async function attachIncludes(items: PraticaDto[], include?: PraticaInclude[]) {
   const ids = items.map((p) => String(p.id));
   const want = new Set(include || []);
 
-  const byPratica = <T extends { praticaId?: unknown }>(rows: T[]) => {
+  const byPratica = <T extends Record<string, unknown>>(rows: T[]) => {
     const map = new Map<string, T[]>();
     for (const row of rows) {
       const pid = String(row.praticaId ?? "");
