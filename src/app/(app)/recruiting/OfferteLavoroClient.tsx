@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Briefcase, ChevronDown, ChevronRight, Inbox, MessagesSquare, Plus, Search, Timer, UserCheck, UserRound, Users } from "lucide-react";
+import { Briefcase, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Inbox, Plus, Timer, UserCheck, UserRound, Users } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/ui";
 import { SectionTabNav, sectionTabClass } from "@/components/ui/SectionTabNav";
@@ -11,6 +11,7 @@ import {
   aggiornaOffertaLavoroAction,
   chiudiOffertaLavoroAction,
   creaOffertaLavoroAction,
+  syncIndeedApplicationsAction,
 } from "@/actions/recruiting";
 import {
   DICITURA_PARI_OPPORTUNITA,
@@ -32,9 +33,15 @@ import {
   type StatoCandidatura,
 } from "@/lib/recruiting/candidature";
 import {
+  ESITO_COLLOQUIO_LABELS,
   STATO_COLLOQUIO_LABELS,
+  type EsitoColloquio,
   type StatoColloquio,
 } from "@/lib/recruiting/colloqui";
+import {
+  listCandidatureViste,
+  markCandidaturaVista,
+} from "@/lib/recruiting/candidatureVisteStorage";
 
 type OffertaRow = {
   id: string;
@@ -71,6 +78,9 @@ type ColloquioHome = {
   round: number;
   stato: StatoColloquio;
   scheduledAt: string;
+  esito: EsitoColloquio | null;
+  valutazioneStelle: number | null;
+  intervistatoreNome: string;
 };
 
 const inputCls =
@@ -99,20 +109,50 @@ const STATO_COLL_COLORS: Record<StatoColloquio, string> = {
   ANNULLATO: "bg-stone-200 text-stone-700",
 };
 
-/** Percorso in home: Candidature (tutte) + stati principali. */
+/** Percorso in home: Candidature (tutte) + Nuove (non ancora aperte) + stati. */
 const PERCORSO_HOME = [
   { id: "CANDIDATURE", label: "Candidature", icon: Users },
-  { id: "RICEVUTA", label: STATO_CANDIDATURA_LABELS.RICEVUTA, icon: Inbox },
-  { id: "IN_VALUTAZIONE", label: STATO_CANDIDATURA_LABELS.IN_VALUTAZIONE, icon: Search },
-  { id: "COLLOQUIO", label: STATO_CANDIDATURA_LABELS.COLLOQUIO, icon: MessagesSquare },
+  { id: "NUOVE", label: "Nuove", icon: Inbox },
+  { id: "COLLOQUIO_PROGRAMMATO", label: "Colloquio programmato", icon: CalendarClock },
+  { id: "COLLOQUIO_SVOLTO", label: "Colloquio svolto", icon: CheckCircle2 },
   { id: "PROVA", label: STATO_CANDIDATURA_LABELS.PROVA, icon: Timer },
   { id: "ASSUNTA", label: STATO_CANDIDATURA_LABELS.ASSUNTA, icon: UserCheck },
 ] as const;
 
 type PercorsoHomeId = (typeof PERCORSO_HOME)[number]["id"];
 
+/** Bucket colloquio: programmato ha priorità se convivono round diversi. */
+function bucketColloquioCandidatura(
+  candidaturaId: string,
+  colloqui: ColloquioHome[]
+): "PROGRAMMATO" | "SVOLTO" | null {
+  const cols = colloqui.filter(
+    (x) => x.candidaturaId === candidaturaId && x.stato !== "ANNULLATO"
+  );
+  if (cols.some((x) => x.stato === "PROGRAMMATO")) return "PROGRAMMATO";
+  if (cols.some((x) => x.stato === "SVOLTO" || x.stato === "ESITATO")) return "SVOLTO";
+  return null;
+}
+
 function formatData(iso: string) {
   return new Date(iso).toLocaleDateString("it-IT");
+}
+
+function StelleDisplay({ value }: { value: number | null }) {
+  if (!value || value < 1) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-amber-500"
+      aria-label={`${value} su 5`}
+      title={`${value}/5`}
+    >
+      {Array.from({ length: 5 }, (_, i) => (
+        <span key={i} className={i < value ? "opacity-100" : "opacity-25"}>
+          ★
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function PercorsoHomeMenu({
@@ -147,24 +187,18 @@ function PercorsoHomeMenu({
   );
 }
 
-function MockBadge() {
-  return (
-    <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-violet-100 text-violet-800">
-      MOCK
-    </span>
-  );
-}
-
 export function OfferteLavoroClient({
   offerte,
   canManage,
   candidature = [],
   colloqui = [],
+  userId,
 }: {
   offerte: OffertaRow[];
   canManage: boolean;
   candidature?: CandidaturaHome[];
   colloqui?: ColloquioHome[];
+  userId: string;
 }) {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
@@ -174,18 +208,75 @@ export function OfferteLavoroClient({
   const [pending, startTransition] = useTransition();
   const [percorso, setPercorso] = useState<PercorsoHomeId>("CANDIDATURE");
   const [aperte, setAperte] = useState<Record<string, boolean>>({});
+  const [viste, setViste] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    function syncViste() {
+      setViste(listCandidatureViste(userId));
+    }
+    syncViste();
+    window.addEventListener("focus", syncViste);
+    return () => window.removeEventListener("focus", syncViste);
+  }, [userId]);
+
+  // Aggiornamento quasi istantaneo quando arrivano candidature dal Receiver
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [router]);
+
+  function marcaVista(candidaturaId: string) {
+    markCandidaturaVista(userId, candidaturaId);
+    setViste((prev) => {
+      if (prev.has(candidaturaId)) return prev;
+      const next = new Set(prev);
+      next.add(candidaturaId);
+      return next;
+    });
+  }
+
+  function isNuova(c: CandidaturaHome) {
+    return (
+      (c.stato === "RICEVUTA" || c.stato === "IN_VALUTAZIONE") && !viste.has(c.id)
+    );
+  }
+
+  function inPercorsoColloquio(
+    c: CandidaturaHome,
+    bucket: "PROGRAMMATO" | "SVOLTO"
+  ) {
+    if (c.stato !== "COLLOQUIO") return false;
+    const b = bucketColloquioCandidatura(c.id, colloqui);
+    if (bucket === "PROGRAMMATO") return b === "PROGRAMMATO" || b === null;
+    return b === "SVOLTO";
+  }
 
   const percorsoCounts: Record<PercorsoHomeId, number> = {
     CANDIDATURE: candidature.length,
-    RICEVUTA: candidature.filter((c) => c.stato === "RICEVUTA").length,
-    IN_VALUTAZIONE: candidature.filter((c) => c.stato === "IN_VALUTAZIONE").length,
-    COLLOQUIO: candidature.filter((c) => c.stato === "COLLOQUIO").length,
+    NUOVE: candidature.filter((c) => isNuova(c)).length,
+    COLLOQUIO_PROGRAMMATO: candidature.filter((c) =>
+      inPercorsoColloquio(c, "PROGRAMMATO")
+    ).length,
+    COLLOQUIO_SVOLTO: candidature.filter((c) =>
+      inPercorsoColloquio(c, "SVOLTO")
+    ).length,
     PROVA: candidature.filter((c) => c.stato === "PROVA").length,
     ASSUNTA: candidature.filter((c) => c.stato === "ASSUNTA").length,
   };
 
   function candidatureFiltrate(list: CandidaturaHome[]) {
     if (percorso === "CANDIDATURE") return list;
+    if (percorso === "NUOVE") {
+      return list.filter((c) => isNuova(c));
+    }
+    if (percorso === "COLLOQUIO_PROGRAMMATO") {
+      return list.filter((c) => inPercorsoColloquio(c, "PROGRAMMATO"));
+    }
+    if (percorso === "COLLOQUIO_SVOLTO") {
+      return list.filter((c) => inPercorsoColloquio(c, "SVOLTO"));
+    }
     return list.filter((c) => c.stato === percorso);
   }
 
@@ -264,8 +355,6 @@ export function OfferteLavoroClient({
               percorso !== "CANDIDATURE"
                 ? aperte[o.id] !== false
                 : Boolean(aperte[o.id]);
-            const nCandidature =
-              percorso === "CANDIDATURE" ? o.candidatureCount : cands.length;
             const etichettaElenco =
               percorso === "CANDIDATURE"
                 ? "Candidature"
@@ -286,12 +375,16 @@ export function OfferteLavoroClient({
                 className="overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-sm"
               >
                 <div
-                  className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10"
+                  className={
+                    canManage
+                      ? "grid cursor-pointer grid-cols-[minmax(12rem,1.4fr)_6.5rem_7.5rem_6.5rem_minmax(14rem,1.6fr)_6.5rem_10.5rem_2rem] items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10 max-xl:grid-cols-[minmax(10rem,1fr)_6rem_7rem_6rem_minmax(12rem,1.4fr)_6rem_10.5rem_2rem] max-lg:flex max-lg:flex-wrap"
+                      : "grid cursor-pointer grid-cols-[minmax(12rem,1.4fr)_6.5rem_7.5rem_6.5rem_minmax(14rem,1.6fr)_6.5rem_2rem] items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10 max-xl:grid-cols-[minmax(10rem,1fr)_6rem_7rem_6rem_minmax(12rem,1.4fr)_6rem_2rem] max-lg:flex max-lg:flex-wrap"
+                  }
                   onClick={() => {
                     router.push(`/recruiting/offerte/${o.id}`);
                   }}
                 >
-                  <div className="min-w-[14rem] flex-1">
+                  <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--navy)]">
                       <Briefcase className="h-3.5 w-3.5" />
                       Inserzione
@@ -304,19 +397,21 @@ export function OfferteLavoroClient({
                       {o.titolo}
                     </Link>
                   </div>
-                  <div className="min-w-[6rem] text-sm">
+                  <div className="min-w-0 text-sm">
                     <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
                       Sede
                     </p>
-                    <p>{o.luogo || "—"}</p>
+                    <p className="truncate">{o.luogo || "—"}</p>
                   </div>
-                  <div className="min-w-[6rem] text-sm">
+                  <div className="min-w-0 text-sm">
                     <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
                       Modalità
                     </p>
-                    <p>{MODALITA_LAVORO_LABELS[o.modalitaLavoro]}</p>
+                    <p className="truncate">
+                      {MODALITA_LAVORO_LABELS[o.modalitaLavoro]}
+                    </p>
                   </div>
-                  <div className="min-w-[5rem]">
+                  <div className="min-w-0">
                     <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
                       Stato
                     </p>
@@ -326,23 +421,109 @@ export function OfferteLavoroClient({
                       {STATO_OFFERTA_LAVORO_LABELS[o.stato]}
                     </span>
                   </div>
-                  <div className="min-w-[6rem] text-sm">
+                  <div className="min-w-0 text-sm">
                     <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-                      {percorso === "CANDIDATURE" ? "Candidature" : etichettaElenco}
+                      Candidature
                     </p>
-                    <p className="tabular-nums font-semibold text-[var(--navy)]">
-                      {nCandidature}
-                    </p>
+                    {(() => {
+                      const byStato = (s: StatoCandidatura) =>
+                        tutte.filter((c) => c.stato === s).length;
+                      const nuove = tutte.filter((c) => isNuova(c)).length;
+                      const items: Array<{
+                        label: string;
+                        n: number;
+                        emphasis?: boolean;
+                        alert?: boolean;
+                      }> = [
+                        { label: "Tot", n: tutte.length, emphasis: true },
+                        {
+                          label: "Nuove",
+                          n: nuove,
+                          alert: nuove > 0,
+                        },
+                        { label: "Colloquio", n: byStato("COLLOQUIO") },
+                        { label: "In prova", n: byStato("PROVA") },
+                        { label: "Assunte", n: byStato("ASSUNTA") },
+                        { label: "Archiv.", n: byStato("ARCHIVIATA") },
+                      ];
+                      return (
+                        <div className="mt-0.5 flex flex-nowrap gap-x-2.5 overflow-x-auto">
+                          {items.map((it) => (
+                            <span
+                              key={it.label}
+                              className={
+                                it.alert
+                                  ? "shrink-0 tabular-nums font-semibold text-emerald-700"
+                                  : it.emphasis
+                                    ? "shrink-0 tabular-nums font-semibold text-[var(--navy)]"
+                                    : it.n > 0
+                                      ? "shrink-0 tabular-nums text-slate-700"
+                                      : "shrink-0 tabular-nums text-slate-400"
+                              }
+                              title={
+                                it.label === "Nuove"
+                                  ? `Nuove non ancora visualizzate: ${it.n}`
+                                  : `${it.label}: ${it.n}`
+                              }
+                            >
+                              <span
+                                className={
+                                  it.alert
+                                    ? "text-[10px] font-semibold uppercase text-emerald-600"
+                                    : "text-[10px] font-medium uppercase text-[var(--muted)]"
+                                }
+                              >
+                                {it.label}
+                              </span>{" "}
+                              {it.n}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
-                  <div className="min-w-[6rem] text-sm text-[var(--muted)]">
+                  <div className="min-w-0 text-sm text-[var(--muted)]">
                     <p className="text-[10px] font-semibold uppercase">Aggiornata</p>
                     <p className="tabular-nums">{formatData(o.updatedAt)}</p>
                   </div>
-                  {canManage && o.stato !== "CHIUSA" ? (
+                  {canManage ? (
                     <div
-                      className="ml-auto flex gap-2"
+                      className="flex w-full shrink-0 items-center justify-end gap-2"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          setError(null);
+                          startTransition(async () => {
+                            try {
+                              const res = await syncIndeedApplicationsAction(o.id);
+                              if (res.received === 0) {
+                                setError(
+                                  "Nessuna candidatura Indeed sul ricevitore per questa offerta."
+                                );
+                              } else if (res.errors > 0) {
+                                setError(
+                                  `Sync: ${res.created} nuove, ${res.updated} aggiornate, ${res.errors} errori.`
+                                );
+                              } else {
+                                setError(null);
+                              }
+                              router.refresh();
+                            } catch (e) {
+                              setError(
+                                e instanceof Error
+                                  ? e.message
+                                  : "Sincronizzazione non riuscita"
+                              );
+                            }
+                          });
+                        }}
+                        className="text-xs font-semibold text-[var(--navy)] underline"
+                      >
+                        Sincronizza
+                      </button>
                       <button
                         type="button"
                         disabled={pending}
@@ -354,17 +535,26 @@ export function OfferteLavoroClient({
                       >
                         Modifica
                       </button>
-                      <button
-                        type="button"
-                        disabled={pending}
-                        onClick={() => {
-                          setError(null);
-                          setChiudi(o);
-                        }}
-                        className="text-xs font-semibold text-rose-700 underline"
-                      >
-                        Chiudi offerta
-                      </button>
+                      {o.stato !== "CHIUSA" ? (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => {
+                            setError(null);
+                            setChiudi(o);
+                          }}
+                          className="text-xs font-semibold text-rose-700 underline"
+                        >
+                          Chiudi offerta
+                        </button>
+                      ) : (
+                        <span
+                          className="invisible pointer-events-none text-xs font-semibold"
+                          aria-hidden
+                        >
+                          Chiudi offerta
+                        </span>
+                      )}
                     </div>
                   ) : null}
                   <button
@@ -400,7 +590,6 @@ export function OfferteLavoroClient({
                     <ul className="ml-2 space-y-1.5 border-l-2 border-slate-300 pl-4">
                       {ordered.map((c) => {
                         const candidato = anagraficaCandidato(c);
-                        const mock = c.source === "mock" || c.source === "percorso";
                         const coll = colloqui
                           .filter((x) => x.candidaturaId === c.id)
                           .sort(
@@ -417,10 +606,10 @@ export function OfferteLavoroClient({
                               <Link
                                 href={`/recruiting/offerte/${o.id}/${c.id}`}
                                 className="font-medium text-slate-700 hover:underline"
+                                onClick={() => marcaVista(c.id)}
                               >
                                 {candidato.label}
                               </Link>
-                              {mock ? <MockBadge /> : null}
                               <span
                                 className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${STATO_CAND_COLORS[c.stato]}`}
                               >
@@ -451,6 +640,17 @@ export function OfferteLavoroClient({
                                     >
                                       {STATO_COLLOQUIO_LABELS[col.stato]}
                                     </span>
+                                    {col.esito ? (
+                                      <span className="font-medium text-slate-700">
+                                        {ESITO_COLLOQUIO_LABELS[col.esito]}
+                                      </span>
+                                    ) : null}
+                                    <StelleDisplay value={col.valutazioneStelle} />
+                                    {col.intervistatoreNome ? (
+                                      <span title="Intervistatore">
+                                        {col.intervistatoreNome}
+                                      </span>
+                                    ) : null}
                                     <span className="tabular-nums">
                                       {new Date(col.scheduledAt).toLocaleString("it-IT")}
                                     </span>
@@ -524,7 +724,11 @@ export function OfferteLavoroClient({
             }
           >
             <input type="hidden" name="id" value={edit.id} />
-            <OffertaFields offerta={edit} allowBozza={edit.stato !== "PUBBLICATA"} />
+            <OffertaFields
+              offerta={edit}
+              allowBozza={edit.stato !== "PUBBLICATA" && edit.stato !== "CHIUSA"}
+              lockedChiusa={edit.stato === "CHIUSA"}
+            />
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
@@ -589,16 +793,19 @@ export function OfferteLavoroClient({
 function OffertaFields({
   offerta,
   allowBozza = true,
+  lockedChiusa = false,
 }: {
   offerta?: OffertaRow | null;
   allowBozza?: boolean;
+  lockedChiusa?: boolean;
 }) {
   const defaultStato = offerta?.stato === "PUBBLICATA" ? "PUBBLICATA" : "BOZZA";
   return (
     <>
+      {lockedChiusa ? <input type="hidden" name="stato" value="CHIUSA" /> : null}
       <p className="text-xs text-[var(--muted)]">
         Campi allineati alla scheda offerta Indeed (titolo, sede, modalità, contratto,
-        descrizione, retribuzione, benefit). La pubblicazione su Indeed non è attiva.
+        descrizione, retribuzione, benefit). Le offerte Pubblicate sono sincronizzate su CreditCore (catalogo candidati).
       </p>
 
       <fieldset className="grid gap-3">
@@ -772,13 +979,19 @@ function OffertaFields({
         <legend className="text-[11px] font-bold uppercase tracking-wide text-[var(--navy)]">
           Pubblicazione
         </legend>
-        <label>
-          <span className={labelCls}>Stato</span>
-          <select name="stato" defaultValue={defaultStato} className={inputCls}>
-            {allowBozza ? <option value="BOZZA">Bozza</option> : null}
-            <option value="PUBBLICATA">Pubblicata</option>
-          </select>
-        </label>
+        {lockedChiusa ? (
+          <p className="rounded-lg border border-[var(--line)] bg-slate-50 px-3 py-2 text-sm text-[var(--muted)]">
+            Offerta chiusa: puoi aggiornare i testi, lo stato resta Chiusa.
+          </p>
+        ) : (
+          <label>
+            <span className={labelCls}>Stato</span>
+            <select name="stato" defaultValue={defaultStato} className={inputCls}>
+              {allowBozza ? <option value="BOZZA">Bozza</option> : null}
+              <option value="PUBBLICATA">Pubblicata</option>
+            </select>
+          </label>
+        )}
         <p className="rounded-lg border border-[var(--line)] bg-slate-50 px-3 py-2 text-sm text-[var(--navy)]">
           {DICITURA_PARI_OPPORTUNITA}
         </p>

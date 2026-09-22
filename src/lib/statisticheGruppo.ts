@@ -122,7 +122,7 @@ function buildRiga(
   for (const p of pratiche) {
     const aff = praticaAffidato(p.capitale, p.interessi, p.spese);
     affidato += aff;
-    const inc = p.incassi.reduce((s, i) => s + i.importo, 0);
+    const inc = p.incassi.reduce((s, i) => s + (Number(i.importo) || 0), 0);
     incassato += inc;
     const incassata = inc > 0.009 || p.stato === "INCASSO";
     const codice = codiceScaricoStatistica(p.stato, p.codiceScarico ?? null);

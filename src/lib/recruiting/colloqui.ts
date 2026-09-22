@@ -54,6 +54,7 @@ export type RecruitingColloquioRecord = {
   noteSvolgimento: string;
   esito: EsitoColloquio | null;
   valutazione: string;
+  valutazioneStelle: number | null;
   createdAt: Date;
   updatedAt: Date;
   createdById: string;
@@ -92,7 +93,11 @@ export function assertTransizioneColloquio(from: StatoColloquio, to: StatoColloq
 }
 
 export function canCreateColloquio(statoCandidatura: StatoCandidatura): boolean {
-  return statoCandidatura === "IN_VALUTAZIONE" || statoCandidatura === "COLLOQUIO";
+  return (
+    statoCandidatura === "RICEVUTA" ||
+    statoCandidatura === "IN_VALUTAZIONE" ||
+    statoCandidatura === "COLLOQUIO"
+  );
 }
 
 export function assertCanCreateColloquio(statoCandidatura: StatoCandidatura): void {
@@ -123,8 +128,10 @@ export function validaColloquioCreateInput(input: {
   const modalitaRaw = String(input.modalita || "").trim().toUpperCase();
   if (!isModalitaColloquio(modalitaRaw)) throw new Error("Modalità non valida");
   const intervistatoreUserId = String(input.intervistatoreUserId || "").trim();
+  if (!intervistatoreUserId) throw new Error("Intervistatore obbligatorio");
   if (intervistatoreUserId.length > 80) throw new Error("Intervistatore non valido");
   const intervistatoreLabel = String(input.intervistatoreLabel || "").trim();
+  if (!intervistatoreLabel) throw new Error("Intervistatore obbligatorio");
   if (intervistatoreLabel.length > LABEL_MAX) throw new Error("Referente troppo lungo");
   return {
     candidaturaId,
@@ -136,13 +143,62 @@ export function validaColloquioCreateInput(input: {
   };
 }
 
+export function validaColloquioUpdateInput(input: {
+  id?: string | null;
+  scheduledAt?: string | null;
+  modalita?: string | null;
+  intervistatoreUserId?: string | null;
+  intervistatoreLabel?: string | null;
+  notePreliminari?: string | null;
+}): {
+  id: string;
+  scheduledAt: Date;
+  modalita: ModalitaColloquio;
+  intervistatoreUserId: string;
+  intervistatoreLabel: string;
+  notePreliminari: string;
+} {
+  const id = String(input.id || "").trim();
+  if (!id || id.length > 80) throw new Error("Colloquio non indicato");
+  const base = validaColloquioCreateInput({
+    candidaturaId: "placeholder",
+    scheduledAt: input.scheduledAt,
+    modalita: input.modalita,
+    intervistatoreUserId: input.intervistatoreUserId,
+    intervistatoreLabel: input.intervistatoreLabel,
+    notePreliminari: input.notePreliminari,
+  });
+  return {
+    id,
+    scheduledAt: base.scheduledAt,
+    modalita: base.modalita,
+    intervistatoreUserId: base.intervistatoreUserId,
+    intervistatoreLabel: base.intervistatoreLabel,
+    notePreliminari: base.notePreliminari,
+  };
+}
+
 export function validaSvolgimentoInput(input: {
   id?: string | null;
   noteSvolgimento?: string | null;
-}): { id: string; noteSvolgimento: string } {
+  valutazioneStelle?: string | number | null;
+}): { id: string; noteSvolgimento: string; valutazioneStelle: number | null } {
   const id = String(input.id || "").trim();
   if (!id || id.length > 80) throw new Error("Colloquio non indicato");
-  return { id, noteSvolgimento: validaNoteAttivita(input.noteSvolgimento) };
+  const raw = input.valutazioneStelle;
+  let valutazioneStelle: number | null = null;
+  if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 5) {
+      throw new Error("Valutazione stelle non valida (1–5)");
+    }
+    valutazioneStelle = n;
+  }
+  return {
+    id,
+    noteSvolgimento: validaNoteAttivita(input.noteSvolgimento),
+    valutazioneStelle,
+  };
 }
 
 export function validaEsitoColloquioInput(input: {
@@ -171,6 +227,7 @@ export function toColloquioRecord(row: {
   noteSvolgimento: string;
   esito: string | null;
   valutazione: string;
+  valutazioneStelle?: number | null;
   createdAt: Date;
   updatedAt: Date;
   createdById: string;
@@ -182,6 +239,13 @@ export function toColloquioRecord(row: {
   const nomeIntervistatore = row.intervistatore
     ? [row.intervistatore.name, row.intervistatore.cognome].filter(Boolean).join(" ").trim()
     : "";
+  const stelle =
+    row.valutazioneStelle != null &&
+    Number.isInteger(row.valutazioneStelle) &&
+    row.valutazioneStelle >= 1 &&
+    row.valutazioneStelle <= 5
+      ? row.valutazioneStelle
+      : null;
   return {
     id: row.id,
     tenantId: row.tenantId,
@@ -197,6 +261,7 @@ export function toColloquioRecord(row: {
     noteSvolgimento: row.noteSvolgimento || "",
     esito,
     valutazione: row.valutazione || "",
+    valutazioneStelle: stelle,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     createdById: row.createdById,

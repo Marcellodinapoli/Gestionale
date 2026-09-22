@@ -1,12 +1,14 @@
-import { requirePermission } from "@/lib/guard";
+import { canManageMandantePerimetriWithNav, requireNavPage } from "@/lib/guard";
 import { MandanteSchedaEditor } from "@/components/mandanti/MandanteSchedaEditor";
 
 export default async function NuovaMandantePage() {
-  const user = await requirePermission("mandanti:manage");
+  const user = await requireNavPage("mandanti");
+  const canManagePerimetri = await canManageMandantePerimetriWithNav(user);
 
   return (
     <MandanteSchedaEditor
       ruolo={user.role}
+      canManagePerimetri={canManagePerimetri}
       isNew
       mandante={{
         id: "",

@@ -670,7 +670,8 @@ model RecruitingReceiverConfig {
   updatedAt  DateTime @updatedAt
 }
 
-// Candidatura: anagrafica (cognome/nome) + metadati tecnici. Nessun CV.
+// Candidatura: anagrafica (cognome/nome) + metadati tecnici + contatti Indeed Apply.
+// Nessun CV / resume / documento candidato.
 model RecruitingCandidatura {
   id                    String    @id @default(cuid())
   tenantId              String
@@ -681,6 +682,10 @@ model RecruitingCandidatura {
   receiverCandidateId   String?
   cognome               String    @default("")
   nome                  String    @default("")
+  email                 String?
+  emailVerified         Boolean?
+  phone                 String?
+  coverLetter           String?
   // RICEVUTA | IN_VALUTAZIONE | COLLOQUIO | PROVA | ARCHIVIATA | ASSUNTA
   stato                 String    @default("RICEVUTA")
   source                String?
@@ -694,6 +699,10 @@ model RecruitingCandidatura {
   @@index([tenantId, offertaId])
   @@index([tenantId, stato])
   @@unique([id, tenantId])
+  // Idempotenza Indeed: unique filtrato SQL
+  // UQ_RecruitingCandidature_Tenant_ExternalApplicationId
+  // (TenantId, ExternalApplicationId) WHERE ExternalApplicationId IS NOT NULL
+  // — non modellabile come @@unique Prisma (romperebbe i NULL delle candidature manuali).
 }
 
 // Storico append-only della scheda candidatura (unica fonte della timeline).
@@ -742,6 +751,8 @@ model RecruitingColloquio {
   // POSITIVO | NEGATIVO | DA_RIVALUTARE | ASSENTE
   esito                 String?
   valutazione           String    @default("")
+  // 1–5, opzionale (valutazione a stelle)
+  valutazioneStelle     Int?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   createdById           String

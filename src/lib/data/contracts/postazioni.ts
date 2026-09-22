@@ -3,6 +3,8 @@ export type PostazioneFilter = {
   id?: string;
   idsIn?: string[];
   nome?: string;
+  /** Match esatto interno centralino (es. "260"). */
+  interno?: string;
   active?: boolean;
   sedeId?: string;
   excludeId?: string;

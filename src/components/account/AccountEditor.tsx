@@ -123,8 +123,8 @@ export function AccountEditor({
 
   return (
     <div className="space-y-4">
-      <section className="overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-sm">
-        <div className="bg-gradient-to-r from-[#1a365d] to-[#1a4f7a] px-4 py-5 sm:px-6">
+      <section className="rounded-xl border border-[var(--line)] bg-white shadow-sm">
+        <div className="rounded-t-xl bg-gradient-to-r from-[#1a365d] to-[#1a4f7a] px-4 py-5 sm:px-6">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-white/30 bg-white/15 text-lg font-bold text-white backdrop-blur-sm">
               {iniziali(user.name) || "?"}
@@ -133,7 +133,7 @@ export function AccountEditor({
               <h2 className="truncate text-lg font-semibold text-white">{user.name}</h2>
               <p className="truncate text-sm text-white/80">{ROLE_LABELS[user.role] || user.role}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="relative z-20 flex flex-wrap items-center gap-2 overflow-visible">
               {showFormazione ? (
                 <FormazioneAccountMenu canMonitor={canMonitorFormazione} />
               ) : null}

@@ -1,0 +1,7 @@
+# Receiver data (local adapter)
+/data
+/dist
+/node_modules
+.env
+.source-key-for-firebase.txt
+*.log

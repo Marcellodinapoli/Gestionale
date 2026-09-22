@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { euro } from "@/lib/domainFormat";
 import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 import {
@@ -328,7 +328,7 @@ export default async function StampaMandantePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ destinatario?: string }>;
 }) {
-  const user = await requirePermission("mandanti:manage");
+  const user = await requireNavPage("mandanti");
   const { id } = await params;
   const sp = await searchParams;
   const destinatario = parseDestinatario(sp.destinatario);

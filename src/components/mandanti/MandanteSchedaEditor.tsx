@@ -49,13 +49,15 @@ export function MandanteSchedaEditor({
   mandante,
   ruolo,
   isNew = false,
+  canManagePerimetri = false,
 }: {
   mandante: MandanteData;
   ruolo: string;
   isNew?: boolean;
+  /** Perimetri / economie / codici: ADMIN/AMMINISTRAZIONE o eccezione menu Mandanti. */
+  canManagePerimetri?: boolean;
 }) {
   const router = useRouter();
-  const canManagePerimetri = ruolo === "ADMIN" || ruolo === "AMMINISTRAZIONE";
   const canDelete = ruolo === "ADMIN";
   const [codice, setCodice] = useState(mandante.codice);
   const [ragioneSociale, setRagioneSociale] = useState(mandante.ragioneSociale);

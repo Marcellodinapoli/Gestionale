@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorPraticheRepository } from "@/lib/data/connector/ConnectorPraticheRepository";
+import { createNeonPraticheRepository } from "@/lib/neon/NeonPraticheRepository";
 import { prismaPraticheRepository } from "@/lib/data/prisma/PrismaPraticheRepository";
 import type { PraticaListRequest, PraticaScope, PraticheRepository } from "@/lib/data/contracts/pratiche";
 import type { Role, SessionUser } from "@/lib/permissions";
@@ -29,6 +30,7 @@ export function toPraticaScope(ctx: PraticaDbContext): PraticaScope {
 }
 
 function repo(ctx: PraticaDbContext): PraticheRepository {
+  if (isNeonProvider()) return createNeonPraticheRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorPraticheRepository(ctx.tenantSlug);
   return prismaPraticheRepository;
 }
@@ -43,9 +45,9 @@ export function praticaDbFromUser(user: SessionUser, memberIds?: string[]) {
   });
 }
 
-/** Drop-in sostituto di `prisma.pratica` con supporto connector. */
+/** Drop-in sostituto di `prisma.pratica` con supporto connector/neon. */
 export function praticaDb(ctx: PraticaDbContext): typeof prisma.pratica {
-  if (!isConnectorProvider()) return prisma.pratica;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.pratica;
 
   const r = repo(ctx);
   return {

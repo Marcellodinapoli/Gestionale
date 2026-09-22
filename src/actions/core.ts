@@ -20,7 +20,7 @@ import {
 } from "@/lib/incassoPianoEffetti";
 import { metodoIncassoLabel } from "@/lib/metodoIncasso";
 import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
-import { assertCan, can, canClearCodiceScarico, canEditCodiceScaricoBk, canManageMandantePerimetri, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
+import { assertCan, can, canClearCodiceScarico, canEditCodiceScaricoBk, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
   canAccessPratica,
   parseDateOnly,
@@ -51,7 +51,7 @@ import {
 } from "@/lib/mandantePerimetri";
 import { CODICI_SCARICO } from "@/lib/scarico";
 import { isCodiceScaricoFiltroToken } from "@/lib/filtriCodScarico";
-import { requireWritablePermission, requireWritableUser } from "@/lib/guard";
+import { requireWritablePermission, requireWritableUser, canManageMandantePerimetriWithNav } from "@/lib/guard";
 import { STATI_TELEFONO } from "@/lib/statoTelefono";
 import { assertPraticaLockHeld, assertPraticaNotLockedByOther, releaseAllUserLocks, lockScopeFromUser } from "@/lib/praticaLock";
 import { isPasswordExpired } from "@/lib/passwordPolicy";
@@ -2146,6 +2146,7 @@ export async function createMandanteAction(formData: FormData) {
   const pec = String(formData.get("pec") || "").trim() || null;
   const perimetriRaw = String(formData.get("perimetri") || "").trim() || null;
   if (!codice || !ragioneSociale) fail("Acronimo interno e ragione sociale obbligatori");
+  const managesPerimetri = await canManageMandantePerimetriWithNav(user);
   const created = await (await mandanteModel()).create({
     data: {
       tenantId: user.tenantId,
@@ -2157,7 +2158,7 @@ export async function createMandanteAction(formData: FormData) {
       referenteTelefono,
       referenteEmail,
       pec,
-      ...(canManageMandantePerimetri(user) && perimetriRaw ? { perimetri: perimetriRaw } : {}),
+      ...(managesPerimetri && perimetriRaw ? { perimetri: perimetriRaw } : {}),
     },
   });
   await writeAudit({
@@ -2196,7 +2197,7 @@ export async function updateMandanteAction(formData: FormData) {
   const perimetriRaw = formData.has("perimetri")
     ? String(formData.get("perimetri") ?? "").trim()
     : null;
-  const managesPerimetri = canManageMandantePerimetri(user);
+  const managesPerimetri = await canManageMandantePerimetriWithNav(user);
   const perimetri =
     managesPerimetri && perimetriRaw !== null ? perimetriRaw : existing.perimetri;
 

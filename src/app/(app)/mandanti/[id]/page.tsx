@@ -1,7 +1,6 @@
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
-import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/guard";
+import { canManageMandantePerimetriWithNav, requireNavPage } from "@/lib/guard";
 import { MandanteSchedaEditor } from "@/components/mandanti/MandanteSchedaEditor";
 
 export default async function MandanteDettaglioPage({
@@ -9,7 +8,8 @@ export default async function MandanteDettaglioPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requirePermission("mandanti:manage");
+  const user = await requireNavPage("mandanti");
+  const canManagePerimetri = await canManageMandantePerimetriWithNav(user);
   const { id } = await params;
 
   const mandante = await mandantiDbFromUser(user).findFirst({
@@ -21,6 +21,7 @@ export default async function MandanteDettaglioPage({
   return (
     <MandanteSchedaEditor
       ruolo={user.role}
+      canManagePerimetri={canManagePerimetri}
       mandante={{
         id: mandante.id,
         codice: mandante.codice,

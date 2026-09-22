@@ -3,7 +3,7 @@
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { usersDbFromUser } from "@/lib/usersRepo";
-import { prisma } from "@/lib/prisma";
+import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireUser } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
@@ -35,9 +35,25 @@ export async function updateAccountTelefoniaAction(formData: FormData) {
   const interno = normalizzaInterno(String(formData.get("interno") || ""));
   const prefissoChiamata = normalizzaPrefisso(String(formData.get("prefissoChiamata") || ""));
 
+  // Allinea postazione all'interno: stessa cifra → stessa postazione (es. int. 260 ↔ postazione 260).
+  let postazioneId: string | null | undefined = undefined;
+  if (interno) {
+    const match = await postazioniDbFromUser(user).findFirst({
+      where: { tenantId: user.tenantId, active: true, interno },
+      select: { id: true, nome: true, interno: true },
+    });
+    if (match) postazioneId = match.id;
+  } else {
+    postazioneId = null;
+  }
+
   await usersDbFromUser(user).update({
     where: { id: user.id },
-    data: { interno, prefissoChiamata },
+    data: {
+      interno,
+      prefissoChiamata,
+      ...(postazioneId !== undefined ? { postazioneId } : {}),
+    },
   });
 
   await writeAudit({
@@ -45,7 +61,9 @@ export async function updateAccountTelefoniaAction(formData: FormData) {
     action: "account_telefonia",
     entity: "user",
     entityId: user.id,
-    dettaglio: `int. ${interno || "—"} · pref. ${prefissoChiamata || "—"}`,
+    dettaglio: `int. ${interno || "—"} · pref. ${prefissoChiamata || "—"}${
+      postazioneId ? ` · postazione ${postazioneId}` : ""
+    }`,
   });
 
   revalidatePath("/account");

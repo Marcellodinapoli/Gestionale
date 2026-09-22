@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { rolesWithPermission } from "@/lib/permissions";
 import { assertCandidaturaOperabile } from "@/lib/recruiting/candidature";
 import {
   assertCanCreateColloquio,
@@ -18,6 +19,12 @@ import {
   sql,
 } from "@/lib/recruiting/sqlDb";
 
+/** Solo personale con recruiting:manage (Admin / Amministrazione). */
+const INTERVIEWER_ROLES = rolesWithPermission("recruiting:manage");
+
+/** Supervisori tenant: affiancatori per la prova. */
+const SUPERVISOR_ROLES = ["SUPERVISOR"] as const;
+
 function tenantIdOrThrow(tenantId: string) {
   const id = String(tenantId || "").trim();
   if (!id) throw new Error("Tenant mancante");
@@ -26,21 +33,37 @@ function tenantIdOrThrow(tenantId: string) {
 
 async function assertIntervistatoreDelTenant(tenantId: string, userId: string) {
   const uid = String(userId || "").trim();
-  if (!uid) return;
+  if (!uid) throw new Error("Intervistatore obbligatorio");
   if (!recruitingUsesSql()) {
     const user = await prisma.user.findFirst({
-      where: { id: uid, tenantId },
+      where: {
+        id: uid,
+        tenantId,
+        active: true,
+        role: { in: [...INTERVIEWER_ROLES] },
+      },
       select: { id: true },
     });
     if (!user) throw new Error("Intervistatore non valido");
     return;
   }
   const pool = await recruitingPool();
-  const res = await pool
+  const req = pool
     .request()
     .input("tenantId", sql.UniqueIdentifier, tenantId)
-    .input("id", sql.UniqueIdentifier, uid)
-    .query(`SELECT TOP 1 Id FROM dbo.Users WHERE Id = @id AND TenantId = @tenantId AND Active = 1`);
+    .input("id", sql.UniqueIdentifier, uid);
+  INTERVIEWER_ROLES.forEach((role, i) => {
+    req.input(`role${i}`, sql.NVarChar(40), role);
+  });
+  const roleParams = INTERVIEWER_ROLES.map((_, i) => `@role${i}`).join(", ");
+  const res = await req.query(`
+    SELECT TOP 1 Id
+    FROM dbo.Users
+    WHERE Id = @id
+      AND TenantId = @tenantId
+      AND Active = 1
+      AND Role IN (${roleParams})
+  `);
   if (!res.recordset[0]) throw new Error("Intervistatore non valido");
 }
 
@@ -70,7 +93,7 @@ async function getColloquioDelTenant(
   let q = `
     SELECT c.Id, c.TenantId, c.CandidaturaId, c.Round, c.Stato, c.ScheduledAt, c.Modalita,
            c.IntervistatoreUserId, c.IntervistatoreLabel, c.NotePreliminari, c.NoteSvolgimento,
-           c.Esito, c.Valutazione, c.CreatedAt, c.UpdatedAt, c.CreatedById,
+           c.Esito, c.Valutazione, c.ValutazioneStelle, c.CreatedAt, c.UpdatedAt, c.CreatedById,
            u.Name AS IntervistatoreName, u.Cognome AS IntervistatoreCognome
     FROM dbo.RecruitingColloqui c
     LEFT JOIN dbo.Users u ON CONVERT(NVARCHAR(64), u.Id) = c.IntervistatoreUserId
@@ -106,7 +129,7 @@ export async function listColloquiByCandidatura(
     .query(`
       SELECT c.Id, c.TenantId, c.CandidaturaId, c.Round, c.Stato, c.ScheduledAt, c.Modalita,
              c.IntervistatoreUserId, c.IntervistatoreLabel, c.NotePreliminari, c.NoteSvolgimento,
-             c.Esito, c.Valutazione, c.CreatedAt, c.UpdatedAt, c.CreatedById,
+             c.Esito, c.Valutazione, c.ValutazioneStelle, c.CreatedAt, c.UpdatedAt, c.CreatedById,
              u.Name AS IntervistatoreName, u.Cognome AS IntervistatoreCognome
       FROM dbo.RecruitingColloqui c
       LEFT JOIN dbo.Users u ON CONVERT(NVARCHAR(64), u.Id) = c.IntervistatoreUserId
@@ -160,7 +183,7 @@ export async function listColloquiRecenti(
       SELECT TOP (@take)
         c.Id, c.TenantId, c.CandidaturaId, c.Round, c.Stato, c.ScheduledAt, c.Modalita,
         c.IntervistatoreUserId, c.IntervistatoreLabel, c.NotePreliminari, c.NoteSvolgimento,
-        c.Esito, c.Valutazione, c.CreatedAt, c.UpdatedAt, c.CreatedById,
+        c.Esito, c.Valutazione, c.ValutazioneStelle, c.CreatedAt, c.UpdatedAt, c.CreatedById,
         u.Name AS IntervistatoreName, u.Cognome AS IntervistatoreCognome,
         cand.OffertaId AS OffertaId, o.Titolo AS OffertaTitolo
       FROM dbo.RecruitingColloqui c
@@ -183,7 +206,11 @@ export async function listUtentiTenantRecruiting(
   const tid = tenantIdOrThrow(tenantId);
   if (!recruitingUsesSql()) {
     const rows = await prisma.user.findMany({
-      where: { tenantId: tid, active: true },
+      where: {
+        tenantId: tid,
+        active: true,
+        role: { in: [...INTERVIEWER_ROLES] },
+      },
       select: { id: true, name: true, cognome: true },
       orderBy: { name: "asc" },
     });
@@ -193,15 +220,59 @@ export async function listUtentiTenantRecruiting(
     }));
   }
   const pool = await recruitingPool();
-  const res = await pool
-    .request()
-    .input("tenantId", sql.UniqueIdentifier, tid)
-    .query(`
-      SELECT CONVERT(NVARCHAR(64), Id) AS Id, Name, Cognome
-      FROM dbo.Users
-      WHERE TenantId = @tenantId AND Active = 1
-      ORDER BY Name ASC
-    `);
+  const req = pool.request().input("tenantId", sql.UniqueIdentifier, tid);
+  INTERVIEWER_ROLES.forEach((role, i) => {
+    req.input(`role${i}`, sql.NVarChar(40), role);
+  });
+  const roleParams = INTERVIEWER_ROLES.map((_, i) => `@role${i}`).join(", ");
+  const res = await req.query(`
+    SELECT CONVERT(NVARCHAR(64), Id) AS Id, Name, Cognome
+    FROM dbo.Users
+    WHERE TenantId = @tenantId
+      AND Active = 1
+      AND Role IN (${roleParams})
+    ORDER BY Name ASC
+  `);
+  return res.recordset.map((u) => ({
+    id: String(u.Id),
+    name: [u.Name, u.Cognome].filter(Boolean).join(" ").trim() || String(u.Name),
+  }));
+}
+
+/** Lista supervisori attivi del tenant (affiancatori prova). */
+export async function listSupervisoriTenantRecruiting(
+  tenantId: string
+): Promise<Array<{ id: string; name: string }>> {
+  const tid = tenantIdOrThrow(tenantId);
+  if (!recruitingUsesSql()) {
+    const rows = await prisma.user.findMany({
+      where: {
+        tenantId: tid,
+        active: true,
+        role: { in: [...SUPERVISOR_ROLES] },
+      },
+      select: { id: true, name: true, cognome: true },
+      orderBy: { name: "asc" },
+    });
+    return rows.map((u) => ({
+      id: u.id,
+      name: [u.name, u.cognome].filter(Boolean).join(" ").trim() || u.name,
+    }));
+  }
+  const pool = await recruitingPool();
+  const req = pool.request().input("tenantId", sql.UniqueIdentifier, tid);
+  SUPERVISOR_ROLES.forEach((role, i) => {
+    req.input(`role${i}`, sql.NVarChar(40), role);
+  });
+  const roleParams = SUPERVISOR_ROLES.map((_, i) => `@role${i}`).join(", ");
+  const res = await req.query(`
+    SELECT CONVERT(NVARCHAR(64), Id) AS Id, Name, Cognome
+    FROM dbo.Users
+    WHERE TenantId = @tenantId
+      AND Active = 1
+      AND Role IN (${roleParams})
+    ORDER BY Name ASC
+  `);
   return res.recordset.map((u) => ({
     id: String(u.Id),
     name: [u.Name, u.Cognome].filter(Boolean).join(" ").trim() || String(u.Name),
@@ -336,6 +407,7 @@ async function transizioneColloquio(input: {
   noteSvolgimento?: string;
   esito?: EsitoColloquio;
   valutazione?: string;
+  valutazioneStelle?: number | null;
 }): Promise<RecruitingColloquioRecord> {
   const current = await getColloquioDelTenant(input.tenantId, input.id);
   if (!current) throw new Error("Colloquio non trovato");
@@ -358,6 +430,9 @@ async function transizioneColloquio(input: {
           ...(input.noteSvolgimento !== undefined ? { noteSvolgimento: input.noteSvolgimento } : {}),
           ...(input.esito ? { esito: input.esito } : {}),
           ...(input.valutazione !== undefined ? { valutazione: input.valutazione } : {}),
+          ...(input.valutazioneStelle !== undefined
+            ? { valutazioneStelle: input.valutazioneStelle }
+            : {}),
         },
       });
       if (result.count !== 1) throw new Error("Colloquio non trovato");
@@ -367,6 +442,10 @@ async function transizioneColloquio(input: {
           : input.to === "ESITATO"
             ? "COLLOQUIO_ESITO"
             : "COLLOQUIO_ANNULLATO";
+      const stelleNote =
+        input.to === "SVOLTO" && input.valutazioneStelle
+          ? `Valutazione: ${input.valutazioneStelle}/5`
+          : "";
       await tx.recruitingAttivita.create({
         data: {
           tenantId: candidatura.tenantId,
@@ -375,7 +454,7 @@ async function transizioneColloquio(input: {
           occurredAt: new Date(),
           note:
             input.to === "SVOLTO"
-              ? input.noteSvolgimento || ""
+              ? [stelleNote, input.noteSvolgimento || ""].filter(Boolean).join(" · ")
               : input.to === "ESITATO"
                 ? input.valutazione || ""
                 : "",
@@ -400,9 +479,13 @@ async function transizioneColloquio(input: {
       : input.to === "ESITATO"
         ? "COLLOQUIO_ESITO"
         : "COLLOQUIO_ANNULLATO";
+  const stelleNote =
+    input.to === "SVOLTO" && input.valutazioneStelle
+      ? `Valutazione: ${input.valutazioneStelle}/5`
+      : "";
   const note =
     input.to === "SVOLTO"
-      ? input.noteSvolgimento || ""
+      ? [stelleNote, input.noteSvolgimento || ""].filter(Boolean).join(" · ")
       : input.to === "ESITATO"
         ? input.valutazione || ""
         : "";
@@ -420,12 +503,14 @@ async function transizioneColloquio(input: {
       .input("noteSvo", sql.NVarChar(2000), input.noteSvolgimento ?? null)
       .input("esito", sql.NVarChar(30), input.esito ?? null)
       .input("val", sql.NVarChar(2000), input.valutazione ?? null)
+      .input("stelle", sql.Int, input.valutazioneStelle ?? null)
       .query(`
         UPDATE dbo.RecruitingColloqui SET
           Stato = @toStato,
           NoteSvolgimento = COALESCE(@noteSvo, NoteSvolgimento),
           Esito = COALESCE(@esito, Esito),
           Valutazione = COALESCE(@val, Valutazione),
+          ValutazioneStelle = COALESCE(@stelle, ValutazioneStelle),
           UpdatedAt = SYSUTCDATETIME()
         WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Stato = @fromStato
       `);
@@ -461,7 +546,7 @@ async function transizioneColloquio(input: {
 export async function svolgiColloquio(
   tenantId: string,
   createdById: string,
-  input: { id: string; noteSvolgimento: string }
+  input: { id: string; noteSvolgimento: string; valutazioneStelle: number | null }
 ): Promise<RecruitingColloquioRecord> {
   return transizioneColloquio({
     tenantId,
@@ -469,6 +554,7 @@ export async function svolgiColloquio(
     id: input.id,
     to: "SVOLTO",
     noteSvolgimento: input.noteSvolgimento,
+    valutazioneStelle: input.valutazioneStelle,
   });
 }
 
@@ -487,6 +573,140 @@ export async function chiudiColloquio(
   });
 }
 
+/** Segna svolto (se ancora PROGRAMMATO) e registra subito l'esito in un unico passaggio. */
+export async function svolgiEChiudiColloquio(
+  tenantId: string,
+  createdById: string,
+  input: {
+    id: string;
+    noteSvolgimento: string;
+    valutazioneStelle: number | null;
+    esito: EsitoColloquio;
+    valutazione: string;
+  }
+): Promise<RecruitingColloquioRecord> {
+  const current = await getColloquioDelTenant(tenantId, input.id);
+  if (!current) throw new Error("Colloquio non trovato");
+  if (current.stato === "PROGRAMMATO") {
+    await svolgiColloquio(tenantId, createdById, {
+      id: input.id,
+      noteSvolgimento: input.noteSvolgimento,
+      valutazioneStelle: input.valutazioneStelle,
+    });
+  } else if (current.stato !== "SVOLTO") {
+    throw new Error("Colloquio non in stato idoneo per la valutazione");
+  }
+  return transizioneColloquio({
+    tenantId,
+    createdById,
+    id: input.id,
+    to: "ESITATO",
+    esito: input.esito,
+    valutazione: input.valutazione,
+    noteSvolgimento: input.noteSvolgimento,
+    valutazioneStelle: input.valutazioneStelle,
+  });
+}
+
+/** Aggiorna esito/note/stelle di un colloquio non annullato. */
+export async function patchValutazioneColloquio(
+  tenantId: string,
+  input: {
+    id: string;
+    notePreliminari: string;
+    noteSvolgimento: string;
+    esito: EsitoColloquio;
+    valutazione: string;
+    valutazioneStelle: number | null;
+  }
+): Promise<RecruitingColloquioRecord> {
+  const current = await getColloquioDelTenant(tenantId, input.id);
+  if (!current) throw new Error("Colloquio non trovato");
+  if (current.stato === "ANNULLATO") {
+    throw new Error("Colloquio annullato non modificabile");
+  }
+  const candidatura = await assertCandidaturaDelTenant(tenantId, current.candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+
+  if (!recruitingUsesSql()) {
+    const result = await prisma.recruitingColloquio.updateMany({
+      where: {
+        id: current.id,
+        tenantId: candidatura.tenantId,
+        candidaturaId: candidatura.id,
+        stato: { not: "ANNULLATO" },
+      },
+      data: {
+        notePreliminari: input.notePreliminari,
+        noteSvolgimento: input.noteSvolgimento,
+        esito: input.esito,
+        valutazione: input.valutazione,
+        valutazioneStelle: input.valutazioneStelle,
+      },
+    });
+    if (result.count !== 1) throw new Error("Colloquio non trovato");
+    const updated = await getColloquioDelTenant(candidatura.tenantId, current.id, candidatura.id);
+    if (!updated) throw new Error("Colloquio non trovato");
+    return updated;
+  }
+
+  const pool = await recruitingPool();
+  const result = await pool
+    .request()
+    .input("id", sql.NVarChar(64), current.id)
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .input("notePre", sql.NVarChar(2000), input.notePreliminari)
+    .input("noteSvo", sql.NVarChar(2000), input.noteSvolgimento)
+    .input("esito", sql.NVarChar(30), input.esito)
+    .input("val", sql.NVarChar(2000), input.valutazione)
+    .input("stelle", sql.Int, input.valutazioneStelle)
+    .query(`
+      UPDATE dbo.RecruitingColloqui SET
+        NotePreliminari = @notePre,
+        NoteSvolgimento = @noteSvo,
+        Esito = @esito,
+        Valutazione = @val,
+        ValutazioneStelle = @stelle,
+        UpdatedAt = SYSUTCDATETIME()
+      WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Stato <> N'ANNULLATO'
+    `);
+  if (result.rowsAffected[0] !== 1) throw new Error("Colloquio non trovato");
+  const updated = await getColloquioDelTenant(candidatura.tenantId, current.id, candidatura.id);
+  if (!updated) throw new Error("Colloquio non trovato");
+  return updated;
+}
+
+/** Salva valutazione: chiude PROGRAMMATO/SVOLTO oppure aggiorna un ESITATO. */
+export async function salvaValutazioneColloquio(
+  tenantId: string,
+  createdById: string,
+  input: {
+    id: string;
+    notePreliminari: string;
+    noteSvolgimento: string;
+    valutazioneStelle: number | null;
+    esito: EsitoColloquio;
+    valutazione: string;
+  }
+): Promise<RecruitingColloquioRecord> {
+  const current = await getColloquioDelTenant(tenantId, input.id);
+  if (!current) throw new Error("Colloquio non trovato");
+  if (current.stato === "ANNULLATO") {
+    throw new Error("Colloquio annullato non modificabile");
+  }
+  if (current.stato === "PROGRAMMATO" || current.stato === "SVOLTO") {
+    await svolgiEChiudiColloquio(tenantId, createdById, {
+      id: input.id,
+      noteSvolgimento: input.noteSvolgimento,
+      valutazioneStelle: input.valutazioneStelle,
+      esito: input.esito,
+      valutazione: input.valutazione,
+    });
+  }
+  return patchValutazioneColloquio(tenantId, input);
+}
+
 export async function annullaColloquio(
   tenantId: string,
   createdById: string,
@@ -498,4 +718,141 @@ export async function annullaColloquio(
     id,
     to: "ANNULLATO",
   });
+}
+
+/** Aggiorna data/modalità/referente/note di un colloquio ancora PROGRAMMATO. */
+export async function updateColloquio(
+  tenantId: string,
+  createdById: string,
+  input: {
+    id: string;
+    scheduledAt: Date;
+    modalita: ModalitaColloquio;
+    intervistatoreUserId: string;
+    intervistatoreLabel: string;
+    notePreliminari: string;
+  }
+): Promise<RecruitingColloquioRecord> {
+  const current = await getColloquioDelTenant(tenantId, input.id);
+  if (!current) throw new Error("Colloquio non trovato");
+  if (current.stato !== "PROGRAMMATO") {
+    throw new Error("Si possono modificare solo i colloqui programmati");
+  }
+  const candidatura = await assertCandidaturaDelTenant(tenantId, current.candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+  await assertIntervistatoreDelTenant(candidatura.tenantId, input.intervistatoreUserId);
+
+  if (!recruitingUsesSql()) {
+    const result = await prisma.recruitingColloquio.updateMany({
+      where: {
+        id: current.id,
+        tenantId: candidatura.tenantId,
+        candidaturaId: candidatura.id,
+        stato: "PROGRAMMATO",
+      },
+      data: {
+        scheduledAt: input.scheduledAt,
+        modalita: input.modalita,
+        intervistatoreUserId: input.intervistatoreUserId || null,
+        intervistatoreLabel: input.intervistatoreLabel,
+        notePreliminari: input.notePreliminari,
+      },
+    });
+    if (result.count !== 1) throw new Error("Colloquio non trovato");
+    const updated = await getColloquioDelTenant(candidatura.tenantId, current.id, candidatura.id);
+    if (!updated) throw new Error("Colloquio non trovato");
+    return updated;
+  }
+
+  const pool = await recruitingPool();
+  const result = await pool
+    .request()
+    .input("id", sql.NVarChar(64), current.id)
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .input("scheduledAt", sql.DateTime2, input.scheduledAt)
+    .input("modalita", sql.NVarChar(20), input.modalita)
+    .input("intUser", sql.NVarChar(64), input.intervistatoreUserId || null)
+    .input("intLabel", sql.NVarChar(120), input.intervistatoreLabel)
+    .input("notePre", sql.NVarChar(2000), input.notePreliminari)
+    .query(`
+      UPDATE dbo.RecruitingColloqui SET
+        ScheduledAt = @scheduledAt,
+        Modalita = @modalita,
+        IntervistatoreUserId = @intUser,
+        IntervistatoreLabel = @intLabel,
+        NotePreliminari = @notePre,
+        UpdatedAt = SYSUTCDATETIME()
+      WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Stato = N'PROGRAMMATO'
+    `);
+  if (result.rowsAffected[0] !== 1) throw new Error("Colloquio non trovato");
+  void createdById;
+  const updated = await getColloquioDelTenant(candidatura.tenantId, current.id, candidatura.id);
+  if (!updated) throw new Error("Colloquio non trovato");
+  return updated;
+}
+
+/** Elimina un colloquio PROGRAMMATO o ANNULLATO (non se già svolto/esitato). */
+export async function deleteColloquio(
+  tenantId: string,
+  id: string
+): Promise<{ candidaturaId: string }> {
+  const current = await getColloquioDelTenant(tenantId, id);
+  if (!current) throw new Error("Colloquio non trovato");
+  if (current.stato !== "PROGRAMMATO" && current.stato !== "ANNULLATO") {
+    throw new Error("Si possono eliminare solo colloqui programmati o annullati");
+  }
+  const candidatura = await assertCandidaturaDelTenant(tenantId, current.candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+
+  if (!recruitingUsesSql()) {
+    await prisma.$transaction(async (tx) => {
+      await tx.recruitingAttivita.deleteMany({
+        where: {
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          colloquioId: current.id,
+        },
+      });
+      const result = await tx.recruitingColloquio.deleteMany({
+        where: {
+          id: current.id,
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          stato: { in: ["PROGRAMMATO", "ANNULLATO"] },
+        },
+      });
+      if (result.count !== 1) throw new Error("Colloquio non trovato");
+    });
+    return { candidaturaId: candidatura.id };
+  }
+
+  const pool = await recruitingPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await new sql.Request(tx)
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .input("colloquioId", sql.NVarChar(64), current.id)
+      .query(`
+        DELETE FROM dbo.RecruitingAttivita
+        WHERE TenantId = @tenantId AND CandidaturaId = @candidaturaId AND ColloquioId = @colloquioId
+      `);
+    const del = await new sql.Request(tx)
+      .input("id", sql.NVarChar(64), current.id)
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .query(`
+        DELETE FROM dbo.RecruitingColloqui
+        WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId
+          AND Stato IN (N'PROGRAMMATO', N'ANNULLATO')
+      `);
+    if (del.rowsAffected[0] !== 1) throw new Error("Colloquio non trovato");
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+  return { candidaturaId: candidatura.id };
 }

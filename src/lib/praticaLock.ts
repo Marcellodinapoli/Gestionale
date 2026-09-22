@@ -9,8 +9,9 @@ import {
   PRATICA_LOCK_TTL_MS,
   PRATICA_LOCK_HEARTBEAT_MS,
 } from "@/lib/data/contracts/lock";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorLockRepository } from "@/lib/data/connector/ConnectorLockRepository";
+import { createNeonLockRepository } from "@/lib/neon/NeonLockRepository";
 import { firestoreLockRepository } from "@/lib/praticaLockFirestore";
 
 export { PRATICA_LOCK_TTL_MS, PRATICA_LOCK_HEARTBEAT_MS };
@@ -32,6 +33,10 @@ export function lockScopeFromUser(user: {
 }
 
 function lockRepo(scope?: LockTenantScope): LockRepository {
+  if (isNeonProvider()) {
+    if (!scope) throw new Error("Lock tenant scope richiesto con DATABASE_PROVIDER=neon");
+    return createNeonLockRepository(scope);
+  }
   if (isConnectorProvider()) {
     if (!scope) throw new Error("Lock tenant scope richiesto con DATABASE_PROVIDER=connector");
     return createConnectorLockRepository(scope);

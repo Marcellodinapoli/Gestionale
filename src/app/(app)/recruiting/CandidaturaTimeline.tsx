@@ -4,6 +4,7 @@ import {
   CANALE_CONTATTO_LABELS,
   ESITO_CONTATTO_LABELS,
   TIPO_ATTIVITA_LABELS,
+  confrontaAttivitaPerDataDesc,
   etichettaCambioStato,
   etichettaSezioneAttivita,
   type RecruitingAttivitaRecord,
@@ -21,35 +22,24 @@ function esitoLabel(attivita: RecruitingAttivitaRecord): string | null {
   return attivita.esito;
 }
 
-function apriColloquio(colloquioId: string) {
-  const el = document.getElementById(`colloquio-${colloquioId}`);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.add("ring-2", "ring-[var(--navy)]", "ring-offset-2");
-  window.setTimeout(() => {
-    el.classList.remove("ring-2", "ring-[var(--navy)]", "ring-offset-2");
-  }, 1600);
-}
-
 export function CandidaturaTimeline({
   attivita,
-  colloquioIds = [],
 }: {
   attivita: RecruitingAttivitaRecord[];
   colloquioIds?: string[];
 }) {
-  const known = new Set(colloquioIds);
+  const elenco = [...attivita].sort(confrontaAttivitaPerDataDesc);
 
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-[var(--navy)]">Timeline</h2>
-      {attivita.length === 0 ? (
+      {elenco.length === 0 ? (
         <p className="rounded-xl border border-[var(--line)] bg-white px-4 py-6 text-sm text-[var(--muted)]">
           Nessun evento registrato.
         </p>
       ) : (
         <ol className="space-y-2 rounded-xl border border-[var(--line)] bg-white p-4">
-          {attivita.map((a) => {
+          {elenco.map((a) => {
             const testo =
               a.tipo === "CAMBIO_STATO"
                 ? etichettaCambioStato(a.statoDa, a.statoA)
@@ -66,7 +56,6 @@ export function CandidaturaTimeline({
               a.tipo === "NOTA" || a.tipo === "CONTATTO"
                 ? etichettaSezioneAttivita(attivita, a)
                 : null;
-            const canJump = Boolean(a.colloquioId && known.has(a.colloquioId));
             return (
               <li key={a.id} className="border-b border-[var(--line)] pb-2 last:border-0 last:pb-0">
                 <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
@@ -79,15 +68,6 @@ export function CandidaturaTimeline({
                   {` · ${a.createdByName}`}
                   {extra ? ` · ${extra}` : ""}
                 </p>
-                {canJump ? (
-                  <button
-                    type="button"
-                    onClick={() => apriColloquio(a.colloquioId!)}
-                    className="mt-0.5 text-xs font-semibold text-[var(--accent)] underline"
-                  >
-                    Apri colloquio
-                  </button>
-                ) : null}
               </li>
             );
           })}

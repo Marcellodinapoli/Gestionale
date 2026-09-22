@@ -29,9 +29,17 @@ export async function selezionaPostazioneAction(formData: FormData) {
   const postazioneFissa =
     canImpostarePostazioneFissa(user.role) && formData.get("postazioneFissa") === "on";
 
+  const internoPostazione = validazione.postazione.interno
+    ? String(validazione.postazione.interno).trim() || null
+    : null;
+
   await usersDbFromUser(user).update({
     where: { id: user.id },
-    data: { postazioneId, postazioneFissa },
+    data: {
+      postazioneId,
+      postazioneFissa,
+      ...(internoPostazione ? { interno: internoPostazione } : {}),
+    },
   });
 
   await writeAudit({
@@ -66,7 +74,14 @@ export async function updateAccountPostazioneAction(formData: FormData) {
 
   await usersDbFromUser(user).update({
     where: { id: user.id },
-    data: { postazioneId, postazioneFissa },
+    data: {
+      postazioneId,
+      postazioneFissa,
+      // Allinea interno personale a quello della postazione scelta.
+      ...(validazione.postazione.interno
+        ? { interno: String(validazione.postazione.interno).trim() || null }
+        : {}),
+    },
   });
 
   await writeAudit({

@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorProvvigioniRepository } from "@/lib/data/connector/ConnectorProvvigioniRepository";
+import { createNeonProvvigioniRepository } from "@/lib/neon/NeonProvvigioniRepository";
 import { prismaProvvigioniRepository } from "@/lib/data/prisma/PrismaProvvigioniRepository";
 import type { ProvvigioneFilter, ProvvigioniRepository } from "@/lib/data/contracts/provvigioni";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -12,6 +13,7 @@ import type { SessionUser } from "@/lib/permissions";
 export type ProvvigioniDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: ProvvigioniDbContext): ProvvigioniRepository {
+  if (isNeonProvider()) return createNeonProvvigioniRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorProvvigioniRepository(ctx.tenantSlug);
   return prismaProvvigioniRepository;
 }
@@ -21,7 +23,7 @@ export function provvigioniDbFromUser(user: SessionUser) {
 }
 
 export function provvigioniDb(ctx: ProvvigioniDbContext): typeof prisma.provvigione {
-  if (!isConnectorProvider()) return prisma.provvigione;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.provvigione;
 
   const r = repo(ctx);
   return {

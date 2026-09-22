@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorIncassiRepository } from "@/lib/data/connector/ConnectorIncassiRepository";
+import { createNeonIncassiRepository } from "@/lib/neon/NeonIncassiRepository";
 import type { IncassoFilter } from "@/lib/data/contracts/incassi";
 import { dataIt, euro } from "@/lib/domain";
 import {
@@ -172,8 +173,10 @@ export async function loadIncassiElenco(
   });
   filter.tenantId = user.tenantId;
 
-  if (isConnectorProvider()) {
-    const repo = createConnectorIncassiRepository(resolveTenantSlug(user));
+  if (isConnectorProvider() || isNeonProvider()) {
+    const repo = isNeonProvider()
+      ? createNeonIncassiRepository(resolveTenantSlug(user))
+      : createConnectorIncassiRepository(resolveTenantSlug(user));
     const result = await repo.list({
       tenantSlug: resolveTenantSlug(user),
       tenantId: user.tenantId,

@@ -202,13 +202,14 @@ export async function createOperatoreAction(formData: FormData) {
   if (created && !formazioneOnly) {
     const rawNav = String(formData.get("navVisibilityJson") || "").trim();
     if (rawNav) {
+      let flags: Record<string, boolean>;
       try {
-        const flags = JSON.parse(rawNav) as Record<string, boolean>;
-        const { applyNavFlagsForNewUser } = await import("@/lib/navVisibility/apply");
-        await applyNavFlagsForNewUser(user, created.id, role as Role, flags);
+        flags = JSON.parse(rawNav) as Record<string, boolean>;
       } catch {
-        /* ignore payload nav */
+        throw new Error("Visibilità menu: JSON non valido");
       }
+      const { applyNavFlagsForNewUser } = await import("@/lib/navVisibility/apply");
+      await applyNavFlagsForNewUser(user, created.id, role as Role, flags);
     }
   }
 
@@ -493,13 +494,14 @@ export async function updateOperatoreAction(formData: FormData) {
   if (!target.formazioneOnly) {
     const rawNav = String(formData.get("navVisibilityJson") || "").trim();
     if (rawNav) {
+      let flags: Record<string, boolean>;
       try {
-        const flags = JSON.parse(rawNav) as Record<string, boolean>;
-        const { applyNavFlagsForNewUser } = await import("@/lib/navVisibility/apply");
-        await applyNavFlagsForNewUser(user, targetId, target.role as Role, flags);
+        flags = JSON.parse(rawNav) as Record<string, boolean>;
       } catch {
-        /* ignore */
+        throw new Error("Visibilità menu: JSON non valido");
       }
+      const { applyNavFlagsForNewUser } = await import("@/lib/navVisibility/apply");
+      await applyNavFlagsForNewUser(user, targetId, target.role as Role, flags);
     }
   }
 

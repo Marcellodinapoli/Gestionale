@@ -1,19 +1,20 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { requireNavPage } from "@/lib/guard";
-import { can } from "@/lib/permissions";
+import { canPermissionOrNav, requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { getOffertaLavoro } from "@/lib/recruiting/offerteRepo";
 import { getCandidatura } from "@/lib/recruiting/candidatureRepo";
 import { isStatoCandidaturaTerminale, anagraficaCandidato } from "@/lib/recruiting/candidature";
 import { listAttivitaByCandidatura } from "@/lib/recruiting/attivitaRepo";
-import { suggerimentoTransizioneCandidatura, etichettaSezioneAttivita } from "@/lib/recruiting/attivita";
+import { suggerimentoTransizioneCandidatura, buildProveRows } from "@/lib/recruiting/attivita";
 import { canCreateColloquio } from "@/lib/recruiting/colloqui";
-import { listColloquiByCandidatura, listUtentiTenantRecruiting } from "@/lib/recruiting/colloquiRepo";
+import { listColloquiByCandidatura, listSupervisoriTenantRecruiting, listUtentiTenantRecruiting } from "@/lib/recruiting/colloquiRepo";
+import { getApplication } from "@/lib/recruiting/receiverClient";
+import { ReceiverClientError } from "@/lib/recruiting/receiver";
 import { CandidaturaDettaglioClient } from "../../../CandidaturaDettaglioClient";
 import { CandidaturaColloquiClient } from "../../../CandidaturaColloquiClient";
-import { CandidaturaAttivitaClient } from "../../../CandidaturaAttivitaClient";
+import { CandidaturaProveClient } from "../../../CandidaturaProveClient";
 import { CandidaturaTimeline } from "../../../CandidaturaTimeline";
+import { MarkCandidaturaVista } from "../../../MarkCandidaturaVista";
 
 export default async function CandidaturaDettaglioPage({
   params,
@@ -21,7 +22,6 @@ export default async function CandidaturaDettaglioPage({
   params: Promise<{ offertaId: string; candidaturaId: string }>;
 }) {
   const user = await requireNavPage("recruiting");
-  if (!can(user, "recruiting:view")) redirect("/");
   const { offertaId, candidaturaId } = await params;
   const [offerta, candidatura] = await Promise.all([
     getOffertaLavoro(user.tenantId, offertaId),
@@ -31,26 +31,60 @@ export default async function CandidaturaDettaglioPage({
     return <p className="text-sm text-rose-700">Candidatura non trovata.</p>;
   }
 
-  const [attivita, colloqui, utenti] = await Promise.all([
+  const [attivita, colloqui, utenti, supervisori] = await Promise.all([
     listAttivitaByCandidatura(user.tenantId, candidatura.id),
     listColloquiByCandidatura(user.tenantId, candidatura.id),
     listUtentiTenantRecruiting(user.tenantId),
+    listSupervisoriTenantRecruiting(user.tenantId),
   ]);
-  const canManage = can(user, "recruiting:manage");
+
+  let cvFileName: string | null = null;
+  const receiverCandidateId = String(candidatura.receiverCandidateId || "").trim();
+  if (receiverCandidateId) {
+    try {
+      const remote = await getApplication(user.tenantId, receiverCandidateId);
+      const name = String(remote.resumeMeta?.fileName || "").trim();
+      cvFileName = name || null;
+    } catch (e) {
+      if (!(e instanceof ReceiverClientError)) {
+        console.warn("[recruiting] metadati CV Receiver non disponibili", e);
+      }
+    }
+  }
+
+  const canManage = await canPermissionOrNav(user, "recruiting:manage");
   const operabile = canManage && !isStatoCandidaturaTerminale(candidatura.stato);
   const suggerimento = suggerimentoTransizioneCandidatura({
     stato: candidatura.stato,
-    attivita: attivita.map((a) => ({ tipo: a.tipo, esito: a.esito })),
+    attivita: attivita.map((a) => ({
+      tipo: a.tipo,
+      esito: a.esito,
+      statoA: a.statoA,
+    })),
   });
   const hasColloquiAperti = colloqui.some(
     (c) => c.stato === "PROGRAMMATO" || c.stato === "SVOLTO"
   );
+  const colloquioProgrammatoId =
+    colloqui.find((c) => c.stato === "PROGRAMMATO")?.id ?? null;
+  const ultimoColloquio =
+    [...colloqui].sort((a, b) => b.round - a.round)[0] ?? null;
+  const proveRows = buildProveRows(attivita);
+  const ultimaProva = [...proveRows].reverse()[0] ?? null;
 
-  const lastContatto = [...attivita].reverse().find((a) => a.tipo === "CONTATTO");
+  // Contatto della fase corrente (Candidatura → colloquio; Colloquio → prova).
+  const lastContatto = [...attivita].reverse().find((a) => {
+    if (a.tipo !== "CONTATTO") return false;
+    if (candidatura.stato === "RICEVUTA" || candidatura.stato === "IN_VALUTAZIONE") {
+      return a.statoA === "RICEVUTA" || a.statoA === "IN_VALUTAZIONE";
+    }
+    return a.statoA === candidatura.stato;
+  });
   const candidato = anagraficaCandidato(candidatura);
 
   return (
     <div className="space-y-4">
+      <MarkCandidaturaVista userId={user.id} candidaturaId={candidatura.id} />
       <PageHeader title={candidato.label} subtitle={offerta.titolo} />
       <Link href="/recruiting" className="text-sm underline">
         ← Recruiting
@@ -61,11 +95,22 @@ export default async function CandidaturaDettaglioPage({
           stato: candidatura.stato,
           cognome: candidato.cognome,
           nome: candidato.nome,
+          email: candidatura.email,
+          phone: candidatura.phone,
+          coverLetter: candidatura.coverLetter,
+          source: candidatura.source,
+          receivedAt: candidatura.receivedAt.toISOString(),
+          receiverCandidateId: candidatura.receiverCandidateId,
+          cvFileName,
         }}
+        offerta={{ id: offerta.id, titolo: offerta.titolo }}
         canManage={canManage}
+        canViewCv={true}
         operabile={operabile}
         canCreateColloquio={operabile && canCreateColloquio(candidatura.stato)}
+        colloquioProgrammatoId={colloquioProgrammatoId}
         utenti={utenti}
+        supervisori={supervisori}
         suggerimento={suggerimento}
         hasColloquiAperti={hasColloquiAperti}
         contatto={
@@ -73,28 +118,33 @@ export default async function CandidaturaDettaglioPage({
             ? {
                 id: lastContatto.id,
                 canale: lastContatto.canale || "TELEFONO",
-                esito: lastContatto.esito || "RAGGIUNTO",
+                esito: lastContatto.esito || "",
                 occurredAt: lastContatto.occurredAt.toISOString(),
                 note: lastContatto.note,
               }
             : null
         }
-      />
-      <CandidaturaAttivitaClient
-        candidaturaId={candidatura.id}
-        canManage={operabile}
-        voci={attivita
-          .filter((a) => a.tipo === "CONTATTO" || a.tipo === "NOTA")
-          .map((a) => ({
-            id: a.id,
-            tipo: a.tipo,
-            occurredAt: a.occurredAt.toISOString(),
-            note: a.note,
-            esito: a.esito,
-            canale: a.canale,
-            createdByName: a.createdByName,
-            sezione: etichettaSezioneAttivita(attivita, a),
-          }))}
+        ultimoColloquio={
+          ultimoColloquio
+            ? {
+                id: ultimoColloquio.id,
+                esito: ultimoColloquio.esito,
+                stato: ultimoColloquio.stato,
+                valutazioneStelle: ultimoColloquio.valutazioneStelle,
+                noteSvolgimento: ultimoColloquio.noteSvolgimento,
+              }
+            : null
+        }
+        ultimaProva={
+          ultimaProva
+            ? {
+                id: ultimaProva.id,
+                esito: ultimaProva.esito,
+                valutazioneStelle: ultimaProva.valutazioneStelle,
+                parere: ultimaProva.parere,
+              }
+            : null
+        }
       />
       <CandidaturaColloquiClient
         candidaturaId={candidatura.id}
@@ -105,71 +155,38 @@ export default async function CandidaturaDettaglioPage({
           stato: c.stato,
           scheduledAt: c.scheduledAt.toISOString(),
           modalita: c.modalita,
+          intervistatoreUserId: c.intervistatoreUserId,
+          intervistatoreLabel: c.intervistatoreLabel,
           intervistatoreNome: c.intervistatoreNome,
           notePreliminari: c.notePreliminari,
           noteSvolgimento: c.noteSvolgimento,
           esito: c.esito,
           valutazione: c.valutazione,
+          valutazioneStelle: c.valutazioneStelle,
         }))}
         utenti={utenti}
         canManage={operabile}
         canCreate={operabile && canCreateColloquio(candidatura.stato)}
       />
-      <CandidaturaTimeline
-        attivita={attivita}
-        colloquioIds={colloqui.map((c) => c.id)}
+      <CandidaturaProveClient
+        candidaturaId={candidatura.id}
+        statoCandidatura={candidatura.stato}
+        prove={proveRows.map((p) => ({
+          id: p.id,
+          scheduledAt: p.scheduledAt.toISOString(),
+          modalita: p.modalita,
+          affiancatore: p.affiancatore,
+          affiancatoreUserId:
+            supervisori.find((u) => u.name === p.affiancatore)?.id ?? null,
+          notePreliminari: p.notePreliminari,
+          esito: p.esito,
+          parere: p.parere,
+          valutazioneStelle: p.valutazioneStelle,
+        }))}
+        utenti={supervisori}
+        canManage={operabile}
       />
-      <section className="rounded-xl border border-dashed border-[var(--line)] bg-slate-50/70 px-4 py-3 text-xs text-[var(--muted)]">
-        <p className="font-semibold uppercase tracking-wide">Riferimenti</p>
-        <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
-          <div>
-            <dt className="uppercase tracking-wide">Cognome</dt>
-            <dd className="text-sm font-semibold text-slate-800">{candidato.cognome}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide">Nome</dt>
-            <dd className="text-sm font-semibold text-slate-800">{candidato.nome}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide">Identificativo</dt>
-            <dd className="font-mono text-[11px] text-slate-600">{candidatura.id}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide">Origine</dt>
-            <dd>{candidatura.source || "Non indicata"}</dd>
-          </div>
-          {candidatura.externalApplicationId ? (
-            <div>
-              <dt className="uppercase tracking-wide">Identificativo esterno</dt>
-              <dd className="font-mono text-[11px] text-slate-600">
-                {candidatura.externalApplicationId}
-              </dd>
-            </div>
-          ) : null}
-          {candidatura.receiverCandidateId ? (
-            <div>
-              <dt className="uppercase tracking-wide">Identificativo ricevitore</dt>
-              <dd className="font-mono text-[11px] text-slate-600">
-                {candidatura.receiverCandidateId}
-              </dd>
-            </div>
-          ) : null}
-          <div>
-            <dt className="uppercase tracking-wide">Ricevuta</dt>
-            <dd>{candidatura.receivedAt.toLocaleString("it-IT")}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide">Aggiornata</dt>
-            <dd>{candidatura.updatedAt.toLocaleString("it-IT")}</dd>
-          </div>
-          {candidatura.lastSyncAt ? (
-            <div>
-              <dt className="uppercase tracking-wide">Ultimo aggiornamento metadati</dt>
-              <dd>{candidatura.lastSyncAt.toLocaleString("it-IT")}</dd>
-            </div>
-          ) : null}
-        </dl>
-      </section>
+      <CandidaturaTimeline attivita={attivita} />
     </div>
   );
 }

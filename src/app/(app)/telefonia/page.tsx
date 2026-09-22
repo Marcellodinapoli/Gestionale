@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import { can } from "@/lib/permissions";
+import { requireNavPage } from "@/lib/guard";
 import {
   CounterPathSoftphoneProvider,
   DefaultTelProvider,
@@ -22,9 +20,7 @@ function ensureProvidersRegistered() {
 }
 
 export default async function TelefoniaPage() {
-  const user = await getCurrentUser();
-  if (!user || !can(user, "telephony:manage")) redirect("/");
-
+  const user = await requireNavPage("telefonia");
   const cfg = await getTenantTelephonyConfig(user.tenantId, user.tenantSlug);
   ensureProvidersRegistered();
 

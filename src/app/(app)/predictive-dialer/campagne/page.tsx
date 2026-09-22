@@ -2,12 +2,12 @@ import { Card, PageHeader } from "@/components/ui";
 import { DialerCampagnaForm } from "@/components/predictive-dialer/DialerCampagnaForm";
 import { DialerCampagneList } from "@/components/predictive-dialer/DialerSupervisorMonitor";
 import { listCampagneForUser } from "@/lib/predictive-dialer/campaigns";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 
 export default async function PredictiveDialerCampagnePage() {
-  const user = await requirePermission("dialer:manage");
+  const user = await requireNavPage("dialer");
   const [campagne, gruppo] = await Promise.all([
     listCampagneForUser(user),
     getGruppoLavoro(user),

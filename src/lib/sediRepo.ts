@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorSediRepository } from "@/lib/data/connector/ConnectorSediRepository";
+import { createNeonSediRepository } from "@/lib/neon/NeonSediRepository";
 import { prismaSediRepository } from "@/lib/data/prisma/PrismaSediRepository";
 import type { SedeFilter, SediRepository } from "@/lib/data/contracts/sedi";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -12,6 +13,7 @@ import type { SessionUser } from "@/lib/permissions";
 export type SedeDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: SedeDbContext): SediRepository {
+  if (isNeonProvider()) return createNeonSediRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorSediRepository(ctx.tenantSlug);
   return prismaSediRepository;
 }
@@ -23,7 +25,7 @@ export function sediRepoFromUser(user: SessionUser) {
 export const sediDbFromUser = sediRepoFromUser;
 
 export function sediDb(ctx: SedeDbContext): typeof prisma.sede {
-  if (!isConnectorProvider()) return prisma.sede;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.sede;
 
   const r = repo(ctx);
   return {

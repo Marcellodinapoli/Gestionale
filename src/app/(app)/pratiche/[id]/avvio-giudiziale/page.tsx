@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import { canAccessPratica, dataIt, euro, dateInputValue } from "@/lib/domain";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
@@ -17,7 +17,7 @@ export default async function AvvioGiudizialePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requirePermission("legal:view");
+  const user = await requireNavPage("legal");
   const { id } = await params;
   if (!(await canAccessPratica(user, id))) notFound();
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { canAccessPratica, euro } from "@/lib/domain";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
 import { getPraticaGiudizialeByPraticaId } from "@/lib/giudiziale/praticaGiudizialeRepo";
@@ -18,7 +18,7 @@ export default async function ValutazioneLegalePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requirePermission("legal:view");
+  const user = await requireNavPage("legal");
   const { id } = await params;
   if (!(await canAccessPratica(user, id))) notFound();
 

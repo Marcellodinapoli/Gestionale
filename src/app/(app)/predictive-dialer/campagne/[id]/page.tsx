@@ -6,7 +6,7 @@ import {
   activateDialerCampagnaAction,
   deactivateDialerCampagnaAction,
 } from "@/actions/predictiveDialer";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { mapDialerCampagna } from "@/lib/predictive-dialer/mappers";
 import { canManageDialerCampagna, parseCodiciScaricoJson } from "@/lib/predictive-dialer/scope";
@@ -18,7 +18,7 @@ export default async function PredictiveDialerCampagnaDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requirePermission("dialer:manage");
+  const user = await requireNavPage("dialer");
   const { id } = await params;
   const row = await prisma.dialerCampagna.findFirst({
     where: { id, tenantId: user.tenantId },

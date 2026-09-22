@@ -123,21 +123,19 @@ export function isOrarioLavoro(value: string): value is OrarioLavoro {
 export function parseStatoOffertaScrivibile(value: string | null | undefined): StatoOffertaLavoro {
   const raw = String(value || "").trim().toUpperCase();
   if (!raw) return "BOZZA";
-  if (raw === "CHIUSA") {
-    throw new Error("Usa l'azione di chiusura per chiudere un'offerta");
-  }
+  if (raw === "CHIUSA") return "CHIUSA";
   if (raw === "BOZZA" || raw === "PUBBLICATA") return raw;
   throw new Error("Stato offerta non valido");
 }
 
-/** Transizioni ammesse: BOZZA↔BOZZA, BOZZA→PUBBLICATA, PUBBLICATA→PUBBLICATA, *→CHIUSA. */
+/** Transizioni ammesse: BOZZA↔BOZZA, BOZZA→PUBBLICATA, PUBBLICATA→PUBBLICATA, CHIUSA→CHIUSA, *→CHIUSA. */
 export function assertTransizioneOfferta(
   from: StatoOffertaLavoro,
   to: StatoOffertaLavoro
 ) {
   if (from === to) return;
   if (from === "CHIUSA") {
-    throw new Error("Offerta chiusa: non modificabile");
+    throw new Error("Offerta chiusa: lo stato non si può riaprire da qui");
   }
   if (to === "CHIUSA") return;
   if (from === "BOZZA" && to === "PUBBLICATA") return;

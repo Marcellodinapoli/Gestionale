@@ -112,7 +112,7 @@ export function CandidatureOffertaClient({
                 <th className="px-3 py-2">Candidatura</th>
                 <th className="px-3 py-2">Stato</th>
                 <th className="px-3 py-2">Origine</th>
-                <th className="px-3 py-2">Ricevuta</th>
+                <th className="px-3 py-2">Data</th>
               </tr>
             </thead>
             <tbody>
@@ -175,7 +175,7 @@ export function CandidatureOffertaClient({
         >
           <input type="hidden" name="offertaId" value={offertaId} />
           <p className="text-xs text-[var(--muted)]">
-            Lo stato iniziale è Ricevuta. Cognome e nome sono obbligatori.
+            Lo stato iniziale è Candidatura. Cognome e nome sono obbligatori.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <label>

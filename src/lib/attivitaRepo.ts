@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorAttivitaRepository } from "@/lib/data/connector/ConnectorAttivitaRepository";
+import { createNeonAttivitaRepository } from "@/lib/neon/NeonAttivitaRepository";
 import { prismaAttivitaRepository } from "@/lib/data/prisma/PrismaAttivitaRepository";
 import type { AttivitaFilter, AttivitaRepository } from "@/lib/data/contracts/attivita";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -12,6 +13,7 @@ import type { SessionUser } from "@/lib/permissions";
 export type AttivitaDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: AttivitaDbContext): AttivitaRepository {
+  if (isNeonProvider()) return createNeonAttivitaRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorAttivitaRepository(ctx.tenantSlug);
   return prismaAttivitaRepository;
 }
@@ -21,7 +23,7 @@ export function attivitaDbFromUser(user: SessionUser) {
 }
 
 export function attivitaDb(ctx: AttivitaDbContext): typeof prisma.attivita {
-  if (!isConnectorProvider()) return prisma.attivita;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.attivita;
 
   const r = repo(ctx);
   return {

@@ -2,10 +2,10 @@ import { PageHeader } from "@/components/ui";
 import { DialerSupervisorMonitor } from "@/components/predictive-dialer/DialerSupervisorMonitor";
 import { listCampagneForUser } from "@/lib/predictive-dialer/campaigns";
 import { loadCampagnaStats, loadMonitorOperatori } from "@/lib/predictive-dialer/stats";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 
 export default async function PredictiveDialerMonitorPage() {
-  const user = await requirePermission("dialer:manage");
+  const user = await requireNavPage("dialer");
   const campagne = await listCampagneForUser(user);
   const activeId = campagne.find((c) => c.stato === "ATTIVA")?.id;
   const [initialStats, initialMonitor] = activeId

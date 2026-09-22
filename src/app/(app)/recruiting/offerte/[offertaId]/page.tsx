@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Briefcase } from "lucide-react";
-import { requireNavPage } from "@/lib/guard";
-import { can } from "@/lib/permissions";
+import { canPermissionOrNav, requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
-import { getOffertaLavoro } from "@/lib/recruiting/offerteRepo";
+import { getOffertaLavoro, countCandidatureOfferta } from "@/lib/recruiting/offerteRepo";
 import {
   DICITURA_PARI_OPPORTUNITA,
   MODALITA_LAVORO_LABELS,
@@ -15,6 +13,7 @@ import {
   isTipoContratto,
 } from "@/lib/recruiting/offerte";
 import { CandidatureOffertaClient } from "../../CandidatureOffertaClient";
+import { OffertaSchedaClient } from "../../OffertaSchedaClient";
 
 function Blocco({ titolo, testo }: { titolo: string; testo: string }) {
   const body = testo.trim();
@@ -33,13 +32,14 @@ export default async function OffertaInserzionePage({
   params: Promise<{ offertaId: string }>;
 }) {
   const user = await requireNavPage("recruiting");
-  if (!can(user, "recruiting:view")) redirect("/");
   const { offertaId } = await params;
   const offerta = await getOffertaLavoro(user.tenantId, offertaId);
   if (!offerta) {
     return <p className="text-sm text-rose-700">Offerta non trovata.</p>;
   }
-  const canManage = can(user, "recruiting:manage");
+  const canManage = await canPermissionOrNav(user, "recruiting:manage");
+  const candidatureCount = await countCandidatureOfferta(user.tenantId, offerta.id);
+  const canDelete = canManage && candidatureCount === 0;
   const contratto = isTipoContratto(offerta.tipoContratto)
     ? TIPO_CONTRATTO_LABELS[offerta.tipoContratto]
     : "—";
@@ -54,6 +54,27 @@ export default async function OffertaInserzionePage({
       <Link href="/recruiting" className="text-sm underline">
         ← Recruiting
       </Link>
+
+      <OffertaSchedaClient
+        canManage={canManage}
+        canDelete={canDelete}
+        offerta={{
+          id: offerta.id,
+          titolo: offerta.titolo,
+          luogo: offerta.luogo,
+          modalitaLavoro: offerta.modalitaLavoro,
+          tipoContratto: offerta.tipoContratto,
+          orario: offerta.orario,
+          numeroPosizioni: offerta.numeroPosizioni,
+          descrizione: offerta.descrizione,
+          attivitaPrincipali: offerta.attivitaPrincipali,
+          requisiti: offerta.requisiti,
+          competenze: offerta.competenze,
+          retribuzione: offerta.retribuzione,
+          benefit: offerta.benefit,
+          stato: offerta.stato,
+        }}
+      />
 
       <article className="space-y-4 rounded-xl border border-[var(--line)] bg-white p-4">
         <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--navy)]">

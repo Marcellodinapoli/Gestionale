@@ -2,12 +2,13 @@
 
 Nucleo operativo ispirato a **CG32** e **Ulisse**: pratiche, affidi, lavorazione telefonica, incassi, ruoli con limiti.
 
-**Database: solo Firebase (Firestore).** Niente SQLite, Postgres o Neon.
+**Dati:** oggi default Firestore; cloud target = **Neon (operativo)** + **Firebase (Formazione, permanente)**. SQL Server solo via Connettore, non in questa fase.
 
 ## Avvio
 
 1. Copia `.env.example` → `.env` e imposta service account + `NEXT_PUBLIC_FIREBASE_*`.
-2. Seed demo su Firestore:
+2. (Opzionale) Neon: aggiungi `NEON_DATABASE_URL` dalla console e verifica con `npm run neon:ping`.
+3. Seed demo su Firestore:
 
 ```powershell
 npm run db:seed
@@ -47,4 +48,6 @@ Esempio in `public/esempio-pratiche.csv`.
 
 ## Nota tecnica
 
-`src/lib/firebase/schema.prisma` serve **solo** a generare tipi TypeScript per l’adapter Firestore. Non c’è database locale.
+- `src/lib/firebase/schema.prisma` genera tipi TypeScript per l’adapter Firestore.
+- **Formazione** usa sempre Firebase.
+- **Neon**: `NEON_DATABASE_URL` + `npm run neon:ping` (vedi `docs/DATABASE_ARCHITECTURE.md`).

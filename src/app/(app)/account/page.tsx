@@ -39,19 +39,19 @@ export default async function AccountPage() {
     formazioneOnly: session.formazioneOnly,
   });
 
-  const postazioni = gestiscePostazione
-    ? await postazioniDbFromUser(session).findMany({
-        where: { active: true, tenantId: session.tenantId },
-        orderBy: [{ sedeRef: { nome: "asc" } }, { nome: "asc" }],
-        include: {
-          sedeRef: { select: { nome: true } },
-          occupanti: {
-            where: { active: true, id: { not: session.id }, tenantId: session.tenantId },
-            select: { id: true, name: true },
-          },
-        },
-      })
-    : [];
+  // Sempre carichiamo le postazioni attive: servono anche all'admin per allineare
+  // la card "Postazione" all'interno (es. int. 260 ↔ postazione 260).
+  const postazioni = await postazioniDbFromUser(session).findMany({
+    where: { active: true, tenantId: session.tenantId },
+    orderBy: [{ sedeRef: { nome: "asc" } }, { nome: "asc" }],
+    include: {
+      sedeRef: { select: { nome: true } },
+      occupanti: {
+        where: { active: true, id: { not: session.id }, tenantId: session.tenantId },
+        select: { id: true, name: true },
+      },
+    },
+  });
 
   const postazioniLista = postazioni.map((p) => ({
     id: p.id,
@@ -61,12 +61,22 @@ export default async function AccountPage() {
     occupante: p.occupanti[0]?.name || null,
   }));
 
+  const internoEffettivo = user.interno?.trim() || "";
   const postazioneDaLista = user.postazioneId
     ? postazioniLista.find((p) => p.id === user.postazioneId)
     : undefined;
-  const postazioneNome = user.postazione?.nome ?? postazioneDaLista?.nome ?? null;
+  const postazioneDaInterno =
+    !postazioneDaLista && internoEffettivo
+      ? postazioniLista.find(
+          (p) =>
+            (p.interno && p.interno.trim() === internoEffettivo) ||
+            p.nome.trim() === internoEffettivo
+        )
+      : undefined;
+  const postazioneMatch = postazioneDaLista ?? postazioneDaInterno;
+  const postazioneNome = user.postazione?.nome ?? postazioneMatch?.nome ?? null;
   const postazioneInterno =
-    user.postazione?.interno ?? postazioneDaLista?.interno ?? null;
+    user.postazione?.interno ?? postazioneMatch?.interno ?? null;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -81,15 +91,15 @@ export default async function AccountPage() {
           name: user.name,
           email: user.email,
           role: user.role as Role,
-          interno: user.interno?.trim() || postazioneInterno || "",
+          interno: internoEffettivo || postazioneInterno || "",
           prefissoChiamata: user.prefissoChiamata || "",
           postazioneNome,
           postazioneInterno,
-          postazioneId: user.postazioneId,
+          postazioneId: user.postazioneId ?? postazioneMatch?.id ?? null,
           postazioneFissa: Boolean(user.postazioneFissa),
           showPostazioneFissa: canImpostarePostazioneFissa(user.role as Role),
           gestiscePostazione,
-          postazioni: postazioniLista,
+          postazioni: gestiscePostazione ? postazioniLista : undefined,
           giorniAllaScadenza: giorniAllaScadenzaPassword(user.passwordChangedAt),
           creditCalcEnabled: Boolean(
             user.consulenteEsterno && user.creditCalcEnabled

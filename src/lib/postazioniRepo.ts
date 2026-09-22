@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorPostazioniRepository } from "@/lib/data/connector/ConnectorPostazioniRepository";
+import { createNeonPostazioniRepository } from "@/lib/neon/NeonPostazioniRepository";
 import { prismaPostazioniRepository } from "@/lib/data/prisma/PrismaPostazioniRepository";
 import type { PostazioneFilter, PostazioniRepository } from "@/lib/data/contracts/postazioni";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -12,6 +13,7 @@ import type { SessionUser } from "@/lib/permissions";
 export type PostazioneDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: PostazioneDbContext): PostazioniRepository {
+  if (isNeonProvider()) return createNeonPostazioniRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorPostazioniRepository(ctx.tenantSlug);
   return prismaPostazioniRepository;
 }
@@ -21,7 +23,7 @@ export function postazioniDbFromUser(user: SessionUser) {
 }
 
 export function postazioniDb(ctx: PostazioneDbContext): typeof prisma.postazione {
-  if (!isConnectorProvider()) return prisma.postazione;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.postazione;
 
   const r = repo(ctx);
   return {
@@ -189,6 +191,7 @@ function prismaWhereToFilter(where: unknown): PostazioneFilter | undefined {
       if (Array.isArray(idObj.in)) filter.idsIn = idObj.in.map(String);
     }
     if (typeof node.nome === "string") filter.nome = node.nome;
+    if (typeof node.interno === "string") filter.interno = node.interno;
     if (typeof node.active === "boolean") filter.active = node.active;
     if (typeof node.sedeId === "string") filter.sedeId = node.sedeId;
     if (node.NOT && typeof node.NOT === "object") {

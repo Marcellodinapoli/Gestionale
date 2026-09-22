@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { connectorFetch } from "@/lib/data/connector/ConnectorClient";
+import { neonQuery } from "@/lib/neon/pool";
 import { resolveTenantSlug } from "@/lib/praticheRepo";
 import { mapSqlRow } from "@/lib/data/mapSqlRow";
 import type { SessionUser } from "@/lib/permissions";
@@ -244,6 +245,15 @@ export async function getPraticaGiudizialeByPraticaId(
       );
       return data.item ? mapRow(data.item) : null;
     }
+    if (isNeonProvider()) {
+      const rows = await neonQuery(
+        `SELECT * FROM "PraticheGiudiziali"
+         WHERE "PraticaId" = $1::uuid AND "TenantId" = $2::uuid
+         LIMIT 1`,
+        [praticaId, user.tenantId]
+      );
+      return rows[0] ? mapRow(rows[0] as Record<string, unknown>) : null;
+    }
     const row = await prisma.praticaGiudiziale.findUnique({ where: { praticaId } });
     return row ? mapRow(row as unknown as Record<string, unknown>) : null;
   } catch (err) {
@@ -267,6 +277,100 @@ export async function upsertPraticaGiudiziale(
       }
     );
     return mapRow(data.item);
+  }
+
+  if (isNeonProvider()) {
+    const dataPassaggio = input.dataAffidamentoGiudiziale
+      ? new Date(input.dataAffidamentoGiudiziale)
+      : null;
+    const closedAt = input.closedAt ? new Date(input.closedAt) : null;
+    const existing = await getPraticaGiudizialeByPraticaId(user, praticaId);
+    if (existing) {
+      await neonQuery(
+        `UPDATE "PraticheGiudiziali" SET
+           "StatoAvvio" = $3,
+           "DataAffidamentoGiudiziale" = $4,
+           "StudioLegale" = $5,
+           "AvvocatoReferente" = $6,
+           "ReferenteInternoId" = $7::uuid,
+           "NoteAffidamento" = $8,
+           "MotivoPassaggio" = $9,
+           "MotivoAltroDettaglio" = $10,
+           "DocumentazioneDisponibile" = $11,
+           "PrescrizioneVerificata" = $12,
+           "AnagraficaDebitoreVerificata" = $13,
+           "ValutazioneRecuperabilita" = $14,
+           "NoteVerifica" = $15,
+           "MotivazioneArchiviazione" = $16,
+           "NoteArchiviazione" = $17,
+           "ClosedAt" = $18,
+           "UpdatedAt" = NOW()
+         WHERE "TenantId" = $1::uuid AND "PraticaId" = $2::uuid`,
+        [
+          user.tenantId,
+          praticaId,
+          input.statoAvvio,
+          dataPassaggio,
+          input.studioLegale?.trim() || null,
+          input.avvocatoReferente?.trim() || null,
+          input.referenteInternoId || null,
+          input.noteAffidamento?.trim() || null,
+          input.motivoPassaggio || null,
+          input.motivoAltroDettaglio?.trim() || null,
+          input.documentazioneDisponibile || null,
+          input.prescrizioneVerificata || null,
+          input.anagraficaDebitoreVerificata || null,
+          input.valutazioneRecuperabilita || null,
+          input.noteVerifica?.trim() || null,
+          input.motivazioneArchiviazione?.trim() || null,
+          input.noteArchiviazione?.trim() || null,
+          closedAt,
+        ]
+      );
+    } else {
+      await neonQuery(
+        `INSERT INTO "PraticheGiudiziali" (
+           "Id","TenantId","PraticaId","StatoAvvio","DataAffidamentoGiudiziale",
+           "StudioLegale","AvvocatoReferente","ReferenteInternoId","NoteAffidamento",
+           "MotivoPassaggio","MotivoAltroDettaglio","DocumentazioneDisponibile",
+           "PrescrizioneVerificata","AnagraficaDebitoreVerificata","ValutazioneRecuperabilita",
+           "NoteVerifica","MotivazioneArchiviazione","NoteArchiviazione",
+           "CreatedById","CreatedAt","UpdatedAt","ClosedAt"
+         ) VALUES (
+           $1::uuid,$2::uuid,$3::uuid,$4,$5,
+           $6,$7,$8::uuid,$9,
+           $10,$11,$12,
+           $13,$14,$15,
+           $16,$17,$18,
+           $19::uuid,NOW(),NOW(),$20
+         )`,
+        [
+          crypto.randomUUID(),
+          user.tenantId,
+          praticaId,
+          input.statoAvvio,
+          dataPassaggio,
+          input.studioLegale?.trim() || null,
+          input.avvocatoReferente?.trim() || null,
+          input.referenteInternoId || null,
+          input.noteAffidamento?.trim() || null,
+          input.motivoPassaggio || null,
+          input.motivoAltroDettaglio?.trim() || null,
+          input.documentazioneDisponibile || null,
+          input.prescrizioneVerificata || null,
+          input.anagraficaDebitoreVerificata || null,
+          input.valutazioneRecuperabilita || null,
+          input.noteVerifica?.trim() || null,
+          input.motivazioneArchiviazione?.trim() || null,
+          input.noteArchiviazione?.trim() || null,
+          input.createdById || user.id,
+          closedAt,
+        ]
+      );
+    }
+    const row = await getPraticaGiudizialeByPraticaId(user, praticaId);
+    if (!row) throw new Error("Upsert giudiziale Neon fallito");
+    return row;
   }
 
   const dataPassaggio = input.dataAffidamentoGiudiziale
@@ -334,6 +438,103 @@ export async function saveValutazioneLegale(
       }
     );
     return mapRow(data.item);
+  }
+
+  if (isNeonProvider()) {
+    const data = valutazioneData(input, user.id);
+    const existing = await getPraticaGiudizialeByPraticaId(user, praticaId);
+    if (existing) {
+      await neonQuery(
+        `UPDATE "PraticheGiudiziali" SET
+           "StatoAvvio" = $3,
+           "TitoloCreditoEsistenza" = $4,
+           "TitoloCreditoValidita" = $5,
+           "TitoloCreditoEsigibilita" = $6,
+           "PrescrizioneTermini" = $7,
+           "DocumentazioneProve" = $8,
+           "ContestazioniDebitore" = $9,
+           "SolvibilitaRecupero" = $10,
+           "GiudiceCompetente" = $11,
+           "ForoEventuale" = $12,
+           "TipoAzioneIpotizzata" = $13,
+           "TipoAzioneAltroDettaglio" = $14,
+           "CostiBenefici" = $15,
+           "RischiLegali" = $16,
+           "ParereValutazione" = $17,
+           "ParereMotivazione" = $18,
+           "ValutazioneCompletataAt" = $19,
+           "ValutazioneById" = $20::uuid,
+           "UpdatedAt" = NOW()
+         WHERE "TenantId" = $1::uuid AND "PraticaId" = $2::uuid`,
+        [
+          user.tenantId,
+          praticaId,
+          data.statoAvvio,
+          data.titoloCreditoEsistenza,
+          data.titoloCreditoValidita,
+          data.titoloCreditoEsigibilita,
+          data.prescrizioneTermini,
+          data.documentazioneProve,
+          data.contestazioniDebitore,
+          data.solvibilitaRecupero,
+          data.giudiceCompetente,
+          data.foroEventuale,
+          data.tipoAzioneIpotizzata,
+          data.tipoAzioneAltroDettaglio,
+          data.costiBenefici,
+          data.rischiLegali,
+          data.parereValutazione,
+          data.parereMotivazione,
+          data.valutazioneCompletataAt,
+          data.valutazioneById,
+        ]
+      );
+    } else {
+      await neonQuery(
+        `INSERT INTO "PraticheGiudiziali" (
+           "Id","TenantId","PraticaId","StatoAvvio",
+           "TitoloCreditoEsistenza","TitoloCreditoValidita","TitoloCreditoEsigibilita",
+           "PrescrizioneTermini","DocumentazioneProve","ContestazioniDebitore","SolvibilitaRecupero",
+           "GiudiceCompetente","ForoEventuale","TipoAzioneIpotizzata","TipoAzioneAltroDettaglio",
+           "CostiBenefici","RischiLegali","ParereValutazione","ParereMotivazione",
+           "ValutazioneCompletataAt","ValutazioneById","CreatedById","CreatedAt","UpdatedAt"
+         ) VALUES (
+           $1::uuid,$2::uuid,$3::uuid,$4,
+           $5,$6,$7,
+           $8,$9,$10,$11,
+           $12,$13,$14,$15,
+           $16,$17,$18,$19,
+           $20,$21::uuid,$22::uuid,NOW(),NOW()
+         )`,
+        [
+          crypto.randomUUID(),
+          user.tenantId,
+          praticaId,
+          data.statoAvvio,
+          data.titoloCreditoEsistenza,
+          data.titoloCreditoValidita,
+          data.titoloCreditoEsigibilita,
+          data.prescrizioneTermini,
+          data.documentazioneProve,
+          data.contestazioniDebitore,
+          data.solvibilitaRecupero,
+          data.giudiceCompetente,
+          data.foroEventuale,
+          data.tipoAzioneIpotizzata,
+          data.tipoAzioneAltroDettaglio,
+          data.costiBenefici,
+          data.rischiLegali,
+          data.parereValutazione,
+          data.parereMotivazione,
+          data.valutazioneCompletataAt,
+          data.valutazioneById,
+          input.createdById || user.id,
+        ]
+      );
+    }
+    const row = await getPraticaGiudizialeByPraticaId(user, praticaId);
+    if (!row) throw new Error("Salvataggio valutazione Neon fallito");
+    return row;
   }
 
   const data = valutazioneData(input, user.id);
@@ -428,6 +629,112 @@ export async function saveStrategiaProcedura(
       ? { speseGiudizialiJson }
       : {}),
   };
+
+  if (isNeonProvider()) {
+    const existing = await getPraticaGiudizialeByPraticaId(user, praticaId);
+    if (existing) {
+      await neonQuery(
+        `UPDATE "PraticheGiudiziali" SET
+           "StatoAvvio" = $3,
+           "StrategiaScelta" = $4,
+           "ProceduraDaSeguire" = $5,
+           "ProfessionistaIncaricato" = $6,
+           "AttivitaProceduraJson" = $7,
+           "AgendaScadenze" = $8,
+           "DocumentiDaProdurre" = $9,
+           "StatoProcedura" = $10,
+           "EventiStorico" = $11,
+           "CostiSostenuti" = $12,
+           "SpeseGiudizialiJson" = $13,
+           "EsitoGiudiziale" = $14,
+           "DataEsito" = $15,
+           "ImportoRecuperato" = $16,
+           "NoteLegaliOperatori" = $17,
+           "StrategiaAggiornataAt" = $18,
+           "EsitoRegistratoAt" = $19,
+           "ClosedAt" = $20,
+           "UpdatedAt" = NOW()
+         WHERE "TenantId" = $1::uuid AND "PraticaId" = $2::uuid`,
+        [
+          user.tenantId,
+          praticaId,
+          data.statoAvvio,
+          data.strategiaScelta,
+          data.proceduraDaSeguire,
+          data.professionistaIncaricato,
+          data.attivitaProceduraJson,
+          data.agendaScadenze,
+          data.documentiDaProdurre,
+          data.statoProcedura,
+          data.eventiStorico,
+          data.costiSostenuti,
+          data.speseGiudizialiJson ?? null,
+          data.esitoGiudiziale,
+          data.dataEsito,
+          data.importoRecuperato,
+          data.noteLegaliOperatori,
+          data.strategiaAggiornataAt,
+          data.esitoRegistratoAt,
+          data.closedAt,
+        ]
+      );
+    } else {
+      await neonQuery(
+        `INSERT INTO "PraticheGiudiziali" (
+           "Id","TenantId","PraticaId","StatoAvvio",
+           "StrategiaScelta","ProceduraDaSeguire","ProfessionistaIncaricato",
+           "AttivitaProceduraJson","AgendaScadenze","DocumentiDaProdurre","StatoProcedura",
+           "EventiStorico","CostiSostenuti","SpeseGiudizialiJson","EsitoGiudiziale",
+           "DataEsito","ImportoRecuperato","NoteLegaliOperatori",
+           "StrategiaAggiornataAt","EsitoRegistratoAt","ClosedAt",
+           "CreatedById","CreatedAt","UpdatedAt"
+         ) VALUES (
+           $1::uuid,$2::uuid,$3::uuid,$4,
+           $5,$6,$7,
+           $8,$9,$10,$11,
+           $12,$13,$14,$15,
+           $16,$17,$18,
+           $19,$20,$21,
+           $22::uuid,NOW(),NOW()
+         )`,
+        [
+          crypto.randomUUID(),
+          user.tenantId,
+          praticaId,
+          data.statoAvvio,
+          data.strategiaScelta,
+          data.proceduraDaSeguire,
+          data.professionistaIncaricato,
+          data.attivitaProceduraJson,
+          data.agendaScadenze,
+          data.documentiDaProdurre,
+          data.statoProcedura,
+          data.eventiStorico,
+          data.costiSostenuti,
+          data.speseGiudizialiJson ?? null,
+          data.esitoGiudiziale,
+          data.dataEsito,
+          data.importoRecuperato,
+          data.noteLegaliOperatori,
+          data.strategiaAggiornataAt,
+          data.esitoRegistratoAt,
+          data.closedAt,
+          input.createdById || user.id,
+        ]
+      );
+    }
+    if (_totaleSpeseGiudiziali != null) {
+      await neonQuery(
+        `UPDATE "Pratiche" SET "SpeseGiudiziali" = $3, "UpdatedAt" = NOW()
+         WHERE "Id" = $1::uuid AND "TenantId" = $2::uuid`,
+        [praticaId, user.tenantId, _totaleSpeseGiudiziali]
+      );
+    }
+    const row = await getPraticaGiudizialeByPraticaId(user, praticaId);
+    if (!row) throw new Error("Salvataggio strategia Neon fallito");
+    return row;
+  }
+
   const row = await prisma.praticaGiudiziale.upsert({
     where: { praticaId },
     create: {
@@ -508,6 +815,54 @@ export async function listPratichePerAvvioLegale(
     });
   }
 
+  if (isNeonProvider()) {
+    const rows = await neonQuery(
+      `SELECT
+         p."Id" AS "PraticaId",
+         p."Numero" AS "PraticaNumero",
+         p."Residuo" AS "Residuo",
+         TRIM(CONCAT(COALESCE(d."Cognome", ''), ' ', COALESCE(d."Nome", ''))) AS "DebitoreNome",
+         m."Codice" AS "MandanteCodice",
+         g."StatoAvvio" AS "StatoAvvio",
+         g."MotivoPassaggio" AS "MotivoPassaggio",
+         p."ConferimentoTipo" AS "ConferimentoTipo"
+       FROM "Pratiche" p
+       INNER JOIN "Debitori" d ON d."Id" = p."DebitoreId"
+       INNER JOIN "Mandanti" m ON m."Id" = p."MandanteId"
+       LEFT JOIN "PraticheGiudiziali" g ON g."PraticaId" = p."Id"
+       WHERE p."TenantId" = $1::uuid
+         AND (
+           p."ConferimentoTipo" IS NULL
+           OR TRIM(p."ConferimentoTipo") = ''
+           OR UPPER(TRIM(p."ConferimentoTipo")) <> 'STRAGIUDIZIALE'
+         )
+       ORDER BY p."UpdatedAt" DESC
+       LIMIT 300`,
+      [user.tenantId]
+    );
+    const { isGiudizialePrevistoSulLotto } = await import("@/lib/conferimentoLegale");
+    return rows
+      .filter((r) =>
+        isGiudizialePrevistoSulLotto(
+          (r as { ConferimentoTipo?: string }).ConferimentoTipo
+        )
+      )
+      .slice(0, 200)
+      .map((r) => {
+        const row = r as Record<string, unknown>;
+        return {
+          praticaId: String(row.PraticaId),
+          praticaNumero: String(row.PraticaNumero || "—"),
+          debitoreNome: String(row.DebitoreNome || "—").trim() || "—",
+          mandanteCodice: String(row.MandanteCodice || "—"),
+          residuo: Number(row.Residuo || 0),
+          statoAvvio: row.StatoAvvio != null ? String(row.StatoAvvio) : null,
+          motivoPassaggio:
+            row.MotivoPassaggio != null ? String(row.MotivoPassaggio) : null,
+        };
+      });
+  }
+
   const { praticaScopeWhere } = await import("@/lib/gruppoPerimetroScope");
   const { isGiudizialePrevistoSulLotto } = await import(
     "@/lib/conferimentoLegale"
@@ -570,6 +925,43 @@ export async function listPraticheGiudiziali(
         debitoreNome: String(m.debitoreNome || "—"),
         mandanteCodice: String(m.mandanteCodice || "—"),
         residuo: Number(m.residuo || 0),
+      };
+    });
+  }
+
+  if (isNeonProvider()) {
+    const params: unknown[] = [user.tenantId];
+    let statoSql = "";
+    if (stati?.length) {
+      params.push(stati);
+      statoSql = ` AND g."StatoAvvio" = ANY($${params.length}::text[])`;
+    }
+    const rows = await neonQuery(
+      `SELECT
+         g.*,
+         p."Numero" AS "PraticaNumero",
+         p."Residuo" AS "Residuo",
+         TRIM(CONCAT(COALESCE(d."Cognome", ''), ' ', COALESCE(d."Nome", ''))) AS "DebitoreNome",
+         m."Codice" AS "MandanteCodice"
+       FROM "PraticheGiudiziali" g
+       INNER JOIN "Pratiche" p ON p."Id" = g."PraticaId"
+       INNER JOIN "Debitori" d ON d."Id" = p."DebitoreId"
+       INNER JOIN "Mandanti" m ON m."Id" = p."MandanteId"
+       WHERE g."TenantId" = $1::uuid
+       ${statoSql}
+       ORDER BY g."UpdatedAt" DESC
+       LIMIT 200`,
+      params
+    );
+    return rows.map((row) => {
+      const raw = row as Record<string, unknown>;
+      const base = mapRow(raw);
+      return {
+        ...base,
+        praticaNumero: String(raw.PraticaNumero || "—"),
+        debitoreNome: String(raw.DebitoreNome || "—").trim() || "—",
+        mandanteCodice: String(raw.MandanteCodice || "—"),
+        residuo: Number(raw.Residuo || 0),
       };
     });
   }

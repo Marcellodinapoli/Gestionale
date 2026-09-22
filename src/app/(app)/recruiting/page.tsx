@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
-import { requireNavPage } from "@/lib/guard";
-import { can } from "@/lib/permissions";
+import { canPermissionOrNav, requireNavPage } from "@/lib/guard";
 import { listOfferteLavoro } from "@/lib/recruiting/offerteRepo";
 import { getReceiverConfig } from "@/lib/recruiting/receiverRepo";
 import { countCandidatureByOfferta, listCandidaturePerHome } from "@/lib/recruiting/candidatureRepo";
@@ -10,10 +8,7 @@ import { RecruitingReceiverClient } from "./RecruitingReceiverClient";
 
 export default async function RecruitingPage() {
   const user = await requireNavPage("recruiting");
-  if (!can(user, "recruiting:view")) {
-    redirect("/");
-  }
-  const canManage = can(user, "recruiting:manage");
+  const canManage = await canPermissionOrNav(user, "recruiting:manage");
   const [offerteRows, receiver, counts, candidatureRecenti, colloquiRecenti] = await Promise.all([
     listOfferteLavoro(user.tenantId),
     getReceiverConfig(user.tenantId),
@@ -52,6 +47,7 @@ export default async function RecruitingPage() {
       <OfferteLavoroClient
         offerte={offerte}
         canManage={canManage}
+        userId={user.id}
         candidature={candidatureRecenti.map((c) => ({
           id: c.id,
           offertaId: c.offertaId,
@@ -67,6 +63,9 @@ export default async function RecruitingPage() {
           round: c.round,
           stato: c.stato,
           scheduledAt: c.scheduledAt.toISOString(),
+          esito: c.esito,
+          valutazioneStelle: c.valutazioneStelle,
+          intervistatoreNome: c.intervistatoreNome,
         }))}
       />
       <RecruitingReceiverClient config={receiverView} canManage={canManage} />

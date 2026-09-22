@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorDebitoriRepository } from "@/lib/data/connector/ConnectorDebitoriRepository";
+import { createNeonDebitoriRepository } from "@/lib/neon/NeonDebitoriRepository";
 import { prismaDebitoriRepository } from "@/lib/data/prisma/PrismaDebitoriRepository";
 import type { DebitoreFilter, DebitoriRepository } from "@/lib/data/contracts/debitori";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -12,6 +13,7 @@ import type { SessionUser } from "@/lib/permissions";
 export type DebitoreDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: DebitoreDbContext): DebitoriRepository {
+  if (isNeonProvider()) return createNeonDebitoriRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorDebitoriRepository(ctx.tenantSlug);
   return prismaDebitoriRepository;
 }
@@ -21,7 +23,7 @@ export function debitoriDbFromUser(user: SessionUser) {
 }
 
 export function debitoriDb(ctx: DebitoreDbContext): typeof prisma.debitore {
-  if (!isConnectorProvider()) return prisma.debitore;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.debitore;
 
   const r = repo(ctx);
   return {
@@ -60,7 +62,7 @@ export function debitoriDb(ctx: DebitoreDbContext): typeof prisma.debitore {
 }
 
 export function debitoreRecapitoDb(_ctx: DebitoreDbContext): typeof prisma.debitoreRecapito {
-  if (!isConnectorProvider()) return prisma.debitoreRecapito;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.debitoreRecapito;
 
   const r = repo(_ctx);
   return {

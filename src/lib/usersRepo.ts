@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorUsersAdminRepository } from "@/lib/data/connector/ConnectorUsersAdminRepository";
+import { createNeonUsersAdminRepository } from "@/lib/neon/NeonUsersAdminRepository";
 import { prismaUsersRepository } from "@/lib/data/prisma/PrismaUsersRepository";
 import type { UserFilter, UserInclude, UserOrderBy, UsersOperationalRepository } from "@/lib/data/contracts/users";
 import { applySelect } from "@/lib/data/mapSqlRow";
@@ -31,6 +32,7 @@ async function connectorSlug(ctx: UserDbContext): Promise<string> {
 }
 
 function repo(slug: string): UsersOperationalRepository {
+  if (isNeonProvider()) return createNeonUsersAdminRepository(slug);
   if (isConnectorProvider()) return createConnectorUsersAdminRepository(slug);
   return prismaUsersRepository;
 }
@@ -40,7 +42,7 @@ export function usersDbFromUser(user: SessionUser) {
 }
 
 export function usersDb(ctx: UserDbContext): typeof prisma.user {
-  if (!isConnectorProvider()) return prisma.user;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.user;
 
   return {
     findMany: async (args: Prisma.UserFindManyArgs) => {

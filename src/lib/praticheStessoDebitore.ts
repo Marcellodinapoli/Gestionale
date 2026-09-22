@@ -142,7 +142,7 @@ function mapVoce(
   };
 }
 
-const CACHE_NS = "praticheCollegateV5";
+const CACHE_NS = "praticheCollegateV6";
 
 /** Carica F9/F10 in un passaggio (niente doppio find della pratica corrente). */
 export async function loadPraticheStessoDebitorePayload(

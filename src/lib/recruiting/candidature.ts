@@ -1,4 +1,4 @@
-/** Candidatura: cognome/nome in scheda. Nessun CV o payload esterno. */
+/** Candidatura: anagrafica + contatti Indeed Apply. Nessun CV o payload resume. */
 
 export const STATI_CANDIDATURA = [
   "RICEVUTA",
@@ -12,17 +12,19 @@ export const STATI_CANDIDATURA = [
 export type StatoCandidatura = (typeof STATI_CANDIDATURA)[number];
 
 export const STATO_CANDIDATURA_LABELS: Record<StatoCandidatura, string> = {
-  RICEVUTA: "Ricevuta",
+  RICEVUTA: "Candidatura",
   IN_VALUTAZIONE: "In valutazione",
   COLLOQUIO: "Colloquio",
-  PROVA: "Prova",
+  PROVA: "In prova",
   ARCHIVIATA: "Archiviata",
   ASSUNTA: "Assunto/a",
 };
 
-/** Transizioni ammesse. ASSUNTA e ARCHIVIATA sono terminali. */
+/** Transizioni ammesse. ASSUNTA e ARCHIVIATA sono terminali.
+ *  IN_VALUTAZIONE resta nello schema per dati legacy, ma non è più nel percorso attivo:
+ *  da Candidatura si va direttamente a Colloquio. */
 const TRANSIZIONI_CANDIDATURA: Record<StatoCandidatura, readonly StatoCandidatura[]> = {
-  RICEVUTA: ["IN_VALUTAZIONE", "ARCHIVIATA"],
+  RICEVUTA: ["COLLOQUIO", "ARCHIVIATA"],
   IN_VALUTAZIONE: ["COLLOQUIO", "ARCHIVIATA"],
   COLLOQUIO: ["PROVA", "ARCHIVIATA"],
   PROVA: ["ASSUNTA", "ARCHIVIATA"],
@@ -70,6 +72,10 @@ export type RecruitingCandidaturaRecord = {
   receiverCandidateId: string | null;
   cognome: string;
   nome: string;
+  email: string | null;
+  emailVerified: boolean | null;
+  phone: string | null;
+  coverLetter: string | null;
   stato: StatoCandidatura;
   source: string | null;
   receivedAt: Date;
@@ -77,6 +83,7 @@ export type RecruitingCandidaturaRecord = {
   lastSyncAt: Date | null;
 };
 
+/** Creazione manuale (UI). */
 export type RecruitingCandidaturaWriteInput = {
   offertaId: string;
   cognome: string;
@@ -84,7 +91,28 @@ export type RecruitingCandidaturaWriteInput = {
   source: string;
 };
 
+/**
+ * Upsert da ricevitore aziendale (futura sync Indeed Apply).
+ * Chiave logica: tenantId + externalApplicationId + offertaId.
+ */
+export type RecruitingCandidaturaReceiverUpsertInput = {
+  offertaId: string;
+  externalApplicationId: string;
+  receiverCandidateId?: string | null;
+  cognome: string;
+  nome: string;
+  email?: string | null;
+  emailVerified?: boolean | null;
+  phone?: string | null;
+  coverLetter?: string | null;
+  source?: string | null;
+};
+
 const ANAGRAFICA_MAX = 80;
+const EMAIL_MAX = 200;
+const PHONE_MAX = 40;
+const COVER_LETTER_MAX = 20000;
+const EXTERNAL_ID_MAX = 80;
 
 /** Cognome + nome da mostrare in scheda e elenchi. Sempre valorizzato. */
 export function anagraficaCandidato(input: {
@@ -153,6 +181,52 @@ function validaSource(value: string | null | undefined): string {
   return raw;
 }
 
+function validaExternalApplicationId(value: string | null | undefined): string {
+  const raw = String(value || "").trim();
+  if (!raw) throw new Error("Identificativo applicazione esterno obbligatorio");
+  if (raw.length > EXTERNAL_ID_MAX) {
+    throw new Error("Identificativo applicazione esterno troppo lungo");
+  }
+  return raw;
+}
+
+function validaReceiverCandidateId(value: string | null | undefined): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw.length > EXTERNAL_ID_MAX) {
+    throw new Error("Identificativo ricevitore troppo lungo");
+  }
+  return raw;
+}
+
+/** Per ingest Receiver/Indeed: email invalida → null (non blocca la candidatura). */
+function validaEmailReceiver(value: string | null | undefined): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw.length > EMAIL_MAX) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return null;
+  return raw;
+}
+
+function validaPhone(value: string | null | undefined): string | null {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return null;
+  if (raw.length > PHONE_MAX) throw new Error("Telefono troppo lungo");
+  return raw;
+}
+
+function validaCoverLetter(value: string | null | undefined): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw.length > COVER_LETTER_MAX) throw new Error("Lettera di presentazione troppo lunga");
+  return raw;
+}
+
+function validaEmailVerified(value: boolean | null | undefined): boolean | null {
+  if (value === true || value === false) return value;
+  return null;
+}
+
 export function validaCandidaturaInput(input: {
   offertaId?: string | null;
   cognome?: string | null;
@@ -169,6 +243,34 @@ export function validaCandidaturaInput(input: {
   };
 }
 
+export function validaCandidaturaReceiverUpsertInput(input: {
+  offertaId?: string | null;
+  externalApplicationId?: string | null;
+  receiverCandidateId?: string | null;
+  cognome?: string | null;
+  nome?: string | null;
+  email?: string | null;
+  emailVerified?: boolean | null;
+  phone?: string | null;
+  coverLetter?: string | null;
+  source?: string | null;
+}): RecruitingCandidaturaReceiverUpsertInput {
+  const offertaId = String(input.offertaId || "").trim();
+  if (!offertaId || offertaId.length > 80) throw new Error("Offerta non indicata");
+  return {
+    offertaId,
+    externalApplicationId: validaExternalApplicationId(input.externalApplicationId),
+    receiverCandidateId: validaReceiverCandidateId(input.receiverCandidateId),
+    cognome: validaAnagraficaCampo(input.cognome, "Cognome"),
+    nome: validaAnagraficaCampo(input.nome, "Nome"),
+    email: validaEmailReceiver(input.email),
+    emailVerified: validaEmailVerified(input.emailVerified),
+    phone: validaPhone(input.phone),
+    coverLetter: validaCoverLetter(input.coverLetter),
+    source: validaSource(input.source) || null,
+  };
+}
+
 export function toCandidaturaRecord(row: {
   id: string;
   tenantId: string;
@@ -177,6 +279,10 @@ export function toCandidaturaRecord(row: {
   receiverCandidateId: string | null;
   cognome?: string | null;
   nome?: string | null;
+  email?: string | null;
+  emailVerified?: boolean | null;
+  phone?: string | null;
+  coverLetter?: string | null;
   stato: string;
   source: string | null;
   receivedAt: Date;
@@ -192,6 +298,14 @@ export function toCandidaturaRecord(row: {
     receiverCandidateId: row.receiverCandidateId || null,
     cognome: String(row.cognome || "").trim(),
     nome: String(row.nome || "").trim(),
+    email: row.email != null && String(row.email).trim() ? String(row.email).trim() : null,
+    emailVerified:
+      row.emailVerified === true || row.emailVerified === false ? row.emailVerified : null,
+    phone: row.phone != null && String(row.phone).trim() ? String(row.phone).trim() : null,
+    coverLetter:
+      row.coverLetter != null && String(row.coverLetter).trim()
+        ? String(row.coverLetter).trim()
+        : null,
     stato: isStatoCandidatura(statoRaw) ? statoRaw : "RICEVUTA",
     source: row.source || null,
     receivedAt: row.receivedAt,

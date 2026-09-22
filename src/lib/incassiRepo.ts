@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorIncassiRepository } from "@/lib/data/connector/ConnectorIncassiRepository";
+import { createNeonIncassiRepository } from "@/lib/neon/NeonIncassiRepository";
 import { prismaIncassiRepository } from "@/lib/data/prisma/PrismaIncassiRepository";
 import type {
   AggiornaIncassoInput,
@@ -18,6 +19,7 @@ import type { SessionUser } from "@/lib/permissions";
 export type IncassoDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: IncassoDbContext): IncassiRepository {
+  if (isNeonProvider()) return createNeonIncassiRepository(ctx.tenantSlug);
   if (isConnectorProvider()) return createConnectorIncassiRepository(ctx.tenantSlug);
   return prismaIncassiRepository;
 }
@@ -27,7 +29,7 @@ export function incassiDbFromUser(user: SessionUser) {
 }
 
 export function incassiDb(ctx: IncassoDbContext): typeof prisma.incasso {
-  if (!isConnectorProvider()) return prisma.incasso;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.incasso;
 
   const r = repo(ctx);
   return {

@@ -115,13 +115,13 @@ export function isManutenzione(user: { role: string } | null | undefined) {
   return user?.role === "MANUTENZIONE";
 }
 
-/** Tutti tranne admin (e formazione-only) devono avere una postazione. */
+/** Tutti devono avere una postazione (tranne account solo-formazione). */
 export function requiresPostazione(
   user: { role: Role; formazioneOnly?: boolean } | null | undefined
 ) {
   if (!user) return false;
   if (user.formazioneOnly) return false;
-  return user.role !== "ADMIN";
+  return true;
 }
 
 /** Solo l'operatore deve avere l'interno configurato prima di chiamare. */
@@ -152,9 +152,14 @@ export function canClearCodiceScarico(role: Role | string | null | undefined) {
   return role !== "SUPERVISOR" && role !== "OPERATOR";
 }
 
-/** Back office, amministrazione e legal possono fissare la postazione. */
+/** Admin, back office, amministrazione e legal possono fissare la postazione. */
 export function canImpostarePostazioneFissa(role: Role) {
-  return role === "BACK_OFFICE" || role === "AMMINISTRAZIONE" || role === "LEGAL";
+  return (
+    role === "ADMIN" ||
+    role === "BACK_OFFICE" ||
+    role === "AMMINISTRAZIONE" ||
+    role === "LEGAL"
+  );
 }
 
 /** True se l'utente deve ancora passare dalla schermata di selezione postazione. */
@@ -218,6 +223,11 @@ export function can(
     return FORMAZIONE_ONLY_PERMISSIONS.includes(permission);
   }
   return MAP[permission].includes(user.role);
+}
+
+/** Ruoli a cui è assegnato un permesso (es. elenco intervistatori recruiting). */
+export function rolesWithPermission(permission: Permission): readonly Role[] {
+  return MAP[permission];
 }
 
 export function assertCan(user: { role: Role } | null | undefined, permission: Permission) {

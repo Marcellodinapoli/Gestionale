@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { GiudizialeElencoTable } from "@/components/giudiziale/GiudizialeElencoTable";
 import {
@@ -7,7 +7,7 @@ import {
 } from "@/lib/giudiziale/praticaGiudizialeRepo";
 
 export default async function LegalValutazionePage() {
-  const user = await requirePermission("legal:view");
+  const user = await requireNavPage("legal");
   const items = (
     await listPraticheGiudiziali(user, {
       stati: ["IN_ATTESA_VALUTAZIONE_LEGALE"],

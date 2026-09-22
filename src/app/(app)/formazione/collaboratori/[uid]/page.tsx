@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requirePermission } from "@/lib/guard";
+import { requireNavPage } from "@/lib/guard";
 import { CollaboratorProgressView } from "@/components/formazione/supervisor/CollaboratorProgressView";
 
 export default async function CollaboratorProgressPage({
@@ -7,7 +7,7 @@ export default async function CollaboratorProgressPage({
 }: {
   params: Promise<{ uid: string }>;
 }) {
-  const user = await requirePermission("formazione:view");
+  const user = await requireNavPage("formazione");
   if (user.role !== "SUPERVISOR" && user.role !== "ADMIN") {
     redirect("/formazione/progressi");
   }

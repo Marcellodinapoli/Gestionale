@@ -7,6 +7,7 @@ import {
   type RecruitingCandidaturaRecord,
 } from "@/lib/recruiting/candidature";
 import {
+  encodeProvaEsitoNote,
   toAttivitaRecord,
   type CanaleContatto,
   type EsitoContatto,
@@ -156,6 +157,16 @@ export async function createContattoAttivita(
 ): Promise<RecruitingAttivitaRecord> {
   const candidatura = await assertCandidaturaDelTenant(tenantId, input.candidaturaId);
   assertCandidaturaOperabile(candidatura.stato);
+  if (candidatura.stato === "ASSUNTA" || candidatura.stato === "ARCHIVIATA") {
+    throw new Error("Candidatura non modificabile");
+  }
+  if (
+    candidatura.stato !== "RICEVUTA" &&
+    candidatura.stato !== "IN_VALUTAZIONE" &&
+    candidatura.stato !== "COLLOQUIO"
+  ) {
+    throw new Error("Il contatto si registra solo in Candidatura o Colloquio");
+  }
   return insertAttivita({
     tenantId: candidatura.tenantId,
     candidaturaId: candidatura.id,
@@ -190,21 +201,234 @@ export async function createNotaAttivita(
 export async function createProvaProgrammata(
   tenantId: string,
   createdById: string,
-  input: { candidaturaId: string; scheduledAt: Date; note: string }
+  input: {
+    candidaturaId: string;
+    scheduledAt: Date;
+    note: string;
+    modalita?: string;
+    intervistatoreLabel?: string;
+  }
 ): Promise<RecruitingAttivitaRecord> {
   const candidatura = await assertCandidaturaDelTenant(tenantId, input.candidaturaId);
   assertCandidaturaOperabile(candidatura.stato);
   if (candidatura.stato !== "COLLOQUIO") {
     throw new Error("Prova non programmabile in questo stato");
   }
+  const modalitaLabels: Record<string, string> = {
+    PRESENZA: "In presenza",
+    VIDEO: "Video",
+    TELEFONO: "Telefono",
+  };
+  const meta: string[] = [];
+  if (input.modalita) {
+    meta.push(`Modalità: ${modalitaLabels[input.modalita] || input.modalita}`);
+  }
+  if (input.intervistatoreLabel) {
+    meta.push(`Affiancatore: ${input.intervistatoreLabel}`);
+  }
+  const note = [meta.join(" · "), input.note].filter(Boolean).join("\n").trim();
   return insertAttivita({
     tenantId: candidatura.tenantId,
     candidaturaId: candidatura.id,
     tipo: "PROVA_PROGRAMMATA",
     occurredAt: input.scheduledAt,
     createdById,
-    note: input.note,
+    note,
     statoA: candidatura.stato,
+  });
+}
+
+function encodeProvaProgrammataNote(input: {
+  modalita?: string;
+  intervistatoreLabel?: string;
+  note: string;
+}): string {
+  const modalitaLabels: Record<string, string> = {
+    PRESENZA: "In presenza",
+    VIDEO: "Video",
+    TELEFONO: "Telefono",
+  };
+  const meta: string[] = [];
+  if (input.modalita) {
+    meta.push(`Modalità: ${modalitaLabels[input.modalita] || input.modalita}`);
+  }
+  if (input.intervistatoreLabel) {
+    meta.push(`Affiancatore: ${input.intervistatoreLabel}`);
+  }
+  return [meta.join(" · "), input.note].filter(Boolean).join("\n").trim();
+}
+
+export async function updateProvaProgrammata(
+  tenantId: string,
+  createdById: string,
+  input: {
+    id: string;
+    candidaturaId: string;
+    scheduledAt: Date;
+    note: string;
+    modalita?: string;
+    intervistatoreLabel?: string;
+  }
+): Promise<RecruitingAttivitaRecord> {
+  void createdById;
+  const candidatura = await assertCandidaturaDelTenant(tenantId, input.candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+  if (candidatura.stato !== "PROVA" && candidatura.stato !== "COLLOQUIO") {
+    throw new Error("La prova si modifica solo in fase Prova");
+  }
+  const list = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
+  const current = list.find((a) => a.id === input.id && a.tipo === "PROVA_PROGRAMMATA");
+  if (!current) throw new Error("Prova non trovata");
+  const note = encodeProvaProgrammataNote({
+    modalita: input.modalita,
+    intervistatoreLabel: input.intervistatoreLabel,
+    note: input.note,
+  });
+  if (!recruitingUsesSql()) {
+    const result = await prisma.recruitingAttivita.updateMany({
+      where: {
+        id: input.id,
+        tenantId: candidatura.tenantId,
+        candidaturaId: candidatura.id,
+        tipo: "PROVA_PROGRAMMATA",
+      },
+      data: { occurredAt: input.scheduledAt, note },
+    });
+    if (result.count !== 1) throw new Error("Prova non trovata");
+    const row = await prisma.recruitingAttivita.findFirst({
+      where: { id: input.id, tenantId: candidatura.tenantId },
+      include: { createdBy: { select: { name: true, cognome: true } } },
+    });
+    if (!row) throw new Error("Prova non aggiornata");
+    return toAttivitaRecord(row);
+  }
+  const pool = await recruitingPool();
+  const upd = await pool
+    .request()
+    .input("id", sql.NVarChar(64), input.id)
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .input("occurredAt", sql.DateTime2, input.scheduledAt)
+    .input("note", sql.NVarChar(2000), note)
+    .query(`
+      UPDATE dbo.RecruitingAttivita
+      SET OccurredAt = @occurredAt, Note = @note
+      WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Tipo = N'PROVA_PROGRAMMATA'
+    `);
+  if (upd.rowsAffected[0] !== 1) throw new Error("Prova non trovata");
+  const refreshed = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
+  const updated = refreshed.find((a) => a.id === input.id);
+  if (!updated) throw new Error("Prova non aggiornata");
+  return updated;
+}
+
+export async function salvaEsitoProva(
+  tenantId: string,
+  createdById: string,
+  input: {
+    provaId: string;
+    esito: string;
+    parere: string;
+    valutazioneStelle: number;
+  }
+): Promise<RecruitingAttivitaRecord> {
+  let candidaturaId = "";
+  let provaOccurredAt = new Date();
+
+  if (!recruitingUsesSql()) {
+    const prova = await prisma.recruitingAttivita.findFirst({
+      where: {
+        id: input.provaId,
+        tenantId: tenantIdOrThrow(tenantId),
+        tipo: "PROVA_PROGRAMMATA",
+      },
+    });
+    if (!prova) throw new Error("Prova non trovata");
+    candidaturaId = prova.candidaturaId;
+    provaOccurredAt = prova.occurredAt;
+  } else {
+    const pool = await recruitingPool();
+    const res = await pool
+      .request()
+      .input("id", sql.NVarChar(64), input.provaId)
+      .input("tenantId", sql.NVarChar(64), tenantIdOrThrow(tenantId))
+      .query(`
+        SELECT CandidaturaId, OccurredAt
+        FROM dbo.RecruitingAttivita
+        WHERE Id = @id AND TenantId = @tenantId AND Tipo = N'PROVA_PROGRAMMATA'
+      `);
+    const row = res.recordset[0] as { CandidaturaId?: string; OccurredAt?: Date } | undefined;
+    if (!row?.CandidaturaId) throw new Error("Prova non trovata");
+    candidaturaId = String(row.CandidaturaId);
+    provaOccurredAt = row.OccurredAt || new Date();
+  }
+
+  const candidatura = await assertCandidaturaDelTenant(tenantId, candidaturaId);
+  assertCandidaturaOperabile(candidatura.stato);
+  if (candidatura.stato !== "PROVA") {
+    throw new Error("L’esito prova si registra in fase Prova");
+  }
+
+  const note = encodeProvaEsitoNote({
+    valutazioneStelle: input.valutazioneStelle,
+    parere: input.parere,
+  });
+
+  const attivita = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
+  const existing = attivita.find(
+    (a) => a.tipo === "PROVA_ESITO" && a.colloquioId === input.provaId
+  );
+
+  if (existing) {
+    if (!recruitingUsesSql()) {
+      await prisma.recruitingAttivita.updateMany({
+        where: {
+          id: existing.id,
+          tenantId: candidatura.tenantId,
+          candidaturaId: candidatura.id,
+          tipo: "PROVA_ESITO",
+        },
+        data: { esito: input.esito, note },
+      });
+      const row = await prisma.recruitingAttivita.findFirst({
+        where: { id: existing.id, tenantId: candidatura.tenantId },
+        include: { createdBy: { select: { name: true, cognome: true } } },
+      });
+      if (!row) throw new Error("Esito prova non aggiornato");
+      return toAttivitaRecord(row);
+    }
+    const pool = await recruitingPool();
+    await pool
+      .request()
+      .input("id", sql.NVarChar(64), existing.id)
+      .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+      .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+      .input("esito", sql.NVarChar(30), input.esito)
+      .input("note", sql.NVarChar(2000), note)
+      .query(`
+        UPDATE dbo.RecruitingAttivita
+        SET Esito = @esito, Note = @note
+        WHERE Id = @id AND TenantId = @tenantId AND CandidaturaId = @candidaturaId AND Tipo = N'PROVA_ESITO'
+      `);
+    const refreshed = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
+    const updated = refreshed.find((a) => a.id === existing.id);
+    if (!updated) throw new Error("Esito prova non aggiornato");
+    return updated;
+  }
+
+  const occurredAt = new Date(
+    Math.max(Date.now(), new Date(provaOccurredAt).getTime() + 1000)
+  );
+  return insertAttivita({
+    tenantId: candidatura.tenantId,
+    candidaturaId: candidatura.id,
+    tipo: "PROVA_ESITO",
+    occurredAt,
+    createdById,
+    note,
+    esito: input.esito,
+    statoA: "PROVA",
+    colloquioId: input.provaId,
   });
 }
 
@@ -223,8 +447,12 @@ export async function updateContattoAttivita(
   void createdById;
   const candidatura = await assertCandidaturaDelTenant(tenantId, input.candidaturaId);
   assertCandidaturaOperabile(candidatura.stato);
-  if (candidatura.stato === "RICEVUTA") {
-    throw new Error("In Ricevuta registra un nuovo contatto");
+  if (
+    candidatura.stato !== "RICEVUTA" &&
+    candidatura.stato !== "IN_VALUTAZIONE" &&
+    candidatura.stato !== "COLLOQUIO"
+  ) {
+    throw new Error("Il contatto si modifica solo in Candidatura o Colloquio");
   }
   const list = await listAttivitaByCandidatura(candidatura.tenantId, candidatura.id);
   const current = list.find((a) => a.id === input.id && a.tipo === "CONTATTO");

@@ -3,7 +3,8 @@ import { getDatabaseProvider } from "@/lib/data/config";
 import {
   getTenantsRepository,
   getUsersRepository,
-  isConnectorProvider,
+  getPostazioniRepository,
+  isSqlBackendProvider,
 } from "@/lib/data/factory";
 import { postazioniDb } from "@/lib/postazioniRepo";
 import { prisma } from "@/lib/prisma";
@@ -44,7 +45,7 @@ export type AuthSessionUser = AuthUser & {
 };
 
 export async function findTenantBySlug(slug: string): Promise<AuthTenant | null> {
-  if (isConnectorProvider()) {
+  if (isSqlBackendProvider()) {
     const tenant = await getTenantsRepository().getBySlug(slug);
     if (!tenant) return null;
     return tenant;
@@ -60,7 +61,7 @@ export async function findTenantBySlug(slug: string): Promise<AuthTenant | null>
 }
 
 export async function findTenantById(id: string): Promise<AuthTenant | null> {
-  if (isConnectorProvider()) {
+  if (isSqlBackendProvider()) {
     const tenant = await getTenantsRepository().getById(id);
     if (!tenant) return null;
     return tenant;
@@ -78,7 +79,7 @@ export async function findTenantById(id: string): Promise<AuthTenant | null> {
 export async function findUserAuditContext(
   userId: string
 ): Promise<{ tenantId: string; tenantSlug: string } | null> {
-  if (isConnectorProvider()) {
+  if (isSqlBackendProvider()) {
     return getUsersRepository().getAuditContext(userId);
   }
   const user = await prisma.user.findUnique({
@@ -93,7 +94,7 @@ export async function findUserByEmail(
   tenantId: string,
   email: string
 ): Promise<AuthUser | null> {
-  if (isConnectorProvider()) {
+  if (isSqlBackendProvider()) {
     const user = await getUsersRepository().findByEmail(tenantId, email);
     if (!user || !user.passwordHash) return null;
     return {
@@ -144,6 +145,9 @@ export async function findActivePostazione(
   postazioneId: string,
   tenantSlug?: string
 ) {
+  if (isSqlBackendProvider()) {
+    return getPostazioniRepository().findActive(tenantId, postazioneId);
+  }
   return postazioniDb({ tenantId, tenantSlug: tenantSlug ?? tenantId }).findFirst({
     where: { id: postazioneId, tenantId, active: true },
   });
@@ -157,7 +161,7 @@ export async function updateUserLogin(
     postazioneFissa?: boolean;
   }
 ) {
-  if (isConnectorProvider()) {
+  if (isSqlBackendProvider()) {
     await getUsersRepository().updateLogin(userId, data);
     return;
   }
@@ -175,7 +179,7 @@ export async function loadSessionUser(
   userId: string,
   tenantId?: string
 ): Promise<AuthSessionUser | null> {
-  if (isConnectorProvider()) {
+  if (isSqlBackendProvider()) {
     if (!tenantId) return null;
     const user = await getUsersRepository().getSession(tenantId, userId);
     if (!user || !user.active || !user.tenantActive) return null;
@@ -244,6 +248,6 @@ export async function loadSessionUser(
 export function describeOperationalDataAccess() {
   return {
     provider: getDatabaseProvider(),
-    authViaConnector: isConnectorProvider(),
+    authViaSqlBackend: isSqlBackendProvider(),
   };
 }

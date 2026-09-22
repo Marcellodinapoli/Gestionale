@@ -1,17 +1,14 @@
 import "server-only";
 import type { HomeKpiBundle, HomeKpiContext } from "@/lib/data/contracts/dashboard";
-import { isConnectorProvider } from "@/lib/data/factory";
-import { createConnectorDashboardRepository } from "@/lib/data/connector/ConnectorDashboardRepository";
+import { getDashboardRepository, isSqlBackendProvider } from "@/lib/data/factory";
 import { loadFirestoreHomeKpi } from "@/lib/homeKpi/firestoreHomeKpi";
 
 export async function loadHomeKpi(
   ctx: HomeKpiContext,
   firestoreLoader: () => Promise<HomeKpiBundle>
 ): Promise<HomeKpiBundle> {
-  if (!isConnectorProvider()) return firestoreLoader();
-
-  const repo = createConnectorDashboardRepository();
-  return repo.getHomeKpi(ctx);
+  if (!isSqlBackendProvider()) return firestoreLoader();
+  return getDashboardRepository().getHomeKpi(ctx);
 }
 
 export async function loadHomeKpiAuto(

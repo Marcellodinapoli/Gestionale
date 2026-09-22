@@ -532,8 +532,11 @@ function NavDropdownMenu({
 
 const NAV_GAP = 2;
 const OVERFLOW_MENU_LABEL = "Menu";
-const OVERFLOW_MENU_BTN_WIDTH = 80;
-const GESTIONE_BTN_WIDTH = 92;
+/** Riserva per bottone Menu/Gestione nello stato attivo (bianco + semibold), più margine. */
+const OVERFLOW_MENU_BTN_WIDTH = 118;
+const GESTIONE_BTN_WIDTH = 118;
+/** Path fittizio: misura le voci sempre “inactive” così il fit non cambia cambiando pagina. */
+const NAV_MEASURE_PATH = "__nav_measure__";
 
 function useLgNavLabels() {
   const [lg, setLg] = useState(false);
@@ -602,11 +605,12 @@ function ResponsiveMainNav({
     setMergedOverflowMenu(true);
   }, [links, adminLinks.length]);
 
+  // Solo resize / label lg: NON ricalcolare al cambio pathname (evita Dialer che entra/esce dal Menu).
   useEffect(() => {
     recalculate();
     const id = requestAnimationFrame(() => recalculate());
     return () => cancelAnimationFrame(id);
-  }, [recalculate, pathname, lgLabels]);
+  }, [recalculate, lgLabels]);
 
   useEffect(() => {
     const navEl = navRef.current;
@@ -655,15 +659,14 @@ function ResponsiveMainNav({
           <NavItem
             key={link.href}
             link={link}
-            pathname={pathname}
+            pathname={NAV_MEASURE_PATH}
             forceLabel={lgLabels}
-            {...navBackProps(link)}
           />
         ))}
       </div>
       <div
         ref={navRef}
-        className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5"
+        className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden"
       >
         {visibleLinks.map((link) => (
           <NavItem

@@ -113,7 +113,7 @@ export function codiceScaricoPratica(stato: string, codiceScarico?: string | nul
 }
 
 export function praticaAffidato(capitale: number, interessi: number, spese: number) {
-  return (capitale || 0) + (interessi || 0) + (spese || 0);
+  return (Number(capitale) || 0) + (Number(interessi) || 0) + (Number(spese) || 0);
 }
 
 export function pctSuAffidato(importo: number, affidato: number) {

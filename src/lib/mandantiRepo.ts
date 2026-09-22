@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorMandantiRepository } from "@/lib/data/connector/ConnectorMandantiRepository";
+import { createNeonMandantiRepository } from "@/lib/neon/NeonMandantiRepository";
 import { prismaMandantiRepository } from "@/lib/data/prisma/PrismaMandantiRepository";
 import type { MandanteFilter, MandanteListRequest, MandantiRepository } from "@/lib/data/contracts/mandanti";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -17,6 +18,7 @@ async function connectorSlug(ctx: MandanteDbContext): Promise<string> {
 }
 
 function repo(slug: string): MandantiRepository {
+  if (isNeonProvider()) return createNeonMandantiRepository(slug);
   if (isConnectorProvider()) return createConnectorMandantiRepository(slug);
   return prismaMandantiRepository;
 }
@@ -26,7 +28,7 @@ export function mandantiDbFromUser(user: SessionUser) {
 }
 
 export function mandantiDb(ctx: MandanteDbContext): typeof prisma.mandante {
-  if (!isConnectorProvider()) return prisma.mandante;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.mandante;
 
   return {
     findMany: async (args: Prisma.MandanteFindManyArgs) => {

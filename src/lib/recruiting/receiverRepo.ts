@@ -6,6 +6,7 @@ import {
   type RecruitingReceiverConfigRecord,
   type RecruitingReceiverConfigWriteInput,
 } from "@/lib/recruiting/receiver";
+import { propagateReceiverSourceName } from "@/lib/recruiting/candidatureRepo";
 import {
   mapReceiverRow,
   newRecruitingId,
@@ -55,16 +56,16 @@ export async function upsertReceiverConfig(
   };
   if (!recruitingUsesSql()) {
     if (!current) {
-      const created = await prisma.recruitingReceiverConfig.create({
+      await prisma.recruitingReceiverConfig.create({
         data: { tenantId: tid, ...data },
       });
-      return toReceiverConfigRecord(created);
+    } else {
+      const result = await prisma.recruitingReceiverConfig.updateMany({
+        where: { id: current.id, tenantId: tid },
+        data,
+      });
+      if (result.count !== 1) throw new Error("Configurazione non trovata");
     }
-    const result = await prisma.recruitingReceiverConfig.updateMany({
-      where: { id: current.id, tenantId: tid },
-      data,
-    });
-    if (result.count !== 1) throw new Error("Configurazione non trovata");
   } else {
     const pool = await recruitingPool();
     if (!current) {
@@ -97,6 +98,10 @@ export async function upsertReceiverConfig(
   }
   const updated = await getReceiverConfig(tid);
   if (!updated) throw new Error("Configurazione non trovata");
+  const nextLabel = String(updated.sourceName || "").trim();
+  if (nextLabel) {
+    await propagateReceiverSourceName(tid, nextLabel);
+  }
   return updated;
 }
 

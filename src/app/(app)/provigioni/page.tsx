@@ -537,7 +537,7 @@ export default async function ProvigioniPage({
         <RicaviAltreSediNascostiBanner sedeNomePropria={user.sedeNome} />
       ) : null}
 
-      {avvisoPerimetri ? (
+      {avvisoPerimetri && user.role !== "OPERATOR" ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           Nessun perimetro configurato per il gruppo. Configura mandante e perimetri in{" "}
           <strong>Affidi → Modifica gruppo</strong> per filtrare le provvigioni sui perimetri

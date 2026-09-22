@@ -64,7 +64,8 @@ export function RecruitingReceiverClient({
             Configurazione ricevitore
           </h2>
           <p className="mt-0.5 text-xs text-[var(--muted)]">
-            URL HTTPS del ricevitore aziendale. Nessun CV o dato candidato.
+            URL HTTPS del ricevitore dell’azienda (tenant). Indeed arriva tramite
+            questo bridge — un ricevitore/config per ogni azienda.
           </p>
         </div>
         <span
