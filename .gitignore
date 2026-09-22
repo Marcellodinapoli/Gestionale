@@ -56,3 +56,6 @@ serviceAccountKey.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+tools/cloudflared.exe
+
