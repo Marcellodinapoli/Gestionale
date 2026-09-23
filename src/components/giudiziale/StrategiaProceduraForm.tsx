@@ -24,6 +24,12 @@ import {
   type SpesaGiudizialeVoce,
 } from "@/lib/giudiziale/speseGiudiziali";
 import { SpeseGiudizialiEditor } from "@/components/giudiziale/SpeseGiudizialiEditor";
+import { ImpegniLegaliEditor } from "@/components/giudiziale/ImpegniLegaliEditor";
+import {
+  parseAgendaScadenze,
+  serializeAgendaScadenze,
+  type ImpegnoLegaleExtra,
+} from "@/lib/giudiziale/impegniLegali";
 
 const fieldCls =
   "h-9 w-full rounded-lg border border-[#7d94a8] bg-white px-2 text-sm text-[var(--navy)]";
@@ -72,7 +78,12 @@ export function StrategiaProceduraForm({
   const [attivita, setAttivita] = useState<AttivitaProceduraMap>(() =>
     parseAttivitaProceduraJson(initial?.attivitaProceduraJson)
   );
-  const [agenda, setAgenda] = useState(initial?.agendaScadenze || "");
+  const [impegniAgenda, setImpegniAgenda] = useState<ImpegnoLegaleExtra[]>(
+    () => parseAgendaScadenze(initial?.agendaScadenze).impegni
+  );
+  const [noteAgenda, setNoteAgenda] = useState(
+    () => parseAgendaScadenze(initial?.agendaScadenze).note
+  );
   const [documenti, setDocumenti] = useState(initial?.documentiDaProdurre || "");
   const [statoProcedura, setStatoProcedura] = useState(
     initial?.statoProcedura || "DA_AVVIARE"
@@ -117,7 +128,7 @@ export function StrategiaProceduraForm({
       proceduraDaSeguire: procedura,
       professionistaIncaricato: professionista,
       attivitaProceduraJson: JSON.stringify(attivita),
-      agendaScadenze: agenda,
+      agendaScadenze: serializeAgendaScadenze(impegniAgenda, noteAgenda),
       documentiDaProdurre: documenti,
       statoProcedura: statoProcedura || null,
       eventiStorico: eventi,
@@ -136,7 +147,8 @@ export function StrategiaProceduraForm({
       procedura,
       professionista,
       attivita,
-      agenda,
+      impegniAgenda,
+      noteAgenda,
       documenti,
       statoProcedura,
       eventi,
@@ -329,17 +341,15 @@ export function StrategiaProceduraForm({
             </select>
           </div>
         </div>
-        <div>
-          <label className={labelCls}>Agenda / scadenze</label>
-          <textarea
-            className={areaCls}
-            rows={3}
-            value={agenda}
-            disabled={disabled}
-            onChange={(e) => setAgenda(e.target.value)}
-            placeholder="Scadenze processuali e appuntamenti"
-          />
-        </div>
+        <ImpegniLegaliEditor
+          impegni={impegniAgenda}
+          note={noteAgenda}
+          disabled={disabled}
+          onChange={({ impegni, note }) => {
+            setImpegniAgenda(impegni);
+            setNoteAgenda(note);
+          }}
+        />
         <div>
           <label className={labelCls}>Documenti da produrre</label>
           <textarea

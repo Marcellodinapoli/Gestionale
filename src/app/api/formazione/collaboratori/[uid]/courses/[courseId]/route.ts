@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/guard";
+import { requireApiModule, requireApiUser } from "@/lib/guard";
 import { assertCan } from "@/lib/permissions";
-import { assertSupervisorCanViewFirebaseUid } from "@/lib/formazione/collaboratorAccess";
+import { assertCanViewCollaboratorCourse } from "@/lib/formazione/collaboratorAccess";
 import { loadCollaboratorCourseDetail } from "@/lib/formazione/collaboratorProgress";
 import { getFirebaseFirestore } from "@/lib/firebase/admin";
 
@@ -14,17 +14,16 @@ export async function GET(
 
   try {
     assertCan(userOrRes, "formazione:view");
-    if (userOrRes.role !== "SUPERVISOR" && userOrRes.role !== "ADMIN") {
-      return NextResponse.json({ error: "Permesso negato" }, { status: 403 });
-    }
   } catch {
     return NextResponse.json({ error: "Permesso negato" }, { status: 403 });
   }
+  const moduleDenied = await requireApiModule(userOrRes, "formazione");
+  if (moduleDenied) return moduleDenied;
 
   const { uid, courseId } = await params;
 
   try {
-    await assertSupervisorCanViewFirebaseUid(userOrRes, uid);
+    await assertCanViewCollaboratorCourse(userOrRes, uid);
     const course = await loadCollaboratorCourseDetail(
       getFirebaseFirestore(),
       uid,

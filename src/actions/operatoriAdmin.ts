@@ -350,6 +350,8 @@ export async function resetPasswordAmministrazioneAction(formData: FormData) {
     entityId: targetId,
     dettaglio: `reset password di ${target.name}`,
   });
+  revalidatePath("/operatori");
+  revalidatePath("/utenti");
 }
 
 export async function updateSedeUtenteAction(formData: FormData) {

@@ -1,6 +1,6 @@
 import { LegalPhaseNav, type LegalPhaseKey } from "@/components/giudiziale/LegalPhaseNav";
 
-export type GiudizialeTabKey = "avvio" | "valutazione" | "strategia";
+export type GiudizialeTabKey = "avvio" | "valutazione" | "strategia" | "agenda";
 
 /** @deprecated hint legacy — la navigazione non blocca più. */
 export function tabReachable(

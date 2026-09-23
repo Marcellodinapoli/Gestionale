@@ -2,8 +2,10 @@ import { configurazioneDbFromUser } from "@/lib/configurazioneRepo";
 import { requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { ConfigurazioneEditor } from "@/components/configurazione/ConfigurazioneEditor";
+import { TenantModulesEditor } from "@/components/configurazione/TenantModulesEditor";
 import { SECRET_CONFIG_KEYS } from "@/lib/configSecrets";
 import { writeAudit } from "@/lib/domain";
+import { getTenantPlatformConfig } from "@/lib/platform/tenantProfile";
 
 export default async function ConfigurazionePage() {
   const user = await requireNavPage("configurazione");
@@ -34,6 +36,7 @@ export default async function ConfigurazionePage() {
   for (const r of rows) {
     config[r.chiave] = r.valore;
   }
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
 
   return (
     <div className="space-y-4 pb-8">
@@ -41,6 +44,7 @@ export default async function ConfigurazionePage() {
         title="Configurazione sistema"
         subtitle="Solo parametri operativi — password e chiavi restano fuori dal gestionale"
       />
+      <TenantModulesEditor enabledModules={platform.enabledModules} />
       <ConfigurazioneEditor config={config} secretsPurged={purged.count} />
     </div>
   );

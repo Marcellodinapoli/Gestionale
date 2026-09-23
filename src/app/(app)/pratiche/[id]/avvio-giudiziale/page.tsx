@@ -9,6 +9,8 @@ import { getPraticaGiudizialeByPraticaId } from "@/lib/giudiziale/praticaGiudizi
 import { PraticaContabileShell } from "@/components/pratica/PraticaContabileShell";
 import { AvvioGiudizialeForm } from "@/components/giudiziale/AvvioGiudizialeForm";
 import { GiudizialeNavTabs } from "@/components/giudiziale/GiudizialeNavTabs";
+import { LegalAgendaUpcoming } from "@/components/giudiziale/LegalAgendaUpcoming";
+import { expandImpegniLegali } from "@/lib/agenda/scadenzeGiudiziali";
 import { PageHeader } from "@/components/ui";
 import { isGiudizialePrevistoSulLotto } from "@/lib/conferimentoLegale";
 
@@ -51,6 +53,15 @@ export default async function AvvioGiudizialePage({
   const debitoreNome =
     `${pratica.debitore.cognome} ${pratica.debitore.nome}`.trim() || "—";
   const statoLabel = STATO_LABELS[pratica.stato] || pratica.stato;
+  const impegniLegali = expandImpegniLegali({
+    praticaId: pratica.id,
+    numero: pratica.numero,
+    debitore: pratica.debitore,
+    dataAffidamentoGiudiziale: giudiziale?.dataAffidamentoGiudiziale,
+    attivitaProceduraJson: giudiziale?.attivitaProceduraJson,
+    agendaScadenze: giudiziale?.agendaScadenze,
+    dataEsito: giudiziale?.dataEsito,
+  });
 
   const toDateInput = (v: Date | string | null | undefined) => {
     if (!v) return "";
@@ -74,6 +85,11 @@ export default async function AvvioGiudizialePage({
           <PageHeader
             title="Avvio attività giudiziale"
             subtitle={`Stessa pratica ${pratica.numero} · passaggio dalla gestione stragiudiziale`}
+          />
+
+          <LegalAgendaUpcoming
+            voci={impegniLegali}
+            title="Impegni di questa pratica"
           />
 
           <section className="space-y-2 rounded-lg border border-[var(--line)] bg-[#eef4f8] p-3">

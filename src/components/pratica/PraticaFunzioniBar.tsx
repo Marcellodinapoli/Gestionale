@@ -42,7 +42,7 @@ import {
   type PraticheStessoDebitoreClientPayload,
 } from "@/lib/praticheStessoDebitoreClient";
 import { useEscBack } from "@/lib/useEscBack";
-import { canShowIncassoPopup, can, type Role } from "@/lib/permissions";
+import { canShowIncassoPopup } from "@/lib/permissions";
 import { APRI_NOTA_F5_EVENT, NOTA_BOZZA_EVENT, type NotaBozzaDetail } from "@/lib/notaBozza";
 import { RegistrazioneTelefonataControl } from "@/components/pratica/RegistrazioneTelefonataControl";
 import type { RecordingMode } from "@/lib/recordingMode";
@@ -313,9 +313,7 @@ export function PraticaFunzioniBar({
     Boolean(corrente && !isPraticaF9Aperta(corrente));
   const azioniBloccate = praticaLocked || !canEditNotes;
   const showIncassoPopup = canShowIncassoPopup(currentUserRole);
-  const showAvviaGiudiziale =
-    canAvviaGiudiziale ||
-    (!!currentUserRole && can({ role: currentUserRole as Role }, "legal:view"));
+  const showAvviaGiudiziale = canAvviaGiudiziale;
 
   useEscBack(`/pratiche/${praticaId}`, Boolean(attivo) && !popup);
 

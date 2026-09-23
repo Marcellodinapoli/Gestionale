@@ -1,14 +1,26 @@
 import Link from "next/link";
-import { ClipboardCheck, LayoutDashboard, PlayCircle, Waypoints } from "lucide-react";
+import {
+  CalendarDays,
+  ClipboardCheck,
+  LayoutDashboard,
+  PlayCircle,
+  Waypoints,
+} from "lucide-react";
 import { SectionTabNav, sectionTabClass } from "@/components/ui/SectionTabNav";
 
-export type LegalPhaseKey = "panoramica" | "avvio" | "valutazione" | "strategia";
+export type LegalPhaseKey =
+  | "panoramica"
+  | "avvio"
+  | "valutazione"
+  | "strategia"
+  | "agenda";
 
 const LABELS: Record<LegalPhaseKey, string> = {
   panoramica: "Panoramica",
   avvio: "Avvio",
   valutazione: "Valutazione",
   strategia: "Strategia",
+  agenda: "Agenda",
 };
 
 const ICONS: Record<LegalPhaseKey, typeof LayoutDashboard> = {
@@ -16,12 +28,14 @@ const ICONS: Record<LegalPhaseKey, typeof LayoutDashboard> = {
   avvio: PlayCircle,
   valutazione: ClipboardCheck,
   strategia: Waypoints,
+  agenda: CalendarDays,
 };
 
 const HUB_HREFS: Record<Exclude<LegalPhaseKey, "avvio">, string> = {
   panoramica: "/legal",
   valutazione: "/legal/valutazione",
   strategia: "/legal/strategia",
+  agenda: "/legal/agenda",
 };
 
 function praticaHref(praticaId: string, key: LegalPhaseKey): string {
@@ -34,6 +48,8 @@ function praticaHref(praticaId: string, key: LegalPhaseKey): string {
       return `/pratiche/${praticaId}/valutazione-legale`;
     case "strategia":
       return `/pratiche/${praticaId}/strategia-giudiziale`;
+    case "agenda":
+      return `/pratiche/${praticaId}/agenda-legale`;
   }
 }
 
@@ -42,6 +58,7 @@ const ORDER_HUB: Exclude<LegalPhaseKey, "avvio">[] = [
   "panoramica",
   "valutazione",
   "strategia",
+  "agenda",
 ];
 
 /** Da pratica: include Avvio. */
@@ -50,6 +67,7 @@ const ORDER_PRATICA: LegalPhaseKey[] = [
   "avvio",
   "valutazione",
   "strategia",
+  "agenda",
 ];
 
 /**

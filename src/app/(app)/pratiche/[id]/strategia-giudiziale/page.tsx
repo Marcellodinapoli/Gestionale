@@ -15,6 +15,8 @@ import {
   labelStrategiaScelta,
 } from "@/lib/giudiziale/strategiaGiudiziale";
 import { GiudizialeNavTabs } from "@/components/giudiziale/GiudizialeNavTabs";
+import { LegalAgendaUpcoming } from "@/components/giudiziale/LegalAgendaUpcoming";
+import { expandImpegniLegali } from "@/lib/agenda/scadenzeGiudiziali";
 import { StrategiaProceduraForm } from "@/components/giudiziale/StrategiaProceduraForm";
 import { PageHeader } from "@/components/ui";
 import { PraticaContabileShell } from "@/components/pratica/PraticaContabileShell";
@@ -57,6 +59,15 @@ export default async function StrategiaGiudizialePage({
     "PROCEDURA_AVVIATA",
   ].includes(giudiziale?.statoAvvio || "");
   const formReadOnly = conclusa || !strategiaDisponibile;
+  const impegniLegali = expandImpegniLegali({
+    praticaId: pratica.id,
+    numero: pratica.numero,
+    debitore: pratica.debitore,
+    dataAffidamentoGiudiziale: giudiziale?.dataAffidamentoGiudiziale,
+    attivitaProceduraJson: giudiziale?.attivitaProceduraJson,
+    agendaScadenze: giudiziale?.agendaScadenze,
+    dataEsito: giudiziale?.dataEsito,
+  });
   return (
     <div className="h-full min-h-0">
       <PraticaContabileShell
@@ -73,6 +84,11 @@ export default async function StrategiaGiudizialePage({
           <PageHeader
             title="Strategia / procedura"
             subtitle={`Pratica ${pratica.numero} · ${debitoreNome} · Pianificazione e gestione dell'azione giudiziale`}
+          />
+
+          <LegalAgendaUpcoming
+            voci={impegniLegali}
+            title="Impegni di questa pratica"
           />
 
           <section className="grid gap-2 rounded-lg border border-[var(--line)] bg-[#eef4f8] p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">

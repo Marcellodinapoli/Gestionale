@@ -44,17 +44,35 @@ export async function requireApiUser(): Promise<SessionUser | NextResponse> {
  * Permesso di ruolo oppure sezione menu visibile (default/eccezione).
  * Così un'eccezione di visibilità trasferisce anche l'autorizzazione a lavorare.
  */
+async function tenantAllowsNavPage(user: SessionUser, pageId: NavPageId) {
+  const { moduleIdForNavPage } = await import("@/lib/navVisibility/catalog");
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  return tenantHasModule(platform, moduleIdForNavPage(pageId));
+}
+
 export async function canPermissionOrNav(
   user: SessionUser,
   permission: Permission
 ): Promise<boolean> {
-  if (can(user, permission)) return true;
+  if (can(user, permission)) {
+    const { navPagesForPermission } = await import("@/lib/navVisibility/permissionBridge");
+    const pages = navPagesForPermission(permission);
+    if (pages.length === 0) return true;
+    for (const pageId of pages) {
+      if (await tenantAllowsNavPage(user, pageId)) return true;
+    }
+    return false;
+  }
   const { navPagesForPermission } = await import("@/lib/navVisibility/permissionBridge");
   const pages = navPagesForPermission(permission);
   if (pages.length === 0) return false;
   const { getEffectiveNavVisibilityForUser } = await import("@/lib/navVisibility");
   const visible = await getEffectiveNavVisibilityForUser(user, user);
-  return pages.some((pageId) => !!visible[pageId]);
+  for (const pageId of pages) {
+    if (!visible[pageId]) continue;
+    if (await tenantAllowsNavPage(user, pageId)) return true;
+  }
+  return false;
 }
 
 export async function requirePermission(permission: Permission) {
@@ -74,8 +92,11 @@ export async function assertNavPageAccess(pageId: NavPageId) {
   const user = await requireUser();
   const { getEffectiveNavVisibilityForUser } = await import("@/lib/navVisibility");
   const visible = await getEffectiveNavVisibilityForUser(user, user);
-  if (visible[pageId]) return user;
-  throw new Error("Accesso non consentito");
+  if (!visible[pageId]) throw new Error("Accesso non consentito");
+  if (!(await tenantAllowsNavPage(user, pageId))) {
+    throw new Error("Modulo non abilitato per questa azienda");
+  }
+  return user;
 }
 
 /**
@@ -85,29 +106,37 @@ export async function assertRecruitingAccess() {
   return assertNavPageAccess("recruiting");
 }
 
-/** Accesso pagina basato su preferenze visibilità (default ruolo + eccezioni). */
+async function redirectAwayFromHiddenPage(user: SessionUser, pageId: NavPageId) {
+  if (user.formazioneOnly) {
+    if (pageId === "formazione") {
+      redirect("/account");
+    }
+    const { homePathForUser } = await import("@/lib/formazioneOnlyAccess");
+    redirect(homePathForUser(user));
+  }
+  if (pageId === "home") {
+    const { getEffectiveNavVisibilityForUser } = await import("@/lib/navVisibility");
+    const visible = await getEffectiveNavVisibilityForUser(user, user);
+    const fallback =
+      (Object.entries(visible).find(
+        ([id, on]) => on && id !== "home" && id !== "account"
+      )?.[0] as NavPageId | undefined) ||
+      "account";
+    const { NAV_PAGES } = await import("@/lib/navVisibility/catalog");
+    const href =
+      NAV_PAGES.find((p) => p.id === fallback)?.pathPrefix || "/account";
+    redirect(href);
+  }
+  redirect("/");
+}
+
+/** Accesso pagina: visibilità ruolo/utente + modulo abilitato per il tenant. */
 export async function requireNavPage(pageId: NavPageId) {
   const user = await requireUser();
   const { getEffectiveNavVisibilityForUser } = await import("@/lib/navVisibility");
   const visible = await getEffectiveNavVisibilityForUser(user, user);
-  if (!visible[pageId]) {
-    if (user.formazioneOnly) {
-      const { homePathForUser } = await import("@/lib/formazioneOnlyAccess");
-      redirect(homePathForUser(user));
-    }
-    // Evita loop se Home stessa non è visibile.
-    if (pageId === "home") {
-      const fallback =
-        (Object.entries(visible).find(
-          ([id, on]) => on && id !== "home" && id !== "account"
-        )?.[0] as NavPageId | undefined) ||
-        "account";
-      const { NAV_PAGES } = await import("@/lib/navVisibility/catalog");
-      const href =
-        NAV_PAGES.find((p) => p.id === fallback)?.pathPrefix || "/account";
-      redirect(href);
-    }
-    redirect("/");
+  if (!visible[pageId] || !(await tenantAllowsNavPage(user, pageId))) {
+    await redirectAwayFromHiddenPage(user, pageId);
   }
   return user;
 }
@@ -120,9 +149,25 @@ export async function requireModule(moduleId: ModuleId) {
   const user = await requireUser();
   const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
   if (!tenantHasModule(platform, moduleId)) {
+    if (user.formazioneOnly) redirect("/account");
     redirect("/");
   }
   return user;
+}
+
+/** API: 403 se il modulo non è abilitato per il tenant. */
+export async function requireApiModule(
+  user: SessionUser,
+  moduleId: ModuleId
+): Promise<NextResponse | null> {
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  if (!tenantHasModule(platform, moduleId)) {
+    return NextResponse.json(
+      { error: "Modulo non abilitato per questa azienda" },
+      { status: 403 }
+    );
+  }
+  return null;
 }
 
 function assertWritable(user: Awaited<ReturnType<typeof requireUser>>) {

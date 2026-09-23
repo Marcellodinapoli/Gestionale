@@ -5,7 +5,7 @@ export default async function FormazioneCorsoDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ label?: string; category?: string }>;
+  searchParams: Promise<{ label?: string; category?: string; tab?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -15,6 +15,7 @@ export default async function FormazioneCorsoDetailPage({
       courseId={id}
       courseLabel={sp.label ?? ""}
       catalogCategory={sp.category}
+      initialTab={sp.tab}
     />
   );
 }

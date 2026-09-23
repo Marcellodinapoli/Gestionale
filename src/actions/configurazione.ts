@@ -79,3 +79,52 @@ export async function salvaConfigurazioneAction(formData: FormData) {
     revalidatePath("/telefonia");
   }
 }
+
+/** Accende/spegne i moduli prodotto per questo tenant (senza toccare il codice). */
+export async function salvaModuliPiattaformaAction(formData: FormData) {
+  const user = await requireWritablePermission("users:manage");
+  const { isModuleId, serializeEnabledModules, SELLABLE_MODULE_IDS } = await import(
+    "@/lib/platform/modules"
+  );
+  const { PLATFORM_MODULES_KEY, PLATFORM_CONFIG_CATEGORIA } = await import(
+    "@/lib/platform/tenantProfile"
+  );
+
+  let parsed: unknown = [];
+  try {
+    parsed = JSON.parse(String(formData.get("modules") || "[]"));
+  } catch {
+    throw new Error("Elenco moduli non valido");
+  }
+  if (!Array.isArray(parsed)) throw new Error("Elenco moduli non valido");
+
+  const sellable = new Set<string>(SELLABLE_MODULE_IDS);
+  const ids = parsed
+    .map((x) => String(x).trim())
+    .filter((id) => isModuleId(id) && (id === "core" || sellable.has(id)));
+
+  const valore = serializeEnabledModules(ids);
+  const configModel = configurazioneDbFromUser(user);
+  await configModel.upsert({
+    where: {
+      tenantId_chiave: { tenantId: user.tenantId, chiave: PLATFORM_MODULES_KEY },
+    },
+    create: {
+      tenantId: user.tenantId,
+      chiave: PLATFORM_MODULES_KEY,
+      valore,
+      categoria: PLATFORM_CONFIG_CATEGORIA,
+    },
+    update: { valore, categoria: PLATFORM_CONFIG_CATEGORIA },
+  });
+
+  await writeAudit({
+    userId: user.id,
+    tenantId: user.tenantId,
+    action: "update",
+    entity: "configurazione",
+    dettaglio: `aggiornati moduli tenant (${ids.join(", ") || "core"})`,
+  });
+  revalidatePath("/");
+  revalidatePath("/configurazione");
+}

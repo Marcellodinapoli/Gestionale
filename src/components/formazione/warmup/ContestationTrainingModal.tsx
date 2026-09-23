@@ -4,7 +4,9 @@ import { useRef, useState } from "react";
 import { Mic, X } from "lucide-react";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
-import { callFormazioneFunction } from "@/lib/formazione/callable";
+import { formatFirebaseFunctionsError } from "@/lib/formazione/firebaseFunctionsError";
+import { startLiveTranscript } from "@/lib/formazione/liveTranscript";
+import { evaluateWarmupLocal } from "@/lib/formazione/warmupLocalEvaluate";
 import { categoryColor } from "@/lib/formazione/warmupDefaults";
 import type { ContestazioneTrainingItem } from "@/lib/formazione/contestazioniDefaults";
 
@@ -26,7 +28,7 @@ export function ContestationTrainingModal({
   onClose: () => void;
   onComplete: () => void;
 }) {
-  const { db, user, functions } = useFormazione();
+  const { db, user } = useFormazione();
   const [step, setStep] = useState(0);
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -35,6 +37,7 @@ export function ContestationTrainingModal({
   const [error, setError] = useState<string | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const transcriptRef = useRef<{ stop: () => string } | null>(null);
 
   const color = categoryColor(item.category);
 
@@ -50,17 +53,20 @@ export function ContestationTrainingModal({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
+      transcriptRef.current = startLiveTranscript();
       recorder.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        const spoken = transcriptRef.current?.stop() ?? "";
+        transcriptRef.current = null;
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        if (blob.size < 5000) {
+        if (blob.size < 5000 && !spoken) {
           setError("Registrazione troppo breve, riprova.");
           return;
         }
-        await evaluate(blob);
+        await evaluate(spoken);
       };
       mediaRef.current = recorder;
       recorder.start();
@@ -70,35 +76,20 @@ export function ContestationTrainingModal({
     }
   }
 
-  async function evaluate(blob: Blob) {
-    if (!functions || !db || !user) return;
+  async function evaluate(spoken: string) {
+    if (!db || !user) return;
     setProcessing(true);
     setHasRecording(true);
     setAiResult(null);
     setError(null);
 
     try {
-      const buffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      bytes.forEach((b) => {
-        binary += String.fromCharCode(b);
+      const result: Record<string, unknown> = evaluateWarmupLocal({
+        kind: "contestation",
+        phase: item.title,
+        transcription: spoken,
+        expectedText: item.response,
       });
-
-      const result = await callFormazioneFunction<Record<string, unknown>>(
-        functions,
-        "warmupEvaluate",
-        {
-          audioBase64: btoa(binary),
-          mimeType: "audio/webm",
-          phase: item.title,
-          expectedText: item.response,
-          phaseExplanation: `Contestazione: ${item.declared}\nSignificato: ${item.meaning}\nRischio: ${item.risk}\nObiettivo: ${item.objective}`,
-          customerLine: item.declared,
-          kind: "contestation",
-          systemPrompt: item.systemPrompt,
-        }
-      );
 
       setAiResult(result);
 
@@ -121,7 +112,7 @@ export function ContestationTrainingModal({
         { merge: true }
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Valutazione non riuscita");
+      setError(formatFirebaseFunctionsError(e));
     } finally {
       setProcessing(false);
     }

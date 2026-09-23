@@ -9,6 +9,8 @@ import {
   labelStatoAvvio,
 } from "@/lib/giudiziale/avvioGiudiziale";
 import { GiudizialeNavTabs } from "@/components/giudiziale/GiudizialeNavTabs";
+import { LegalAgendaUpcoming } from "@/components/giudiziale/LegalAgendaUpcoming";
+import { expandImpegniLegali } from "@/lib/agenda/scadenzeGiudiziali";
 import { ValutazioneLegaleForm } from "@/components/giudiziale/ValutazioneLegaleForm";
 import { PraticaContabileShell } from "@/components/pratica/PraticaContabileShell";
 import { PageHeader } from "@/components/ui";
@@ -37,6 +39,15 @@ export default async function ValutazioneLegalePage({
     `${pratica.debitore.cognome} ${pratica.debitore.nome}`.trim() || "—";
   const residuo = pratica.residuo || 0;
   const archiviata = giudiziale?.statoAvvio === "ARCHIVIATA_SENZA_AZIONE";
+  const impegniLegali = expandImpegniLegali({
+    praticaId: pratica.id,
+    numero: pratica.numero,
+    debitore: pratica.debitore,
+    dataAffidamentoGiudiziale: giudiziale?.dataAffidamentoGiudiziale,
+    attivitaProceduraJson: giudiziale?.attivitaProceduraJson,
+    agendaScadenze: giudiziale?.agendaScadenze,
+    dataEsito: giudiziale?.dataEsito,
+  });
   const valutazioneBloccata =
     archiviata ||
     giudiziale?.statoAvvio === "IN_PROCEDURA" ||
@@ -65,6 +76,11 @@ export default async function ValutazioneLegalePage({
           <PageHeader
             title="Valutazione legale"
             subtitle={`Pratica ${pratica.numero} · ${debitoreNome}`}
+          />
+
+          <LegalAgendaUpcoming
+            voci={impegniLegali}
+            title="Impegni di questa pratica"
           />
 
           <section className="grid gap-2 rounded-lg border border-[var(--line)] bg-[#eef4f8] p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">

@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/permissions";
+import type { ModuleId } from "@/lib/platform/modules";
 
 /** Id stabile delle voci di menu (main + admin). */
 export type NavPageId =
@@ -34,37 +35,43 @@ export type NavPageDef = {
   /** Prefisso path per match (es. /report). */
   pathPrefix: string;
   group: "main" | "admin";
+  /** Modulo tenant che deve essere acceso per questa pagina. */
+  moduleId: ModuleId;
   /** Non modificabile (sempre visibile se l’utente è loggato). */
   locked?: boolean;
 };
 
 export const NAV_PAGES: NavPageDef[] = [
-  { id: "home", label: "Home", pathPrefix: "/", group: "main" },
-  { id: "pratiche", label: "Pratiche", pathPrefix: "/pratiche", group: "main" },
-  { id: "incassi", label: "Incassi", pathPrefix: "/incassi", group: "main" },
-  { id: "affidi", label: "Affidi", pathPrefix: "/affidi", group: "main" },
-  { id: "agenda", label: "Agenda", pathPrefix: "/agenda", group: "main" },
-  { id: "messaggi", label: "Messaggi", pathPrefix: "/messaggi", group: "main" },
-  { id: "statistiche", label: "Statistiche", pathPrefix: "/statistiche", group: "main" },
-  { id: "provigioni", label: "Provvigioni", pathPrefix: "/provigioni", group: "main" },
-  { id: "report", label: "Registrazioni", pathPrefix: "/report", group: "main" },
-  { id: "rubrica", label: "Rubrica", pathPrefix: "/rubrica", group: "main" },
-  { id: "lavorazione", label: "Lavorazione", pathPrefix: "/lavorazione", group: "main" },
-  { id: "dialer", label: "Dialer", pathPrefix: "/predictive-dialer", group: "main" },
-  { id: "account", label: "Account", pathPrefix: "/account", group: "main", locked: true },
-  { id: "formazione", label: "Formazione", pathPrefix: "/formazione", group: "main" },
-  { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main" },
-  { id: "legal", label: "Legal", pathPrefix: "/legal", group: "main" },
-  { id: "recruiting", label: "Recruiting", pathPrefix: "/recruiting", group: "main" },
-  { id: "import", label: "Import", pathPrefix: "/import", group: "admin" },
-  { id: "mandanti", label: "Mandanti", pathPrefix: "/mandanti", group: "admin" },
-  { id: "telefonia", label: "Telefonia", pathPrefix: "/telefonia", group: "admin" },
-  { id: "operatori", label: "Operatori", pathPrefix: "/operatori", group: "admin" },
-  { id: "sedi", label: "Sedi", pathPrefix: "/sedi", group: "admin" },
-  { id: "postazioni", label: "Postazioni", pathPrefix: "/postazioni", group: "admin" },
-  { id: "configurazione", label: "Configurazione", pathPrefix: "/configurazione", group: "admin" },
-  { id: "log", label: "Log audit", pathPrefix: "/log", group: "admin" },
+  { id: "home", label: "Home", pathPrefix: "/", group: "main", moduleId: "core" },
+  { id: "pratiche", label: "Pratiche", pathPrefix: "/pratiche", group: "main", moduleId: "recovery" },
+  { id: "incassi", label: "Incassi", pathPrefix: "/incassi", group: "main", moduleId: "incassi" },
+  { id: "affidi", label: "Affidi", pathPrefix: "/affidi", group: "main", moduleId: "affidi" },
+  { id: "agenda", label: "Agenda", pathPrefix: "/agenda", group: "main", moduleId: "core" },
+  { id: "messaggi", label: "Messaggi", pathPrefix: "/messaggi", group: "main", moduleId: "core" },
+  { id: "statistiche", label: "Statistiche", pathPrefix: "/statistiche", group: "main", moduleId: "recovery" },
+  { id: "provigioni", label: "Provvigioni", pathPrefix: "/provigioni", group: "main", moduleId: "recovery" },
+  { id: "report", label: "Registrazioni", pathPrefix: "/report", group: "main", moduleId: "recovery" },
+  { id: "rubrica", label: "Rubrica", pathPrefix: "/rubrica", group: "main", moduleId: "core" },
+  { id: "lavorazione", label: "Lavorazione", pathPrefix: "/lavorazione", group: "main", moduleId: "lavorazione" },
+  { id: "dialer", label: "Dialer", pathPrefix: "/predictive-dialer", group: "main", moduleId: "dialer" },
+  { id: "account", label: "Account", pathPrefix: "/account", group: "main", moduleId: "core", locked: true },
+  { id: "formazione", label: "Formazione", pathPrefix: "/formazione", group: "main", moduleId: "formazione" },
+  { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main", moduleId: "strumenti" },
+  { id: "legal", label: "Legal", pathPrefix: "/legal", group: "main", moduleId: "legale" },
+  { id: "recruiting", label: "Recruiting", pathPrefix: "/recruiting", group: "main", moduleId: "recruiting" },
+  { id: "import", label: "Import", pathPrefix: "/import", group: "admin", moduleId: "recovery" },
+  { id: "mandanti", label: "Mandanti", pathPrefix: "/mandanti", group: "admin", moduleId: "recovery" },
+  { id: "telefonia", label: "Telefonia", pathPrefix: "/telefonia", group: "admin", moduleId: "core" },
+  { id: "operatori", label: "Operatori", pathPrefix: "/operatori", group: "admin", moduleId: "core" },
+  { id: "sedi", label: "Sedi", pathPrefix: "/sedi", group: "admin", moduleId: "core" },
+  { id: "postazioni", label: "Postazioni", pathPrefix: "/postazioni", group: "admin", moduleId: "core" },
+  { id: "configurazione", label: "Configurazione", pathPrefix: "/configurazione", group: "admin", moduleId: "core" },
+  { id: "log", label: "Log audit", pathPrefix: "/log", group: "admin", moduleId: "core" },
 ];
+
+export function moduleIdForNavPage(pageId: NavPageId): ModuleId {
+  return NAV_PAGES.find((p) => p.id === pageId)?.moduleId ?? "core";
+}
 
 export const NAV_PAGE_IDS = NAV_PAGES.map((p) => p.id);
 

@@ -1,8 +1,9 @@
 import "server-only";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider, isSqlBackendProvider } from "@/lib/data/factory";
 import { usersDb } from "@/lib/usersRepo";
+import { neonQuery } from "@/lib/neon/pool";
 import { connectorFetch } from "@/lib/data/connector/ConnectorClient";
 import { validatePasswordComplexity } from "@/lib/passwordRules";
 
@@ -33,15 +34,41 @@ export function giorniAllaScadenzaPassword(passwordChangedAt: DateLike) {
   return Math.max(0, Math.ceil((expiresAt - Date.now()) / MS_PER_DAY));
 }
 
-async function userModelForPasswordOps(userId: string) {
-  if (!isConnectorProvider()) return prisma.user;
+async function userModelForPasswordOps(_userId: string) {
+  if (!isSqlBackendProvider()) return prisma.user;
   const { getCurrentUser } = await import("@/lib/auth");
   const current = await getCurrentUser();
-  if (!current?.tenantId) return prisma.user;
+  if (!current?.tenantId) throw new Error("Sessione non valida");
   return usersDb({
     tenantId: current.tenantId,
     tenantSlug: current.tenantSlug ?? current.tenantId,
   });
+}
+
+async function loadNeonPasswordHistory(userId: string): Promise<Array<{ passwordHash: string }>> {
+  try {
+    const rows = await neonQuery<Record<string, unknown>>(
+      `SELECT "PasswordHash" FROM "PasswordHistory" WHERE "UserId" = $1::uuid ORDER BY "CreatedAt" DESC`,
+      [userId]
+    );
+    return rows
+      .map((r) => ({ passwordHash: String(r.PasswordHash ?? r.passwordHash ?? "") }))
+      .filter((r) => r.passwordHash);
+  } catch {
+    return [];
+  }
+}
+
+async function appendNeonPasswordHistory(userId: string, passwordHash: string) {
+  try {
+    await neonQuery(
+      `INSERT INTO "PasswordHistory" ("Id", "UserId", "PasswordHash", "CreatedAt")
+       VALUES (gen_random_uuid(), $1::uuid, $2, NOW())`,
+      [userId, passwordHash]
+    );
+  } catch {
+    /* tabella assente o schema diverso: il reset deve comunque andare a buon fine */
+  }
 }
 
 export async function isUserPasswordExpired(userId: string) {
@@ -61,6 +88,18 @@ export async function isUserPasswordExpired(userId: string) {
 }
 
 async function loadPasswordReuseContext(userId: string) {
+  if (isNeonProvider()) {
+    const userModel = await userModelForPasswordOps(userId);
+    const user = await userModel.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!user) return null;
+    return {
+      passwordHash: String(user.passwordHash || ""),
+      passwordHistory: await loadNeonPasswordHistory(userId),
+    };
+  }
   if (!isConnectorProvider()) {
     return prisma.user.findUnique({
       where: { id: userId },
@@ -120,6 +159,15 @@ export async function rotateUserPassword(userId: string, newPassword: string) {
     await connectorFetch(`/api/v1/internal/users/${encodeURIComponent(userId)}/password`, {
       method: "PATCH",
       body: { passwordHash, passwordChangedAt: now.toISOString() },
+    });
+    return;
+  }
+
+  if (isNeonProvider()) {
+    await appendNeonPasswordHistory(userId, user.passwordHash);
+    await userModel.update({
+      where: { id: userId },
+      data: { passwordHash, passwordChangedAt: now },
     });
     return;
   }

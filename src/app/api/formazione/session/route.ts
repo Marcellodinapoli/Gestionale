@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/guard";
+import { requireApiModule, requireApiUser } from "@/lib/guard";
 import { assertCan } from "@/lib/permissions";
 import {
   firebaseFieldValue,
@@ -16,6 +16,8 @@ export async function GET() {
   } catch {
     return NextResponse.json({ error: "Permesso negato" }, { status: 403 });
   }
+  const moduleDenied = await requireApiModule(userOrRes, "formazione");
+  if (moduleDenied) return moduleDenied;
 
   try {
     const auth = getFirebaseAuth();

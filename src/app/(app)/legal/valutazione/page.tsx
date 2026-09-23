@@ -5,20 +5,28 @@ import {
   listPraticheGiudiziali,
   toLegalElencoRow,
 } from "@/lib/giudiziale/praticaGiudizialeRepo";
+import { LegalAgendaUpcoming } from "@/components/giudiziale/LegalAgendaUpcoming";
+import { loadAgendaLegale } from "@/lib/agenda/loadAgendaLegale";
 
 export default async function LegalValutazionePage() {
   const user = await requireNavPage("legal");
-  const items = (
-    await listPraticheGiudiziali(user, {
+  const [elenco, impegniLegali] = await Promise.all([
+    listPraticheGiudiziali(user, {
       stati: ["IN_ATTESA_VALUTAZIONE_LEGALE"],
-    })
-  ).map(toLegalElencoRow);
+    }),
+    loadAgendaLegale(user),
+  ]);
+  const items = elenco.map(toLegalElencoRow);
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Valutazione"
         subtitle="Elenco pratiche in attesa di valutazione legale — stesso percorso della pratica."
+      />
+      <LegalAgendaUpcoming
+        voci={impegniLegali}
+        title="Impegni con data"
       />
       <GiudizialeElencoTable
         items={items}

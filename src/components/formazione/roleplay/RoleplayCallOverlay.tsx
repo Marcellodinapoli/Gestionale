@@ -31,7 +31,7 @@ function statusLabel(status: RoleplayVoiceStatus) {
     case "speaking":
       return "Il debitore parla — interrompi parlando";
     case "error":
-      return "Problema di connessione";
+      return "Simulazione non avviata. Riprova.";
     default:
       return "Chiamata terminata";
   }

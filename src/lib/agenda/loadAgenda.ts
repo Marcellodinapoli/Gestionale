@@ -18,7 +18,7 @@ async function loadGiudizialiScadenze(
     where: {
       AND: [
         baseScope,
-        { giudiziale: { is: { attivitaProceduraJson: { not: null } } } },
+        { giudiziale: { isNot: null } },
       ],
     },
     select: {
@@ -26,7 +26,14 @@ async function loadGiudizialiScadenze(
       numero: true,
       debitore: { select: { nome: true, cognome: true } },
       assegnatario: { select: { name: true } },
-      giudiziale: { select: { attivitaProceduraJson: true } },
+      giudiziale: {
+        select: {
+          attivitaProceduraJson: true,
+          agendaScadenze: true,
+          dataAffidamentoGiudiziale: true,
+          dataEsito: true,
+        },
+      },
     },
     take: 200,
   });
@@ -38,6 +45,9 @@ async function loadGiudizialiScadenze(
       debitore: p.debitore,
       assegnatarioName: p.assegnatario?.name,
       attivitaProceduraJson: p.giudiziale?.attivitaProceduraJson,
+      agendaScadenze: p.giudiziale?.agendaScadenze,
+      dataAffidamentoGiudiziale: p.giudiziale?.dataAffidamentoGiudiziale,
+      dataEsito: p.giudiziale?.dataEsito,
       rangeStart: range?.start,
       rangeEnd: range?.end,
     })

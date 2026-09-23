@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, X } from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useFormazione } from "@/components/formazione/FormazioneProvider";
-import { callFormazioneFunction } from "@/lib/formazione/callable";
+import { formatFirebaseFunctionsError } from "@/lib/formazione/firebaseFunctionsError";
+import { startLiveTranscript } from "@/lib/formazione/liveTranscript";
+import { evaluateWarmupLocal } from "@/lib/formazione/warmupLocalEvaluate";
 import {
   colorFromValue,
   defaultPhase,
@@ -70,7 +72,7 @@ export function CallTrainingModal({
   onClose: () => void;
   onComplete: () => void;
 }) {
-  const { db, user, functions } = useFormazione();
+  const { db, user } = useFormazione();
   const [phase, setPhase] = useState<WarmupTelefonataPhase>(() =>
     defaultPhase(phaseKey)
   );
@@ -111,17 +113,20 @@ export function CallTrainingModal({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
+      transcriptRef.current = startLiveTranscript();
       recorder.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        const spoken = transcriptRef.current?.stop() ?? "";
+        transcriptRef.current = null;
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        if (blob.size < 5000) {
+        if (blob.size < 5000 && !spoken) {
           setError("Registrazione troppo breve, riprova.");
           return;
         }
-        await evaluate(blob);
+        await evaluate(spoken);
       };
       mediaRef.current = recorder;
       recorder.start();
@@ -131,36 +136,24 @@ export function CallTrainingModal({
     }
   }
 
-  async function evaluate(blob: Blob) {
-    if (!functions || !db || !user) return;
+  async function evaluate(spoken: string) {
+    if (!db || !user) return;
     setProcessing(true);
     setHasRecorded(true);
     setAiResult(null);
     setError(null);
 
     try {
-      const buffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      bytes.forEach((b) => {
-        binary += String.fromCharCode(b);
+      const result: Record<string, unknown> = evaluateWarmupLocal({
+        kind: "warmup",
+        phaseKey,
+        phase: phase.sectionTitle,
+        transcription: spoken,
+        evaluationCriteria: phase.evaluationCriteria,
+        phaseInstruction: phase.phaseInstruction,
+        responseGuidance: phase.responseGuidance,
+        targetPersonName: phase.targetPersonName,
       });
-
-      const result = await callFormazioneFunction<Record<string, unknown>>(
-        functions,
-        "warmupEvaluate",
-        {
-          audioBase64: btoa(binary),
-          mimeType: "audio/webm",
-          phase: phase.sectionTitle,
-          expectedText: phase.evaluationCriteria,
-          phaseExplanation: `Risposta del cliente: ${phase.customerLine}\n${phase.spiegazione}`,
-          customerLine: phase.customerLine,
-          kind: "warmup",
-          systemPrompt: phase.systemPrompt,
-          phaseInstruction: phase.phaseInstruction,
-        }
-      );
 
       const score = extractScore(result);
       const passed = phasePassed(result);
@@ -200,7 +193,7 @@ export function CallTrainingModal({
         );
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Valutazione non riuscita");
+      setError(formatFirebaseFunctionsError(e));
     } finally {
       setProcessing(false);
     }

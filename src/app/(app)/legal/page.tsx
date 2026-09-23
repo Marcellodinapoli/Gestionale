@@ -5,12 +5,15 @@ import { listPraticheGiudiziali } from "@/lib/giudiziale/praticaGiudizialeRepo";
 import { ATTIVITA_GIUDIZIALE_PARAM } from "@/lib/giudiziale/avvioGiudiziale";
 import { loadHomeGiudizialeStragiudKpi } from "@/lib/homeKpi/loadHomeGiudizialeStragiud";
 import { HomeGiudizialeStragiudCards } from "@/components/home/HomeGiudizialeStragiudCards";
+import { LegalAgendaUpcoming } from "@/components/giudiziale/LegalAgendaUpcoming";
+import { loadAgendaLegale } from "@/lib/agenda/loadAgendaLegale";
 
 export default async function LegalPage() {
   const user = await requireNavPage("legal");
-  const [items, giudizialeStragiudKpi] = await Promise.all([
+  const [items, giudizialeStragiudKpi, impegniLegali] = await Promise.all([
     listPraticheGiudiziali(user),
     loadHomeGiudizialeStragiudKpi(user),
+    loadAgendaLegale(user),
   ]);
   const inValutazione = items.filter(
     (i) => i.statoAvvio === "IN_ATTESA_VALUTAZIONE_LEGALE"
@@ -34,7 +37,7 @@ export default async function LegalPage() {
     <div className="space-y-4">
       <PageHeader
         title="Gestione legale"
-        subtitle="L'avvio giudiziale parte dalla pratica. Da qui: Valutazione e Strategia."
+        subtitle="L'avvio giudiziale parte dalla pratica. Da qui: Valutazione, Strategia e Agenda legale."
       />
 
       <div>
@@ -43,6 +46,8 @@ export default async function LegalPage() {
         </h2>
         <HomeGiudizialeStragiudCards kpi={kpiCards} />
       </div>
+
+      <LegalAgendaUpcoming voci={impegniLegali} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Card title="Valutazione">

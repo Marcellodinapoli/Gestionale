@@ -109,6 +109,9 @@ class NeonTenantsRepository implements TenantsRepository {
   }
 
   async getById(id: string): Promise<TenantRecord | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return null;
+    }
     const rows = await neonQuery(
       `SELECT "Id", "Slug", "Nome", "Active" FROM "Tenants" WHERE "Id" = $1::uuid LIMIT 1`,
       [id]

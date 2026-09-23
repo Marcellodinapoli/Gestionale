@@ -1,6 +1,7 @@
 import "server-only";
 import { neonQuery } from "@/lib/neon/pool";
 import { mapSqlRow } from "@/lib/data/mapSqlRow";
+import { isUuid } from "@/lib/tenant";
 import type {
   UserCreateInput,
   UserFilter,
@@ -85,17 +86,26 @@ async function loadUser(
 }
 
 function buildFilter(tenantId: string, filter?: UserFilter): { sql: string; params: unknown[] } {
+  if (!isUuid(tenantId)) return { sql: "false", params: [] };
   const parts = [`u."TenantId" = $1::uuid`];
   const params: unknown[] = [tenantId];
   let i = 2;
   if (!filter) return { sql: parts.join(" AND "), params };
   if (filter.id) {
+    if (!isUuid(filter.id)) return { sql: "false", params };
     parts.push(`u."Id" = $${i++}::uuid`);
     params.push(filter.id);
   }
   if (filter.idsIn?.length) {
+    const ids = filter.idsIn.filter(isUuid);
+    if (!ids.length) return { sql: "false", params };
     parts.push(`u."Id" = ANY($${i++}::uuid[])`);
-    params.push(filter.idsIn);
+    params.push(ids);
+  }
+  if (filter.supervisorId) {
+    if (!isUuid(filter.supervisorId)) return { sql: "false", params };
+    parts.push(`u."SupervisorId" = $${i++}::uuid`);
+    params.push(filter.supervisorId);
   }
   if (filter.email) {
     parts.push(`lower(u."Email") = lower($${i++})`);
@@ -234,6 +244,7 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
       name: "Name",
       email: "Email",
       passwordHash: "PasswordHash",
+      passwordChangedAt: "PasswordChangedAt",
       role: "Role",
       interno: "Interno",
       prefissoChiamata: "PrefissoChiamata",
@@ -251,6 +262,9 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
             sets.push(`"${col}" = $${i++}::uuid`);
             params.push(val);
           }
+        } else if (col === "PasswordChangedAt") {
+          sets.push(`"${col}" = $${i++}`);
+          params.push(val instanceof Date ? val.toISOString() : val);
         } else {
           sets.push(`"${col}" = $${i++}`);
           params.push(val);

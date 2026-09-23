@@ -17,6 +17,7 @@ import {
   type OperatoreModifica,
 } from "@/components/operatori/ModificaOperatoreForm";
 import { ROLE_LABELS, ruoliCreabiliDa, type Role } from "@/lib/permissions";
+import { PASSWORD_REQUIREMENTS, validatePasswordComplexity } from "@/lib/passwordRules";
 import type { NavRoleDefaults, NavUserOverrides } from "@/lib/navVisibility/catalog";
 import type { OperatoreListaItem } from "@/lib/operatoriFiltri";
 
@@ -144,8 +145,9 @@ function RigaOperatore({
   }
 
   async function resetPassword() {
-    if (pwd.length < 6) {
-      setPwdMsg("Min 6 caratteri");
+    const complexityErr = validatePasswordComplexity(pwd);
+    if (complexityErr) {
+      setPwdMsg(complexityErr);
       return;
     }
     try {
@@ -155,6 +157,7 @@ function RigaOperatore({
       await resetPasswordAmministrazioneAction(fd);
       setPwdMsg("Resettata!");
       setPwd("");
+      router.refresh();
       setTimeout(() => {
         setResetOpen(false);
         setPwdMsg(null);
@@ -346,32 +349,44 @@ function RigaOperatore({
       </td>
       <td>
         {resetOpen ? (
-          <span className="flex items-center gap-1">
-            <input
-              type="password"
-              value={pwd}
-              onChange={(e) => setPwd(e.target.value)}
-              placeholder="Nuova pwd"
-              className="h-7 w-28 rounded border border-[var(--line)] px-1 text-xs"
-            />
-            <button
-              onClick={resetPassword}
-              className="rounded bg-[var(--navy)] px-2 py-0.5 text-[10px] text-white"
-            >
-              OK
-            </button>
-            <button
-              onClick={() => {
-                setResetOpen(false);
-                setPwdMsg(null);
-                setPwd("");
-              }}
-              className="text-[var(--muted)]"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+          <span className="flex flex-col items-start gap-1">
+            <span className="flex items-center gap-1">
+              <input
+                type="password"
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                placeholder="Nuova pwd"
+                title={PASSWORD_REQUIREMENTS}
+                className="h-7 w-28 rounded border border-[var(--line)] px-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={resetPassword}
+                className="rounded bg-[var(--navy)] px-2 py-0.5 text-[10px] text-white"
+              >
+                OK
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetOpen(false);
+                  setPwdMsg(null);
+                  setPwd("");
+                }}
+                className="text-[var(--muted)]"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+            <span className="max-w-[14rem] text-[10px] text-[var(--muted)]">
+              {PASSWORD_REQUIREMENTS}
+            </span>
             {pwdMsg ? (
-              <span className="text-[10px] font-semibold text-emerald-600">
+              <span
+                className={`text-[10px] font-semibold ${
+                  pwdMsg === "Resettata!" ? "text-emerald-600" : "text-rose-700"
+                }`}
+              >
                 {pwdMsg}
               </span>
             ) : null}

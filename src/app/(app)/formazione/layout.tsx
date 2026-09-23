@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { requireNavPage } from "@/lib/guard";
+import { requireModule, requireNavPage } from "@/lib/guard";
 import {
   FormazioneProvider,
   FormazioneGate,
@@ -12,6 +12,7 @@ export default async function FormazioneLayout({
 }: {
   children: ReactNode;
 }) {
+  await requireModule("formazione");
   const user = await requireNavPage("formazione");
   const canMonitor = user.role === "SUPERVISOR" || user.role === "ADMIN";
 

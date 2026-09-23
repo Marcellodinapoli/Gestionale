@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/guard";
+import { requireApiModule, requireApiUser } from "@/lib/guard";
 import { assertCan } from "@/lib/permissions";
 import { assertSupervisorCanViewFirebaseUid } from "@/lib/formazione/collaboratorAccess";
 import { loadCollaboratorProgress } from "@/lib/formazione/collaboratorProgress";
@@ -20,6 +20,8 @@ export async function GET(
   } catch {
     return NextResponse.json({ error: "Permesso negato" }, { status: 403 });
   }
+  const moduleDenied = await requireApiModule(userOrRes, "formazione");
+  if (moduleDenied) return moduleDenied;
 
   const { uid } = await params;
 

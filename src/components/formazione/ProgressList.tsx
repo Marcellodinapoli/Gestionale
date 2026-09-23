@@ -184,9 +184,15 @@ export function ProgressList() {
       postCourses={post}
       loading={loading}
       error={error}
-      detailHref={(course) =>
-        `/formazione/corsi/${course.courseId}?label=${encodeURIComponent(course.code)}`
-      }
+      detailHref={(course) => {
+        const category =
+          course.category === "post" ? CATEGORY_RECUPERO : CATEGORY_SOLLECITO;
+        const qs = new URLSearchParams({
+          label: course.code,
+          category,
+        });
+        return `/formazione/progressi/${course.courseId}?${qs}`;
+      }}
     />
   );
 }

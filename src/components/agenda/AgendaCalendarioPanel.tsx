@@ -55,6 +55,8 @@ export type CalendarioVoceSerialized =
       numero: string;
       debitore: string;
       responsabile: string | null;
+      href?: string;
+      fase?: string;
     };
 
 function formatOraBreve(iso: string) {
@@ -74,12 +76,22 @@ function formatOraLunga(iso: string) {
   });
 }
 
-function buildHref(vista: VistaAgenda, data: string) {
+function buildHref(
+  vista: VistaAgenda,
+  data: string,
+  basePath: string,
+  extras?: Record<string, string>
+) {
   const sp = new URLSearchParams();
   if (vista !== "mese") sp.set("vista", vista);
   if (data !== formatDataAgenda(new Date())) sp.set("data", data);
+  if (extras) {
+    for (const [k, v] of Object.entries(extras)) {
+      if (v) sp.set(k, v);
+    }
+  }
   const qs = sp.toString();
-  return qs ? `/agenda?${qs}` : "/agenda";
+  return qs ? `${basePath}?${qs}` : basePath;
 }
 
 function etichettaVoce(voce: CalendarioVoceSerialized) {
@@ -115,7 +127,7 @@ function VoceChip({
   if (voce.kind === "giudiziale") {
     return (
       <Link
-        href={`/pratiche/${voce.praticaId}/strategia-giudiziale`}
+        href={voce.href || `/pratiche/${voce.praticaId}/strategia-giudiziale`}
         className={`block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight text-[#7c2d12] hover:bg-white/80 ${
           compact ? "bg-[#fde68a]" : "bg-[#fbbf24]"
         }`}
@@ -141,15 +153,23 @@ export function AgendaCalendarioPanel({
   voci,
   vistaRaw,
   dataRaw,
+  basePath = "/agenda",
+  soloLegale = false,
+  queryExtras,
 }: {
   voci: CalendarioVoceSerialized[];
   vistaRaw?: string;
   dataRaw?: string;
+  basePath?: string;
+  soloLegale?: boolean;
+  queryExtras?: Record<string, string>;
 }) {
   const vista = parseVistaAgenda(vistaRaw);
   const anchor = parseDataAgenda(dataRaw);
   const dataIso = formatDataAgenda(anchor);
   const [nuovoOpen, setNuovoOpen] = useState(false);
+  const hrefFor = (nextVista: VistaAgenda, nextData: string) =>
+    buildHref(nextVista, nextData, basePath, queryExtras);
   const oggi = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -173,7 +193,7 @@ export function AgendaCalendarioPanel({
           {(["giorno", "settimana", "mese"] as const).map((v) => (
             <Link
               key={v}
-              href={buildHref(v, dataIso)}
+              href={hrefFor(v, dataIso)}
               className={`rounded-lg px-3 py-1.5 capitalize ${
                 vista === v ? "bg-[#132033] text-white" : "border border-[var(--line)] bg-white"
               }`}
@@ -182,19 +202,21 @@ export function AgendaCalendarioPanel({
             </Link>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => setNuovoOpen(true)}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--navy)] px-3 text-sm font-medium text-white"
-        >
-          <Plus className="h-4 w-4" aria-hidden />
-          Nuovo impegno
-        </button>
+        {soloLegale ? null : (
+          <button
+            type="button"
+            onClick={() => setNuovoOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--navy)] px-3 text-sm font-medium text-white"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Nuovo impegno
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2">
         <Link
-          href={buildHref(vista, prevData)}
+          href={hrefFor(vista, prevData)}
           className="rounded border border-[var(--line)] px-2 py-1 text-sm hover:bg-[#eef4f8]"
           title="Periodo precedente"
         >
@@ -204,14 +226,14 @@ export function AgendaCalendarioPanel({
           {etichettaIntervallo(vista, anchor)}
         </p>
         <Link
-          href={buildHref(vista, nextData)}
+          href={hrefFor(vista, nextData)}
           className="rounded border border-[var(--line)] px-2 py-1 text-sm hover:bg-[#eef4f8]"
           title="Periodo successivo"
         >
           ›
         </Link>
         <Link
-          href={buildHref(vista, formatDataAgenda(new Date()))}
+          href={hrefFor(vista, formatDataAgenda(new Date()))}
           className="text-xs text-[var(--accent)] underline"
         >
           Oggi
@@ -219,15 +241,23 @@ export function AgendaCalendarioPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--muted)]">
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#bfdbfe]" /> Richiamo pratica
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#c7d2fe]" /> Impegno libero
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#fbbf24]" /> Scadenza legale
-        </span>
+        {soloLegale ? (
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#fbbf24]" /> Impegno / scadenza legale
+          </span>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#bfdbfe]" /> Richiamo pratica
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#c7d2fe]" /> Impegno libero
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#fbbf24]" /> Scadenza legale
+            </span>
+          </>
+        )}
       </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -256,7 +286,7 @@ export function AgendaCalendarioPanel({
                       } ${isSel ? "ring-2 ring-inset ring-[var(--accent)]" : ""}`}
                     >
                       <Link
-                        href={buildHref("giorno", key)}
+                        href={hrefFor("giorno", key)}
                         className={`mb-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold hover:opacity-80 ${
                           isOggi
                             ? "bg-[var(--navy)] text-white"
@@ -277,7 +307,7 @@ export function AgendaCalendarioPanel({
                         ))}
                         {items.length > 2 ? (
                           <Link
-                            href={buildHref("giorno", key)}
+                            href={hrefFor("giorno", key)}
                             className="block px-0.5 text-[10px] font-semibold text-[var(--muted)] hover:underline"
                           >
                             +{items.length - 2}
@@ -301,7 +331,7 @@ export function AgendaCalendarioPanel({
                   return (
                     <div key={key} className="min-h-[14rem] bg-white">
                       <Link
-                        href={buildHref("giorno", key)}
+                        href={hrefFor("giorno", key)}
                         className={`block border-b border-[var(--line)] px-1 py-1.5 text-center hover:bg-[#f8fafc] ${
                           isOggi ? "bg-[#e8eef4]" : "bg-[#f8fafc]"
                         }`}
@@ -397,10 +427,10 @@ export function AgendaCalendarioPanel({
                 >
                   <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-[#9a3412]">
-                      Scadenza legale
+                      {voce.fase || "Scadenza legale"}
                     </p>
                     <Link
-                      href={`/pratiche/${voce.praticaId}/strategia-giudiziale`}
+                      href={voce.href || `/pratiche/${voce.praticaId}/strategia-giudiziale`}
                       className="font-medium text-[#9a3412] underline"
                     >
                       {voce.activityLabel}

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { AccountEditor } from "@/components/account/AccountEditor";
 import { giorniAllaScadenzaPassword } from "@/lib/passwordPolicy";
+import { getTenantPlatformConfig, tenantHasModule } from "@/lib/platform/tenantProfile";
 import {
   can,
   canImpostarePostazioneFissa,
@@ -15,6 +16,7 @@ import {
 
 export default async function AccountPage() {
   const session = await requireUser();
+  const platform = await getTenantPlatformConfig(session.tenantId, session.tenantSlug);
 
   const user = await usersDbFromUser(session).findUnique({
     where: { id: session.id },
@@ -85,8 +87,14 @@ export default async function AccountPage() {
         subtitle="Il tuo profilo, le impostazioni telefoniche e la password"
       />
       <AccountEditor
-        showFormazione={can(session, "formazione:view")}
-        showStrumenti={can(session, "formazione:view") && !isFormazioneOnly(session)}
+        showFormazione={
+          can(session, "formazione:view") && tenantHasModule(platform, "formazione")
+        }
+        showStrumenti={
+          can(session, "formazione:view") &&
+          !isFormazioneOnly(session) &&
+          tenantHasModule(platform, "strumenti")
+        }
         user={{
           name: user.name,
           email: user.email,

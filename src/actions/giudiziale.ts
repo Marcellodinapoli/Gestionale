@@ -204,11 +204,14 @@ export async function confermaAvvioGiudizialeAction(
 
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath(`/pratiche/${praticaId}/avvio-giudiziale`);
+  revalidatePath(`/pratiche/${praticaId}/agenda-legale`);
   revalidatePath(redirectTo);
   revalidatePath("/legal");
   revalidatePath("/legal/avvio");
   revalidatePath("/legal/valutazione");
   revalidatePath("/legal/strategia");
+  revalidatePath("/legal/agenda");
+  revalidatePath("/agenda");
 
   let ok = "Operazione registrata";
   if (input.azione === "ARCHIVIA_SENZA_AZIONE") {
@@ -330,10 +333,13 @@ export async function definisciStrategiaAction(
   const redirectTo = `/pratiche/${praticaId}/strategia-giudiziale`;
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath(`/pratiche/${praticaId}/valutazione-legale`);
+  revalidatePath(`/pratiche/${praticaId}/agenda-legale`);
   revalidatePath(redirectTo);
   revalidatePath("/legal");
   revalidatePath("/legal/valutazione");
   revalidatePath("/legal/strategia");
+  revalidatePath("/legal/agenda");
+  revalidatePath("/agenda");
 
   return { ok: "Valutazione salvata: definisci la strategia", redirectTo };
 }
@@ -461,10 +467,12 @@ export async function salvaStrategiaProceduraAction(
 
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath(`/pratiche/${praticaId}/strategia-giudiziale`);
+  revalidatePath(`/pratiche/${praticaId}/agenda-legale`);
   revalidatePath("/agenda");
   revalidatePath("/legal");
   revalidatePath("/legal/avvio");
   revalidatePath("/legal/strategia");
+  revalidatePath("/legal/agenda");
 
   return { ok: "Strategia / procedura salvata" };
 }
@@ -558,9 +566,11 @@ export async function registraEsitoGiudizialeAction(
   const redirectTo = `/pratiche/${praticaId}`;
   revalidatePath(`/pratiche/${praticaId}`);
   revalidatePath(`/pratiche/${praticaId}/strategia-giudiziale`);
+  revalidatePath(`/pratiche/${praticaId}/agenda-legale`);
   revalidatePath("/agenda");
   revalidatePath("/legal");
   revalidatePath("/legal/strategia");
+  revalidatePath("/legal/agenda");
 
   return { ok: "Esito registrato: procedura conclusa", redirectTo };
 }

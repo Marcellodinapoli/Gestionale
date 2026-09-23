@@ -5,6 +5,8 @@ import {
   listPraticheGiudiziali,
   toLegalElencoRow,
 } from "@/lib/giudiziale/praticaGiudizialeRepo";
+import { LegalAgendaUpcoming } from "@/components/giudiziale/LegalAgendaUpcoming";
+import { loadAgendaLegale } from "@/lib/agenda/loadAgendaLegale";
 
 export default async function LegalStrategiaPage() {
   const user = await requireNavPage("legal");
@@ -24,6 +26,10 @@ export default async function LegalStrategiaPage() {
       <PageHeader
         title="Strategia"
         subtitle="Stesso percorso della pratica: apri strategia / procedura sul fascicolo."
+      />
+      <LegalAgendaUpcoming
+        voci={impegniLegali}
+        title="Impegni con data"
       />
       <GiudizialeElencoTable
         items={items}

@@ -5,6 +5,7 @@ import { loadHomeKpiAuto } from "@/lib/homeKpi/loadHomeKpi";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { prisma } from "@/lib/prisma";
 import { requireNavPage } from "@/lib/guard";
+import { getTenantPlatformConfig, tenantHasModule } from "@/lib/platform/tenantProfile";
 import { can, isManutenzione } from "@/lib/permissions";
 import { euro, dataIt } from "@/lib/domain";
 import {
@@ -153,6 +154,7 @@ export default async function HomePage({
   }>;
 }) {
   const user = await requireNavPage("home");
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
   const sp = await searchParams;
   const {
     lavorateData: lavorateDataRaw,
@@ -684,7 +686,9 @@ export default async function HomePage({
         />
       ) : null}
 
-      {user.role === "SUPERVISOR" ? <FormazioneMonitorHomeCard /> : null}
+      {user.role === "SUPERVISOR" && tenantHasModule(platform, "formazione") ? (
+        <FormazioneMonitorHomeCard />
+      ) : null}
 
     </div>
   );

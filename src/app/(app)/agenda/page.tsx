@@ -57,6 +57,8 @@ export default async function AgendaPage({
       numero: g.numero,
       debitore: `${g.debitore.nome} ${g.debitore.cognome}`.trim() || "—",
       responsabile: g.responsabile ?? null,
+      href: g.href,
+      fase: g.fase,
     })),
   ].sort((a, b) => new Date(a.memoAt).getTime() - new Date(b.memoAt).getTime());
 

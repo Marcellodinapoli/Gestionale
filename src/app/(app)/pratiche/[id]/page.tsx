@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
+import { getTenantPlatformConfig, tenantHasModule } from "@/lib/platform/tenantProfile";
 import { canAccessPratica } from "@/lib/domain";
 import {
   collegataIdsFromPayload,
@@ -65,6 +66,7 @@ export default async function PraticaDetailPage({
   }>;
 }) {
   const user = await requireUser();
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
   const praticaModel = praticaDbFromUser(user);
   const { id } = await params;
   const sp = await searchParams;
@@ -257,7 +259,9 @@ export default async function PraticaDetailPage({
             nav={nav}
             currentUserName={user.name}
             currentUserRole={user.role}
-            canAvviaGiudiziale={can(user, "legal:view")}
+            canAvviaGiudiziale={
+              can(user, "legal:view") && tenantHasModule(platform, "legale")
+            }
             giudizialePrevistoSulLotto={isGiudizialePrevistoSulLotto(
               (pratica as { conferimentoTipo?: string | null }).conferimentoTipo
             )}

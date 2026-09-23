@@ -60,17 +60,25 @@ function CourseNavButton({
   );
 }
 
+function isPlayableVideoUrl(url: string | null): url is string {
+  return Boolean(url && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/")));
+}
+
 export function CourseTraining({
   courseId,
   courseLabel: initialCourseLabel,
   catalogCategory,
+  initialTab,
 }: {
   courseId: string;
   courseLabel: string;
   catalogCategory?: string;
+  initialTab?: string;
 }) {
   const { db, user } = useFormazione();
-  const [tab, setTab] = useState<"video" | "quiz" | "allegati">("video");
+  const [tab, setTab] = useState<"video" | "quiz" | "allegati">(
+    initialTab === "quiz" || initialTab === "allegati" ? initialTab : "video"
+  );
   const [title, setTitle] = useState("");
   const [courseLabel, setCourseLabel] = useState(initialCourseLabel);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -98,9 +106,13 @@ export function CourseTraining({
 
       const data = courseSnap.data()!;
       const category = String(data.category ?? catalogCategory ?? "");
-      const resolvedVideoUrl = data.videoUrl ? String(data.videoUrl) : null;
+      const rawVideoUrl = data.videoUrl ? String(data.videoUrl) : null;
+      const resolvedVideoUrl = isPlayableVideoUrl(rawVideoUrl) ? rawVideoUrl : null;
       setTitle(String(data.title ?? "Training"));
       setVideoUrl(resolvedVideoUrl);
+      if (!resolvedVideoUrl && initialTab !== "video") {
+        setTab(initialTab === "allegati" ? "allegati" : "quiz");
+      }
       setLoading(false);
 
       // 2) Progress + catalogo vicini in parallelo (non bloccano il video)
@@ -162,7 +174,7 @@ export function CourseTraining({
     return () => {
       cancelled = true;
     };
-  }, [db, user, courseId, initialCourseLabel, catalogCategory]);
+  }, [db, user, courseId, initialCourseLabel, catalogCategory, initialTab]);
 
   if (loading) {
     return (

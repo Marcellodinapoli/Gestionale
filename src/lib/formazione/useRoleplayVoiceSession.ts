@@ -6,6 +6,36 @@ import { callFormazioneFunction } from "@/lib/formazione/callable";
 import type { RoleplayHistoryMessage } from "@/lib/formazione/roleplayProgress";
 import type { RoleplayVoiceStatus } from "@/components/formazione/roleplay/RoleplayCallOverlay";
 
+async function roleplayStepReply(
+  functions: Functions | null,
+  payload: Record<string, unknown>
+): Promise<string> {
+  if (functions) {
+    try {
+      const data = await callFormazioneFunction<{ reply?: string }>(
+        functions,
+        "roleplayStep",
+        payload
+      );
+      const reply = String(data.reply ?? "").trim();
+      if (reply && reply.toLowerCase() !== "errore") return reply;
+    } catch {
+      /* CreditForm roleplayStep non è deployata (404): fallback locale */
+    }
+  }
+
+  const res = await fetch("/api/formazione/roleplay/step", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json()) as { reply?: string; error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Motore roleplay non disponibile");
+  const reply = String(data.reply ?? "").trim();
+  if (!reply) throw new Error("Risposta vuota dal roleplay");
+  return reply;
+}
+
 type SpeechRecognitionLike = {
   lang: string;
   continuous: boolean;
@@ -129,7 +159,7 @@ export function useRoleplayVoiceSession(functions: Functions | null) {
 
   const sendStep = useCallback(
     async (userText: string, showError = true) => {
-      if (!functions || !sessionRef.current || !activeRef.current || httpInFlightRef.current) {
+      if (!sessionRef.current || !activeRef.current || httpInFlightRef.current) {
         return;
       }
 
@@ -139,31 +169,18 @@ export function useRoleplayVoiceSession(functions: Functions | null) {
 
       try {
         const session = sessionRef.current;
-        const data = await callFormazioneFunction<{ reply?: string; role?: string }>(
-          functions,
-          "roleplayStep",
-          {
-            userText,
-            prompt: session.prompt,
-            sessionId: session.sessionId,
-            history: historyRef.current,
-            practiceData: session.practiceData,
-            scenarioWeights: session.scenarioWeights,
-            difficulty: session.difficulty,
-            personality: session.personality,
-          }
-        );
+        const reply = await roleplayStepReply(functions, {
+          userText,
+          prompt: session.prompt,
+          sessionId: session.sessionId,
+          history: historyRef.current,
+          practiceData: session.practiceData,
+          scenarioWeights: session.scenarioWeights,
+          difficulty: session.difficulty,
+          personality: session.personality,
+        });
 
         if (!activeRef.current || !awaitingReplyRef.current) return;
-
-        const reply = String(data.reply ?? "").trim();
-        if (!reply || reply.toLowerCase() === "errore") {
-          if (showError) {
-            activeRef.current = false;
-            setStatus("error");
-          }
-          return;
-        }
 
         awaitingReplyRef.current = false;
         appendTranscript("debitore", reply);

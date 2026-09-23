@@ -4,13 +4,14 @@ import { LegalPhaseNav } from "@/components/giudiziale/LegalPhaseNav";
 export function LegalSubnav({
   attivo,
 }: {
-  attivo: "hub" | "valutazione" | "strategia" | "avvio";
+  attivo: "hub" | "valutazione" | "strategia" | "avvio" | "agenda";
 }) {
   const map = {
     hub: "panoramica" as const,
     avvio: "avvio" as const,
     valutazione: "valutazione" as const,
     strategia: "strategia" as const,
+    agenda: "agenda" as const,
   };
   return <LegalPhaseNav attivo={map[attivo]} />;
 }

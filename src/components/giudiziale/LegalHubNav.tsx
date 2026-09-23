@@ -8,5 +8,6 @@ export function LegalHubNav() {
   let attivo: LegalPhaseKey = "panoramica";
   if (pathname.startsWith("/legal/valutazione")) attivo = "valutazione";
   else if (pathname.startsWith("/legal/strategia")) attivo = "strategia";
+  else if (pathname.startsWith("/legal/agenda")) attivo = "agenda";
   return <LegalPhaseNav attivo={attivo} />;
 }

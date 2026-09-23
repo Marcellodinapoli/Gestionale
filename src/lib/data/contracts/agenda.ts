@@ -31,7 +31,7 @@ export type AgendaImpegnoVoce = {
   userName?: string;
 };
 
-/** Scadenze attività strategia/procedura giudiziale (virtuali in calendario). */
+/** Scadenze / impegni Legal (virtuali in calendario). */
 export type AgendaGiudizialeVoce = {
   id: string;
   praticaId: string;
@@ -43,6 +43,8 @@ export type AgendaGiudizialeVoce = {
   debitore: { nome: string; cognome: string };
   assegnatarioName?: string | null;
   responsabile?: string | null;
+  href?: string;
+  fase?: string;
 };
 
 export type AgendaCalendarioBundle = {

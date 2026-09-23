@@ -4,7 +4,7 @@ import { configurazioneDbForTenant } from "@/lib/configurazioneRepo";
 import { resolveTenantSlugForConnector } from "@/lib/tenant";
 import {
   hasModule,
-  isModuleId,
+  parseEnabledModules,
   RECOVERY_DEFAULT_MODULES,
   VERTICAL_PROFILES,
   type ModuleId,
@@ -32,15 +32,7 @@ function parseVertical(raw: string | null | undefined): VerticalProfile {
 }
 
 function parseModules(raw: string | null | undefined): ModuleId[] {
-  if (!raw?.trim()) return [...RECOVERY_DEFAULT_MODULES];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [...RECOVERY_DEFAULT_MODULES];
-    const ids = parsed.map((x) => String(x).trim()).filter(isModuleId);
-    return ids.length ? ids : [...RECOVERY_DEFAULT_MODULES];
-  } catch {
-    return [...RECOVERY_DEFAULT_MODULES];
-  }
+  return parseEnabledModules(raw);
 }
 
 /**
