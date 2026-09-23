@@ -10,16 +10,18 @@ import { loadAgendaLegale } from "@/lib/agenda/loadAgendaLegale";
 
 export default async function LegalStrategiaPage() {
   const user = await requireNavPage("legal");
-  const items = (
-    await listPraticheGiudiziali(user, {
+  const [elenco, impegniLegali] = await Promise.all([
+    listPraticheGiudiziali(user, {
       stati: [
         "GIUDIZIALE_AVVIATO_PROCEDURA_DA_DEFINIRE",
         "IN_PROCEDURA",
         "CONCLUSA_CON_ESITO",
         "PROCEDURA_AVVIATA",
       ],
-    })
-  ).map(toLegalElencoRow);
+    }),
+    loadAgendaLegale(user),
+  ]);
+  const items = elenco.map(toLegalElencoRow);
 
   return (
     <div className="space-y-4">

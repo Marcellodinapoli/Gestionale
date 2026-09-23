@@ -85,6 +85,7 @@ export function CallTrainingModal({
   const [error, setError] = useState<string | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const transcriptRef = useRef<{ stop: () => string } | null>(null);
 
   const color = useMemo(() => colorFromValue(phase.colorValue), [phase.colorValue]);
 
