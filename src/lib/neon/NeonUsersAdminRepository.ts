@@ -85,25 +85,27 @@ async function loadUser(
   return rows[0] ? mapUser(rows[0] as Record<string, unknown>) : null;
 }
 
+const EMPTY_FILTER = { sql: "1 = 0", params: [] as unknown[] };
+
 function buildFilter(tenantId: string, filter?: UserFilter): { sql: string; params: unknown[] } {
-  if (!isUuid(tenantId)) return { sql: "false", params: [] };
+  if (!isUuid(tenantId)) return { ...EMPTY_FILTER };
   const parts = [`u."TenantId" = $1::uuid`];
   const params: unknown[] = [tenantId];
   let i = 2;
   if (!filter) return { sql: parts.join(" AND "), params };
   if (filter.id) {
-    if (!isUuid(filter.id)) return { sql: "false", params };
+    if (!isUuid(filter.id)) return { ...EMPTY_FILTER };
     parts.push(`u."Id" = $${i++}::uuid`);
     params.push(filter.id);
   }
   if (filter.idsIn?.length) {
     const ids = filter.idsIn.filter(isUuid);
-    if (!ids.length) return { sql: "false", params };
+    if (!ids.length) return { ...EMPTY_FILTER };
     parts.push(`u."Id" = ANY($${i++}::uuid[])`);
     params.push(ids);
   }
   if (filter.supervisorId) {
-    if (!isUuid(filter.supervisorId)) return { sql: "false", params };
+    if (!isUuid(filter.supervisorId)) return { ...EMPTY_FILTER };
     parts.push(`u."SupervisorId" = $${i++}::uuid`);
     params.push(filter.supervisorId);
   }
@@ -143,6 +145,7 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
 
   async list(req: UserListRequest) {
     const { sql, params } = buildFilter(req.tenantId, req.filter);
+    if (sql === "1 = 0") return { items: [], total: 0 };
     const orderCol =
       req.orderBy?.email != null
         ? `"Email"`
@@ -181,6 +184,7 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
   async count(tenantSlug: string, tenantId: string, filter?: UserFilter) {
     void tenantSlug;
     const { sql, params } = buildFilter(tenantId, filter);
+    if (sql === "1 = 0") return 0;
     const rows = await neonQuery(
       `SELECT COUNT(*)::int AS c FROM "Users" u WHERE ${sql}`,
       params

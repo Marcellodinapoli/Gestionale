@@ -1,7 +1,7 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { getFirebaseAuth, getFirebaseFirestore } from "@/lib/firebase/admin";
 import { isNeonProvider, getTenantsRepository, getUsersRepository } from "@/lib/data/factory";
-import { createNeonUsersAdminRepository } from "@/lib/neon/NeonUsersAdminRepository";
+import { neonQuery } from "@/lib/neon/pool";
 import { isUuid } from "@/lib/tenant";
 import type { SessionUser } from "@/lib/permissions";
 
@@ -36,9 +36,18 @@ async function resolveFirebaseUid(gestionaleUserId: string, email: string): Prom
 async function resolveNeonTenantId(user: SessionUser): Promise<string | null> {
   if (isUuid(user.tenantId)) return user.tenantId;
   const slug = user.tenantSlug?.trim();
-  if (!slug) return null;
-  const tenant = await getTenantsRepository().getBySlug(slug);
-  return tenant?.id && isUuid(tenant.id) ? tenant.id : null;
+  if (slug && !isUuid(slug)) {
+    const tenant = await getTenantsRepository().getBySlug(slug);
+    if (tenant?.id && isUuid(tenant.id)) return tenant.id;
+  }
+  const email = user.email?.trim();
+  if (!email) return null;
+  const rows = await neonQuery<{ TenantId: string }>(
+    `SELECT u."TenantId" FROM "Users" u WHERE lower(u."Email") = lower($1) LIMIT 1`,
+    [email]
+  );
+  const id = rows[0]?.TenantId != null ? String(rows[0].TenantId) : "";
+  return isUuid(id) ? id : null;
 }
 
 async function listOperatorsForCollaboratori(user: SessionUser): Promise<
@@ -52,38 +61,32 @@ async function listOperatorsForCollaboratori(user: SessionUser): Promise<
 > {
   if (isNeonProvider()) {
     const tenantId = await resolveNeonTenantId(user);
-    if (tenantId) {
-      let supervisorId: string | undefined;
-      if (user.role === "SUPERVISOR") {
-        supervisorId = isUuid(user.id) ? user.id : undefined;
-        if (!supervisorId) {
-          const me = await getUsersRepository().findByEmail(tenantId, user.email);
-          supervisorId = me?.id && isUuid(me.id) ? me.id : undefined;
-        }
-        if (!supervisorId) return [];
+    if (!tenantId) return [];
+    let supervisorId: string | undefined;
+    if (user.role === "SUPERVISOR") {
+      supervisorId = isUuid(user.id) ? user.id : undefined;
+      if (!supervisorId) {
+        const me = await getUsersRepository().findByEmail(tenantId, user.email);
+        supervisorId = me?.id && isUuid(me.id) ? me.id : undefined;
       }
-      const listed = await createNeonUsersAdminRepository(user.tenantSlug || "").list({
-        tenantSlug: user.tenantSlug || "",
-        tenantId,
-        filter: {
-          role: "OPERATOR",
-          active: true,
-          ...(supervisorId ? { supervisorId } : {}),
-        },
-        orderBy: { name: "asc" },
-        take: 500,
-      });
-      return listed.items.map((row) => ({
+      if (!supervisorId) return [];
+    }
+    const listed = await getUsersRepository().listByTenant(tenantId);
+    return listed
+      .filter((row) => {
+        if (String(row.role || "").toUpperCase() !== "OPERATOR") return false;
+        if (row.active === false) return false;
+        if (supervisorId && row.supervisorId !== supervisorId) return false;
+        return true;
+      })
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "it"))
+      .map((row) => ({
         id: String(row.id),
         name: String(row.name ?? ""),
         email: String(row.email ?? ""),
         active: row.active !== false,
-        createdAt:
-          row.createdAt instanceof Date
-            ? row.createdAt
-            : new Date(String(row.createdAt ?? Date.now())),
+        createdAt: new Date(),
       }));
-    }
   }
 
   const where =
