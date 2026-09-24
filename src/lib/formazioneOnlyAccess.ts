@@ -6,7 +6,11 @@ export function isFormazioneOnly(user: { formazioneOnly?: boolean } | null | und
 
 /** Percorsi consentiti agli account solo formazione. */
 export function isFormazioneOnlyPath(pathname: string) {
-  return pathname === "/account" || pathname.startsWith("/formazione");
+  return (
+    pathname === "/account" ||
+    pathname === "/creditcalc" ||
+    pathname.startsWith("/formazione")
+  );
 }
 
 export function homePathForUser(user: SessionUser) {

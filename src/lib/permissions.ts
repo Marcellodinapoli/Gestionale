@@ -59,6 +59,8 @@ export type Permission =
   | "legal:view"
   | "recruiting:view"
   | "recruiting:manage"
+  | "portafogli:view"
+  | "portafogli:manage"
   | "dialer:operate"
   | "dialer:manage"
   | "dialer:admin";
@@ -96,6 +98,8 @@ const MAP: Record<Permission, Role[]> = {
   /** Recruiting: offerte di lavoro (metadati). Nessun CV / candidato. */
   "recruiting:view": ["ADMIN", "AMMINISTRAZIONE"],
   "recruiting:manage": ["ADMIN", "AMMINISTRAZIONE"],
+  "portafogli:view": ["ADMIN", "AMMINISTRAZIONE", "BACK_OFFICE", "SUPERVISOR"],
+  "portafogli:manage": ["ADMIN", "AMMINISTRAZIONE", "BACK_OFFICE"],
   "dialer:operate": ["ADMIN", "SUPERVISOR", "OPERATOR"],
   "dialer:manage": ["ADMIN", "SUPERVISOR"],
   "dialer:admin": ["ADMIN"],
@@ -162,6 +166,11 @@ export function canImpostarePostazioneFissa(role: Role) {
   );
 }
 
+/** Admin e amministrazione non restano fuori se le postazioni sono occupate. */
+export function canEnterWithoutPostazione(role: Role) {
+  return role === "ADMIN" || role === "AMMINISTRAZIONE";
+}
+
 /** True se l'utente deve ancora passare dalla schermata di selezione postazione. */
 export function mustChoosePostazioneAlLogin(
   user: {
@@ -172,6 +181,7 @@ export function mustChoosePostazioneAlLogin(
   } | null | undefined
 ) {
   if (!user || !requiresPostazione(user)) return false;
+  if (canEnterWithoutPostazione(user.role)) return false;
   if (user.postazioneFissa && user.postazioneId) return false;
   return !user.postazioneId;
 }

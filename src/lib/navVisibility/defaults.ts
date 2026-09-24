@@ -26,7 +26,7 @@ export function baselinePageVisible(
   pageId: NavPageId
 ): boolean {
   const u = user as SessionUser;
-  if (pageId === "account") return true;
+  if (pageId === "account" || pageId === "creditcalc") return true;
   if (user.role === "MANUTENZIONE") return true;
 
   switch (pageId) {
@@ -59,6 +59,8 @@ export function baselinePageVisible(
       return !user.formazioneOnly && can(u, "legal:view");
     case "recruiting":
       return !user.formazioneOnly && can(u, "recruiting:view");
+    case "portafogli":
+      return !user.formazioneOnly && can(u, "portafogli:view");
     case "import":
       return can(u, "import:run");
     case "mandanti":
@@ -74,6 +76,9 @@ export function baselinePageVisible(
       return can(u, "users:manage");
     case "log":
       return can(u, "audit:view");
+    case "account":
+    case "creditcalc":
+      return true;
     default:
       return false;
   }
@@ -130,7 +135,7 @@ export function resolveEffectiveNavVisibility(input: {
 
   const out = {} as Record<NavPageId, boolean>;
   for (const page of NAV_PAGES) {
-    if (page.locked || page.id === "account") {
+    if (page.locked || page.id === "account" || page.id === "creditcalc") {
       out[page.id] = true;
       continue;
     }

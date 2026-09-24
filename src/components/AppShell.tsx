@@ -29,6 +29,7 @@ import {
   BookUser,
   Banknote,
   UserCircle,
+  Calculator,
   MessageSquare,
   ArrowLeft,
   ClipboardList,
@@ -36,6 +37,7 @@ import {
   Wrench,
   MapPin,
   Scale,
+  Layers,
 } from "lucide-react";
 import { logoutAction } from "@/actions/core";
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
@@ -69,10 +71,78 @@ type NavLink = {
   show: (u: SessionUser) => boolean;
   /** Id catalogo visibilità pagine (se assente = sempre secondo show()). */
   navPageId?: import("@/lib/navVisibility/catalog").NavPageId;
-  /** Sfondo accento permanente (es. Legal). */
-  accentClass?: string;
-  accentActiveClass?: string;
+  /** Icona in evidenza: badge + colore, senza tintare tutta la riga. */
+  accent?: NavAccent;
 };
+
+type NavAccent = {
+  iconDark: string;
+  iconLight: string;
+  badgeDark: string;
+  badgeLight: string;
+};
+
+const NAV_ACCENT: Record<string, NavAccent> = {
+  legal: {
+    iconDark: "text-[#e8d5b5]",
+    iconLight: "text-[#8a6a3d]",
+    badgeDark: "bg-[#d4b896]/25 ring-1 ring-[#e8d5b5]/50",
+    badgeLight: "bg-[#f4ead8] ring-1 ring-[#d4b896]/60",
+  },
+  formazione: {
+    iconDark: "text-[#5eead4]",
+    iconLight: "text-[#0f766e]",
+    badgeDark: "bg-teal-400/25 ring-1 ring-teal-300/55",
+    badgeLight: "bg-teal-50 ring-1 ring-teal-300/75",
+  },
+  recruiting: {
+    iconDark: "text-[#7dd3fc]",
+    iconLight: "text-[#1d4ed8]",
+    badgeDark: "bg-sky-400/25 ring-1 ring-sky-300/55",
+    badgeLight: "bg-sky-50 ring-1 ring-sky-300/75",
+  },
+  dialer: {
+    iconDark: "text-[#fdba74]",
+    iconLight: "text-[#c2410c]",
+    badgeDark: "bg-orange-400/25 ring-1 ring-orange-300/55",
+    badgeLight: "bg-orange-50 ring-1 ring-orange-300/75",
+  },
+  creditcalc: {
+    iconDark: "text-[#c4b5fd]",
+    iconLight: "text-[#6d28d9]",
+    badgeDark: "bg-violet-400/25 ring-1 ring-violet-300/55",
+    badgeLight: "bg-violet-50 ring-1 ring-violet-300/75",
+  },
+  portafogli: {
+    iconDark: "text-[#86efac]",
+    iconLight: "text-[#166534]",
+    badgeDark: "bg-emerald-400/25 ring-1 ring-emerald-300/55",
+    badgeLight: "bg-emerald-50 ring-1 ring-emerald-300/75",
+  },
+};
+
+function NavAccentIcon({
+  icon: Icon,
+  accent,
+  onLight,
+}: {
+  icon: LucideIcon;
+  accent?: NavAccent;
+  onLight?: boolean;
+}) {
+  if (!accent) {
+    return <Icon className="h-4 w-4 shrink-0" />;
+  }
+  return (
+    <span
+      className={`inline-flex h-[1.375rem] w-[1.375rem] shrink-0 items-center justify-center rounded-md ${
+        onLight ? accent.badgeLight : accent.badgeDark
+      }`}
+    >
+      <Icon className={`h-3.5 w-3.5 ${onLight ? accent.iconLight : accent.iconDark}`} />
+    </span>
+  );
+}
 
 const MAIN_LINKS: NavLink[] = [
   { href: "/", label: "Home", icon: Home, moduleId: "core", navPageId: "home", show: (u) => !isFormazioneOnly(u) },
@@ -163,8 +233,18 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "dialer",
     navPageId: "dialer",
     show: (u) => !isFormazioneOnly(u) && can(u, "dialer:operate"),
+    accent: NAV_ACCENT.dialer,
   },
   { href: "/account", label: "Account", icon: UserCircle, moduleId: "core", navPageId: "account", show: () => true },
+  {
+    href: "/creditcalc",
+    label: "CreditCalc",
+    icon: Calculator,
+    moduleId: "core",
+    navPageId: "creditcalc",
+    show: () => true,
+    accent: NAV_ACCENT.creditcalc,
+  },
   {
     href: "/formazione/progressi",
     label: "Formazione",
@@ -172,6 +252,7 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "formazione",
     navPageId: "formazione",
     show: (u) => can(u, "formazione:view"),
+    accent: NAV_ACCENT.formazione,
   },
   {
     href: "/strumenti/ricerca-normativa",
@@ -180,6 +261,7 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "strumenti",
     navPageId: "strumenti",
     show: (u) => !isFormazioneOnly(u) && can(u, "strumenti:view"),
+    accent: NAV_ACCENT.formazione,
   },
   {
     href: "/legal",
@@ -188,8 +270,7 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "legale",
     navPageId: "legal",
     show: (u) => !isFormazioneOnly(u) && can(u, "legal:view"),
-    accentClass: "bg-[#e8d5b5] text-[#5c4033] hover:bg-[#dfc7a0] hover:text-[#3d2914]",
-    accentActiveClass: "bg-[#d4b896] font-semibold text-[#3d2914]",
+    accent: NAV_ACCENT.legal,
   },
   {
     href: "/recruiting",
@@ -198,6 +279,16 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "recruiting",
     navPageId: "recruiting",
     show: (u) => !isFormazioneOnly(u) && can(u, "recruiting:view"),
+    accent: NAV_ACCENT.recruiting,
+  },
+  {
+    href: "/portafogli",
+    label: "Portafogli",
+    icon: Layers,
+    moduleId: "utp-npl",
+    navPageId: "portafogli",
+    show: (u) => !isFormazioneOnly(u) && can(u, "portafogli:view"),
+    accent: NAV_ACCENT.portafogli,
   },
 ];
 
@@ -303,10 +394,8 @@ function NavItem({
   const showLabel = forceLabel || compact;
   const itemClass = `flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
     active
-      ? link.accentActiveClass || "bg-white font-semibold text-[#132033]"
-      : link.accentClass
-        ? link.accentClass
-        : "text-white/75 hover:bg-white/10 hover:text-white"
+      ? "bg-white font-semibold text-[#132033]"
+      : "text-white/75 hover:bg-white/10 hover:text-white"
   }`;
 
   if (showBack) {
@@ -318,7 +407,7 @@ function NavItem({
         title={title}
         aria-label={title}
       >
-        <ArrowLeft className="h-4 w-4 shrink-0 text-[var(--accent,#0e7490)]" aria-hidden />
+        <NavAccentIcon icon={ArrowLeft} accent={link.accent} onLight={active} />
         {showLabel ? (
           <span className="whitespace-nowrap">{label}</span>
         ) : (
@@ -334,7 +423,7 @@ function NavItem({
       className={itemClass}
       title={title}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <NavAccentIcon icon={Icon} accent={link.accent} onLight={active} />
       {showLabel ? (
         <span className="whitespace-nowrap">{label}</span>
       ) : (
@@ -476,7 +565,6 @@ function NavDropdownMenu({
             {links.map((link) => {
               const ItemIcon = link.icon;
               const itemActive = navActive(pathname, link.href);
-              const accent = Boolean(link.accentClass);
               return (
                 <Link
                   key={link.href}
@@ -485,14 +573,11 @@ function NavDropdownMenu({
                   onClick={() => setOpen(false)}
                   className={`mx-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
                     itemActive
-                      ? link.accentActiveClass ||
-                        "bg-slate-100 font-semibold text-[#132033]"
-                      : accent
-                        ? link.accentClass!
-                        : "text-slate-700 hover:bg-slate-50"
+                      ? "bg-slate-100 font-semibold text-[#132033]"
+                      : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <ItemIcon className="h-4 w-4 shrink-0 opacity-70" />
+                  <NavAccentIcon icon={ItemIcon} accent={link.accent} onLight />
                   {link.label}
                 </Link>
               );

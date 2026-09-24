@@ -626,7 +626,10 @@ export default async function HomePage({
           mostraGruppo ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
         }`}
       >
-        <DashboardKpi title="Pratiche visibili" value={totali} />
+        <DashboardKpi
+          title={user.role === "OPERATOR" ? "Pratiche affidate" : "Pratiche visibili"}
+          value={totali}
+        />
         <InLavorazionePerimetroCard
           righe={inLavoroPerPerimetro}
           gruppoSenzaPerimetri={mostraGruppo && !gruppoPerimetriConfigurati}

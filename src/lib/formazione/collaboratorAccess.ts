@@ -18,19 +18,64 @@ export type CollaboratorRow = {
 async function resolveFirebaseUid(gestionaleUserId: string, email: string): Promise<string | null> {
   const db = getFirebaseFirestore();
   const auth = getFirebaseAuth();
+  const emailNorm = email.trim().toLowerCase();
 
-  const linked = await db
-    .collection("users")
-    .where("gestionaleUserId", "==", gestionaleUserId)
-    .limit(1)
-    .get();
-  if (!linked.empty) return linked.docs[0]!.id;
-
-  try {
-    return (await auth.getUserByEmail(email)).uid;
-  } catch {
-    return null;
+  if (gestionaleUserId) {
+    const linked = await db
+      .collection("users")
+      .where("gestionaleUserId", "==", gestionaleUserId)
+      .limit(1)
+      .get();
+    if (!linked.empty) return linked.docs[0]!.id;
   }
+
+  if (emailNorm) {
+    try {
+      return (await auth.getUserByEmail(emailNorm)).uid;
+    } catch {
+      const byEmail = await db
+        .collection("users")
+        .where("email", "==", email)
+        .limit(1)
+        .get();
+      if (!byEmail.empty) return byEmail.docs[0]!.id;
+    }
+  }
+
+  return null;
+}
+
+/** Uid Firebase della sessione corrente (i miei progressi). */
+export async function resolveOwnFirebaseUid(user: SessionUser): Promise<string | null> {
+  const fromId = await resolveFirebaseUid(user.id, user.email);
+  if (fromId) return fromId;
+  if (isNeonProvider()) {
+    const tenantId = await resolveNeonTenantId(user);
+    if (tenantId) {
+      const neonUser = await getUsersRepository().findByEmail(tenantId, user.email);
+      if (neonUser?.id) {
+        const fromNeon = await resolveFirebaseUid(neonUser.id, user.email);
+        if (fromNeon) return fromNeon;
+      }
+    }
+  }
+  return null;
+}
+
+async function isOwnFirebaseUid(user: SessionUser, firebaseUid: string): Promise<boolean> {
+  const own = await resolveOwnFirebaseUid(user);
+  if (own && own === firebaseUid) return true;
+  const emailNorm = user.email.trim().toLowerCase();
+  if (!emailNorm) return false;
+  try {
+    const authUser = await getFirebaseAuth().getUser(firebaseUid);
+    if (authUser.email?.trim().toLowerCase() === emailNorm) return true;
+  } catch {
+    /* ignore */
+  }
+  const snap = await getFirebaseFirestore().collection("users").doc(firebaseUid).get();
+  const fbEmail = String(snap.data()?.email ?? "").trim().toLowerCase();
+  return Boolean(fbEmail && fbEmail === emailNorm);
 }
 
 async function resolveNeonTenantId(user: SessionUser): Promise<string | null> {
@@ -190,8 +235,7 @@ export async function assertCanViewCollaboratorCourse(
   user: SessionUser,
   firebaseUid: string
 ) {
-  const ownUid = await resolveFirebaseUid(user.id, user.email);
-  if (ownUid && ownUid === firebaseUid) return;
+  if (await isOwnFirebaseUid(user, firebaseUid)) return;
   if (user.role !== "SUPERVISOR" && user.role !== "ADMIN") {
     throw new Error("Non autorizzato");
   }

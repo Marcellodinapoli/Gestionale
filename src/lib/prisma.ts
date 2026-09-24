@@ -6,7 +6,7 @@ import { isSqliteProvider } from "@/lib/data/config";
 import { createFirebasePrisma } from "@/lib/firebase/firebasePrisma";
 
 /** Bump per forzare reload dello shim dopo HMR (evita client stale in globalThis). */
-const FIREBASE_PRISMA_VERSION = 15;
+const FIREBASE_PRISMA_VERSION = 17;
 
 const globalForPrisma = globalThis as unknown as {
   sqlitePrisma?: PrismaClient;

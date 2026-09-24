@@ -26,6 +26,9 @@ export function navPagesForPermission(permission: Permission): NavPageId[] {
     case "recruiting:view":
     case "recruiting:manage":
       return ["recruiting"];
+    case "portafogli:view":
+    case "portafogli:manage":
+      return ["portafogli"];
     case "dialer:manage":
     case "dialer:admin":
       return ["dialer"];

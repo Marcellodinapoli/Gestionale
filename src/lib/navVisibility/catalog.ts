@@ -16,10 +16,12 @@ export type NavPageId =
   | "lavorazione"
   | "dialer"
   | "account"
+  | "creditcalc"
   | "formazione"
   | "strumenti"
   | "legal"
   | "recruiting"
+  | "portafogli"
   | "import"
   | "mandanti"
   | "telefonia"
@@ -55,10 +57,12 @@ export const NAV_PAGES: NavPageDef[] = [
   { id: "lavorazione", label: "Lavorazione", pathPrefix: "/lavorazione", group: "main", moduleId: "lavorazione" },
   { id: "dialer", label: "Dialer", pathPrefix: "/predictive-dialer", group: "main", moduleId: "dialer" },
   { id: "account", label: "Account", pathPrefix: "/account", group: "main", moduleId: "core", locked: true },
+  { id: "creditcalc", label: "CreditCalc", pathPrefix: "/creditcalc", group: "main", moduleId: "core", locked: true },
   { id: "formazione", label: "Formazione", pathPrefix: "/formazione", group: "main", moduleId: "formazione" },
   { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main", moduleId: "strumenti" },
   { id: "legal", label: "Legal", pathPrefix: "/legal", group: "main", moduleId: "legale" },
   { id: "recruiting", label: "Recruiting", pathPrefix: "/recruiting", group: "main", moduleId: "recruiting" },
+  { id: "portafogli", label: "Portafogli", pathPrefix: "/portafogli", group: "main", moduleId: "utp-npl" },
   { id: "import", label: "Import", pathPrefix: "/import", group: "admin", moduleId: "recovery" },
   { id: "mandanti", label: "Mandanti", pathPrefix: "/mandanti", group: "admin", moduleId: "recovery" },
   { id: "telefonia", label: "Telefonia", pathPrefix: "/telefonia", group: "admin", moduleId: "core" },

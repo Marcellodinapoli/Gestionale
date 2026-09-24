@@ -14,10 +14,16 @@ type Debitore = {
 };
 
 type Fattura = {
-  dataScadenza: Date;
+  dataScadenza: Date | string | null;
   importo: number;
   pagato: number;
 };
+
+function asTime(value: Date | string | null | undefined): number {
+  if (!value) return 0;
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
 
 type Incasso = {
   id: string;
@@ -62,7 +68,7 @@ export function EstrattoContoPreview({
   const insoluti = fatture.filter((f) => f.importo - f.pagato > 0.009);
   const primaScad = fatture[0]?.dataScadenza || scadenza;
   const ultimaScad = [...fatture].sort(
-    (a, b) => b.dataScadenza.getTime() - a.dataScadenza.getTime()
+    (a, b) => asTime(b.dataScadenza) - asTime(a.dataScadenza)
   )[0]?.dataScadenza;
   const ultimoPag = incassi.length ? incassi[incassi.length - 1].data : null;
   const stralciato = Math.max(0, affidato - definito);

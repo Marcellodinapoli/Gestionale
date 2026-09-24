@@ -25,6 +25,8 @@ const MAIN_SECTION_LABELS: Record<string, string> = {
   "/rubrica": "Rubrica",
   "/lavorazione": "Lavorazione",
   "/account": "Account",
+  "/portafogli": "Portafogli",
+  "/creditcalc": "CreditCalc",
   "/formazione/progressi": "Formazione",
   "/strumenti/ricerca-normativa": "Strumenti AI",
 };

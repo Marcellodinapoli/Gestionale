@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
 import { requireUser } from "@/lib/guard";
 import { STATO_LABELS } from "@/lib/permissions";
 import { canAccessPratica, euro, dataIt, dataOraIt, importoIt } from "@/lib/domain";
@@ -37,13 +36,30 @@ export default async function StampaPraticaPage({
   if (!pratica) notFound();
 
   const praticaOk = pratica;
-  const d = praticaOk.debitore;
+  const d = praticaOk.debitore ?? {
+    nome: "",
+    cognome: "",
+    codiceFiscale: null,
+    indirizzo: null,
+    cap: null,
+    citta: null,
+    provincia: null,
+    telefono: null,
+    email: null,
+    recapiti: [] as Array<{ tipo: string; valore: string }>,
+  };
+  const recapiti = Array.isArray(d.recapiti) ? d.recapiti : [];
+  const mandante = praticaOk.mandante ?? { ragioneSociale: "—", codice: "—" };
+  const fatture = Array.isArray(praticaOk.fatture) ? praticaOk.fatture : [];
+  const incassi = Array.isArray(praticaOk.incassi) ? praticaOk.incassi : [];
+  const garanti = Array.isArray(praticaOk.garanti) ? praticaOk.garanti : [];
+  const attivita = Array.isArray(praticaOk.attivita) ? praticaOk.attivita : [];
   const totale = praticaOk.capitale + praticaOk.interessi + praticaOk.spese;
   const indirizzo = [d.indirizzo, [d.cap, d.citta, d.provincia].filter(Boolean).join(" ")]
     .filter(Boolean)
     .join(" — ");
-  const fatturePagate = praticaOk.fatture.filter((f) => f.importo - f.pagato <= 0.009);
-  const fattureAperte = praticaOk.fatture.filter((f) => f.importo - f.pagato > 0.009);
+  const fatturePagate = fatture.filter((f) => f.importo - f.pagato <= 0.009);
+  const fattureAperte = fatture.filter((f) => f.importo - f.pagato > 0.009);
 
   function FattureTable({
     title,
@@ -125,8 +141,8 @@ export default async function StampaPraticaPage({
 
         <div className="mb-4 grid grid-cols-2 gap-x-6 gap-y-1">
           <p>
-            <span className="font-semibold">Mandante:</span> {pratica.mandante.ragioneSociale} (
-            {pratica.mandante.codice})
+            <span className="font-semibold">Mandante:</span> {mandante.ragioneSociale} (
+            {mandante.codice})
           </p>
           <p>
             <span className="font-semibold">Affidatario:</span> {pratica.assegnatario?.name || "—"}
@@ -150,16 +166,16 @@ export default async function StampaPraticaPage({
             <p>
               Tel. {d.telefono || "—"} · E-mail {d.email || "—"}
             </p>
-            {d.recapiti.length ? (
+            {recapiti.length ? (
               <p>
-                Altri recapiti: {d.recapiti.map((r) => `${r.tipo} ${r.valore}`).join(" · ")}
+                Altri recapiti: {recapiti.map((r) => `${r.tipo} ${r.valore}`).join(" · ")}
               </p>
             ) : null}
           </div>
           <div>
             <h2 className="mb-1 text-xs font-bold uppercase">Garante</h2>
-            {pratica.garanti.length ? (
-              pratica.garanti.map((g, i) => {
+            {garanti.length ? (
+              garanti.map((g, i) => {
                 const indG = [
                   g.indirizzo,
                   [g.cap, g.citta, g.provincia].filter(Boolean).join(" "),
@@ -169,7 +185,7 @@ export default async function StampaPraticaPage({
                 return (
                   <div key={g.id} className={i > 0 ? "mt-2" : ""}>
                     <p className="font-semibold">
-                      {pratica.garanti.length > 1 ? `${i + 1}. ` : ""}
+                      {garanti.length > 1 ? `${i + 1}. ` : ""}
                       {g.cognome} {g.nome}
                     </p>
                     <p>CF {g.codiceFiscale || "—"}</p>
@@ -209,11 +225,11 @@ export default async function StampaPraticaPage({
             flow
             debitore={d}
             numero={pratica.numero}
-            creditore={pratica.mandante.ragioneSociale}
-            societa={pratica.mandante.codice}
+            creditore={mandante.ragioneSociale}
+            societa={mandante.codice}
             scadenza={pratica.scadenza}
-            fatture={pratica.fatture}
-            incassi={pratica.incassi}
+            fatture={fatture}
+            incassi={incassi}
             affidato={totale}
             definito={pratica.residuo}
           />
@@ -231,19 +247,19 @@ export default async function StampaPraticaPage({
           <h2 className="mb-2 border-b border-[#132033] pb-0.5 text-xs font-bold uppercase">
             Incassi
           </h2>
-          <IncassiPreview flow incassi={pratica.incassi} />
+          <IncassiPreview flow incassi={incassi} />
         </section>
 
         <section>
           <h2 className="mb-2 border-b border-[#132033] pb-0.5 text-xs font-bold uppercase">
             Registro note
           </h2>
-          {pratica.attivita.length ? (
+          {attivita.length ? (
             <ul className="space-y-1 font-mono text-[12px]">
-              {pratica.attivita.map((a) => (
+              {attivita.map((a) => (
                 <li key={a.id} className="whitespace-pre-wrap break-words">
                   {formatNotaLine({
-                    userName: a.user.name,
+                    userName: a.user?.name || "Operatore",
                     createdAt: a.createdAt,
                     tipo: a.tipo,
                     esito: a.esito,

@@ -6,12 +6,15 @@ import { writeAudit } from "@/lib/domain";
 import type { Role } from "@/lib/permissions";
 import {
   NAV_PAGE_IDS,
+  NAV_PAGES,
   NAV_VISIBILITY_ROLES,
   type NavRoleDefaults,
   type NavVisibilityMap,
 } from "@/lib/navVisibility/catalog";
 import { loadNavRoleDefaults, saveNavRoleDefaults } from "@/lib/navVisibility/store";
 import { applyNavFlagsForNewUser } from "@/lib/navVisibility/apply";
+
+const LOCKED_NAV_IDS = new Set(NAV_PAGES.filter((p) => p.locked).map((p) => p.id));
 
 function fail(message: string): never {
   throw new Error(message);
@@ -21,7 +24,7 @@ function parseVisibilityMap(raw: unknown): NavVisibilityMap {
   if (!raw || typeof raw !== "object") return {};
   const out: NavVisibilityMap = {};
   for (const id of NAV_PAGE_IDS) {
-    if (id === "account") continue;
+    if (LOCKED_NAV_IDS.has(id)) continue;
     const v = (raw as Record<string, unknown>)[id];
     if (typeof v === "boolean") out[id] = v;
   }

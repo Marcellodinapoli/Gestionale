@@ -18,7 +18,9 @@ import type {
   DashboardRepository,
   HomeKpiBundle,
   HomeKpiContext,
+  HomeScopeFilter,
 } from "@/lib/data/contracts/dashboard";
+import { isUuid } from "@/lib/tenant";
 
 function mapTenant(row: Record<string, unknown>): TenantRecord {
   return {
@@ -331,11 +333,95 @@ class NeonPraticheRepository implements PraticheRepository {
   }
 }
 
+async function resolveHomeTenantUuid(tenantId: string, tenantSlug?: string): Promise<string | null> {
+  if (isUuid(tenantId)) return tenantId;
+  const s = String(tenantSlug || "").trim();
+  if (!s || isUuid(s)) return null;
+  const rows = await neonQuery(
+    `SELECT "Id" FROM "Tenants" WHERE lower("Slug") = lower($1) LIMIT 1`,
+    [s]
+  );
+  const id = rows[0] ? String((rows[0] as { Id?: string }).Id ?? "") : "";
+  return isUuid(id) ? id : null;
+}
+
+function homePraticheScopeSql(
+  scope: HomeScopeFilter,
+  memberIds: string[] | undefined,
+  startIdx: number
+): { sql: string; params: unknown[] } {
+  const params: unknown[] = [];
+  let i = startIdx;
+  let sql = "";
+
+  if (scope.mode === "none") {
+    return { sql: " AND FALSE", params };
+  }
+
+  if (scope.mode === "operator") {
+    const uid = scope.userId;
+    if (!uid || !isUuid(uid)) return { sql: " AND FALSE", params };
+    sql += ` AND ("AssegnatarioId" = $${i}::uuid OR "OperatoreTitolareId" = $${i}::uuid)`;
+    params.push(uid);
+    i += 1;
+  } else if (scope.mode === "supervisor") {
+    const ids = [
+      ...new Set(
+        [scope.userId, ...(memberIds || scope.memberIds || [])].filter(
+          (id): id is string => Boolean(id) && isUuid(id)
+        )
+      ),
+    ];
+    if (!ids.length) return { sql: " AND FALSE", params };
+    sql += ` AND ("AssegnatarioId" = ANY($${i}::uuid[]) OR "OperatoreTitolareId" = ANY($${i}::uuid[]))`;
+    params.push(ids);
+    i += 1;
+  }
+
+  if (scope.perimetroOr?.length) {
+    const parts: string[] = [];
+    for (const p of scope.perimetroOr) {
+      if (!isUuid(p.mandanteId)) continue;
+      if (p.numeriMandante?.length) {
+        parts.push(`("MandanteId" = $${i}::uuid AND "NumeroMandante" = ANY($${i + 1}::text[]))`);
+        params.push(p.mandanteId, p.numeriMandante);
+        i += 2;
+      } else {
+        parts.push(`"MandanteId" = $${i}::uuid`);
+        params.push(p.mandanteId);
+        i += 1;
+      }
+    }
+    if (parts.length) sql += ` AND (${parts.join(" OR ")})`;
+  }
+
+  return { sql, params };
+}
+
 class NeonDashboardRepository implements DashboardRepository {
   async getHomeKpi(ctx: HomeKpiContext): Promise<HomeKpiBundle> {
     const t0 = Date.now();
-    const tenantId = ctx.tenantId;
+    const tenantId = await resolveHomeTenantUuid(ctx.tenantId, ctx.tenantSlug);
     let sqlQueries = 0;
+
+    if (!tenantId) {
+      return {
+        shared: {
+          totali: 0,
+          scadute: 0,
+          incassiOggiSum: 0,
+          inLavoroPerPerimetro: [],
+          lavoratePerOperatore: [],
+          praticheLavorateGruppo: [],
+          praticheCambioCodice: [],
+          codiciMandantePerimetro: [],
+          daAffidareGruppo: [],
+        },
+        meta: { queryMs: Date.now() - t0, sqlQueries: 0, roundTrips: 0 },
+      };
+    }
+
+    const scope = homePraticheScopeSql(ctx.scope, ctx.memberIds, 2);
 
     const praticheAgg = await neonQuery(
       `SELECT
@@ -356,17 +442,26 @@ class NeonDashboardRepository implements DashboardRepository {
            WHERE "AssegnatarioId" IS NULL
              AND "Stato" NOT IN ('INCASSO','INESIGIBILE','RESA','CHIUSA')
          )::int AS non_assegnate
-       FROM "Pratiche" WHERE "TenantId" = $1::uuid`,
-      [tenantId]
+       FROM "Pratiche" WHERE "TenantId" = $1::uuid${scope.sql}`,
+      [tenantId, ...scope.params]
     );
     sqlQueries += 1;
+
+    const incassiParams: unknown[] = [tenantId];
+    let incassiUserSql = "";
+    if (ctx.incassiScope === "none") {
+      incassiUserSql = " AND FALSE";
+    } else if (ctx.incassiScope === "user" && isUuid(ctx.userId)) {
+      incassiUserSql = ` AND "UserId" = $2::uuid`;
+      incassiParams.push(ctx.userId);
+    }
 
     const incassiOggiRows = await neonQuery(
       `SELECT COALESCE(SUM("Importo"),0)::float AS oggi
        FROM "Incassi"
        WHERE "TenantId" = $1::uuid
-         AND ("Data" AT TIME ZONE 'Europe/Rome')::date = (NOW() AT TIME ZONE 'Europe/Rome')::date`,
-      [tenantId]
+         AND ("Data" AT TIME ZONE 'Europe/Rome')::date = (NOW() AT TIME ZONE 'Europe/Rome')::date${incassiUserSql}`,
+      incassiParams
     );
     sqlQueries += 1;
 

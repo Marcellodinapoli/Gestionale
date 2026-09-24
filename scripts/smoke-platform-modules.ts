@@ -35,7 +35,7 @@ function assert(cond: boolean, msg: string) {
 
 assert(
   RECOVERY_DEFAULT_MODULES.join(",") ===
-    "core,recovery,incassi,dialer,affidi,lavorazione,legale,formazione,recruiting,strumenti",
+    "core,recovery,incassi,dialer,affidi,lavorazione,legale,formazione,recruiting,strumenti,utp-npl",
   "default modules"
 );
 for (const m of RECOVERY_DEFAULT_MODULES) {

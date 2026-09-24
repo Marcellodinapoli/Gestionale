@@ -37,7 +37,11 @@ export function ProgressCourseDetail({
         </Link>
       </div>
       <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm sm:p-6">
-        <CollaboratorCourseDetailView firebaseUid={user.uid} courseId={courseId} />
+        <CollaboratorCourseDetailView
+          firebaseUid={user.uid}
+          courseId={courseId}
+          ownProgress
+        />
       </div>
     </div>
   );

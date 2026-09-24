@@ -27,6 +27,7 @@ model Tenant {
   importBatch ImportBatch[]
   dialerCampagne DialerCampagna[]
   offerteLavoro OffertaLavoro[]
+  portafogli  Portafoglio[]
   recruitingReceiverConfig RecruitingReceiverConfig?
   recruitingCandidature RecruitingCandidatura[]
   recruitingAttivita RecruitingAttivita[]
@@ -274,6 +275,8 @@ model Pratica {
   note            String?
   importBatchId   String?
   importBatch     ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  portafoglioId   String?
+  portafoglio     Portafoglio? @relation(fields: [portafoglioId], references: [id], onDelete: SetNull)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   attivita        Attivita[]
@@ -294,6 +297,7 @@ model Pratica {
   @@unique([tenantId, numero])
   @@index([tenantId])
   @@index([importBatchId])
+  @@index([tenantId, portafoglioId])
 }
 
 model ImportBatch {
@@ -321,6 +325,37 @@ model ImportBatch {
 
   @@index([tenantId])
   @@index([tenantId, createdAt])
+}
+
+/// Acquisto book UTP/NPL (isolamento tenant obbligatorio).
+model Portafoglio {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nome               String
+  codice             String?
+  venditore          String?
+  /// Servicer / gestore del book (testo libero, opzionale).
+  servicer           String?
+  /// UTP | NPL | MISTO
+  tipo               String    @default("NPL")
+  /// IN_VALUTAZIONE | NON_ACQUISITO | COMPRATO | IN_GESTIONE | CHIUSO
+  stato              String    @default("IN_VALUTAZIONE")
+  dataCutoff         DateTime?
+  dataAcquisto       DateTime?
+  nominaleDichiarato Float     @default(0)
+  prezzoOfferto      Float?
+  prezzoPagato       Float?
+  speseAcquisto      Float     @default(0)
+  recuperoAtteso     Float?
+  note               String?
+  createdById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  pratiche           Pratica[]
+
+  @@index([tenantId])
+  @@index([tenantId, stato])
 }
 
 model PraticaLock {

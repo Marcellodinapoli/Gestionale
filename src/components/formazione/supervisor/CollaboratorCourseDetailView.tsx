@@ -39,9 +39,11 @@ function Kv({ label, value }: { label: string; value: string }) {
 export function CollaboratorCourseDetailView({
   firebaseUid,
   courseId,
+  ownProgress = false,
 }: {
   firebaseUid: string;
   courseId: string;
+  ownProgress?: boolean;
 }) {
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,9 @@ export function CollaboratorCourseDetailView({
       setError(null);
       try {
         const res = await fetch(
-          `/api/formazione/collaboratori/${firebaseUid}/courses/${encodeURIComponent(courseId)}`
+          ownProgress
+            ? `/api/formazione/me/courses/${encodeURIComponent(courseId)}`
+            : `/api/formazione/collaboratori/${firebaseUid}/courses/${encodeURIComponent(courseId)}`
         );
         const data = (await res.json()) as { course?: CourseDetail; error?: string };
         if (!res.ok) throw new Error(data.error ?? "Errore caricamento");
@@ -72,7 +76,7 @@ export function CollaboratorCourseDetailView({
     return () => {
       cancelled = true;
     };
-  }, [firebaseUid, courseId]);
+  }, [firebaseUid, courseId, ownProgress]);
 
   const correct = course?.answerDetails.filter((a) => a.correct).length ?? 0;
   const wrong = course?.answerDetails.filter((a) => !a.correct).length ?? 0;

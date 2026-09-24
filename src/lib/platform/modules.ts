@@ -48,6 +48,7 @@ export const NEW_PRODUCT_MODULE_IDS: readonly ModuleId[] = [
   "formazione",
   "recruiting",
   "strumenti",
+  "utp-npl",
 ] as const;
 
 /** Moduli attivi se il tenant non ha ancora una config v2. */
@@ -65,7 +66,6 @@ export const RECOVERY_DEFAULT_MODULES: readonly ModuleId[] = [
 export const FUTURE_MODULE_IDS: readonly ModuleId[] = [
   "broker",
   "utility",
-  "utp-npl",
 ] as const;
 
 /** Moduli vendibili / commutabili per tenant (il core resta sempre). */
@@ -79,6 +79,7 @@ export const SELLABLE_MODULE_IDS: readonly ModuleId[] = [
   "formazione",
   "recruiting",
   "strumenti",
+  "utp-npl",
 ] as const;
 
 export type ModuleCatalogEntry = {
@@ -141,9 +142,13 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
     label: "Strumenti AI",
     description: "Ricerca normativa e strumenti di analisi",
   },
+  {
+    id: "utp-npl",
+    label: "UTP / NPL",
+    description: "Acquisto e gestione portafogli, agganciati alle pratiche del tenant",
+  },
   { id: "broker", label: "Broker", description: "Non disponibile", future: true },
   { id: "utility", label: "Utility", description: "Non disponibile", future: true },
-  { id: "utp-npl", label: "UTP / NPL", description: "Non disponibile", future: true },
 ];
 
 export function isModuleId(value: string): value is ModuleId {

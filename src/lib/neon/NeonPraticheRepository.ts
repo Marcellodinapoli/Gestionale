@@ -1,6 +1,7 @@
 import "server-only";
 import { neonQuery } from "@/lib/neon/pool";
 import { mapSqlRow } from "@/lib/data/mapSqlRow";
+import { isUuid } from "@/lib/tenant";
 import type {
   AssignPraticaInput,
   PraticaCreateInput,
@@ -110,6 +111,27 @@ function mapChild(row: Record<string, unknown>) {
   return mapped;
 }
 
+async function resolveTenantUuid(tenantId: string, slug?: string): Promise<string | null> {
+  if (isUuid(tenantId)) return tenantId;
+  const s = String(slug || "").trim();
+  if (!s || isUuid(s)) return null;
+  const rows = await neonQuery(
+    `SELECT "Id" FROM "Tenants" WHERE lower("Slug") = lower($1) LIMIT 1`,
+    [s]
+  );
+  const id = rows[0] ? String((rows[0] as { Id?: string }).Id ?? "") : "";
+  return isUuid(id) ? id : null;
+}
+
+async function queryInclude<T>(label: string, run: () => Promise<T[]>, fallback: T[] = []): Promise<T[]> {
+  try {
+    return await run();
+  } catch (e) {
+    console.error(`Neon pratica include ${label} fallita`, e);
+    return fallback;
+  }
+}
+
 function needsRelations(include?: PraticaInclude[]) {
   if (!include?.length) return false;
   return include.some((k) =>
@@ -154,20 +176,24 @@ async function attachIncludes(items: PraticaDto[], include?: PraticaInclude[]) {
   let docBy: Map<string, Record<string, unknown>[]> | undefined;
 
   if (want.has("rate")) {
-    const rows = await neonQuery(
-      `SELECT * FROM "PianoRate" WHERE "PraticaId" = ANY($1::uuid[]) ORDER BY "NumeroRata"`,
-      [ids]
+    const rows = await queryInclude("PianoRate", () =>
+      neonQuery(
+        `SELECT * FROM "PianoRate" WHERE "PraticaId" = ANY($1::uuid[]) ORDER BY "NumeroRata"`,
+        [ids]
+      )
     );
     rateBy = byPratica(rows.map((r) => mapChild(r as Record<string, unknown>)));
   }
   if (want.has("incassi") || want.has("incassiUser")) {
-    const rows = await neonQuery(
-      `SELECT i.*, u."Name" AS "UserName"
+    const rows = await queryInclude("Incassi", () =>
+      neonQuery(
+        `SELECT i.*, u."Name" AS "UserName"
        FROM "Incassi" i
        LEFT JOIN "Users" u ON u."Id" = i."UserId"
        WHERE i."PraticaId" = ANY($1::uuid[])
        ORDER BY i."Data" DESC`,
-      [ids]
+        [ids]
+      )
     );
     incBy = byPratica(
       rows.map((r) => {
@@ -182,9 +208,11 @@ async function attachIncludes(items: PraticaDto[], include?: PraticaInclude[]) {
     );
   }
   if (want.has("garanti") || want.has("garantiRecapiti")) {
-    const rows = await neonQuery(
-      `SELECT * FROM "Garanti" WHERE "PraticaId" = ANY($1::uuid[]) ORDER BY "Ordine"`,
-      [ids]
+    const rows = await queryInclude("Garanti", () =>
+      neonQuery(
+        `SELECT * FROM "Garanti" WHERE "PraticaId" = ANY($1::uuid[]) ORDER BY "Ordine"`,
+        [ids]
+      )
     );
     const mapped = rows.map((r) => mapChild(r as Record<string, unknown>));
     if (want.has("garantiRecapiti") && mapped.length) {
@@ -208,13 +236,15 @@ async function attachIncludes(items: PraticaDto[], include?: PraticaInclude[]) {
     garBy = byPratica(mapped);
   }
   if (want.has("attivita") || want.has("attivitaUser")) {
-    const rows = await neonQuery(
-      `SELECT a.*, u."Name" AS "UserName"
+    const rows = await queryInclude("Attivita", () =>
+      neonQuery(
+        `SELECT a.*, u."Name" AS "UserName"
        FROM "Attivita" a
        LEFT JOIN "Users" u ON u."Id" = a."UserId"
        WHERE a."PraticaId" = ANY($1::uuid[])
        ORDER BY a."CreatedAt" DESC`,
-      [ids]
+        [ids]
+      )
     );
     attBy = byPratica(
       rows.map((r) => {
@@ -229,9 +259,11 @@ async function attachIncludes(items: PraticaDto[], include?: PraticaInclude[]) {
     );
   }
   if (want.has("fatture")) {
-    const rows = await neonQuery(
-      `SELECT * FROM "Fatture" WHERE "PraticaId" = ANY($1::uuid[]) ORDER BY "DataFattura"`,
-      [ids]
+    const rows = await queryInclude("Fatture", () =>
+      neonQuery(
+        `SELECT * FROM "Fatture" WHERE "PraticaId" = ANY($1::uuid[]) ORDER BY "DataFattura"`,
+        [ids]
+      )
     );
     fatBy = byPratica(rows.map((r) => mapChild(r as Record<string, unknown>)));
   }
@@ -448,6 +480,9 @@ export class NeonPraticheRepository implements PraticheRepository {
     id: string,
     include?: PraticaInclude[]
   ): Promise<PraticaDto | null> {
+    if (!isUuid(id)) return null;
+    const tid = await resolveTenantUuid(tenantId, _tenantSlug || this._tenantSlug);
+    if (!tid) return null;
     const rows = await neonQuery(
       `SELECT ${LIST_SELECT}
        FROM "Pratiche" p
@@ -456,7 +491,7 @@ export class NeonPraticheRepository implements PraticheRepository {
        LEFT JOIN "Users" a ON a."Id" = p."AssegnatarioId"
        WHERE p."Id" = $1::uuid AND p."TenantId" = $2::uuid
        LIMIT 1`,
-      [id, tenantId]
+      [id, tid]
     );
     if (!rows[0]) return null;
     const [item] = await attachIncludes(
@@ -467,13 +502,17 @@ export class NeonPraticheRepository implements PraticheRepository {
   }
 
   async list(req: PraticaListRequest): Promise<PraticaListResult> {
+    const tid = await resolveTenantUuid(req.scope.tenantId, req.tenantSlug || this._tenantSlug);
+    if (!tid) {
+      return { items: [], total: 0, page: 1, pageSize: req.pageSize ?? req.take ?? 50 };
+    }
     const page = Math.max(1, req.page ?? 1);
     const pageSize = Math.min(10_000, Math.max(1, req.pageSize ?? req.take ?? 50));
     const skip = req.skip ?? (page - 1) * pageSize;
-    const scope = scopeSql(req.scope, 2);
+    const scope = scopeSql({ ...req.scope, tenantId: tid }, 2);
     const filt = filterSql(req.filter, scope.next);
     const where = `p."TenantId" = $1::uuid${scope.sql}${filt.sql}`;
-    const params = [req.scope.tenantId, ...scope.params, ...filt.params];
+    const params = [tid, ...scope.params, ...filt.params];
     const countRows = await neonQuery(
       `SELECT COUNT(*)::int AS c
        FROM "Pratiche" p
