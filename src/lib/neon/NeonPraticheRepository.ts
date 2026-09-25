@@ -562,18 +562,28 @@ export class NeonPraticheRepository implements PraticheRepository {
   }
 
   async groupByNumeroMandante(tenantSlug: string, scope: PraticaScope, filter?: PraticaListFilter) {
-    const list = await this.list({
-      tenantSlug,
-      scope,
-      filter,
-      take: 10_000,
-      pageSize: 10_000,
+    const tid = await resolveTenantUuid(scope.tenantId, tenantSlug || this._tenantSlug);
+    if (!tid) return [];
+    const scopeQ = scopeSql({ ...scope, tenantId: tid }, 2);
+    const filt = filterSql(filter, scopeQ.next);
+    const where = `p."TenantId" = $1::uuid${scopeQ.sql}${filt.sql}`;
+    const params = [tid, ...scopeQ.params, ...filt.params];
+    const rows = await neonQuery(
+      `SELECT DISTINCT sub."NumeroMandante" AS "numeroMandante"
+       FROM (
+         SELECT p."NumeroMandante"
+         FROM "Pratiche" p
+         WHERE ${where}
+         ORDER BY p."UpdatedAt" DESC NULLS LAST
+         LIMIT 10000
+       ) sub`,
+      params
+    );
+    return rows.map((r) => {
+      const raw = (r as { numeroMandante?: unknown; NumeroMandante?: unknown }).numeroMandante
+        ?? (r as { NumeroMandante?: unknown }).NumeroMandante;
+      return { numeroMandante: raw != null ? String(raw) : null };
     });
-    const set = new Set<string | null>();
-    for (const item of list.items) {
-      set.add(item.numeroMandante != null ? String(item.numeroMandante) : null);
-    }
-    return [...set].map((numeroMandante) => ({ numeroMandante }));
   }
 
   async idsAffidoTemporaneo(_tenantSlug: string, tenantId: string) {
