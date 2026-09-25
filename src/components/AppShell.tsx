@@ -413,6 +413,7 @@ function NavItem({
   return (
     <Link
       href={link.href}
+      prefetch={false}
       className={itemClass}
       title={title}
     >
@@ -441,6 +442,7 @@ function HeaderUserActions({
     <>
       <Link
         href="/account"
+        prefetch={false}
         className={`font-medium hover:text-white ${
           compact ? "max-w-[9rem] truncate" : "max-w-[14rem] truncate xl:max-w-none xl:whitespace-nowrap"
         }`}
@@ -562,6 +564,7 @@ function NavDropdownMenu({
                 <Link
                   key={link.href}
                   href={link.href}
+                  prefetch={false}
                   role="menuitem"
                   onClick={() => setOpen(false)}
                   className={`mx-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
