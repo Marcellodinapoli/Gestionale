@@ -113,12 +113,6 @@ const NAV_ACCENT: Record<string, NavAccent> = {
     badgeDark: "bg-violet-400/25 ring-1 ring-violet-300/55",
     badgeLight: "bg-violet-50 ring-1 ring-violet-300/75",
   },
-  portafogli: {
-    iconDark: "text-[#86efac]",
-    iconLight: "text-[#166534]",
-    badgeDark: "bg-emerald-400/25 ring-1 ring-emerald-300/55",
-    badgeLight: "bg-emerald-50 ring-1 ring-emerald-300/75",
-  },
 };
 
 function NavAccentIcon({
@@ -288,7 +282,6 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "utp-npl",
     navPageId: "portafogli",
     show: (u) => !isFormazioneOnly(u) && can(u, "portafogli:view"),
-    accent: NAV_ACCENT.portafogli,
   },
 ];
 

@@ -3,7 +3,7 @@
 export const CONFERIMENTO_TIPI = [
   { value: "STRAGIUDIZIALE", label: "Solo stragiudiziale" },
   { value: "GIUDIZIALE", label: "Solo giudiziale" },
-  { value: "ENTRAMBI", label: "Entrambi" },
+  { value: "ENTRAMBI", label: "Stragiudiziale e giudiziale" },
 ] as const;
 
 export type ConferimentoTipo = (typeof CONFERIMENTO_TIPI)[number]["value"];

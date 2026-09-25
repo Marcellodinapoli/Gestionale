@@ -723,54 +723,85 @@ export function PianoRientroPopup({
         <p className={sectionTitle}>
           {multiPiano ? "2 · Importi delle pratiche" : "2 · Importi"}
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {practiceLabels.map((label, i) => (
-            <label key={label} className="block text-xs">
-              <span className="font-semibold text-[var(--muted)]">{label}</span>
+        <div className="space-y-2">
+          <div
+            className={
+              multiPiano
+                ? nPianiEffettivi === 2
+                  ? "grid gap-2 sm:grid-cols-2"
+                  : "grid gap-2 sm:grid-cols-3"
+                : "grid gap-2 sm:grid-cols-2"
+            }
+          >
+            {practiceLabels.map((label, i) => (
+              <label key={label} className="block text-xs">
+                <span className="font-semibold text-[var(--muted)]">{label}</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={importoAt(i)}
+                  onChange={(e) => setImportoAt(i, e.target.value)}
+                  onBlur={() => {
+                    const n = parseEuroInput(importoAt(i));
+                    if (n != null) setImportoAt(i, formatEuroInput(n), false);
+                  }}
+                  className={inputCls}
+                  placeholder="es. 1.200,00"
+                />
+                {multiPiano && nets[i] != null && (importiGross[i] ?? 0) > 0 ? (
+                  <span className={`mt-0.5 block ${hintCls}`}>
+                    Netto dopo acconto: {euro(nets[i]!)}
+                  </span>
+                ) : null}
+              </label>
+            ))}
+            {!multiPiano ? (
+              <label className="block text-xs">
+                <span className="font-semibold text-[var(--muted)]">
+                  Acconto (se già versato)
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={accontoText}
+                  onChange={(e) => {
+                    setAccontoText(e.target.value);
+                    touch();
+                  }}
+                  onBlur={() => {
+                    const n = parseEuroInput(accontoText);
+                    if (n != null) setAccontoText(formatEuroInput(Math.max(0, n)));
+                  }}
+                  className={inputCls}
+                />
+              </label>
+            ) : null}
+          </div>
+          {multiPiano ? (
+            <label className="block text-xs">
+              <span className="font-semibold text-[var(--muted)]">
+                Acconto (se già versato)
+              </span>
               <input
                 type="text"
                 inputMode="decimal"
-                value={importoAt(i)}
-                onChange={(e) => setImportoAt(i, e.target.value)}
+                value={accontoText}
+                onChange={(e) => {
+                  setAccontoText(e.target.value);
+                  touch();
+                }}
                 onBlur={() => {
-                  const n = parseEuroInput(importoAt(i));
-                  if (n != null) setImportoAt(i, formatEuroInput(n), false);
+                  const n = parseEuroInput(accontoText);
+                  if (n != null) setAccontoText(formatEuroInput(Math.max(0, n)));
                 }}
                 className={inputCls}
-                placeholder="es. 1.200,00"
               />
-              {multiPiano && nets[i] != null && (importiGross[i] ?? 0) > 0 ? (
-                <span className={`mt-0.5 block ${hintCls}`}>
-                  Netto dopo acconto: {euro(nets[i]!)}
-                </span>
-              ) : null}
-            </label>
-          ))}
-          <label className="block text-xs">
-            <span className="font-semibold text-[var(--muted)]">
-              Acconto (se già versato)
-            </span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={accontoText}
-              onChange={(e) => {
-                setAccontoText(e.target.value);
-                touch();
-              }}
-              onBlur={() => {
-                const n = parseEuroInput(accontoText);
-                if (n != null) setAccontoText(formatEuroInput(Math.max(0, n)));
-              }}
-              className={inputCls}
-            />
-            {multiPiano ? (
               <span className={`mt-0.5 block ${hintCls}`}>
                 L&apos;acconto si ripartisce in quote uguali sulle {nPianiEffettivi}{" "}
                 pratiche.
               </span>
-            ) : null}
-          </label>
+            </label>
+          ) : null}
         </div>
 
         {multiPiano && linkedHints.length > 0 ? (
