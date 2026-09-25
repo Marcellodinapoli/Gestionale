@@ -10,11 +10,11 @@ import { loadAgendaLegale } from "@/lib/agenda/loadAgendaLegale";
 
 export default async function LegalPage() {
   const user = await requireNavPage("legal");
-  const [items, giudizialeStragiudKpi, impegniLegali] = await Promise.all([
+  const [items, giudizialeStragiudKpi] = await Promise.all([
     listPraticheGiudiziali(user),
     loadHomeGiudizialeStragiudKpi(user),
-    loadAgendaLegale(user),
   ]);
+  const impegniLegali = await loadAgendaLegale(user, { items });
   const inValutazione = items.filter(
     (i) => i.statoAvvio === "IN_ATTESA_VALUTAZIONE_LEGALE"
   ).length;

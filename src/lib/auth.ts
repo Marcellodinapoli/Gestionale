@@ -7,8 +7,12 @@ import { isPasswordExpired } from "@/lib/passwordPolicy";
 const COOKIE = "gestionale_session";
 
 function secret() {
-  const value = process.env.SESSION_SECRET || "dev-only-secret-not-for-prod";
-  return new TextEncoder().encode(value);
+  const value = process.env.SESSION_SECRET?.trim();
+  if (value) return new TextEncoder().encode(value);
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET is required in production");
+  }
+  return new TextEncoder().encode("dev-only-secret-not-for-prod");
 }
 
 export async function createSession(user: SessionUser) {

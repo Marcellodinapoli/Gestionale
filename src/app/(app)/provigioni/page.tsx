@@ -165,16 +165,6 @@ export default async function ProvigioniPage({
         : "__nessuna__"
       : sedeScopeId;
 
-  const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
-  const sediOpts =
-    user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
-      ? await sediDbFromUser(user).findMany({
-          where: { tenantId: user.tenantId, active: true },
-          orderBy: { nome: "asc" },
-          select: { id: true, nome: true },
-        })
-      : [];
-
   const ref = meseRaw ? new Date(`${meseRaw}-01T12:00:00`) : new Date();
   const da = inizioMese(ref);
   const a = fineMese(ref);
@@ -185,49 +175,65 @@ export default async function ProvigioniPage({
   const isAdmin = user.role === "ADMIN";
   const canFilter = isAdmin || isAmministrazione;
 
-  const operatori = canFilter
-    ? await usersDbFromUser(user).findMany({
-        where: {
-          tenantId: user.tenantId,
-          role: { in: ["OPERATOR", "SUPERVISOR"] },
-          active: true,
-          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
-        },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true, condizioneEconomica: true, importoFisso: true },
-      })
-    : [];
-
-  const mandantiDb = canFilter
-    ? await mandantiDbFromUser(user).findMany({
-        where: { tenantId: user.tenantId },
-        orderBy: { ragioneSociale: "asc" },
-        select: {
-          id: true,
-          codice: true,
-          ragioneSociale: true,
-          ...(canFilter ? { perimetri: true as const } : {}),
-        },
-      })
-    : [];
+  const [sedeUserIds, sediOpts, operatori, mandantiDb, supervisori, supGruppo, gruppoLavoro] =
+    await Promise.all([
+      userIdsInSede(user.tenantId, sedeScopeId),
+      user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
+        ? sediDbFromUser(user).findMany({
+            where: { tenantId: user.tenantId, active: true },
+            orderBy: { nome: "asc" },
+            select: { id: true, nome: true },
+          })
+        : Promise.resolve([]),
+      canFilter
+        ? usersDbFromUser(user).findMany({
+            where: {
+              tenantId: user.tenantId,
+              role: { in: ["OPERATOR", "SUPERVISOR"] },
+              active: true,
+              ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+            },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true, condizioneEconomica: true, importoFisso: true },
+          })
+        : Promise.resolve([]),
+      canFilter
+        ? mandantiDbFromUser(user).findMany({
+            where: { tenantId: user.tenantId },
+            orderBy: { ragioneSociale: "asc" },
+            select: {
+              id: true,
+              codice: true,
+              ragioneSociale: true,
+              ...(canFilter ? { perimetri: true as const } : {}),
+            },
+          })
+        : Promise.resolve([]),
+      isAdmin || isAmministrazione
+        ? usersDbFromUser(user).findMany({
+            where: {
+              tenantId: user.tenantId,
+              role: "SUPERVISOR",
+              ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+            },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      isAdmin && gruppoId
+        ? usersDbFromUser(user).findFirst({
+            where: { id: gruppoId, tenantId: user.tenantId },
+            select: { gruppoMandanti: true },
+          })
+        : Promise.resolve(null),
+      !canFilter ? getGruppoLavoro(user) : Promise.resolve(null),
+    ]);
 
   const mandanti = mandantiDb.map(({ id, codice, ragioneSociale }) => ({
     id,
     codice,
     ragioneSociale,
   }));
-
-  const supervisori = isAdmin || isAmministrazione
-    ? await usersDbFromUser(user).findMany({
-        where: {
-          tenantId: user.tenantId,
-          role: "SUPERVISOR",
-          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
-        },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      })
-    : [];
 
   const perimetriRefs =
     isAmministrazione || isAdmin
@@ -256,15 +262,10 @@ export default async function ProvigioniPage({
   let membriGruppo: Array<{ id: string; name: string; role: string }> = [];
 
   if (isAdmin && gruppoId) {
-    const sup = await usersDbFromUser(user).findFirst({
-      where: { id: gruppoId, tenantId: user.tenantId },
-      select: { gruppoMandanti: true },
-    });
-    gruppoMandanti = parseGruppoMandanti(sup?.gruppoMandanti);
-  } else if (!canFilter) {
-    const gruppo = await getGruppoLavoro(user);
-    gruppoMandanti = gruppo.gruppoMandanti;
-    membriGruppo = gruppo.members;
+    gruppoMandanti = parseGruppoMandanti(supGruppo?.gruppoMandanti);
+  } else if (!canFilter && gruppoLavoro) {
+    gruppoMandanti = gruppoLavoro.gruppoMandanti;
+    membriGruppo = gruppoLavoro.members;
     if (!gruppoMandanti.length) avvisoPerimetri = true;
   }
 

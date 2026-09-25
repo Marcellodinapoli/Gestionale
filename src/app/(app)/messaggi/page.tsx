@@ -1,7 +1,6 @@
 import { requireNavPage } from "@/lib/guard";
 import { PageHeader } from "@/components/ui";
 import { AgendaMessaggiPanel } from "@/components/agenda/AgendaMessaggiPanel";
-import { buildAgendaScopeContext } from "@/lib/agenda/buildAgendaScope";
 import { loadMessaggiAgendaScopedAuto } from "@/lib/agenda/loadAgenda";
 import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
 
@@ -12,11 +11,20 @@ export default async function MessaggiPage({
 }) {
   const user = await requireNavPage("messaggi");
   const sp = await searchParams;
-  const ctx = await buildAgendaScopeContext(user);
+  const tenantSlug = user.tenantSlug ?? user.tenantId;
 
   const [messaggiPraticaRaw, intern] = await Promise.all([
-    loadMessaggiAgendaScopedAuto(ctx, user),
-    messaggiInterniFromUser(user).list(ctx.tenantSlug, ctx.tenantId, {
+    loadMessaggiAgendaScopedAuto(
+      {
+        tenantSlug,
+        tenantId: user.tenantId,
+        role: user.role,
+        userId: user.id,
+        scope: { mode: "tenant" },
+      },
+      user
+    ),
+    messaggiInterniFromUser(user).list(tenantSlug, user.tenantId, {
       userId: user.id,
       take: 100,
     }),

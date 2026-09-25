@@ -16,10 +16,14 @@ import {
 import { importBatchPraticheWhere } from "@/lib/importBatchPratiche";
 
 export async function listImportBatchPratiche(
-  tenantId: string,
-  tenantSlug?: string
+  _tenantId?: string,
+  _tenantSlug?: string
 ): Promise<ImportBatchListItem[]> {
-  const slug = tenantSlug ?? tenantId;
+  const user = await requireWritablePermission("import:run");
+  void _tenantId;
+  void _tenantSlug;
+  const tenantId = user.tenantId;
+  const slug = user.tenantSlug ?? user.tenantId;
   const dbCtx = { tenantId, tenantSlug: slug };
   const incassoModel = incassiDb(dbCtx);
   const repo = importBatchRepo(dbCtx);

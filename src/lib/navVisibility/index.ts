@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import type { SessionUser } from "@/lib/permissions";
 import type { NavPageId, NavVisibilityMap } from "@/lib/navVisibility/catalog";
 import { resolveEffectiveNavVisibility } from "@/lib/navVisibility/defaults";
@@ -7,21 +8,23 @@ import {
   loadNavUserOverrides,
 } from "@/lib/navVisibility/store";
 
-export async function getEffectiveNavVisibilityForUser(
-  actor: Pick<SessionUser, "tenantId" | "tenantSlug">,
-  target: Pick<SessionUser, "id" | "role" | "formazioneOnly">
-): Promise<Record<NavPageId, boolean>> {
-  const [roleDefaults, userOverrides] = await Promise.all([
-    loadNavRoleDefaults(actor),
-    loadNavUserOverrides(actor, target.id),
-  ]);
-  return resolveEffectiveNavVisibility({
-    role: target.role,
-    formazioneOnly: target.formazioneOnly,
-    roleDefaults,
-    userOverrides,
-  });
-}
+export const getEffectiveNavVisibilityForUser = cache(
+  async function getEffectiveNavVisibilityForUser(
+    actor: Pick<SessionUser, "tenantId" | "tenantSlug">,
+    target: Pick<SessionUser, "id" | "role" | "formazioneOnly">
+  ): Promise<Record<NavPageId, boolean>> {
+    const [roleDefaults, userOverrides] = await Promise.all([
+      loadNavRoleDefaults(actor),
+      loadNavUserOverrides(actor, target.id),
+    ]);
+    return resolveEffectiveNavVisibility({
+      role: target.role,
+      formazioneOnly: target.formazioneOnly,
+      roleDefaults,
+      userOverrides,
+    });
+  }
+);
 
 /** Override rispetto al default ruolo (solo differenze). */
 export function overridesFromFlags(

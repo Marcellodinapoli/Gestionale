@@ -1,6 +1,9 @@
 import "server-only";
 import type { SessionUser } from "@/lib/permissions";
-import { listPraticheGiudiziali } from "@/lib/giudiziale/praticaGiudizialeRepo";
+import {
+  listPraticheGiudiziali,
+  type PraticaGiudizialeListItem,
+} from "@/lib/giudiziale/praticaGiudizialeRepo";
 import {
   expandImpegniLegali,
   type AgendaGiudizialeVoce,
@@ -19,9 +22,9 @@ function debitoreFromNome(nomeCompleto: string) {
 /** Impegni con data dalle pagine Legal (avvio, strategia, esito). */
 export async function loadAgendaLegale(
   user: SessionUser,
-  opts?: { praticaId?: string }
+  opts?: { praticaId?: string; items?: PraticaGiudizialeListItem[] }
 ): Promise<AgendaGiudizialeVoce[]> {
-  const items = await listPraticheGiudiziali(user);
+  const items = opts?.items ?? (await listPraticheGiudiziali(user));
   const filtered = opts?.praticaId
     ? items.filter((i) => i.praticaId === opts.praticaId)
     : items;

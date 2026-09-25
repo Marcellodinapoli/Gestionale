@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/guard";
+import { canPermissionOrNav, requireApiUser } from "@/lib/guard";
 import { loadDialerStreamPayload } from "@/lib/predictive-dialer/streamPayload";
 
 const STREAM_POLL_MS = 5_000;
@@ -7,6 +7,9 @@ const STREAM_POLL_MS = 5_000;
 export async function GET(req: Request) {
   const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
+  if (!(await canPermissionOrNav(user, "dialer:operate"))) {
+    return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
+  }
 
   const url = new URL(req.url);
   const campagnaId = url.searchParams.get("campagnaId") || undefined;

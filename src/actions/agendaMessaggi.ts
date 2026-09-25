@@ -18,6 +18,12 @@ export async function markMessaggioAgendaLettoAction(formData: FormData) {
   const tenantSlug = resolveTenantSlug(user);
   const msg = await repo.getById(tenantSlug, user.tenantId, id);
   if (!msg) fail("Messaggio non trovato");
+  if (!msg.praticaId) fail("Messaggio non trovato");
+  const pratica = await praticaDbFromUser(user).findFirst({
+    where: { id: msg.praticaId, ...praticaWhere(user) },
+    select: { id: true },
+  });
+  if (!pratica) fail("Messaggio non trovato");
   await repo.markLetto(tenantSlug, user.tenantId, id);
   revalidatePath("/agenda");
   revalidatePath("/messaggi");

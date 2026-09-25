@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/guard";
 
 export async function GET() {
+  const user = await requireApiUser();
+  if (user instanceof NextResponse) return user;
+  if (user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Permesso negato" }, { status: 403 });
+  }
+
   try {
     const { getFirebaseFirestore } = await import("@/lib/firebase/admin");
     const db = getFirebaseFirestore();

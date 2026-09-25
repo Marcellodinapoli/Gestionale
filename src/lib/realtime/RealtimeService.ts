@@ -25,6 +25,13 @@ const FALLBACK_POLL_MAX_MS = 60_000;
 const MEMO_FALLBACK_POLL_MIN_MS = 45_000;
 const MEMO_FALLBACK_POLL_MAX_MS = 90_000;
 
+/** Netlify Functions non tengono SSE aperti: il reconnect rifà loadMemoAlertsForUser. */
+function isNetlifyServerlessHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host.endsWith(".netlify.app") || host.endsWith(".netlify.com");
+}
+
 /**
  * Realtime lock — SSE via Next.js proxy, fallback polling adattivo.
  * Il browser non interroga il lock ogni 15s: heartbeat separato (30s) solo se owner.
@@ -142,7 +149,7 @@ export function subscribeMemoAlerts(callbacks: MemoAlertsStreamCallbacks): () =>
     scheduleFallbackPoll();
   };
 
-  if (typeof EventSource !== "undefined") {
+  if (typeof EventSource !== "undefined" && !isNetlifyServerlessHost()) {
     try {
       es = new EventSource(url);
       es.addEventListener("memo", (ev) => {
