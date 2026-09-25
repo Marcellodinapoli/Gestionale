@@ -51,6 +51,104 @@ export async function assertCandidaturaDelTenant(
   return candidatura;
 }
 
+/** Candidature già aperte in scheda dall’utente (tab «Nuove»). */
+export async function listCandidaturaIdsVisteByUser(
+  tenantId: string,
+  userId: string
+): Promise<string[]> {
+  const tid = tenantIdOrThrow(tenantId);
+  const uid = String(userId || "").trim();
+  if (!uid) return [];
+
+  if (!recruitingUsesSql()) {
+    const rows = await prisma.recruitingAttivita.findMany({
+      where: { tenantId: tid, createdById: uid, tipo: "VISIONE" },
+      select: { candidaturaId: true },
+      distinct: ["candidaturaId"],
+    });
+    return rows.map((r) => r.candidaturaId);
+  }
+
+  const pool = await recruitingPool();
+  const res = await pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), tid)
+    .input("userId", sql.NVarChar(64), uid)
+    .query(`
+      SELECT DISTINCT CandidaturaId
+      FROM dbo.RecruitingAttivita
+      WHERE TenantId = @tenantId
+        AND CreatedById = @userId
+        AND Tipo = N'VISIONE'
+    `);
+  return res.recordset
+    .map((r) => {
+      const row = r as { CandidaturaId?: unknown; candidaturaId?: unknown };
+      return String(row.CandidaturaId ?? row.candidaturaId ?? "").trim();
+    })
+    .filter(Boolean);
+}
+
+/** Idempotente: una sola VISIONE per utente+candidatura. */
+export async function markCandidaturaVistaAttivita(
+  tenantId: string,
+  candidaturaId: string,
+  userId: string
+): Promise<void> {
+  const candidatura = await assertCandidaturaDelTenant(tenantId, candidaturaId);
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+
+  if (!recruitingUsesSql()) {
+    const existing = await prisma.recruitingAttivita.findFirst({
+      where: {
+        tenantId: candidatura.tenantId,
+        candidaturaId: candidatura.id,
+        createdById: uid,
+        tipo: "VISIONE",
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+    await prisma.recruitingAttivita.create({
+      data: {
+        tenantId: candidatura.tenantId,
+        candidaturaId: candidatura.id,
+        tipo: "VISIONE",
+        occurredAt: new Date(),
+        note: "",
+        createdById: uid,
+      },
+    });
+    return;
+  }
+
+  const pool = await recruitingPool();
+  const found = await pool
+    .request()
+    .input("tenantId", sql.NVarChar(64), candidatura.tenantId)
+    .input("candidaturaId", sql.NVarChar(64), candidatura.id)
+    .input("userId", sql.NVarChar(64), uid)
+    .query(`
+      SELECT TOP 1 Id
+      FROM dbo.RecruitingAttivita
+      WHERE TenantId = @tenantId
+        AND CandidaturaId = @candidaturaId
+        AND CreatedById = @userId
+        AND Tipo = N'VISIONE'
+    `);
+  if (found.recordset.length > 0) return;
+
+  await insertAttivita({
+    tenantId: candidatura.tenantId,
+    candidaturaId: candidatura.id,
+    tipo: "VISIONE",
+    occurredAt: new Date(),
+    createdById: uid,
+    note: "",
+  });
+}
+
 export async function listAttivitaByCandidatura(
   tenantId: string,
   candidaturaId: string

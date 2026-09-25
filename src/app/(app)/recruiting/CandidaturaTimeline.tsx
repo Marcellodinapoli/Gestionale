@@ -28,7 +28,9 @@ export function CandidaturaTimeline({
   attivita: RecruitingAttivitaRecord[];
   colloquioIds?: string[];
 }) {
-  const elenco = [...attivita].sort(confrontaAttivitaPerDataDesc);
+  const elenco = [...attivita]
+    .filter((a) => a.tipo !== "VISIONE")
+    .sort(confrontaAttivitaPerDataDesc);
 
   return (
     <section className="space-y-3">

@@ -11,6 +11,7 @@ import {
   aggiornaOffertaLavoroAction,
   chiudiOffertaLavoroAction,
   creaOffertaLavoroAction,
+  markCandidaturaVistaAction,
   syncIndeedApplicationsAction,
 } from "@/actions/recruiting";
 import {
@@ -39,8 +40,9 @@ import {
   type StatoColloquio,
 } from "@/lib/recruiting/colloqui";
 import {
-  listCandidatureViste,
+  CANDIDATURE_VISTE_EVENT,
   markCandidaturaVista,
+  mergeCandidatureViste,
 } from "@/lib/recruiting/candidatureVisteStorage";
 
 type OffertaRow = {
@@ -193,12 +195,15 @@ export function OfferteLavoroClient({
   candidature = [],
   colloqui = [],
   userId,
+  visteIds = [],
 }: {
   offerte: OffertaRow[];
   canManage: boolean;
   candidature?: CandidaturaHome[];
   colloqui?: ColloquioHome[];
   userId: string;
+  /** Id già aperti in scheda (persistiti server-side). */
+  visteIds?: string[];
 }) {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
@@ -208,16 +213,20 @@ export function OfferteLavoroClient({
   const [pending, startTransition] = useTransition();
   const [percorso, setPercorso] = useState<PercorsoHomeId>("CANDIDATURE");
   const [aperte, setAperte] = useState<Record<string, boolean>>({});
-  const [viste, setViste] = useState<Set<string>>(() => new Set());
+  const [viste, setViste] = useState<Set<string>>(() => new Set(visteIds));
 
   useEffect(() => {
     function syncViste() {
-      setViste(listCandidatureViste(userId));
+      setViste(mergeCandidatureViste(userId, visteIds));
     }
     syncViste();
     window.addEventListener("focus", syncViste);
-    return () => window.removeEventListener("focus", syncViste);
-  }, [userId]);
+    window.addEventListener(CANDIDATURE_VISTE_EVENT, syncViste);
+    return () => {
+      window.removeEventListener("focus", syncViste);
+      window.removeEventListener(CANDIDATURE_VISTE_EVENT, syncViste);
+    };
+  }, [userId, visteIds]);
 
   // Aggiornamento quasi istantaneo quando arrivano candidature dal Receiver
   useEffect(() => {
@@ -234,6 +243,9 @@ export function OfferteLavoroClient({
       const next = new Set(prev);
       next.add(candidaturaId);
       return next;
+    });
+    void markCandidaturaVistaAction(candidaturaId).catch(() => {
+      /* resta il flag locale */
     });
   }
 

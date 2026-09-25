@@ -9,6 +9,7 @@ import {
 
 export const TIPI_ATTIVITA = [
   "RICEZIONE",
+  "VISIONE",
   "CONTATTO",
   "NOTA",
   "COLLOQUIO_PROGRAMMATO",
@@ -24,6 +25,7 @@ export type TipoAttivita = (typeof TIPI_ATTIVITA)[number];
 
 export const TIPO_ATTIVITA_LABELS: Record<TipoAttivita, string> = {
   RICEZIONE: "Ricezione",
+  VISIONE: "Scheda aperta",
   CONTATTO: "Contatto",
   NOTA: "Nota",
   COLLOQUIO_PROGRAMMATO: "Colloquio programmato",

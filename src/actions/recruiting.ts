@@ -47,6 +47,7 @@ import {
   createContattoAttivita,
   createNotaAttivita,
   createProvaProgrammata,
+  markCandidaturaVistaAttivita,
   updateContattoAttivita,
   updateProvaProgrammata,
   salvaEsitoProva,
@@ -279,6 +280,15 @@ export async function creaCandidaturaAction(formData: FormData) {
   const created = await createCandidatura(user.tenantId, input, user.id);
   revalidateRecruiting(created.offertaId);
   revalidatePath(`/recruiting/offerte/${created.offertaId}/${created.id}`);
+}
+
+/** Segna la candidatura come vista (esce dal tab «Nuove»). Idempotente. */
+export async function markCandidaturaVistaAction(candidaturaId: string) {
+  const user = await assertRecruitingAccess();
+  const id = String(candidaturaId || "").trim();
+  if (!id) return;
+  await markCandidaturaVistaAttivita(user.tenantId, id, user.id);
+  revalidatePath("/recruiting");
 }
 
 export async function aggiornaStatoCandidaturaAction(formData: FormData) {

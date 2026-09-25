@@ -3,19 +3,22 @@ import { listOfferteLavoro } from "@/lib/recruiting/offerteRepo";
 import { getReceiverConfig } from "@/lib/recruiting/receiverRepo";
 import { countCandidatureByOfferta, listCandidaturePerHome } from "@/lib/recruiting/candidatureRepo";
 import { listColloquiRecenti } from "@/lib/recruiting/colloquiRepo";
+import { listCandidaturaIdsVisteByUser } from "@/lib/recruiting/attivitaRepo";
 import { OfferteLavoroClient } from "./OfferteLavoroClient";
 import { RecruitingReceiverClient } from "./RecruitingReceiverClient";
 
 export default async function RecruitingPage() {
   const user = await requireNavPage("recruiting");
   const canManage = await canPermissionOrNav(user, "recruiting:manage");
-  const [offerteRows, receiver, counts, candidatureRecenti, colloquiRecenti] = await Promise.all([
-    listOfferteLavoro(user.tenantId),
-    getReceiverConfig(user.tenantId),
-    countCandidatureByOfferta(user.tenantId),
-    listCandidaturePerHome(user.tenantId),
-    listColloquiRecenti(user.tenantId),
-  ]);
+  const [offerteRows, receiver, counts, candidatureRecenti, colloquiRecenti, visteIds] =
+    await Promise.all([
+      listOfferteLavoro(user.tenantId),
+      getReceiverConfig(user.tenantId),
+      countCandidatureByOfferta(user.tenantId),
+      listCandidaturePerHome(user.tenantId),
+      listColloquiRecenti(user.tenantId),
+      listCandidaturaIdsVisteByUser(user.tenantId, user.id),
+    ]);
   const offerte = offerteRows.map((o) => ({
     id: o.id,
     titolo: o.titolo,
@@ -48,6 +51,7 @@ export default async function RecruitingPage() {
         offerte={offerte}
         canManage={canManage}
         userId={user.id}
+        visteIds={visteIds}
         candidature={candidatureRecenti.map((c) => ({
           id: c.id,
           offertaId: c.offertaId,
