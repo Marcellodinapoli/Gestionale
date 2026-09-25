@@ -76,9 +76,6 @@ export function baselinePageVisible(
       return can(u, "users:manage");
     case "log":
       return can(u, "audit:view");
-    case "account":
-    case "creditcalc":
-      return true;
     default:
       return false;
   }

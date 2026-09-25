@@ -16,7 +16,6 @@ export const PLATFORM_MODULE_IDS = [
   "formazione",
   "recruiting",
   "strumenti",
-  "broker",
   "utility",
   "utp-npl",
 ] as const;
@@ -26,7 +25,6 @@ export type ModuleId = (typeof PLATFORM_MODULE_IDS)[number];
 export const VERTICAL_PROFILES = [
   "RECUPERO_CREDITI",
   "LEGALE",
-  "BROKER",
   "UTILITY",
   "UTP_NPL",
 ] as const;
@@ -63,10 +61,7 @@ export const RECOVERY_DEFAULT_MODULES: readonly ModuleId[] = [
 ] as const;
 
 /** Identificatori futuri: nessuna pagina, menu o logica. */
-export const FUTURE_MODULE_IDS: readonly ModuleId[] = [
-  "broker",
-  "utility",
-] as const;
+export const FUTURE_MODULE_IDS: readonly ModuleId[] = ["utility"] as const;
 
 /** Moduli vendibili / commutabili per tenant (il core resta sempre). */
 export const SELLABLE_MODULE_IDS: readonly ModuleId[] = [
@@ -147,7 +142,6 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
     label: "UTP / NPL",
     description: "Acquisto e gestione portafogli, agganciati alle pratiche del tenant",
   },
-  { id: "broker", label: "Broker", description: "Non disponibile", future: true },
   { id: "utility", label: "Utility", description: "Non disponibile", future: true },
 ];
 

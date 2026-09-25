@@ -30,6 +30,7 @@ export type PortafoglioRecord = {
   nome: string;
   codice: string | null;
   venditore: string | null;
+  servicer: string | null;
   tipo: PortafoglioTipo;
   stato: PortafoglioStato;
   dataCutoff: Date | null;
