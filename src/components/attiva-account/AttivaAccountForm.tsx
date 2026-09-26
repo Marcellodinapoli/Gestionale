@@ -135,8 +135,8 @@ export function AttivaAccountForm({ token }: { token: string }) {
           return;
         }
         setSuccess(
-          preview.slug
-            ? `Account creato per ${preview.ragioneSociale || "l'azienda"}. Al login usa il codice azienda: ${preview.slug}. L'azienda deve essere attiva per accedere.`
+          tenantSlug
+            ? `Account creato per ${ragioneSociale || "l'azienda"}. Al login usa il codice azienda: ${tenantSlug}. L'azienda deve essere attiva per accedere.`
             : "Account creato. L'azienda deve essere attivata prima di poter effettuare l'accesso."
         );
         window.setTimeout(() => {
