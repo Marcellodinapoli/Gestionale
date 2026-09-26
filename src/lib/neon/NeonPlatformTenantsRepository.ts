@@ -15,11 +15,13 @@ import {
   PLATFORM_VERTICAL_KEY,
 } from "@/lib/platform/tenantProfile";
 import {
+  COMMERCIAL_PACKAGE_CATALOG,
+  modulesFromPackages,
+  packagesFromModules,
   parseEnabledModules,
   serializeEnabledModules,
   RECOVERY_DEFAULT_MODULES,
   VERTICAL_PROFILES,
-  type ModuleId,
   type VerticalProfile,
 } from "@/lib/platform/modules";
 import {
@@ -174,15 +176,20 @@ async function loadModulesForTenant(tenantId: string): Promise<TenantModulesDto>
     const v = String(row.Valore ?? row.valore ?? "");
     if (k) map.set(k, v);
   }
-  if (!map.has(PLATFORM_MODULES_KEY) && !map.has(PLATFORM_VERTICAL_KEY)) {
-    return {
-      verticalProfile: "RECUPERO_CREDITI",
-      enabledModules: [...RECOVERY_DEFAULT_MODULES],
-    };
-  }
+  const enabledModules = map.has(PLATFORM_MODULES_KEY)
+    ? parseEnabledModules(map.get(PLATFORM_MODULES_KEY))
+    : [...RECOVERY_DEFAULT_MODULES];
   return {
-    verticalProfile: parseVertical(map.get(PLATFORM_VERTICAL_KEY)),
-    enabledModules: parseEnabledModules(map.get(PLATFORM_MODULES_KEY)),
+    verticalProfile: map.has(PLATFORM_VERTICAL_KEY)
+      ? parseVertical(map.get(PLATFORM_VERTICAL_KEY))
+      : "RECUPERO_CREDITI",
+    enabledModules,
+    enabledPackages: packagesFromModules(enabledModules),
+    packageCatalog: COMMERCIAL_PACKAGE_CATALOG.map((p) => ({
+      id: p.id,
+      label: p.label,
+      description: p.description,
+    })),
   };
 }
 
@@ -295,9 +302,16 @@ export class NeonPlatformTenantsRepository {
       ]
     );
 
-    if (input.modules?.enabledModules) {
+    if (
+      input.modules?.enabledModules != null ||
+      input.modules?.enabledPackages != null
+    ) {
+      const enabledModules =
+        input.modules.enabledModules != null
+          ? input.modules.enabledModules
+          : modulesFromPackages(input.modules.enabledPackages || []);
       await this.updateModules(id, {
-        enabledModules: input.modules.enabledModules as ModuleId[],
+        enabledModules,
         verticalProfile: input.modules.verticalProfile,
       });
     }
@@ -563,13 +577,27 @@ export class NeonPlatformTenantsRepository {
 
   async updateModules(
     tenantId: string,
-    input: { enabledModules: string[]; verticalProfile?: VerticalProfile }
+    input: {
+      enabledModules?: string[];
+      enabledPackages?: string[];
+      verticalProfile?: VerticalProfile;
+    }
   ): Promise<TenantModulesDto> {
     requireNeon();
     const t = await this.getById(tenantId);
     if (!t) throw new Error("Tenant non trovato");
 
-    const serialized = serializeEnabledModules(input.enabledModules);
+    const enabledModules =
+      input.enabledModules != null
+        ? input.enabledModules
+        : input.enabledPackages != null
+          ? modulesFromPackages(input.enabledPackages)
+          : null;
+    if (enabledModules == null) {
+      throw new Error("enabledModules o enabledPackages obbligatorio");
+    }
+
+    const serialized = serializeEnabledModules(enabledModules);
     await upsertConfigChiave(tenantId, PLATFORM_MODULES_KEY, serialized);
 
     if (input.verticalProfile) {
@@ -617,6 +645,7 @@ export class NeonPlatformTenantsRepository {
       [id, input.tenantId, email, role, tokenHash, expiresAt.toISOString(), admin]
     );
 
+    // activationUrl / emailSent sono arricchiti dalla route HTTP invites.
     return {
       id,
       tenantId: input.tenantId,
@@ -627,6 +656,10 @@ export class NeonPlatformTenantsRepository {
       createdByPlatformAdmin: admin,
       createdAt: new Date().toISOString(),
       token,
+      activationUrl: "",
+      emailSent: false,
+      ragioneSociale: tenant.ragioneSociale,
+      slug: tenant.slug,
     };
   }
 
@@ -649,10 +682,12 @@ export class NeonPlatformTenantsRepository {
     }
 
     const rows = await neonQuery(
-      `SELECT "Id", "TenantId", "Email", "Role", "TokenHash",
-              "ExpiresAt", "UsedAt", "CreatedByPlatformAdmin", "CreatedAt"
-       FROM "TenantInvites"
-       WHERE "TokenHash" = $1
+      `SELECT i."Id", i."TenantId", i."Email", i."Role", i."TokenHash",
+              i."ExpiresAt", i."UsedAt", i."CreatedByPlatformAdmin", i."CreatedAt",
+              t."Nome" AS "RagioneSociale", t."Slug" AS "Slug"
+       FROM "TenantInvites" i
+       LEFT JOIN "Tenants" t ON t."Id" = i."TenantId"
+       WHERE i."TokenHash" = $1
        LIMIT 1`,
       [hash]
     );
@@ -680,10 +715,12 @@ export class NeonPlatformTenantsRepository {
       usedAt: dateIso(row.UsedAt),
       createdByPlatformAdmin: String(row.CreatedByPlatformAdmin),
       createdAt: dateIso(row.CreatedAt) || "",
+      ragioneSociale: String(row.RagioneSociale ?? row.ragioneSociale ?? "").trim() || undefined,
+      slug: String(row.Slug ?? row.slug ?? "").trim() || undefined,
     };
-    if (base.usedAt) return { ...base, valid: false, reason: "USED" };
+    if (base.usedAt) return { ...base, valid: false, reason: "USED" as const };
     if (new Date(base.expiresAt).getTime() < Date.now()) {
-      return { ...base, valid: false, reason: "EXPIRED" };
+      return { ...base, valid: false, reason: "EXPIRED" as const };
     }
     return { ...base, valid: true };
   }

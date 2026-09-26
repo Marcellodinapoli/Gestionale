@@ -60,6 +60,9 @@ export type TenantAbbonamento = {
 export type TenantModulesDto = {
   verticalProfile: VerticalProfile;
   enabledModules: ModuleId[];
+  /** Pacchetti commerciali Back Office (derivati / inviabili). */
+  enabledPackages?: string[];
+  packageCatalog?: Array<{ id: string; label: string; description: string }>;
 };
 
 export type TenantPlatformDto = {
@@ -85,7 +88,9 @@ export type CreateTenantPlatformInput = {
   perfMonitoringEnabled?: boolean;
   /** Se presente, scrive subito platform.modules / platform.vertical */
   modules?: {
-    enabledModules: string[];
+    enabledModules?: string[];
+    /** Alternativa a enabledModules: pacchetti commerciali Back Office. */
+    enabledPackages?: string[];
     verticalProfile?: VerticalProfile;
   };
 };
@@ -117,12 +122,23 @@ export type TenantInviteRecord = {
   createdAt: string;
 };
 
-export type CreateInviteResult = TenantInviteRecord & {
-  /** Token in chiaro — solo nella response di creazione, mai persistito. */
-  token: string;
-};
-
 export type TenantInviteLookup = TenantInviteRecord & {
   valid: boolean;
   reason?: "USED" | "EXPIRED" | "NOT_FOUND";
+  /** Anagrafica tenant (join) — utile in preview pubblica. */
+  ragioneSociale?: string;
+  slug?: string;
+};
+
+export type CreateInviteResult = TenantInviteRecord & {
+  /** Token in chiaro — solo nella response di creazione, mai persistito. */
+  token: string;
+  /** Link pubblico `/attiva-account?token=…` (token inclusa). */
+  activationUrl: string;
+  /** true se l'email è stata inviata con successo. */
+  emailSent: boolean;
+  /** Motivo mancato invio (config assente o errore provider). */
+  emailError?: string;
+  ragioneSociale?: string;
+  slug?: string;
 };

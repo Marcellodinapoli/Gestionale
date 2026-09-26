@@ -13,7 +13,12 @@ const inputCls =
 type PreviewState =
   | { status: "loading" }
   | { status: "invalid" }
-  | { status: "ready"; email: string };
+  | {
+      status: "ready";
+      email: string;
+      ragioneSociale?: string | null;
+      slug?: string | null;
+    };
 
 export function AttivaAccountForm({ token }: { token: string }) {
   const router = useRouter();
@@ -41,6 +46,8 @@ export function AttivaAccountForm({ token }: { token: string }) {
         );
         const data = (await res.json().catch(() => ({}))) as {
           email?: string;
+          ragioneSociale?: string | null;
+          slug?: string | null;
           code?: string;
         };
         if (cancelled) return;
@@ -48,7 +55,12 @@ export function AttivaAccountForm({ token }: { token: string }) {
           setPreview({ status: "invalid" });
           return;
         }
-        setPreview({ status: "ready", email: data.email });
+        setPreview({
+          status: "ready",
+          email: data.email,
+          ragioneSociale: data.ragioneSociale,
+          slug: data.slug,
+        });
       } catch {
         if (!cancelled) setPreview({ status: "invalid" });
       }
@@ -67,6 +79,9 @@ export function AttivaAccountForm({ token }: { token: string }) {
       setError("Invito non valido o scaduto");
       return;
     }
+
+    const ragioneSociale = preview.ragioneSociale;
+    const tenantSlug = preview.slug;
 
     const fd = new FormData(e.currentTarget);
     const password = String(fd.get("password") || "");
@@ -120,7 +135,9 @@ export function AttivaAccountForm({ token }: { token: string }) {
           return;
         }
         setSuccess(
-          "Account creato. L'azienda deve essere attivata prima di poter effettuare l'accesso."
+          preview.slug
+            ? `Account creato per ${preview.ragioneSociale || "l'azienda"}. Al login usa il codice azienda: ${preview.slug}. L'azienda deve essere attiva per accedere.`
+            : "Account creato. L'azienda deve essere attivata prima di poter effettuare l'accesso."
         );
         window.setTimeout(() => {
           router.replace("/login");
@@ -146,6 +163,19 @@ export function AttivaAccountForm({ token }: { token: string }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      {(preview.ragioneSociale || preview.slug) && (
+        <div className="rounded-lg border border-[var(--line)] bg-[#f7f9fb] px-3 py-2 text-sm">
+          <p className="font-semibold text-[var(--navy)]">
+            {preview.ragioneSociale || "Azienda"}
+          </p>
+          {preview.slug ? (
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              Codice azienda (login): <strong>{preview.slug}</strong>
+            </p>
+          ) : null}
+        </div>
+      )}
+
       <label className="block text-sm">
         Email
         <input

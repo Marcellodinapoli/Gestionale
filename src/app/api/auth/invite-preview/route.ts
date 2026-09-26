@@ -24,7 +24,12 @@ export async function GET(req: Request) {
   try {
     const lookup = await getNeonPlatformTenantsRepository().verifyInviteToken(token);
     if (!lookup.valid || !lookup.email) return INVALID;
-    return NextResponse.json({ email: lookup.email });
+    return NextResponse.json({
+      email: lookup.email,
+      ragioneSociale: lookup.ragioneSociale || null,
+      slug: lookup.slug || null,
+      tenantId: lookup.tenantId || null,
+    });
   } catch (e) {
     console.error("[invite-preview]", e);
     return INVALID;
