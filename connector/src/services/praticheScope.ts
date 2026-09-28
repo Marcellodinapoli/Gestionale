@@ -5,7 +5,49 @@ export type ScopeInput = {
   role: string;
   userId: string;
   memberIds?: string[];
+  /**
+   * Nasconde pratiche scadute dallo stragiudiziale / giudiziale avviato.
+   * Usato per OPERATOR/SUPERVISOR anche quando cercaAmpia promuove lo scope ad ADMIN.
+   */
+  hideFuoriStragiudiziale?: boolean;
 };
+
+const STATI_GIUDIZIALE_NASCOSTI = [
+  "IN_ATTESA_VALUTAZIONE_LEGALE",
+  "GIUDIZIALE_AVVIATO_PROCEDURA_DA_DEFINIRE",
+  "IN_PROCEDURA",
+  "PROCEDURA_AVVIATA",
+  "ARCHIVIATA_SENZA_AZIONE",
+  "CONCLUSA_CON_ESITO",
+];
+
+function appendHideFuoriStragiudiziale(
+  clauses: string[],
+  req: sql.Request,
+  alias: string
+) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  req.input("scopeStragiudToday", sql.DateTime2, today);
+  STATI_GIUDIZIALE_NASCOSTI.forEach((s, i) => {
+    req.input(`scopeGiudStato${i}`, sql.NVarChar(80), s);
+  });
+  const statiList = STATI_GIUDIZIALE_NASCOSTI.map((_, i) => `@scopeGiudStato${i}`).join(", ");
+  clauses.push(`NOT (
+    (
+      ISNULL(${alias}.ConferimentoTipo, N'') <> N'GIUDIZIALE'
+      AND (
+        (${alias}.DataPassaggioGiudiziale IS NOT NULL AND ${alias}.DataPassaggioGiudiziale < @scopeStragiudToday)
+        OR (${alias}.DataPassaggioGiudiziale IS NULL AND ${alias}.Scadenza IS NOT NULL AND ${alias}.Scadenza < @scopeStragiudToday)
+      )
+    )
+    OR EXISTS (
+      SELECT 1 FROM dbo.PraticheGiudiziali g
+      WHERE g.PraticaId = ${alias}.Id
+        AND g.StatoAvvio IN (${statiList})
+    )
+  )`);
+}
 
 /** Applica scope ruolo come clausole SQL AND su alias `p`. */
 export function applyScope(
@@ -17,7 +59,13 @@ export function applyScope(
   req.input("tenantId", sql.UniqueIdentifier, scope.tenantId);
 
   const role = scope.role;
+  const hideFuori =
+    scope.hideFuoriStragiudiziale === true ||
+    role === "OPERATOR" ||
+    role === "SUPERVISOR";
+
   if (role === "ADMIN" || role === "BACK_OFFICE" || role === "AMMINISTRAZIONE" || role === "LEGAL") {
+    if (hideFuori) appendHideFuoriStragiudiziale(clauses, req, alias);
     return clauses;
   }
 
@@ -27,6 +75,7 @@ export function applyScope(
     clauses.push(
       `(${alias}.AssegnatarioId = @scopeUserId OR ${alias}.OperatoreTitolareId = @scopeUserId)`
     );
+    if (hideFuori) appendHideFuoriStragiudiziale(clauses, req, alias);
     return clauses;
   }
 
@@ -43,11 +92,13 @@ export function applyScope(
       OR ${alias}.AssegnatarioId IN (${inList})
       OR ${alias}.OperatoreTitolareId IN (${inList})
     )`);
+    if (hideFuori) appendHideFuoriStragiudiziale(clauses, req, alias);
     return clauses;
   }
 
   clauses.push(
     `(${alias}.AssegnatarioId = @scopeUserId OR ${alias}.OperatoreTitolareId = @scopeUserId)`
   );
+  if (hideFuori) appendHideFuoriStragiudiziale(clauses, req, alias);
   return clauses;
 }

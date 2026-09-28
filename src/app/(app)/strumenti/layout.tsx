@@ -10,7 +10,7 @@ import {
 import { StrumentiNav } from "@/components/strumenti/StrumentiNav";
 
 export default async function StrumentiLayout({ children }: { children: ReactNode }) {
-  await requireModule("strumenti");
+  await requireModule("formazione");
   const user = await requireNavPage("strumenti");
   if (isFormazioneOnly(user)) redirect(homePathForUser(user));
 

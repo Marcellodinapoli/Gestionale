@@ -4,45 +4,70 @@ import { Card } from "@/components/ui";
 
 import { DashboardKpi } from "@/components/home/DashboardStat";
 
-import { buildPraticheQuery } from "@/components/PaginazioneBar";
-
 import { AffidiMonitorFiltri } from "@/components/affidi/AffidiMonitorFiltri";
 
 import type { AffidiMonitoraggioDto } from "@/lib/affidi/loadAffidiMonitoraggio";
 
 import type { MandantePerimetriAffidi } from "@/lib/affidi/affidiMonitorPerimetri";
 
-import type { AffidiNavParams } from "@/components/affidi/AffidiCaricoOperatori";
+import {
+  buildAffidiHref,
+  type AffidiAllertaNav,
+  type AffidiNavParams,
+} from "@/components/affidi/AffidiCaricoOperatori";
 
 export function AffidiMonitoraggioPanel({
   mandanti,
   monitor,
   mandatoId,
   perimetro,
+  allertaAttiva,
+  searchActive,
   extraParams,
 }: {
   mandanti: MandantePerimetriAffidi[];
   monitor: AffidiMonitoraggioDto;
   mandatoId?: string;
   perimetro?: string;
+  allertaAttiva?: AffidiAllertaNav;
+  searchActive?: boolean;
   extraParams?: Pick<
     AffidiNavParams,
-    "operatore" | "coda" | "sezione" | "caricoMandato" | "caricoPerimetro" | "caricoMese"
+    | "operatore"
+    | "coda"
+    | "sezione"
+    | "caricoMandato"
+    | "caricoPerimetro"
+    | "caricoMese"
+    | "caricoCerca"
   >;
 }) {
   const { nuove, nonAssegnate, inLavorazione, inScadenza7gg } = monitor;
 
+  function hrefAllerta(allerta: AffidiAllertaNav) {
+    const same = allertaAttiva === allerta;
+    return buildAffidiHref({
+      ...extraParams,
+      mandato: mandatoId,
+      perimetro,
+      sezione: "affida",
+      affidaCerca: same ? undefined : "1",
+      allerta: same ? undefined : allerta,
+    });
+  }
+
   return (
     <Card title="Monitoraggio operativo">
       <p className="mb-3 text-xs text-[var(--muted)]">
-        I filtri aggiornano allerte e l&apos;elenco pratiche da affidare sotto. Incassi e carico
-        operatori hanno filtri separati in alto.
+        Imposta mandato/perimetro e premi Filtra per l&apos;elenco Affida sotto. Clic su una card
+        allerta: apre lo stesso elenco filtrato.
       </p>
       <Suspense fallback={null}>
         <AffidiMonitorFiltri
           mandanti={mandanti}
           mandatoId={mandatoId}
           perimetro={perimetro}
+          searchActive={searchActive}
           extraParams={extraParams}
         />
       </Suspense>
@@ -55,32 +80,26 @@ export function AffidiMonitoraggioPanel({
           <DashboardKpi
             title="Nuove"
             value={nuove}
-            hint="Pratiche nuove"
-            href={buildPraticheQuery({
-              stato: "NUOVA",
-              ...(mandatoId ? { mandato: mandatoId } : {}),
-              ...(perimetro ? { lotto: perimetro } : {}),
-            })}
+            hint="Aperte senza codice scarico"
+            href={hrefAllerta("nuove")}
           />
           <DashboardKpi
             title="Non assegnate"
             value={nonAssegnate}
-            hint="Pratiche aperte senza operatore"
+            hint="Aperte senza affidatario"
+            href={hrefAllerta("non_assegnate")}
           />
           <DashboardKpi
             title="In lavorazione"
             value={inLavorazione}
             hint="Pratiche in lavorazione"
-            href={buildPraticheQuery({
-              stato: "IN_LAVORAZIONE",
-              ...(mandatoId ? { mandato: mandatoId } : {}),
-              ...(perimetro ? { lotto: perimetro } : {}),
-            })}
+            href={hrefAllerta("in_lavorazione")}
           />
           <DashboardKpi
             title="In scadenza 7 gg"
             value={inScadenza7gg}
             hint="Scadono entro una settimana"
+            href={hrefAllerta("in_scadenza")}
           />
         </div>
       </div>

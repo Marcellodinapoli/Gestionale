@@ -23,6 +23,7 @@ export function AffidiCaricoFiltri({
   caricoMese,
   operatoreId,
   extraParams,
+  searchActive = false,
 }: {
   mandanti: MandantePerimetriAffidi[];
   operatori: Array<{ id: string; name: string }>;
@@ -31,6 +32,8 @@ export function AffidiCaricoFiltri({
   caricoMese?: string;
   operatoreId?: string;
   extraParams?: Pick<AffidiNavParams, "mandato" | "perimetro" | "coda" | "sezione">;
+  /** True dopo Filtra: abilita Reset anche senza altri campi. */
+  searchActive?: boolean;
 }) {
   const router = useRouter();
   const [mandato, setMandato] = useState(caricoMandato || "");
@@ -49,6 +52,7 @@ export function AffidiCaricoFiltri({
     caricoPerimetro: string;
     caricoMese: string;
     operatore: string;
+    caricoCerca?: boolean;
   }) {
     return buildAffidiHref({
       ...extraParams,
@@ -56,6 +60,7 @@ export function AffidiCaricoFiltri({
       caricoPerimetro: next.caricoPerimetro || undefined,
       caricoMese: next.caricoMese || undefined,
       operatore: next.operatore || undefined,
+      caricoCerca: next.caricoCerca ? "1" : undefined,
     });
   }
 
@@ -67,6 +72,7 @@ export function AffidiCaricoFiltri({
         caricoPerimetro: peri,
         caricoMese: meseSel,
         operatore,
+        caricoCerca: true,
       })
     );
   }
@@ -82,11 +88,12 @@ export function AffidiCaricoFiltri({
         caricoPerimetro: "",
         caricoMese: "",
         operatore: "",
+        caricoCerca: false,
       })
     );
   }
 
-  const hasFiltri = mandato || peri || meseSel || operatore;
+  const hasFiltri = searchActive;
 
   return (
     <form

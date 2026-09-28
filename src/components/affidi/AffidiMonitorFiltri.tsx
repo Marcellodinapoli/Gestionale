@@ -18,14 +18,24 @@ export function AffidiMonitorFiltri({
   mandanti,
   mandatoId,
   perimetro,
+  searchActive,
   extraParams,
 }: {
   mandanti: MandantePerimetriAffidi[];
   mandatoId?: string;
   perimetro?: string;
+  /** Elenco Affida già caricato (affidaCerca / allerta). */
+  searchActive?: boolean;
   extraParams?: Pick<
     AffidiNavParams,
-    "operatore" | "coda" | "sezione" | "caricoMandato" | "caricoPerimetro" | "caricoMese"
+    | "operatore"
+    | "coda"
+    | "sezione"
+    | "caricoMandato"
+    | "caricoPerimetro"
+    | "caricoMese"
+    | "caricoCerca"
+    | "allerta"
   >;
 }) {
   const router = useRouter();
@@ -37,23 +47,30 @@ export function AffidiMonitorFiltri({
     [mandato, mandanti]
   );
 
-  function buildHref(nextMandato: string, nextPeri: string) {
+  function buildHref(
+    nextMandato: string,
+    nextPeri: string,
+    opts?: { cerca?: boolean; clearAllerta?: boolean }
+  ) {
     return buildAffidiHref({
       ...extraParams,
       mandato: nextMandato || undefined,
       perimetro: nextPeri || undefined,
+      allerta: opts?.clearAllerta ? undefined : extraParams?.allerta,
+      affidaCerca: opts?.cerca ? "1" : undefined,
+      sezione: opts?.cerca ? "affida" : undefined,
     });
   }
 
   function applica(e: React.FormEvent) {
     e.preventDefault();
-    router.push(buildHref(mandato, peri));
+    router.push(buildHref(mandato, peri, { cerca: true, clearAllerta: true }));
   }
 
   function reset() {
     setMandato("");
     setPeri("");
-    router.push(buildHref("", ""));
+    router.push(buildAffidiHref({ ...extraParams, allerta: undefined, affidaCerca: undefined }));
   }
 
   return (
@@ -97,7 +114,7 @@ export function AffidiMonitorFiltri({
       <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
         Filtra
       </button>
-      {mandato || peri ? (
+      {searchActive ? (
         <button type="button" onClick={reset} className={FILTRI_RESET_BUTTON_CLASS}>
           Reset
         </button>

@@ -86,6 +86,12 @@ export default async function OperatoriPage() {
     .map((u) => u.acronimo)
     .filter((a): a is string => Boolean(a?.trim()));
 
+  const { getTenantPlatformConfig, tenantHasModule } = await import(
+    "@/lib/platform/tenantProfile"
+  );
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const creditCalcModuleOn = tenantHasModule(platform, "creditcalc");
+
   return (
     <OperatoriWorkspace
       utenti={lista}
@@ -95,6 +101,7 @@ export default async function OperatoriPage() {
       roleDefaults={roleDefaults}
       userOverrides={userOverrides}
       acronimiUsati={acronimiUsati}
+      creditCalcModuleOn={creditCalcModuleOn}
       headerActions={
         <>
           <Link
@@ -109,6 +116,7 @@ export default async function OperatoriPage() {
             supervisori={supervisori}
             roleDefaults={roleDefaults}
             acronimiUsati={acronimiUsati}
+            creditCalcModuleOn={creditCalcModuleOn}
           />
         </>
       }

@@ -29,6 +29,7 @@ import {
   sanitizeAltriFiltri,
 } from "@/lib/praticheAltriFiltri";
 import { buildPraticheQuery } from "@/components/PaginazioneBar";
+import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
 
 export {
   STATO_LAVORAZIONE_FISSO,
@@ -397,7 +398,12 @@ export async function conteggiVoceLavorazione(
     userId: opts.tenantId,
   });
   const baseWhere: Prisma.PraticaWhereInput = {
-    AND: [opts.scope, voceWhere],
+    AND: [
+      opts.scope,
+      voceWhere,
+      // Cintura: esclusione anche se lo scope chiamante non l'ha già messa
+      whereVisibiliAdOperatoreSupervisor() as Prisma.PraticaWhereInput,
+    ],
   };
   const memberFilter: Prisma.PraticaWhereInput = opts.operatoreId
     ? {
@@ -468,38 +474,56 @@ export async function conteggiLavorazioneSuggerita(
     operatori?: Array<{ id: string; name: string }>;
   }
 ): Promise<VoceLavorazioneConConteggi[]> {
-  const out: VoceLavorazioneConConteggi[] = [];
-  for (const voce of voci) {
-    const { totale, lavorate } = await conteggiVoceLavorazione(voce, {
-      ...opts,
-      totaleSoloFiltro: !opts.operatoreId,
-    });
-    const operatori: OperatoreConteggiLavorazione[] = [];
+  // Stessi conteggi di prima: in parallelo (prima era await in serie → PAGE lenta su Neon).
+  return Promise.all(
+    voci.map(async (voce) => {
+      const { totale, lavorate } = await conteggiVoceLavorazione(voce, {
+        ...opts,
+        totaleSoloFiltro: !opts.operatoreId,
+      });
 
-    if (opts.operatori?.length && !opts.operatoreId) {
-      for (const op of opts.operatori) {
-        const c = await conteggiVoceLavorazione(voce, { ...opts, operatoreId: op.id });
-        operatori.push({
-          id: op.id,
-          name: op.name,
-          totale: c.totale,
-          lavorate: c.lavorate,
-          hrefTotale: voceToPraticheHrefTotale(voce, opts.dataPiano, op.id),
-          hrefLavorate: voceToPraticheHrefLavorate(voce, opts.dataPiano, op.id),
-        });
-      }
-    }
+      const operatori: OperatoreConteggiLavorazione[] =
+        opts.operatori?.length && !opts.operatoreId
+          ? await Promise.all(
+              opts.operatori.map(async (op) => {
+                const c = await conteggiVoceLavorazione(voce, {
+                  ...opts,
+                  operatoreId: op.id,
+                });
+                return {
+                  id: op.id,
+                  name: op.name,
+                  totale: c.totale,
+                  lavorate: c.lavorate,
+                  hrefTotale: voceToPraticheHrefTotale(voce, opts.dataPiano, op.id),
+                  hrefLavorate: voceToPraticheHrefLavorate(
+                    voce,
+                    opts.dataPiano,
+                    op.id
+                  ),
+                };
+              })
+            )
+          : [];
 
-    out.push({
-      ...voce,
-      totale,
-      lavorate,
-      hrefTotale: voceToPraticheHrefTotale(voce, opts.dataPiano, opts.operatoreId),
-      hrefLavorate: voceToPraticheHrefLavorate(voce, opts.dataPiano, opts.operatoreId),
-      operatori,
-    });
-  }
-  return out;
+      return {
+        ...voce,
+        totale,
+        lavorate,
+        hrefTotale: voceToPraticheHrefTotale(
+          voce,
+          opts.dataPiano,
+          opts.operatoreId
+        ),
+        hrefLavorate: voceToPraticheHrefLavorate(
+          voce,
+          opts.dataPiano,
+          opts.operatoreId
+        ),
+        operatori,
+      };
+    })
+  );
 }
 
 export function voceToAltriFiltri(voce: VoceLavorazioneSuggerita): AltriFiltri {

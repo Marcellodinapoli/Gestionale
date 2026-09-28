@@ -102,25 +102,25 @@ export function isReceiverClientError(err: unknown): err is ReceiverClientError 
 export function receiverErrorPublicMessage(err: ReceiverClientError): string {
   switch (err.code) {
     case "NOT_CONFIGURED":
-      return "Ricevitore non configurato";
+      return "Ricevitore Indeed non configurato (non riguarda CreditCore)";
     case "OFFLINE":
-      return "Ricevitore non raggiungibile";
+      return "Ricevitore Indeed non raggiungibile (bridge candidature Indeed — non CreditCore)";
     case "AUTH_FAILED":
-      return "Autenticazione verso il ricevitore non riuscita";
+      return "Autenticazione al ricevitore Indeed non riuscita (bridge candidature Indeed — non riguarda le offerte CreditCore)";
     case "TENANT_UNAUTHORIZED":
-      return "Tenant non autorizzato sul ricevitore";
+      return "Tenant non autorizzato sul ricevitore Indeed";
     case "CANDIDATE_NOT_FOUND":
-      return "Candidatura non trovata sul ricevitore";
+      return "Candidatura non trovata sul ricevitore Indeed";
     case "CV_UNAVAILABLE":
-      return "CV non disponibile";
+      return "CV non disponibile sul ricevitore Indeed";
     case "TIMEOUT":
-      return "Timeout nella comunicazione con il ricevitore";
+      return "Timeout verso il ricevitore Indeed";
     case "HTTPS_REQUIRED":
-      return "Il ricevitore deve usare HTTPS";
+      return "Il ricevitore Indeed deve usare HTTPS";
     case "INVALID_RESPONSE":
-      return "Risposta del ricevitore non valida";
+      return "Risposta del ricevitore Indeed non valida";
     default:
-      return "Errore di comunicazione con il ricevitore";
+      return "Errore di comunicazione con il ricevitore Indeed";
   }
 }
 

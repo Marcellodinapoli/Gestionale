@@ -9,6 +9,21 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+/** Firebase Callable a volte serializza List come mappa `{ "0": "a", "1": "b" }`. */
+function asStringArray(value: unknown): string[] | null {
+  if (Array.isArray(value)) return value.map(String);
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (!entries.length) return [];
+    const numeric = entries.every(([k]) => /^\d+$/.test(k));
+    if (!numeric) return null;
+    return entries
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([, v]) => String(v));
+  }
+  return null;
+}
+
 export async function GET(req: Request, ctx: Ctx) {
   const auth = requirePlatformApiAuth(req);
   if (!auth.ok) return auth.response;
@@ -29,11 +44,17 @@ export async function PUT(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   try {
     const body = (await req.json()) as {
-      enabledModules?: string[];
+      enabledModules?: unknown;
+      enabledPackages?: unknown;
       verticalProfile?: string;
     };
-    if (!Array.isArray(body.enabledModules)) {
-      return platformError("enabledModules (array) obbligatorio", 400);
+    const enabledModules = asStringArray(body.enabledModules);
+    const enabledPackages = asStringArray(body.enabledPackages);
+    if (enabledModules == null && enabledPackages == null) {
+      return platformError(
+        "enabledModules o enabledPackages (array) obbligatorio",
+        400
+      );
     }
     let verticalProfile: VerticalProfile | undefined;
     if (body.verticalProfile != null) {
@@ -45,7 +66,8 @@ export async function PUT(req: Request, ctx: Ctx) {
     }
     const repo = getNeonPlatformTenantsRepository();
     const modules = await repo.updateModules(id, {
-      enabledModules: body.enabledModules.map(String),
+      enabledModules: enabledModules ?? undefined,
+      enabledPackages: enabledPackages ?? undefined,
       verticalProfile,
     });
     return platformJson(modules);

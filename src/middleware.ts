@@ -5,6 +5,13 @@ import { isFormazioneOnlyPath } from "@/lib/formazioneOnlyAccess";
 
 const COOKIE = "gestionale_session";
 
+const PLATFORM_CORS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+  "Access-Control-Max-Age": "86400",
+};
+
 function secret() {
   const value = process.env.SESSION_SECRET?.trim();
   if (value) return new TextEncoder().encode(value);
@@ -15,6 +22,20 @@ function secret() {
 }
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Preflight + CORS per Platform API (Back Office Flutter web cross-origin).
+  if (pathname.startsWith("/api/platform/")) {
+    if (request.method === "OPTIONS") {
+      return new NextResponse(null, { status: 204, headers: PLATFORM_CORS });
+    }
+    const res = NextResponse.next();
+    for (const [k, v] of Object.entries(PLATFORM_CORS)) {
+      res.headers.set(k, v);
+    }
+    return res;
+  }
+
   const token = request.cookies.get(COOKIE)?.value;
   if (!token) return NextResponse.next();
 
@@ -22,7 +43,6 @@ export async function middleware(request: NextRequest) {
     const { payload } = await jwtVerify(token, secret());
     if (payload.formazioneOnly !== true) return NextResponse.next();
 
-    const pathname = request.nextUrl.pathname;
     if (isFormazioneOnlyPath(pathname)) return NextResponse.next();
 
     return NextResponse.redirect(new URL("/formazione/progressi", request.url));
@@ -33,6 +53,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/api/platform/:path*",
     "/((?!api|login|attiva-account|cambia-password|seleziona-postazione|setup-sedi|_next/static|_next/image|favicon.ico).*)",
   ],
 };

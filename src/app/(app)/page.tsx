@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { buildHomeKpiContext } from "@/lib/homeKpi/buildContext";
 import { loadHomeKpiAuto } from "@/lib/homeKpi/loadHomeKpi";
 import { usersDbFromUser } from "@/lib/usersRepo";
@@ -51,7 +52,6 @@ function RiepilogoMandantiTable({
 }) {
   const totAffidato = righe.reduce((s, r) => s + r.affidato, 0);
   const totResiduo = righe.reduce((s, r) => s + r.residuo, 0);
-  const totInsoluto = righe.reduce((s, r) => s + r.insoluto, 0);
   const totIncassato = righe.reduce((s, r) => s + r.incassato, 0);
   const totRicavoLordo = righe.reduce((s, r) => s + r.ricavoLordo, 0);
   const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
@@ -70,9 +70,15 @@ function RiepilogoMandantiTable({
               <th className="text-right">Pratiche</th>
               {mostraTotali ? (
                 <>
-                  <th className="text-right">Affidato</th>
-                  <th className="text-right">Residuo</th>
-                  <th className="text-right">Insoluto</th>
+                  <th className="text-right" title="Residuo ancora dovuto sulle pratiche">
+                    Debito residuo
+                  </th>
+                  <th
+                    className="text-right"
+                    title="Importo totale affidato (capitale + interessi + spese)"
+                  >
+                    Affidato da recuperare
+                  </th>
                   <th className="text-right">Incassato</th>
                   <th className="text-right">Ricavo lordo</th>
                   <th className="text-right">% Recupero</th>
@@ -92,9 +98,8 @@ function RiepilogoMandantiTable({
                 <td className="text-right">{r.pratiche}</td>
                 {mostraTotali ? (
                   <>
-                    <td className="text-right">{euro(r.affidato)}</td>
                     <td className="text-right">{euro(r.residuo)}</td>
-                    <td className="text-right">{euro(r.insoluto)}</td>
+                    <td className="text-right">{euro(r.affidato)}</td>
                     <td className="text-right font-semibold">{euro(r.incassato)}</td>
                     <td className="text-right font-semibold text-emerald-700">
                       {euro(r.ricavoLordo)}
@@ -122,9 +127,8 @@ function RiepilogoMandantiTable({
                   Totale
                 </td>
                 <td className="text-right">{righe.reduce((s, r) => s + r.pratiche, 0)}</td>
-                <td className="text-right">{euro(totAffidato)}</td>
                 <td className="text-right">{euro(totResiduo)}</td>
-                <td className="text-right">{euro(totInsoluto)}</td>
+                <td className="text-right">{euro(totAffidato)}</td>
                 <td className="text-right">{euro(totIncassato)}</td>
                 <td className="text-right text-emerald-700">{euro(totRicavoLordo)}</td>
                 <td className="text-right">
@@ -155,6 +159,18 @@ export default async function HomePage({
 }) {
   const user = await requireNavPage("home");
   const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const { isAwaitingSectionActivation } = await import("@/lib/platform/modules");
+  if (isAwaitingSectionActivation(platform.enabledModules)) {
+    redirect("/attivazione-sezioni");
+  }
+  if (!tenantHasModule(platform, "recovery")) {
+    if (tenantHasModule(platform, "legale")) redirect("/legal");
+    if (tenantHasModule(platform, "formazione")) redirect("/formazione");
+    if (tenantHasModule(platform, "recruiting")) redirect("/recruiting");
+    if (tenantHasModule(platform, "dialer")) redirect("/predictive-dialer");
+    if (tenantHasModule(platform, "creditcalc")) redirect("/creditcalc");
+    redirect("/account");
+  }
   const sp = await searchParams;
   const {
     lavorateData: lavorateDataRaw,
@@ -328,7 +344,6 @@ export default async function HomePage({
     const mandantiRiepilogo = admin.mandantiRiepilogo;
     const totAffidato = mandantiRiepilogo.reduce((s, r) => s + r.affidato, 0);
     const totResiduo = mandantiRiepilogo.reduce((s, r) => s + r.residuo, 0);
-    const totInsoluto = mandantiRiepilogo.reduce((s, r) => s + r.insoluto, 0);
     const totIncassato = mandantiRiepilogo.reduce((s, r) => s + r.incassato, 0);
     const totRicavoLordo = mandantiRiepilogo.reduce((s, r) => s + r.ricavoLordo, 0);
     const totPerc = totAffidato > 0 ? (totIncassato / totAffidato) * 100 : 0;
@@ -407,7 +422,6 @@ export default async function HomePage({
             href="/pratiche"
           />
           <DashboardKpi title="Debito residuo affidato" value={euro(totResiduo)} />
-          <DashboardKpi title="Debito insoluto affidato" value={euro(totInsoluto)} />
           <DashboardKpi title="Totale incassato" value={euro(totIncassato)} />
           <DashboardKpi
             title="% Recupero"

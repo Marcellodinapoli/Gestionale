@@ -294,15 +294,32 @@ export function PraticaFunzioniBar({
       setAltreChiuse([]);
     }
 
-    const timer = window.setTimeout(() => {
+    // Differisci dopo paint/lock/extra: non compete sul percorso critico di apertura.
+    const runFetch = () => {
+      if (cancelled) return;
       fetchPraticheStessoDebitore(praticaId).then((data) => {
         if (cancelled || !data) return;
         applyPayload(data);
       });
-    }, suppressF9Flash ? 0 : 50);
+    };
+    let idleId: number | undefined;
+    let timerId: number | undefined;
+    if (suppressF9Flash) {
+      timerId = window.setTimeout(runFetch, 0);
+    } else if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(runFetch, { timeout: 700 });
+    } else {
+      timerId = window.setTimeout(runFetch, 250);
+    }
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      if (timerId != null) window.clearTimeout(timerId);
+      if (
+        idleId != null &&
+        typeof window.cancelIdleCallback === "function"
+      ) {
+        window.cancelIdleCallback(idleId);
+      }
     };
   }, [praticaId, initialCollegate, suppressF9Flash]);
 

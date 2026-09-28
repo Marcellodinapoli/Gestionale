@@ -30,6 +30,8 @@ export type OperatoreModifica = {
   qualificheScolastiche: string | null;
   condizioneEconomica: CondizioneEconomica;
   importoFisso: number | null;
+  lastLoginAt?: string | null;
+  lastLogoutAt?: string | null;
 };
 
 export function ModificaOperatoreForm({
@@ -39,6 +41,7 @@ export function ModificaOperatoreForm({
   roleDefaults,
   userOverrides,
   acronimiUsati,
+  creditCalcModuleOn = false,
   onSuccess,
   onCancel,
 }: {
@@ -48,6 +51,7 @@ export function ModificaOperatoreForm({
   roleDefaults: NavVisibilityMap;
   userOverrides?: NavVisibilityMap | null;
   acronimiUsati: string[];
+  creditCalcModuleOn?: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
 }) {
@@ -238,27 +242,59 @@ export function ModificaOperatoreForm({
             </span>
           </label>
           <label
-            className={`flex items-start gap-2 text-sm ${consulenteEsterno ? "" : "opacity-50"}`}
+            className={`flex items-start gap-2 text-sm ${
+              !creditCalcModuleOn || !consulenteEsterno ? "opacity-50" : ""
+            }`}
           >
             <input
               type="checkbox"
               name="creditCalcEnabled"
               value="1"
-              checked={creditCalcEnabled}
-              disabled={!consulenteEsterno}
-              onChange={(e) => setCreditCalcEnabled(e.target.checked)}
+              checked={Boolean(creditCalcModuleOn && consulenteEsterno && creditCalcEnabled)}
+              disabled={!consulenteEsterno || !creditCalcModuleOn}
+              onChange={(e) => {
+                if (!creditCalcModuleOn) return;
+                setCreditCalcEnabled(e.target.checked);
+              }}
               className="mt-1"
             />
             <span>
               <span className="font-medium text-[var(--navy)]">Abilita accesso CreditCalc</span>
               <span className="block text-xs text-[var(--muted)]">
-                Solo Admin/Amministrazione. Consente aprire pratiche (mobile), note e codice
-                scarico. L’operatore genera il QR da Account.
+                {creditCalcModuleOn
+                  ? "Apertura pratiche mobile, note e codice scarico."
+                  : "Pacchetto CreditCalc non attivo in Back Office: voce visibile ma non attivabile."}
               </span>
             </span>
           </label>
         </div>
       ) : null}
+
+      {(utente.lastLoginAt || utente.lastLogoutAt) ? (
+        <div className="rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2 text-xs text-[var(--muted)]">
+          <span className="font-semibold text-[var(--navy)]">Accessi</span>
+          <span className="mt-1 block">
+            Ultimo login:{" "}
+            <span className="font-medium text-[var(--navy)]">
+              {utente.lastLoginAt
+                ? new Date(utente.lastLoginAt).toLocaleString("it-IT")
+                : "—"}
+            </span>
+            {" · "}
+            Ultimo logout:{" "}
+            <span className="font-medium text-[var(--navy)]">
+              {utente.lastLogoutAt
+                ? new Date(utente.lastLogoutAt).toLocaleString("it-IT")
+                : "—"}
+            </span>
+          </span>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2 text-xs text-[var(--muted)]">
+          <span className="font-semibold text-[var(--navy)]">Accessi</span>
+          <span className="mt-1 block">Ultimo login: — · Ultimo logout: —</span>
+        </div>
+      )}
 
       {!utente.formazioneOnly && utente.role !== "MANUTENZIONE" ? (
         <div className="border-t border-[var(--line)] pt-3">

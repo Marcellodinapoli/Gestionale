@@ -351,6 +351,20 @@ function scopeSql(scope: PraticaScope, startIdx: number): { sql: string; params:
     params.push(scope.memberIds);
     i += 1;
   }
+  // Operatore/supervisor: escludi pratiche scadute dallo stragiudiziale
+  if (scope.role === "OPERATOR" || scope.role === "SUPERVISOR") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    sql += ` AND NOT (
+      COALESCE(p."ConferimentoTipo", '') <> 'GIUDIZIALE'
+      AND (
+        (p."DataPassaggioGiudiziale" IS NOT NULL AND p."DataPassaggioGiudiziale" < $${i}::timestamptz)
+        OR (p."DataPassaggioGiudiziale" IS NULL AND p."Scadenza" IS NOT NULL AND p."Scadenza" < $${i}::timestamptz)
+      )
+    )`;
+    params.push(today);
+    i += 1;
+  }
   return { sql, params, next: i };
 }
 
@@ -398,15 +412,252 @@ function filterSql(
     parts.push(`p."AssegnatarioId" IS NOT NULL`);
   }
   if (filter.q?.trim()) {
-    parts.push(
-      `(p."Numero" ILIKE $${i} OR d."Cognome" ILIKE $${i} OR d."Nome" ILIKE $${i} OR d."CodiceFiscale" ILIKE $${i} OR p."NumeroMandante" ILIKE $${i})`
-    );
+    parts.push(`(
+      p."Numero" ILIKE $${i}
+      OR p."NumeroMandante" ILIKE $${i}
+      OR d."Cognome" ILIKE $${i}
+      OR d."Nome" ILIKE $${i}
+      OR d."CodiceFiscale" ILIKE $${i}
+      OR d."Telefono" ILIKE $${i}
+      OR d."Email" ILIKE $${i}
+      OR EXISTS (
+        SELECT 1 FROM "Garanti" gx
+        WHERE gx."PraticaId" = p."Id" AND (
+          gx."Cognome" ILIKE $${i} OR gx."Nome" ILIKE $${i}
+          OR gx."CodiceFiscale" ILIKE $${i} OR gx."Telefono" ILIKE $${i}
+        )
+      )
+      OR EXISTS (
+        SELECT 1 FROM "DebitoreRecapiti" dr
+        WHERE dr."DebitoreId" = p."DebitoreId" AND dr."Valore" ILIKE $${i}
+      )
+    )`);
     params.push(`%${filter.q.trim()}%`);
+    i += 1;
+  }
+  if (filter.debitoreContains?.trim()) {
+    const tokens = filter.debitoreContains.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length) {
+      const debParts: string[] = [];
+      const garParts: string[] = [];
+      for (const tok of tokens) {
+        const t = `%${tok}%`;
+        debParts.push(`(d."Nome" ILIKE $${i} OR d."Cognome" ILIKE $${i})`);
+        params.push(t);
+        i += 1;
+        garParts.push(`(gx."Nome" ILIKE $${i} OR gx."Cognome" ILIKE $${i})`);
+        params.push(t);
+        i += 1;
+      }
+      parts.push(`(
+        (${debParts.join(" AND ")})
+        OR EXISTS (
+          SELECT 1 FROM "Garanti" gx
+          WHERE gx."PraticaId" = p."Id" AND ${garParts.join(" AND ")}
+        )
+      )`);
+    }
+  }
+  if (filter.debitoreNotContains?.trim()) {
+    const tokens = filter.debitoreNotContains.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length) {
+      const debParts: string[] = [];
+      const garParts: string[] = [];
+      for (const tok of tokens) {
+        const t = `%${tok}%`;
+        debParts.push(`(d."Nome" ILIKE $${i} OR d."Cognome" ILIKE $${i})`);
+        params.push(t);
+        i += 1;
+        garParts.push(`(gx."Nome" ILIKE $${i} OR gx."Cognome" ILIKE $${i})`);
+        params.push(t);
+        i += 1;
+      }
+      parts.push(`NOT (
+        (${debParts.join(" AND ")})
+        OR EXISTS (
+          SELECT 1 FROM "Garanti" gx
+          WHERE gx."PraticaId" = p."Id" AND ${garParts.join(" AND ")}
+        )
+      )`);
+    }
+  }
+  if (filter.cittaContains?.trim()) {
+    parts.push(`d."Citta" ILIKE $${i++}`);
+    params.push(`%${filter.cittaContains.trim()}%`);
+  }
+  if (filter.cittaNotContains?.trim()) {
+    parts.push(`(d."Citta" IS NULL OR d."Citta" NOT ILIKE $${i++})`);
+    params.push(`%${filter.cittaNotContains.trim()}%`);
+  }
+  if (filter.provContains?.trim()) {
+    parts.push(`d."Provincia" ILIKE $${i++}`);
+    params.push(`%${filter.provContains.trim()}%`);
+  }
+  if (filter.provNotContains?.trim()) {
+    parts.push(`(d."Provincia" IS NULL OR d."Provincia" NOT ILIKE $${i++})`);
+    params.push(`%${filter.provNotContains.trim()}%`);
+  }
+  if (filter.telefonoContains?.trim()) {
+    const t = `%${filter.telefonoContains.trim()}%`;
+    parts.push(`(
+      d."Telefono" ILIKE $${i}
+      OR EXISTS (
+        SELECT 1 FROM "DebitoreRecapiti" dr
+        WHERE dr."DebitoreId" = p."DebitoreId" AND dr."Valore" ILIKE $${i}
+      )
+      OR EXISTS (
+        SELECT 1 FROM "Garanti" gx
+        WHERE gx."PraticaId" = p."Id" AND gx."Telefono" ILIKE $${i}
+      )
+    )`);
+    params.push(t);
+    i += 1;
+  }
+  if (filter.telefonoNotContains?.trim()) {
+    const t = `%${filter.telefonoNotContains.trim()}%`;
+    parts.push(`NOT (
+      d."Telefono" ILIKE $${i}
+      OR EXISTS (
+        SELECT 1 FROM "DebitoreRecapiti" dr
+        WHERE dr."DebitoreId" = p."DebitoreId" AND dr."Valore" ILIKE $${i}
+      )
+      OR EXISTS (
+        SELECT 1 FROM "Garanti" gx
+        WHERE gx."PraticaId" = p."Id" AND gx."Telefono" ILIKE $${i}
+      )
+    )`);
+    params.push(t);
+    i += 1;
+  }
+  if (filter.noteContains?.trim()) {
+    const t = `%${filter.noteContains.trim()}%`;
+    parts.push(`(
+      p."Note" ILIKE $${i}
+      OR EXISTS (
+        SELECT 1 FROM "Attivita" ax
+        WHERE ax."PraticaId" = p."Id" AND ax."Nota" ILIKE $${i}
+      )
+    )`);
+    params.push(t);
+    i += 1;
+  }
+  if (filter.noteNotContains?.trim()) {
+    const t = `%${filter.noteNotContains.trim()}%`;
+    parts.push(`NOT (
+      p."Note" ILIKE $${i}
+      OR EXISTS (
+        SELECT 1 FROM "Attivita" ax
+        WHERE ax."PraticaId" = p."Id" AND ax."Nota" ILIKE $${i}
+      )
+    )`);
+    params.push(t);
+    i += 1;
+  }
+  if (filter.garanteContains?.trim()) {
+    const t = `%${filter.garanteContains.trim()}%`;
+    parts.push(`EXISTS (
+      SELECT 1 FROM "Garanti" gx
+      WHERE gx."PraticaId" = p."Id" AND (
+        gx."Nome" ILIKE $${i} OR gx."Cognome" ILIKE $${i} OR gx."CodiceFiscale" ILIKE $${i}
+      )
+    )`);
+    params.push(t);
+    i += 1;
+  }
+  if (filter.garanteNotContains?.trim()) {
+    const t = `%${filter.garanteNotContains.trim()}%`;
+    parts.push(`NOT EXISTS (
+      SELECT 1 FROM "Garanti" gx
+      WHERE gx."PraticaId" = p."Id" AND (
+        gx."Nome" ILIKE $${i} OR gx."Cognome" ILIKE $${i} OR gx."CodiceFiscale" ILIKE $${i}
+      )
+    )`);
+    params.push(t);
+    i += 1;
+  }
+  if (filter.operatoreIdsIn?.length) {
+    parts.push(
+      `(p."AssegnatarioId" = ANY($${i}::uuid[]) OR p."OperatoreTitolareId" = ANY($${i}::uuid[]))`
+    );
+    params.push(filter.operatoreIdsIn);
+    i += 1;
+  }
+  if (filter.operatoreIdsNotIn?.length) {
+    parts.push(`(
+      (p."AssegnatarioId" IS NULL OR p."AssegnatarioId" <> ALL($${i}::uuid[]))
+      AND (p."OperatoreTitolareId" IS NULL OR p."OperatoreTitolareId" <> ALL($${i}::uuid[]))
+    )`);
+    params.push(filter.operatoreIdsNotIn);
+    i += 1;
+  }
+  if (filter.perimetroKeys?.length) {
+    parts.push(`(
+      p."NumeroMandante" = ANY($${i}::text[])
+      OR EXISTS (
+        SELECT 1 FROM "ImportBatch" ib
+        WHERE ib."Id" = p."ImportBatchId" AND ib."Perimetro" = ANY($${i}::text[])
+      )
+    )`);
+    params.push(filter.perimetroKeys);
+    i += 1;
+  }
+  if (filter.perimetroKeysNot?.length) {
+    parts.push(`NOT (
+      p."NumeroMandante" = ANY($${i}::text[])
+      OR EXISTS (
+        SELECT 1 FROM "ImportBatch" ib
+        WHERE ib."Id" = p."ImportBatchId" AND ib."Perimetro" = ANY($${i}::text[])
+      )
+    )`);
+    params.push(filter.perimetroKeysNot);
     i += 1;
   }
   if (filter.codScarico) {
     parts.push(`p."CodiceScarico" = $${i++}`);
     params.push(filter.codScarico);
+  }
+  if (filter.codScaricoIsNull) {
+    // Nessuna lavorazione: campo assente o vuoto (non codici custom tipo DRI).
+    parts.push(`(p."CodiceScarico" IS NULL OR btrim(p."CodiceScarico") = '')`);
+  }
+  if (filter.codScaricoNotNull) {
+    parts.push(`(p."CodiceScarico" IS NOT NULL AND btrim(p."CodiceScarico") <> '')`);
+  }
+  if (filter.codScaricoIn?.length) {
+    const codes = filter.codScaricoIn.filter((c) => String(c).trim() !== "");
+    if (codes.length) {
+      parts.push(`p."CodiceScarico" = ANY($${i++}::text[])`);
+      params.push(codes);
+    }
+  }
+  if (filter.codScaricoNotIn?.length) {
+    parts.push(
+      `(p."CodiceScarico" IS NULL OR p."CodiceScarico" <> ALL($${i++}::text[]))`
+    );
+    params.push(filter.codScaricoNotIn);
+  }
+  if (filter.codScaricoBk) {
+    parts.push(`p."CodiceScaricoBk" = $${i++}`);
+    params.push(filter.codScaricoBk);
+  }
+  if (filter.codScaricoBkIsNull) {
+    parts.push(`(p."CodiceScaricoBk" IS NULL OR btrim(p."CodiceScaricoBk") = '')`);
+  }
+  if (filter.codScaricoBkNotNull) {
+    parts.push(`(p."CodiceScaricoBk" IS NOT NULL AND btrim(p."CodiceScaricoBk") <> '')`);
+  }
+  if (filter.codScaricoBkIn?.length) {
+    const codes = filter.codScaricoBkIn.filter((c) => String(c).trim() !== "");
+    if (codes.length) {
+      parts.push(`p."CodiceScaricoBk" = ANY($${i++}::text[])`);
+      params.push(codes);
+    }
+  }
+  if (filter.codScaricoBkNotIn?.length) {
+    parts.push(
+      `(p."CodiceScaricoBk" IS NULL OR p."CodiceScaricoBk" <> ALL($${i++}::text[]))`
+    );
+    params.push(filter.codScaricoBkNotIn);
   }
   if (filter.codiciFiscaliIn?.length) {
     parts.push(`(
@@ -562,28 +813,18 @@ export class NeonPraticheRepository implements PraticheRepository {
   }
 
   async groupByNumeroMandante(tenantSlug: string, scope: PraticaScope, filter?: PraticaListFilter) {
-    const tid = await resolveTenantUuid(scope.tenantId, tenantSlug || this._tenantSlug);
-    if (!tid) return [];
-    const scopeQ = scopeSql({ ...scope, tenantId: tid }, 2);
-    const filt = filterSql(filter, scopeQ.next);
-    const where = `p."TenantId" = $1::uuid${scopeQ.sql}${filt.sql}`;
-    const params = [tid, ...scopeQ.params, ...filt.params];
-    const rows = await neonQuery(
-      `SELECT DISTINCT sub."NumeroMandante" AS "numeroMandante"
-       FROM (
-         SELECT p."NumeroMandante"
-         FROM "Pratiche" p
-         WHERE ${where}
-         ORDER BY p."UpdatedAt" DESC NULLS LAST
-         LIMIT 10000
-       ) sub`,
-      params
-    );
-    return rows.map((r) => {
-      const raw = (r as { numeroMandante?: unknown; NumeroMandante?: unknown }).numeroMandante
-        ?? (r as { NumeroMandante?: unknown }).NumeroMandante;
-      return { numeroMandante: raw != null ? String(raw) : null };
+    const list = await this.list({
+      tenantSlug,
+      scope,
+      filter,
+      take: 10_000,
+      pageSize: 10_000,
     });
+    const set = new Set<string | null>();
+    for (const item of list.items) {
+      set.add(item.numeroMandante != null ? String(item.numeroMandante) : null);
+    }
+    return [...set].map((numeroMandante) => ({ numeroMandante }));
   }
 
   async idsAffidoTemporaneo(_tenantSlug: string, tenantId: string) {

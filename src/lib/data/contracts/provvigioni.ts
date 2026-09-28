@@ -11,6 +11,9 @@ export type ProvvigioneFilter = {
   stato?: string;
   createdAtGte?: string;
   createdAtLte?: string;
+  /** Filtro sulla data dell'incasso collegato (non CreatedAt provvigione). */
+  incassoDataGte?: string;
+  incassoDataLte?: string;
   praticaMandanteId?: string;
   praticaNumeroMandante?: string;
   praticaNumeroMandanteNull?: boolean;

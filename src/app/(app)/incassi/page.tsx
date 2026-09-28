@@ -9,6 +9,7 @@ import { PaginazioneBar, paginateParams } from "@/components/PaginazioneBar";
 import { loadIncassiElenco } from "@/lib/incassiElenco";
 import { parseIncassiElencoFiltri } from "@/lib/incassiElencoUi";
 import { euro } from "@/lib/domain";
+import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 
 function buildIncassiQuery(
   params: Record<string, string | number | undefined>,
@@ -34,6 +35,8 @@ export default async function IncassiElencoPage({
   const sp = await searchParams;
   const filtri = parseIncassiElencoFiltri(sp);
   const { page, pageSize, skip } = paginateParams(sp.page);
+  // Elenco solo dopo Filtra / Applica (cerca=1), come Affidi.
+  const showElenco = sp.cerca === "1";
 
   const [mandantiList, operatori, lottiRows] = await Promise.all([
     mandantiDbFromUser(user).findMany({
@@ -43,7 +46,16 @@ export default async function IncassiElencoPage({
     usersDbFromUser(user).findMany({
       where: {
         active: true,
-        role: { in: ["OPERATOR", "SUPERVISOR", "BACK_OFFICE", "ADMIN", "AMMINISTRAZIONE", "LEGAL"] },
+        role: {
+          in: [
+            "OPERATOR",
+            "SUPERVISOR",
+            "BACK_OFFICE",
+            "ADMIN",
+            "AMMINISTRAZIONE",
+            "LEGAL",
+          ],
+        },
       },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -65,23 +77,29 @@ export default async function IncassiElencoPage({
     ),
   ].sort((a, b) => a.localeCompare(b, "it"));
 
-  const { rows, total, meseLabel } = await loadIncassiElenco(
-    user,
-    filtri,
-    mandantiList,
-    skip,
-    pageSize
-  );
+  const loaded = showElenco
+    ? await loadIncassiElenco(user, filtri, mandantiList, skip, pageSize)
+    : null;
+  const rows = loaded?.rows ?? [];
+  const total = loaded?.total ?? 0;
+  const meseLabel = loaded?.meseLabel ?? rangeMeseIncassi(filtri.mese).label;
 
   const totPagina = rows.reduce((s, r) => s + r.importoNum, 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const queryBase: Record<string, string | undefined> = { ...filtri };
+  const queryBase: Record<string, string | undefined> = {
+    ...filtri,
+    cerca: showElenco ? "1" : undefined,
+  };
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Incassi"
-        subtitle={`Elenco incassi registrati · ${meseLabel} · ${total} risultat${total === 1 ? "o" : "i"}`}
+        subtitle={
+          showElenco
+            ? `Elenco incassi registrati · ${meseLabel} · ${total} risultat${total === 1 ? "o" : "i"}`
+            : "Imposta i filtri e clicca Filtra per vedere l’elenco"
+        }
       />
 
       <IncassiElencoFiltriBar
@@ -99,93 +117,120 @@ export default async function IncassiElencoPage({
           perimetri: m.perimetri,
         }))}
         meseParam={filtri.mese || ""}
+        searchActive={showElenco}
       />
 
-      <Card title="Elenco incassi">
-        <div className="table-scroll">
-          <table className="w-full min-w-[1100px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-[var(--line)] text-xs uppercase text-[var(--muted)]">
-                <th className="px-2 py-2">Data</th>
-                <th className="px-2 py-2">Pratica</th>
-                <th className="px-2 py-2">Cliente</th>
-                <th className="px-2 py-2">Mandato</th>
-                <th className="px-2 py-2">Perimetro</th>
-                <th className="px-2 py-2">Lotto</th>
-                <th className="px-2 py-2">Operatore</th>
-                <th className="px-2 py-2">Tipo</th>
-                <th className="px-2 py-2">Esito</th>
-                <th className="px-2 py-2 text-right">Importo</th>
-                <th className="px-2 py-2">Ricevuta</th>
-                <th className="px-2 py-2">Causale</th>
-                <th className="px-2 py-2">Città</th>
-                <th className="px-2 py-2">CAP</th>
-                <th className="px-2 py-2">Affido</th>
-                <th className="px-2 py-2">Scarico</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={16} className="px-2 py-8 text-center text-[var(--muted)]">
-                    Nessun incasso con i filtri selezionati.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={r.id} className="border-b border-[var(--line)]/60 hover:bg-[#f8fafc]">
-                    <td className="px-2 py-2 whitespace-nowrap">{r.data}</td>
-                    <td className="px-2 py-2">
-                      <Link
-                        href={`/pratiche/${r.praticaId}`}
-                        className="font-medium text-[var(--navy)] underline-offset-2 hover:underline"
-                      >
-                        {r.praticaNumero}
-                      </Link>
-                    </td>
-                    <td className="px-2 py-2">{r.cliente}</td>
-                    <td className="px-2 py-2">{r.mandante}</td>
-                    <td className="px-2 py-2">{r.perimetro}</td>
-                    <td className="px-2 py-2">{r.lotto}</td>
-                    <td className="px-2 py-2">{r.operatore}</td>
-                    <td className="px-2 py-2">{r.metodo}</td>
-                    <td className="px-2 py-2 whitespace-nowrap">{r.modoLabel}</td>
-                    <td className="px-2 py-2 text-right font-semibold tabular-nums">
-                      {r.importo}
-                    </td>
-                    <td className="px-2 py-2">{r.ricevuta}</td>
-                    <td className="px-2 py-2 max-w-[160px] truncate" title={r.causale}>
-                      {r.causale}
-                    </td>
-                    <td className="px-2 py-2">{r.citta}</td>
-                    <td className="px-2 py-2">{r.cap}</td>
-                    <td className="px-2 py-2 whitespace-nowrap">{r.dataAffido}</td>
-                    <td className="px-2 py-2 whitespace-nowrap">{r.dataScarico}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        {rows.length > 0 ? (
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            Totale pagina: {euro(totPagina)}
+      {!showElenco ? (
+        <Card title="Elenco incassi">
+          <p className="px-1 py-10 text-center text-sm text-[var(--muted)]">
+            Nessun elenco caricato. Scegli mandato, mese o altri filtri e premi{" "}
+            <span className="font-semibold text-[var(--navy)]">Filtra</span>.
           </p>
-        ) : null}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          <Card title="Elenco incassi">
+            <div className="table-scroll">
+              <table className="w-full min-w-[1100px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--line)] text-xs uppercase text-[var(--muted)]">
+                    <th className="px-2 py-2">Data</th>
+                    <th className="px-2 py-2">Pratica</th>
+                    <th className="px-2 py-2">Cliente</th>
+                    <th className="px-2 py-2">Mandato</th>
+                    <th className="px-2 py-2">Perimetro</th>
+                    <th className="px-2 py-2">Lotto</th>
+                    <th className="px-2 py-2">Operatore</th>
+                    <th className="px-2 py-2">Tipo</th>
+                    <th className="px-2 py-2">Esito</th>
+                    <th className="px-2 py-2 text-right">Importo</th>
+                    <th className="px-2 py-2">Ricevuta</th>
+                    <th className="px-2 py-2">Causale</th>
+                    <th className="px-2 py-2">Città</th>
+                    <th className="px-2 py-2">CAP</th>
+                    <th className="px-2 py-2">Affido</th>
+                    <th className="px-2 py-2">Scarico</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={16}
+                        className="px-2 py-8 text-center text-[var(--muted)]"
+                      >
+                        Nessun incasso con i filtri selezionati.
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((r) => (
+                      <tr
+                        key={r.id}
+                        className="border-b border-[var(--line)]/60 hover:bg-[#f8fafc]"
+                      >
+                        <td className="px-2 py-2 whitespace-nowrap">{r.data}</td>
+                        <td className="px-2 py-2">
+                          <Link
+                            href={`/pratiche/${r.praticaId}`}
+                            className="font-medium text-[var(--navy)] underline-offset-2 hover:underline"
+                          >
+                            {r.praticaNumero}
+                          </Link>
+                        </td>
+                        <td className="px-2 py-2">{r.cliente}</td>
+                        <td className="px-2 py-2">{r.mandante}</td>
+                        <td className="px-2 py-2">{r.perimetro}</td>
+                        <td className="px-2 py-2">{r.lotto}</td>
+                        <td className="px-2 py-2">{r.operatore}</td>
+                        <td className="px-2 py-2">{r.metodo}</td>
+                        <td className="px-2 py-2 whitespace-nowrap">
+                          {r.modoLabel}
+                        </td>
+                        <td className="px-2 py-2 text-right font-semibold tabular-nums">
+                          {r.importo}
+                        </td>
+                        <td className="px-2 py-2">{r.ricevuta}</td>
+                        <td
+                          className="px-2 py-2 max-w-[160px] truncate"
+                          title={r.causale}
+                        >
+                          {r.causale}
+                        </td>
+                        <td className="px-2 py-2">{r.citta}</td>
+                        <td className="px-2 py-2">{r.cap}</td>
+                        <td className="px-2 py-2 whitespace-nowrap">
+                          {r.dataAffido}
+                        </td>
+                        <td className="px-2 py-2 whitespace-nowrap">
+                          {r.dataScarico}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {rows.length > 0 ? (
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Totale pagina: {euro(totPagina)}
+              </p>
+            ) : null}
+          </Card>
 
-      {total > 0 ? (
-        <PaginazioneBar
-          page={page}
-          totalPages={totalPages}
-          hrefForPage={(p) => buildIncassiQuery(queryBase, p)}
-          right={
-            <span className="text-xs font-semibold tabular-nums text-[var(--navy)]">
-              {Math.min(skip + pageSize, total)}/{total}
-            </span>
-          }
-        />
-      ) : null}
+          {total > 0 ? (
+            <PaginazioneBar
+              page={page}
+              totalPages={totalPages}
+              hrefForPage={(p) => buildIncassiQuery(queryBase, p)}
+              right={
+                <span className="text-xs font-semibold tabular-nums text-[var(--navy)]">
+                  {Math.min(skip + pageSize, total)}/{total}
+                </span>
+              }
+            />
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

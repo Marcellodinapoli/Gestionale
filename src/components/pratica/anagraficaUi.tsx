@@ -46,7 +46,7 @@ export function AnagraficaField({
       <div
         className={`px-0.5 py-px text-[9px] font-semibold uppercase leading-tight tracking-wide ${
           accent
-            ? "bg-[#1a4f7a] text-white"
+            ? "bg-[#1a4f7a] text-right text-white"
             : "bg-[#eef2f6] text-[#4a5568]"
         }`}
       >
@@ -65,7 +65,7 @@ export function AnagraficaField({
             : tone === "danger" || highlight
               ? "font-semibold text-[var(--danger)]"
               : ""
-        } ${compact ? "truncate" : ""}`}
+        } ${compact ? "truncate" : ""} ${accent ? "text-right" : ""}`}
         title={typeof value === "string" ? value : undefined}
       >
         {value}

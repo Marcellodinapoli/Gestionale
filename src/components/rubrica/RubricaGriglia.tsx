@@ -9,6 +9,7 @@ type RubricaUtente = {
   role: string;
   roleLabel: string;
   acronimo: string | null;
+  email?: string | null;
   online: boolean;
   postazione: {
     nome: string;
@@ -24,6 +25,7 @@ function matchRubrica(u: RubricaUtente, q: string) {
     u.name,
     u.acronimo,
     u.roleLabel,
+    u.email,
     u.postazione?.nome,
     u.postazione?.interno,
     u.postazione?.email,
@@ -36,7 +38,13 @@ function matchRubrica(u: RubricaUtente, q: string) {
   return haystack.includes(q);
 }
 
-export function RubricaGriglia({ utenti }: { utenti: RubricaUtente[] }) {
+export function RubricaGriglia({
+  utenti,
+  currentUserId,
+}: {
+  utenti: RubricaUtente[];
+  currentUserId?: string;
+}) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
 
@@ -66,24 +74,37 @@ export function RubricaGriglia({ utenti }: { utenti: RubricaUtente[] }) {
         </p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtrati.map((u) => (
+          {filtrati.map((u) => {
+            const seiTu = currentUserId != null && u.id === currentUserId;
+            return (
             <div
               key={u.id}
               className={`rounded-xl border p-3 ${
-                u.online
-                  ? "border-emerald-200 bg-white"
-                  : "border-[var(--line)] bg-slate-50 opacity-60"
+                seiTu
+                  ? "border-[var(--navy)]/40 bg-[var(--navy)]/[0.04] ring-1 ring-[var(--navy)]/15"
+                  : u.online
+                    ? "border-emerald-200 bg-white"
+                    : "border-[var(--line)] bg-slate-50 opacity-60"
               }`}
             >
               <div className="flex items-start gap-2">
                 <CircleDot
                   className={`mt-0.5 h-3 w-3 shrink-0 ${
-                    u.online ? "text-emerald-500" : "text-slate-300"
+                    seiTu
+                      ? "text-[var(--navy)]"
+                      : u.online
+                        ? "text-emerald-500"
+                        : "text-slate-300"
                   }`}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--navy)]">
                     {u.name}
+                    {seiTu ? (
+                      <span className="ml-1.5 inline-flex rounded-full bg-[var(--navy)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                        Tu
+                      </span>
+                    ) : null}
                     {u.acronimo && (
                       <span className="ml-1.5 text-[10px] font-normal text-[var(--muted)]">
                         ({u.acronimo})
@@ -116,10 +137,12 @@ export function RubricaGriglia({ utenti }: { utenti: RubricaUtente[] }) {
                           {u.postazione.numeroFisso}
                         </p>
                       )}
-                      {u.postazione.email && (
+                      {(u.postazione.email || u.email) && (
                         <p className="flex items-center gap-1 text-[var(--muted)]">
                           <Mail className="h-3 w-3" />
-                          <span className="truncate">{u.postazione.email}</span>
+                          <span className="truncate">
+                            {u.postazione.email || u.email}
+                          </span>
                         </p>
                       )}
                     </div>
@@ -131,7 +154,8 @@ export function RubricaGriglia({ utenti }: { utenti: RubricaUtente[] }) {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -38,15 +38,28 @@ export async function POST(_req: Request, ctx: RouteCtx) {
   }
 
   const scope = lockScopeFromUser(user);
-  // renew riacquisisce se il lock è scaduto; se fallisce (corsa), prova acquire esplicito
-  let lock = await renewPraticaLock(id, user.id, scope);
-  if (!lock.owned && !lock.lockedBy) {
-    lock = await acquirePraticaLock(id, user.id, scope);
+  try {
+    // renew riacquisisce se il lock è scaduto; se fallisce (corsa), prova acquire esplicito
+    let lock = await renewPraticaLock(id, user.id, scope);
+    if (!lock.owned && !lock.lockedBy) {
+      lock = await acquirePraticaLock(id, user.id, scope);
+    }
+    return NextResponse.json({
+      owned: lock.owned,
+      lockedByName: lock.lockedBy?.name ?? null,
+    });
+  } catch (err) {
+    console.error("[pratiche/lock POST]", err);
+    // Evita 500 opachi in UI/timeline: stato lock ancora recuperabile in GET.
+    const lock = await getPraticaLockStatus(id, user.id, scope).catch(() => null);
+    if (lock) {
+      return NextResponse.json({
+        owned: lock.owned,
+        lockedByName: lock.lockedBy?.name ?? null,
+      });
+    }
+    return NextResponse.json({ error: "Lock non disponibile" }, { status: 503 });
   }
-  return NextResponse.json({
-    owned: lock.owned,
-    lockedByName: lock.lockedBy?.name ?? null,
-  });
 }
 
 export async function DELETE(_req: Request, ctx: RouteCtx) {

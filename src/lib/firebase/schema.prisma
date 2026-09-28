@@ -16,6 +16,28 @@ model Tenant {
   nome      String
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
+  /// IN_CONFIGURAZIONE | ATTIVA | SOSPESA — sincronizzato con active
+  status    String   @default("ATTIVA")
+  partitaIva String?
+  codiceFiscale String?
+  emailAziendale String?
+  telefono String?
+  indirizzo String?
+  cap String?
+  comune String?
+  provincia String?
+  referenteNome String?
+  referenteCognome String?
+  referenteEmail String?
+  referenteTelefono String?
+  piano String?
+  dataInizioAbbonamento DateTime?
+  dataScadenzaAbbonamento DateTime?
+  /// NON_IMPOSTATO | IN_REGOLA | IN_RITARDO | SOSPESO
+  statoPagamento String?
+  perfMonitoringEnabled Boolean @default(false)
+  suspensionReason String?
+  suspendedAt DateTime?
   users     User[]
   sedi      Sede[]
   postazioni Postazione[]
@@ -32,6 +54,24 @@ model Tenant {
   recruitingCandidature RecruitingCandidatura[]
   recruitingAttivita RecruitingAttivita[]
   recruitingColloqui RecruitingColloquio[]
+  invites   TenantInvite[]
+}
+
+/// Invito monouso primo ADMIN (o altri ruoli) — solo hash del token.
+model TenantInvite {
+  id                      String    @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email                   String
+  role                    String    @default("ADMIN")
+  tokenHash               String    @unique
+  expiresAt               DateTime
+  usedAt                  DateTime?
+  createdByPlatformAdmin  String
+  createdAt               DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, email])
 }
 
 model Sede {

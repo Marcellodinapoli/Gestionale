@@ -23,6 +23,7 @@ function AnnoOperatoreModal({
   anno,
   caricoMandato,
   caricoPerimetro,
+  numeriMandante,
   filtroLabel,
   onClose,
 }: {
@@ -31,6 +32,7 @@ function AnnoOperatoreModal({
   anno: number;
   caricoMandato?: string;
   caricoPerimetro?: string;
+  numeriMandante?: string[];
   filtroLabel?: string;
   onClose: () => void;
 }) {
@@ -49,13 +51,14 @@ function AnnoOperatoreModal({
           anno,
           caricoMandato,
           caricoPerimetro,
+          numeriMandante,
         });
         setRighe(data);
       } catch (e) {
         setErrore(e instanceof Error ? e.message : "Errore nel caricamento");
       }
     });
-  }, [operatore, anno, caricoMandato, caricoPerimetro]);
+  }, [operatore, anno, caricoMandato, caricoPerimetro, numeriMandante]);
 
   useEffect(() => {
     if (open && operatore) carica();
@@ -139,13 +142,21 @@ export function AffidiIncassiOperatori({
   annoCarico,
   caricoMandato,
   caricoPerimetro,
+  numeriMandante,
   filtroCaricoLabel,
 }: {
   righe: RigaIncassoOperatore[];
   selezionatoId?: string;
   nav?: Pick<
     AffidiNavParams,
-    "mandato" | "perimetro" | "caricoMandato" | "caricoPerimetro" | "caricoMese" | "operatore" | "coda"
+    | "mandato"
+    | "perimetro"
+    | "caricoMandato"
+    | "caricoPerimetro"
+    | "caricoMese"
+    | "caricoCerca"
+    | "operatore"
+    | "coda"
   >;
   meseLabel?: string;
   totaleGruppo: number;
@@ -153,6 +164,7 @@ export function AffidiIncassiOperatori({
   annoCarico: number;
   caricoMandato?: string;
   caricoPerimetro?: string;
+  numeriMandante?: string[];
   filtroCaricoLabel?: string;
 }) {
   const [modalOp, setModalOp] = useState<RigaIncassoOperatore | null>(null);
@@ -223,6 +235,7 @@ export function AffidiIncassiOperatori({
         anno={annoCarico}
         caricoMandato={caricoMandato}
         caricoPerimetro={caricoPerimetro}
+        numeriMandante={numeriMandante}
         filtroLabel={
           filtroCaricoLabel ? `${filtroCaricoLabel} · Anno ${annoCarico}` : `Anno ${annoCarico}`
         }

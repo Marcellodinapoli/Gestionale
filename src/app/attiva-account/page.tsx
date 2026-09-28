@@ -1,4 +1,5 @@
 import { AttivaAccountForm } from "@/components/attiva-account/AttivaAccountForm";
+import { clearSession } from "@/lib/auth";
 
 export default async function AttivaAccountPage({
   searchParams,
@@ -7,6 +8,8 @@ export default async function AttivaAccountPage({
 }) {
   const params = await searchParams;
   const token = String(params.token || "").trim();
+  // Non tenere aperta una sessione di un altro tenant mentre si attiva l'invito.
+  await clearSession();
 
   return (
     <div className="page-gutter flex min-h-screen items-center justify-center bg-[var(--navy)] py-6">

@@ -29,9 +29,11 @@ type SupervisorOpt = { id: string; name: string };
 function fmtOra(iso: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("it-IT", {
     day: "2-digit",
     month: "2-digit",
+    year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -45,6 +47,7 @@ export function OperatoriGestione({
   roleDefaults,
   userOverrides,
   acronimiUsati,
+  creditCalcModuleOn = false,
 }: {
   utenti: Utente[];
   sedi: SedeOpt[];
@@ -53,6 +56,7 @@ export function OperatoriGestione({
   roleDefaults: NavRoleDefaults;
   userOverrides: NavUserOverrides;
   acronimiUsati: string[];
+  creditCalcModuleOn?: boolean;
 }) {
   const ruoliAssegnabili = [
     ...ruoliCreabiliDa(creatorRole),
@@ -93,6 +97,7 @@ export function OperatoriGestione({
               roleDefaults={roleDefaults[u.role as Role] || {}}
               userOverrides={userOverrides[u.id] || {}}
               acronimiUsati={acronimiUsati}
+              creditCalcModuleOn={creditCalcModuleOn}
             />
           ))}
         </tbody>
@@ -109,6 +114,7 @@ function RigaOperatore({
   roleDefaults,
   userOverrides,
   acronimiUsati,
+  creditCalcModuleOn = false,
 }: {
   utente: Utente;
   sedi: SedeOpt[];
@@ -117,6 +123,7 @@ function RigaOperatore({
   roleDefaults: import("@/lib/navVisibility/catalog").NavVisibilityMap;
   userOverrides: import("@/lib/navVisibility/catalog").NavVisibilityMap;
   acronimiUsati: string[];
+  creditCalcModuleOn?: boolean;
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -184,6 +191,8 @@ function RigaOperatore({
     qualificheScolastiche: utente.qualificheScolastiche,
     condizioneEconomica: utente.condizioneEconomicaValue,
     importoFisso: utente.importoFisso,
+    lastLoginAt: utente.lastLoginAt,
+    lastLogoutAt: utente.lastLogoutAt,
   };
 
   return (
@@ -258,12 +267,14 @@ function RigaOperatore({
       </td>
       <td className="text-xs">
         {utente.role === "OPERATOR" && utente.consulenteEsterno ? (
-          <span>
+          <span className={!creditCalcModuleOn ? "opacity-60" : undefined}>
             Esterno
-            {utente.creditCalcEnabled ? (
+            {utente.creditCalcEnabled && creditCalcModuleOn ? (
               <span className="mt-0.5 block font-medium text-emerald-700">CreditCalc ON</span>
             ) : (
-              <span className="mt-0.5 block text-[var(--muted)]">CreditCalc off</span>
+              <span className="mt-0.5 block text-[var(--muted)]">
+                {creditCalcModuleOn ? "CreditCalc off" : "CreditCalc (sezione non attiva)"}
+              </span>
             )}
           </span>
         ) : (
@@ -445,6 +456,7 @@ function RigaOperatore({
           roleDefaults={roleDefaults}
           userOverrides={userOverrides}
           acronimiUsati={acronimiUsati}
+          creditCalcModuleOn={creditCalcModuleOn}
           onSuccess={() => {
             setEditOpen(false);
             router.refresh();

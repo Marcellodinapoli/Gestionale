@@ -128,17 +128,16 @@ export function parseStatoOffertaScrivibile(value: string | null | undefined): S
   throw new Error("Stato offerta non valido");
 }
 
-/** Transizioni ammesse: BOZZA↔BOZZA, BOZZA→PUBBLICATA, PUBBLICATA→PUBBLICATA, CHIUSA→CHIUSA, *→CHIUSA. */
+/** Transizioni ammesse: BOZZA↔PUBBLICATA, *→CHIUSA, CHIUSA→BOZZA|PUBBLICATA (riapertura). */
 export function assertTransizioneOfferta(
   from: StatoOffertaLavoro,
   to: StatoOffertaLavoro
 ) {
   if (from === to) return;
-  if (from === "CHIUSA") {
-    throw new Error("Offerta chiusa: lo stato non si può riaprire da qui");
-  }
   if (to === "CHIUSA") return;
+  if (from === "CHIUSA" && (to === "BOZZA" || to === "PUBBLICATA")) return;
   if (from === "BOZZA" && to === "PUBBLICATA") return;
+  if (from === "PUBBLICATA" && to === "BOZZA") return;
   throw new Error("Transizione di stato non consentita");
 }
 

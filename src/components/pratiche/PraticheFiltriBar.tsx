@@ -146,6 +146,7 @@ export function PraticheFiltriBar({
   apriPraticheHref,
   nascondiFiltroStato = false,
   operatoreDefaultId,
+  searchActive = false,
 }: {
   q?: string;
   stato?: string;
@@ -167,11 +168,23 @@ export function PraticheFiltriBar({
   apriPraticheHref?: string | null;
   /** Operatore: niente tendina stato, solo pratiche in lavorazione. */
   nascondiFiltroStato?: boolean;
+  /** Elenco già caricato (cerca=1 / elenco speciale). */
+  searchActive?: boolean;
   /** Operatore preimpostato in URL (non conta come filtro utente). */
   operatoreDefaultId?: string | null;
 }) {
   const STATO_DEFAULT = "IN_LAVORAZIONE";
   const statoEffettivo = nascondiFiltroStato ? STATO_DEFAULT : stato || STATO_DEFAULT;
+  // Opzione selezionata per prima: alcuni browser riordinano le <option> e rompono l’hydration.
+  const statiFiltroOpts = useMemo(() => {
+    const list = STATI_FILTRO_PRATICHE.map((o) => ({ value: o.value, label: o.label }));
+    const idx = list.findIndex((o) => o.value === statoEffettivo);
+    if (idx > 0) {
+      const [sel] = list.splice(idx, 1);
+      if (sel) list.unshift(sel);
+    }
+    return list;
+  }, [statoEffettivo]);
   const a = altri || {};
   const [altriFiltriOpen, setAltriFiltriOpen] = useState(false);
   const [modalMandato, setModalMandato] = useState("");
@@ -186,15 +199,7 @@ export function PraticheFiltriBar({
   const dataLavorateA =
     lavorateA || (legacySingoloGiorno ? lavorateData || oggiIso : undefined);
   const hasLavorateRange = !!(dataLavorateDa || dataLavorateA);
-  const hasFilters = !!(
-    q ||
-    (!nascondiFiltroStato && stato && stato !== STATO_DEFAULT) ||
-    lavorate ||
-    hasLavorateRange ||
-    lavorateFascia ||
-    nonToccateDa ||
-    hasAltriFiltri(altri, { ignoreOperatoreId: operatoreDefaultId })
-  );
+  const hasFilters = searchActive;
   const perimetriBarOpts = useMemo(
     () => perimetroFiltroOptions(mandantiPerimetri, a.mandato),
     [mandantiPerimetri, a.mandato]
@@ -297,8 +302,10 @@ export function PraticheFiltriBar({
         id="pratiche-filtro-veloce"
         method="get"
         action="/pratiche"
-        className="flex w-full flex-wrap items-end gap-1.5 pb-0.5"
+        className="notranslate flex w-full flex-wrap items-end gap-1.5 pb-0.5"
+        translate="no"
       >
+        <input type="hidden" name="cerca" value="1" />
         {hiddenNav}
         {/* Conserva filtri avanzati quando si usa solo la barra rapida */}
         {hasAltriFiltri(altri, { ignoreOperatoreId: operatoreDefaultId })
@@ -325,15 +332,17 @@ export function PraticheFiltriBar({
           <select
             name="stato"
             key={`stato-${statoEffettivo}`}
-            value={statoEffettivo}
+            defaultValue={statoEffettivo}
             onChange={(e) => {
               e.currentTarget.form?.requestSubmit();
             }}
-            className={`${QUICK_BAR_FIELD_CLASS} w-[8.75rem] shrink-0 px-2`}
+            className={`notranslate ${QUICK_BAR_FIELD_CLASS} w-[8.75rem] shrink-0 px-2`}
             aria-label="Stato operativo"
+            translate="no"
+            suppressHydrationWarning
           >
-            {STATI_FILTRO_PRATICHE.map(({ value, label }) => (
-              <option key={value} value={value}>
+            {statiFiltroOpts.map(({ value, label }) => (
+              <option key={value} value={value} translate="no" className="notranslate">
                 {label}
               </option>
             ))}
@@ -504,6 +513,7 @@ export function PraticheFiltriBar({
         wide
       >
         <form method="get" action="/pratiche" className="space-y-4 p-4">
+          <input type="hidden" name="cerca" value="1" />
           {hiddenNav}
           <input type="hidden" name="q" value={q || ""} />
           <input type="hidden" name="stato" value={statoEffettivo} />
@@ -837,12 +847,14 @@ export function PraticheFiltriBar({
             >
               Chiudi
             </button>
-            <Link
-              href="/pratiche"
-              className="inline-flex h-9 items-center rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
-            >
-              Azzera
-            </Link>
+            {hasFilters ? (
+              <Link
+                href="/pratiche"
+                className="inline-flex h-9 items-center rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
+              >
+                Azzera
+              </Link>
+            ) : null}
             <button
               type="submit"
               className="h-9 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white hover:opacity-90"

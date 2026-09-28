@@ -104,6 +104,16 @@ export function buildPraticheQuery(params: {
     if (v !== undefined && v !== "" && v !== false) sp.set(k, String(v));
   }
 
+  // Elenco pratiche solo dopo Filtra / deep-link intenzionale (cerca=1).
+  if (params.cerca !== "0" && params.cerca !== false) {
+    const hasFiltro = [...sp.keys()].some(
+      (k) => k !== "sort" && k !== "dir" && k !== "page" && k !== "cerca"
+    );
+    if (hasFiltro || params.cerca === "1" || params.cerca === true) {
+      sp.set("cerca", "1");
+    }
+  }
+
   const qs = sp.toString();
   return qs ? `/pratiche?${qs}` : "/pratiche";
 }

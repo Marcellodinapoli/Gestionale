@@ -56,6 +56,18 @@ function filterSql(
     params.push(filter.createdAtLte);
   }
 
+  if (filter?.incassoDataGte || filter?.incassoDataLte) {
+    join += ` INNER JOIN "Incassi" inc ON inc."Id" = pv."IncassoId" `;
+    if (filter.incassoDataGte) {
+      parts.push(`inc."Data" >= $${i++}::timestamptz`);
+      params.push(filter.incassoDataGte);
+    }
+    if (filter.incassoDataLte) {
+      parts.push(`inc."Data" <= $${i++}::timestamptz`);
+      params.push(filter.incassoDataLte);
+    }
+  }
+
   if (filter?.operatoreSedeId || filter?.operatoreOrSupervisorId) {
     join += ` INNER JOIN "Users" u ON u."Id" = pv."OperatoreId" `;
     if (filter.operatoreSedeId) {
@@ -197,7 +209,9 @@ export class NeonProvvigioniRepository implements ProvvigioniRepository {
         man."Codice" AS "Mandante_Codice", man."PerimetriJson" AS "Mandante_Perimetri"`;
     }
     if (req.includeIncasso) {
-      join += ` INNER JOIN "Incassi" inc ON inc."Id" = pv."IncassoId" `;
+      if (!join.includes('"Incassi"')) {
+        join += ` INNER JOIN "Incassi" inc ON inc."Id" = pv."IncassoId" `;
+      }
       select += `,
         inc."Data" AS "Incasso_Data", inc."Importo" AS "Incasso_Importo",
         inc."Metodo" AS "Incasso_Metodo", inc."Fattura" AS "Incasso_Fattura",

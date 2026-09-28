@@ -142,6 +142,7 @@ export default async function ProvigioniPage({
     operatore?: string;
     perimetro?: string;
     sede?: string;
+    cerca?: string;
   }>;
 }) {
   const user = await requireNavPage("provigioni");
@@ -153,7 +154,12 @@ export default async function ProvigioniPage({
     operatore: operatoreId,
     perimetro: perimetroRaw,
     sede: sedeRaw,
+    cerca: cercaRaw,
   } = await searchParams;
+  // Elenco solo dopo Filtra (cerca=1) o filtri espliciti in URL.
+  const showElenco =
+    cercaRaw === "1" ||
+    Boolean(meseRaw || mandanteId || gruppoId || operatoreId || perimetroRaw);
 
   const { sedeId: sedeScopeId } = sedeScopeForRendimento(user, sedeRaw);
   const mostraRicavi = canViewRicaviFatturatiSede(user, sedeScopeId);
@@ -165,6 +171,16 @@ export default async function ProvigioniPage({
         : "__nessuna__"
       : sedeScopeId;
 
+  const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
+  const sediOpts =
+    user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
+      ? await sediDbFromUser(user).findMany({
+          where: { tenantId: user.tenantId, active: true },
+          orderBy: { nome: "asc" },
+          select: { id: true, nome: true },
+        })
+      : [];
+
   const ref = meseRaw ? new Date(`${meseRaw}-01T12:00:00`) : new Date();
   const da = inizioMese(ref);
   const a = fineMese(ref);
@@ -175,65 +191,49 @@ export default async function ProvigioniPage({
   const isAdmin = user.role === "ADMIN";
   const canFilter = isAdmin || isAmministrazione;
 
-  const [sedeUserIds, sediOpts, operatori, mandantiDb, supervisori, supGruppo, gruppoLavoro] =
-    await Promise.all([
-      userIdsInSede(user.tenantId, sedeScopeId),
-      user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"
-        ? sediDbFromUser(user).findMany({
-            where: { tenantId: user.tenantId, active: true },
-            orderBy: { nome: "asc" },
-            select: { id: true, nome: true },
-          })
-        : Promise.resolve([]),
-      canFilter
-        ? usersDbFromUser(user).findMany({
-            where: {
-              tenantId: user.tenantId,
-              role: { in: ["OPERATOR", "SUPERVISOR"] },
-              active: true,
-              ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
-            },
-            orderBy: { name: "asc" },
-            select: { id: true, name: true, condizioneEconomica: true, importoFisso: true },
-          })
-        : Promise.resolve([]),
-      canFilter
-        ? mandantiDbFromUser(user).findMany({
-            where: { tenantId: user.tenantId },
-            orderBy: { ragioneSociale: "asc" },
-            select: {
-              id: true,
-              codice: true,
-              ragioneSociale: true,
-              ...(canFilter ? { perimetri: true as const } : {}),
-            },
-          })
-        : Promise.resolve([]),
-      isAdmin || isAmministrazione
-        ? usersDbFromUser(user).findMany({
-            where: {
-              tenantId: user.tenantId,
-              role: "SUPERVISOR",
-              ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
-            },
-            orderBy: { name: "asc" },
-            select: { id: true, name: true },
-          })
-        : Promise.resolve([]),
-      isAdmin && gruppoId
-        ? usersDbFromUser(user).findFirst({
-            where: { id: gruppoId, tenantId: user.tenantId },
-            select: { gruppoMandanti: true },
-          })
-        : Promise.resolve(null),
-      !canFilter ? getGruppoLavoro(user) : Promise.resolve(null),
-    ]);
+  const operatori = canFilter
+    ? await usersDbFromUser(user).findMany({
+        where: {
+          tenantId: user.tenantId,
+          role: { in: ["OPERATOR", "SUPERVISOR"] },
+          active: true,
+          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, condizioneEconomica: true, importoFisso: true },
+      })
+    : [];
+
+  const mandantiDb = canFilter
+    ? await mandantiDbFromUser(user).findMany({
+        where: { tenantId: user.tenantId },
+        orderBy: { ragioneSociale: "asc" },
+        select: {
+          id: true,
+          codice: true,
+          ragioneSociale: true,
+          ...(canFilter ? { perimetri: true as const } : {}),
+        },
+      })
+    : [];
 
   const mandanti = mandantiDb.map(({ id, codice, ragioneSociale }) => ({
     id,
     codice,
     ragioneSociale,
   }));
+
+  const supervisori = isAdmin || isAmministrazione
+    ? await usersDbFromUser(user).findMany({
+        where: {
+          tenantId: user.tenantId,
+          role: "SUPERVISOR",
+          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
 
   const perimetriRefs =
     isAmministrazione || isAdmin
@@ -262,10 +262,15 @@ export default async function ProvigioniPage({
   let membriGruppo: Array<{ id: string; name: string; role: string }> = [];
 
   if (isAdmin && gruppoId) {
-    gruppoMandanti = parseGruppoMandanti(supGruppo?.gruppoMandanti);
-  } else if (!canFilter && gruppoLavoro) {
-    gruppoMandanti = gruppoLavoro.gruppoMandanti;
-    membriGruppo = gruppoLavoro.members;
+    const sup = await usersDbFromUser(user).findFirst({
+      where: { id: gruppoId, tenantId: user.tenantId },
+      select: { gruppoMandanti: true },
+    });
+    gruppoMandanti = parseGruppoMandanti(sup?.gruppoMandanti);
+  } else if (!canFilter) {
+    const gruppo = await getGruppoLavoro(user);
+    gruppoMandanti = gruppo.gruppoMandanti;
+    membriGruppo = gruppo.members;
     if (!gruppoMandanti.length) avvisoPerimetri = true;
   }
 
@@ -328,85 +333,99 @@ export default async function ProvigioniPage({
   };
 
   const [righe, totali, maturate, liquidate, configsGruppo, totMie, totOperatori, groupByOperatore, groupByOperatoreStato] =
-    await Promise.all([
-      provvigioniModel.findMany({
-        where: wherePeriodo,
-        include: {
-          operatore: { select: { name: true } },
-          pratica: {
-            select: {
-              numero: true,
-              numeroMandante: true,
-              stato: true,
-              codiceScarico: true,
-              debitore: { select: { nome: true, cognome: true } },
-              mandante: { select: { codice: true, perimetri: true } },
+    showElenco
+      ? await Promise.all([
+          provvigioniModel.findMany({
+            where: wherePeriodo,
+            include: {
+              operatore: { select: { name: true } },
+              pratica: {
+                select: {
+                  numero: true,
+                  numeroMandante: true,
+                  stato: true,
+                  codiceScarico: true,
+                  debitore: { select: { nome: true, cognome: true } },
+                  mandante: { select: { codice: true, perimetri: true } },
+                },
+              },
+              incasso: { select: { data: true, importo: true, metodo: true, fattura: true, modo: true } },
             },
-          },
-          incasso: { select: { data: true, importo: true, metodo: true, fattura: true, modo: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-      provvigioniModel.aggregate({
-        where: wherePeriodo,
-        _sum: { importo: true },
-        _count: true,
-      }),
-      provvigioniModel.aggregate({
-        where: { ...wherePeriodo, stato: "MATURATA" },
-        _sum: { importo: true },
-      }),
-      provvigioniModel.aggregate({
-        where: { ...wherePeriodo, stato: "LIQUIDATA" },
-        _sum: { importo: true },
-      }),
-      !isAmministrazione && gruppoMandanti.length
-        ? configProvvigioniPerimetriGruppo(user.tenantId, gruppoMandanti)
-        : Promise.resolve([]),
-      user.role === "SUPERVISOR"
-        ? provvigioniModel.aggregate({
-            where: { ...wherePeriodo, operatoreId: user.id },
+            orderBy: { createdAt: "desc" },
+          }),
+          provvigioniModel.aggregate({
+            where: wherePeriodo,
             _sum: { importo: true },
             _count: true,
-          })
-        : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
-      user.role === "SUPERVISOR" && operatorIdsTeam.length
-        ? provvigioniModel.aggregate({
-            where: { ...wherePeriodo, operatoreId: { in: operatorIdsTeam } },
+          }),
+          provvigioniModel.aggregate({
+            where: { ...wherePeriodo, stato: "MATURATA" },
             _sum: { importo: true },
-            _count: true,
-          })
-        : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
-      user.role === "SUPERVISOR" && operatoriGruppo.length
-        ? provvigioniModel.groupBy({
-            by: ["operatoreId"],
-            where: whereTeamSenzaOperatore,
+          }),
+          provvigioniModel.aggregate({
+            where: { ...wherePeriodo, stato: "LIQUIDATA" },
             _sum: { importo: true },
-            _count: true,
-          })
-        : Promise.resolve([]),
-      user.role === "SUPERVISOR" && operatoriGruppo.length
-        ? provvigioniModel.groupBy({
-            by: ["operatoreId", "stato"],
-            where: whereTeamSenzaOperatore,
-            _sum: { importo: true },
-          })
-        : Promise.resolve([]),
-    ]);
+          }),
+          !isAmministrazione && gruppoMandanti.length
+            ? configProvvigioniPerimetriGruppo(user.tenantId, gruppoMandanti)
+            : Promise.resolve([]),
+          user.role === "SUPERVISOR"
+            ? provvigioniModel.aggregate({
+                where: { ...wherePeriodo, operatoreId: user.id },
+                _sum: { importo: true },
+                _count: true,
+              })
+            : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
+          user.role === "SUPERVISOR" && operatorIdsTeam.length
+            ? provvigioniModel.aggregate({
+                where: { ...wherePeriodo, operatoreId: { in: operatorIdsTeam } },
+                _sum: { importo: true },
+                _count: true,
+              })
+            : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
+          user.role === "SUPERVISOR" && operatoriGruppo.length
+            ? provvigioniModel.groupBy({
+                by: ["operatoreId"],
+                where: whereTeamSenzaOperatore,
+                _sum: { importo: true },
+                _count: true,
+              })
+            : Promise.resolve([]),
+          user.role === "SUPERVISOR" && operatoriGruppo.length
+            ? provvigioniModel.groupBy({
+                by: ["operatoreId", "stato"],
+                where: whereTeamSenzaOperatore,
+                _sum: { importo: true },
+              })
+            : Promise.resolve([]),
+        ])
+      : [
+          [],
+          { _sum: { importo: 0 }, _count: 0 },
+          { _sum: { importo: 0 } },
+          { _sum: { importo: 0 } },
+          [],
+          { _sum: { importo: 0 }, _count: 0 },
+          { _sum: { importo: 0 }, _count: 0 },
+          [],
+          [],
+        ];
 
   const operatoriPerFissoIds = new Set<string>();
-  if (user.role === "OPERATOR") {
-    operatoriPerFissoIds.add(user.id);
-  } else if (operatoreEffettivo && operatoreEffettivo !== "__nessuno__") {
-    operatoriPerFissoIds.add(operatoreEffettivo);
-  } else if (user.role === "SUPERVISOR") {
-    for (const op of operatoriGruppo) operatoriPerFissoIds.add(op.id);
-  } else if (canFilter) {
-    for (const op of operatori) operatoriPerFissoIds.add(op.id);
+  if (showElenco) {
+    if (user.role === "OPERATOR") {
+      operatoriPerFissoIds.add(user.id);
+    } else if (operatoreEffettivo && operatoreEffettivo !== "__nessuno__") {
+      operatoriPerFissoIds.add(operatoreEffettivo);
+    } else if (user.role === "SUPERVISOR") {
+      for (const op of operatoriGruppo) operatoriPerFissoIds.add(op.id);
+    } else if (canFilter) {
+      for (const op of operatori) operatoriPerFissoIds.add(op.id);
+    }
   }
 
   const operatoriFissoRaw =
-    operatoriPerFissoIds.size > 0
+    showElenco && operatoriPerFissoIds.size > 0
       ? await usersDbFromUser(user).findMany({
           where: {
             tenantId: user.tenantId,
@@ -438,12 +457,12 @@ export default async function ProvigioniPage({
 
   let configs = configsGruppo;
 
-  if (isAmministrazione) {
+  if (showElenco && isAmministrazione) {
     configs = await configProvvigioniMandanti(user.tenantId, {
       mandanteIds: mandanteId ? [mandanteId] : undefined,
       soloPerimetro: perimetroValido,
     });
-  } else if (canFilter && mandanteId && !gruppoId) {
+  } else if (showElenco && canFilter && mandanteId && !gruppoId) {
     configs = await configProvvigioniMandanti(user.tenantId, {
       mandanteIds: [mandanteId],
       soloPerimetro: perimetroValido,
@@ -451,16 +470,19 @@ export default async function ProvigioniPage({
   }
 
   const righeMapped = righe.map(mapRigaProvvigione);
-  const metricheScaglioni = configs.length
-    ? await metricheScaglioniPerPerimetro(
-        user,
-        configs,
-        praticaFiltroAmministrazione(mandanteId, perimetroValido)
-      )
-    : new Map();
-  const righeFisso = buildRigheImportoFisso(operatoriFisso, meseLabel);
+  const metricheScaglioni =
+    showElenco && configs.length
+      ? await metricheScaglioniPerPerimetro(
+          user,
+          configs,
+          praticaFiltroAmministrazione(mandanteId, perimetroValido)
+        )
+      : new Map();
+  const righeFisso = showElenco ? buildRigheImportoFisso(operatoriFisso, meseLabel) : [];
   const righeComplete = [...righeMapped, ...righeFisso];
-  const sezioni = buildSezioniProvvigioni(righeComplete, configs, metricheScaglioni);
+  const sezioni = showElenco
+    ? buildSezioniProvvigioni(righeComplete, configs, metricheScaglioni)
+    : [];
 
   const totaleMese = (totali._sum.importo || 0) + totaleFisso;
   const totaleMaturate = (maturate._sum.importo || 0) + totaleFisso;
@@ -496,17 +518,9 @@ export default async function ProvigioniPage({
           )
       : [];
 
-  const hasFiltriAttivi = Boolean(
-    meseRaw ||
-      mandanteId ||
-      gruppoId ||
-      operatoreId ||
-      perimetroRaw ||
-      sedeRaw
-  );
-
-  const subtitle =
-    user.role === "OPERATOR"
+  const subtitle = !showElenco
+    ? "Imposta i filtri e clicca Filtra per vedere l’elenco"
+    : user.role === "OPERATOR"
       ? "Le tue provvigioni · perimetri del gruppo"
       : user.role === "SUPERVISOR"
         ? `Team · ${operatoriGruppo.map((m) => m.name).join(", ") || user.name} · perimetri del gruppo`
@@ -523,13 +537,18 @@ export default async function ProvigioniPage({
           sedi={sediOpts}
           sedeId={sedeScopeId}
           basePath="/provigioni"
-          keepParams={{
-            mese: meseValue,
-            mandante: mandanteId,
-            gruppo: gruppoId,
-            operatore: operatoreId,
-            perimetro: perimetroRaw,
-          }}
+          keepParams={
+            showElenco
+              ? {
+                  mese: meseValue,
+                  mandante: mandanteId,
+                  gruppo: gruppoId,
+                  operatore: operatoreId,
+                  perimetro: perimetroRaw,
+                  cerca: "1",
+                }
+              : {}
+          }
         />
       ) : null}
 
@@ -546,12 +565,19 @@ export default async function ProvigioniPage({
         </p>
       ) : null}
 
-      <form className="mb-3 flex shrink-0 flex-wrap items-end gap-2">
+      <form
+        method="get"
+        action="/provigioni"
+        className="mb-3 flex shrink-0 flex-wrap items-end gap-2"
+      >
+        <input type="hidden" name="cerca" value="1" />
+        {sedeScopeId ? <input type="hidden" name="sede" value={sedeScopeId} /> : null}
         <label className="text-sm">
           <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Mese</span>
           <input
             type="month"
             name="mese"
+            key={`mese-${meseValue}-${showElenco ? "1" : "0"}`}
             defaultValue={meseValue}
             className={`px-3 ${FILTRI_PAGE_INPUT_CLASS} h-10`}
           />
@@ -561,6 +587,7 @@ export default async function ProvigioniPage({
             <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Operatore</span>
             <select
               name="operatore"
+              key={`operatore-${operatoreId || ""}`}
               defaultValue={operatoreId || ""}
               className={FILTRI_PAGE_SELECT_LG_CLASS}
             >
@@ -599,80 +626,90 @@ export default async function ProvigioniPage({
         <button type="submit" className={`h-10 ${FILTRI_APPLY_BUTTON_CLASS}`}>
           Filtra
         </button>
-        <ProvvigioniAggiornaButton />
-        {hasFiltriAttivi ? (
+        {showElenco ? <ProvvigioniAggiornaButton /> : null}
+        {showElenco ? (
           <Link
-            href="/provigioni"
+            href={sedeScopeId ? `/provigioni?sede=${encodeURIComponent(sedeScopeId)}` : "/provigioni"}
             className={`inline-flex h-10 items-center gap-1 ${FILTRI_RESET_BUTTON_CLASS}`}
           >
             <X className="h-4 w-4" />
-            Annulla filtro
+            Reset
           </Link>
         ) : null}
       </form>
 
-      <div
-        className={`mb-3 grid shrink-0 gap-3 ${
-          user.role === "SUPERVISOR" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
-        }`}
-      >
-        <Card title={user.role === "SUPERVISOR" ? "Totale team" : "Totale mese"}>
-          <p className="text-2xl font-semibold">{euro(totaleMese)}</p>
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            {prismaCount(totali._count) + righeFisso.length} movimenti
-            {totaleFisso > 0 ? ` · di cui ${euro(totaleFisso)} fisso` : ""}
-          </p>
-        </Card>
-        {user.role === "SUPERVISOR" ? (
-          <>
-            <Card title="Tue provvigioni">
-              <p className="text-2xl font-semibold text-[var(--navy)]">
-                {euro(totaleMieConFisso)}
-              </p>
+      {!showElenco ? (
+        <p className="rounded-lg border border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
+          Nessun elenco caricato. Imposta mese o altri filtri e premi{" "}
+          <span className="font-semibold text-[var(--navy)]">Filtra</span>.
+        </p>
+      ) : (
+        <>
+          <div
+            className={`mb-3 grid shrink-0 gap-3 ${
+              user.role === "SUPERVISOR" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
+            }`}
+          >
+            <Card title={user.role === "SUPERVISOR" ? "Totale team" : "Totale mese"}>
+              <p className="text-2xl font-semibold">{euro(totaleMese)}</p>
               <p className="mt-1 text-xs text-[var(--muted)]">
-                {prismaCount(totMie._count) + (fissoPerOperatore.has(user.id) ? 1 : 0)} movimenti
+                {prismaCount(totali._count) + righeFisso.length} movimenti
+                {totaleFisso > 0 ? ` · di cui ${euro(totaleFisso)} fisso` : ""}
               </p>
             </Card>
-            <Card title="Operatori del gruppo">
-              <p className="text-2xl font-semibold text-[var(--navy)]">
-                {euro(totOperatoriConFisso)}
+            {user.role === "SUPERVISOR" ? (
+              <>
+                <Card title="Tue provvigioni">
+                  <p className="text-2xl font-semibold text-[var(--navy)]">
+                    {euro(totaleMieConFisso)}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    {prismaCount(totMie._count) + (fissoPerOperatore.has(user.id) ? 1 : 0)}{" "}
+                    movimenti
+                  </p>
+                </Card>
+                <Card title="Operatori del gruppo">
+                  <p className="text-2xl font-semibold text-[var(--navy)]">
+                    {euro(totOperatoriConFisso)}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    {prismaCount(totOperatori._count)} movimenti
+                  </p>
+                </Card>
+              </>
+            ) : null}
+            <Card title="Maturate">
+              <p className="text-2xl font-semibold text-[var(--accent)]">
+                {euro(totaleMaturate)}
               </p>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                {prismaCount(totOperatori._count)} movimenti
-              </p>
+              <p className="mt-1 text-xs text-[var(--muted)]">Da liquidare</p>
             </Card>
-          </>
-        ) : null}
-        <Card title="Maturate">
-          <p className="text-2xl font-semibold text-[var(--accent)]">
-            {euro(totaleMaturate)}
-          </p>
-          <p className="mt-1 text-xs text-[var(--muted)]">Da liquidare</p>
-        </Card>
-        <Card title="Liquidate">
-          <p className="text-2xl font-semibold">{euro(liquidate._sum.importo || 0)}</p>
-          <p className="mt-1 text-xs text-[var(--muted)]">Già erogate</p>
-        </Card>
-      </div>
+            <Card title="Liquidate">
+              <p className="text-2xl font-semibold">{euro(liquidate._sum.importo || 0)}</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">Già erogate</p>
+            </Card>
+          </div>
 
-      {user.role === "SUPERVISOR" ? (
-        <ProvvigioniRiepilogoOperatori
-          items={riepilogoOperatori}
-          mese={meseValue}
-          operatoreSelezionato={operatoreId}
-        />
-      ) : null}
+          {user.role === "SUPERVISOR" ? (
+            <ProvvigioniRiepilogoOperatori
+              items={riepilogoOperatori}
+              mese={meseValue}
+              operatoreSelezionato={operatoreId}
+            />
+          ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        {canFilter ? (
-          <ProvvigioniTableAdmin sezioni={sezioni} />
-        ) : (
-          <ProvvigioniListaPerimetro
-            sezioni={sezioni}
-            showOperatore={user.role !== "OPERATOR"}
-          />
-        )}
-      </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+            {canFilter ? (
+              <ProvvigioniTableAdmin sezioni={sezioni} />
+            ) : (
+              <ProvvigioniListaPerimetro
+                sezioni={sezioni}
+                showOperatore={user.role !== "OPERATOR"}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

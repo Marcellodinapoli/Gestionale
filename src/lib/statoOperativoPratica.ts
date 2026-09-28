@@ -8,9 +8,10 @@ import { statoChiusuraDaCodiceScarico } from "@/lib/scarico";
 export const STATI_OPERATIVI = ["NUOVA", "IN_LAVORAZIONE", "SCADUTA"] as const;
 export type StatoOperativo = (typeof STATI_OPERATIVI)[number];
 
-/** Opzioni filtro elenco Pratiche (tendina): solo carico e scadute. */
+/** Opzioni filtro elenco Pratiche (tendina). Default «In lavorazione» per primo: evita reorder DOM del browser in hydration. */
 export const STATI_FILTRO_PRATICHE = [
   { value: "IN_LAVORAZIONE", label: "In lavorazione" },
+  { value: "NUOVA", label: "Nuove" },
   { value: "SCADUTA", label: "Scadute" },
 ] as const;
 

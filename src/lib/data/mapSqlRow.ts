@@ -1,6 +1,9 @@
 /** Mappa righe SQL PascalCase → camelCase Prisma. */
 export function mapSqlRow(row: Record<string, unknown>): Record<string, unknown> {
-  if (!row || row.id) return row;
+  if (!row) return row;
+  // Già camelCase completo (es. da driver/connector) → lascia invariato.
+  const hasPascal = Object.keys(row).some((k) => k.length > 0 && k[0] === k[0]!.toUpperCase());
+  if (row.id != null && !hasPascal) return row;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(row)) {
     out[k.charAt(0).toLowerCase() + k.slice(1)] = v;

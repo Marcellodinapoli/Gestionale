@@ -9,9 +9,11 @@ import {
   deleteOffertaLavoro,
   ensureOffertaIndeedJobId,
   getOffertaLavoro,
+  ripubblicaOffertaLavoro,
   updateOffertaLavoro,
 } from "@/lib/recruiting/offerteRepo";
 import {
+  getCreditCoreOfferteStatusMap,
   removeOffertaFromCreditCoreSafe,
   syncOffertaToCreditCoreSafe,
 } from "@/lib/recruiting/creditCoreOfferteSync";
@@ -84,11 +86,14 @@ function publicSyncError(e: unknown): Error {
   if (e instanceof IndeedSyncError) {
     return new Error(e.message);
   }
+  if (e instanceof Error && e.message.trim()) {
+    return e;
+  }
   return new Error("Sincronizzazione non riuscita");
 }
 
 /**
- * Sync manuale candidature Indeed dal Receiver aziendale per un'offerta.
+ * Sync manuale: ripubblica offerta su CreditCore + pull candidature Indeed.
  * Nessuno scheduler. Nessun CV salvato in Credixa.
  */
 export async function syncIndeedApplicationsAction(
@@ -97,17 +102,29 @@ export async function syncIndeedApplicationsAction(
   const user = await requireWritablePermission("recruiting:manage");
   const oid = String(offertaId || "").trim();
   try {
-    // Multi-azienda: garantisce indeedJobId del tenant e allinea CreditCore prima del pull
     const offerta = await getOffertaLavoro(user.tenantId, oid);
     if (!offerta || offerta.tenantId !== user.tenantId) {
       throw new Error("Offerta non trovata");
     }
+    if (offerta.stato === "CHIUSA") {
+      throw new Error("Riapri l'offerta prima di sincronizzarla sulle piattaforme.");
+    }
     if (offerta.stato === "PUBBLICATA") {
       await ensureOffertaIndeedJobId(user.tenantId, oid);
-      await syncOffertaToCreditCoreSafe(
-        (await getOffertaLavoro(user.tenantId, oid)) || offerta,
-        { companyName: (user.tenantNome || "").trim() || undefined }
-      );
+      const refreshed =
+        (await getOffertaLavoro(user.tenantId, oid)) || offerta;
+      // Ripubblica catalogo CreditCore: se bloccata/rifiutata/assente → di nuovo «In attesa».
+      const statusMap = await getCreditCoreOfferteStatusMap(user.tenantId, [oid]);
+      const cc = statusMap[oid];
+      const forcePendingApproval =
+        !cc || cc === "blocked" || cc === "rejected" || cc === "unknown";
+      const sync = await syncOffertaToCreditCoreSafe(refreshed, {
+        companyName: (user.tenantNome || "").trim() || undefined,
+        forcePendingApproval,
+      });
+      if (!sync.ok) {
+        throw new Error(`Sync CreditCore non riuscito: ${sync.error}`);
+      }
     }
 
     const result = await syncIndeedApplicationsForOfferta(
@@ -168,16 +185,23 @@ function revalidateRecruiting(offertaId?: string) {
 async function afterOffertaSaved(
   tenantId: string,
   offertaId: string,
-  companyName?: string | null
+  companyName?: string | null,
+  opts?: { forcePendingApproval?: boolean; requireCreditCoreSync?: boolean }
 ) {
   let offerta = await getOffertaLavoro(tenantId, offertaId);
   if (!offerta) return;
   if (offerta.stato === "PUBBLICATA") {
     offerta = await ensureOffertaIndeedJobId(tenantId, offertaId);
   }
-  await syncOffertaToCreditCoreSafe(offerta, {
+  const sync = await syncOffertaToCreditCoreSafe(offerta, {
     companyName: (companyName || "").trim() || undefined,
+    forcePendingApproval: opts?.forcePendingApproval,
   });
+  if (!sync.ok && opts?.requireCreditCoreSync) {
+    throw new Error(
+      `Sync CreditCore non riuscito: ${sync.error}. L'offerta in gestionale è ok, ma il BO non è stato aggiornato.`
+    );
+  }
 }
 
 export async function creaOffertaLavoroAction(formData: FormData) {
@@ -235,6 +259,25 @@ export async function chiudiOffertaLavoroAction(formData: FormData) {
   revalidateRecruiting(id);
 }
 
+export async function ripubblicaOffertaLavoroAction(formData: FormData) {
+  const user = await requireWritablePermission("recruiting:manage");
+  const id = String(formData.get("id") || "").trim();
+  if (!id) throw new Error("Offerta non indicata");
+  const current = await getOffertaLavoro(user.tenantId, id);
+  if (!current) throw new Error("Offerta non trovata");
+  if (current.stato === "CHIUSA") {
+    await ripubblicaOffertaLavoro(user.tenantId, id);
+  } else if (current.stato !== "PUBBLICATA") {
+    throw new Error("L'offerta deve essere Pubblicata o Chiusa per inviarla al BO");
+  }
+  // Sempre forza pending: così compare in «In attesa» anche se era blocked/approved.
+  await afterOffertaSaved(user.tenantId, id, user.tenantNome, {
+    forcePendingApproval: true,
+    requireCreditCoreSync: true,
+  });
+  revalidateRecruiting(id);
+}
+
 export async function eliminaOffertaLavoroAction(formData: FormData) {
   const user = await requireWritablePermission("recruiting:manage");
   const id = String(formData.get("id") || "").trim();
@@ -265,7 +308,9 @@ export async function verificaReceiverConfigAction() {
   const updated = await probeReceiverConfig(user.tenantId);
   revalidateRecruiting();
   if (updated.status === "ERROR") {
-    throw new Error("Ricevitore non raggiungibile");
+    throw new Error(
+      "Ricevitore Indeed non raggiungibile (bridge candidature Indeed — non riguarda CreditCore)"
+    );
   }
 }
 

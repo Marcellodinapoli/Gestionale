@@ -110,7 +110,9 @@ export default async function AccountPage() {
           postazioni: gestiscePostazione ? postazioniLista : undefined,
           giorniAllaScadenza: giorniAllaScadenzaPassword(user.passwordChangedAt),
           creditCalcEnabled: Boolean(
-            user.consulenteEsterno && user.creditCalcEnabled
+            user.consulenteEsterno &&
+              user.creditCalcEnabled &&
+              tenantHasModule(platform, "creditcalc")
           ),
         }}
       />

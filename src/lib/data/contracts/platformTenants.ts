@@ -75,6 +75,12 @@ export type TenantPlatformDto = {
   abbonamento: TenantAbbonamento;
   perfMonitoringEnabled: boolean;
   suspensionReason: string | null;
+  /** ISO datetime sospensione (null se non sospesa). */
+  suspendedAt: string | null;
+  /** Numero account utenti creati per il tenant. */
+  usersCount: number;
+  /** Inviti non usati e non scaduti. */
+  pendingInvitesCount: number;
   createdAt: string;
   modules?: TenantModulesDto;
 };

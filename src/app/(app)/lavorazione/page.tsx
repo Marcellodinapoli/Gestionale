@@ -5,6 +5,7 @@ import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireModule, requireNavPage } from "@/lib/guard";
 import { praticaWhere } from "@/lib/domain";
+import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
 import { gruppoPerimetroScopeWhere } from "@/lib/codiciMandantePerimetro";
@@ -112,10 +113,13 @@ export default async function LavorazionePage({
     periScope = await gruppoPerimetroScopeWhere(user.tenantId, gruppo.gruppoMandanti);
   }
 
-  const scopeParts: Prisma.PraticaWhereInput[] = [praticaWhere(user)];
+  const scopeParts: Prisma.PraticaWhereInput[] = [
+    praticaWhere(user),
+    // Lavorazioni: mai includere pratiche scadute dallo stragiudiziale / già in giudiziale
+    whereVisibiliAdOperatoreSupervisor() as Prisma.PraticaWhereInput,
+  ];
   if (periScope) scopeParts.push(periScope);
-  const scope: Prisma.PraticaWhereInput =
-    scopeParts.length === 1 ? scopeParts[0]! : { AND: scopeParts };
+  const scope: Prisma.PraticaWhereInput = { AND: scopeParts };
 
   const operatoreId = user.role === "OPERATOR" ? user.id : undefined;
   const mostraOperatori = user.role !== "OPERATOR";

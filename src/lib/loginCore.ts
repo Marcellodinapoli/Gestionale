@@ -46,8 +46,13 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
   if (!password) return loginError("Inserisci la password");
 
   const tenant = await findTenantBySlug(slug);
-  if (!tenant || tenant.active === false) {
+  if (!tenant) {
     return loginError("Azienda non trovata o non attiva");
+  }
+  if (tenant.active === false) {
+    return loginError(
+      "Azienda non attiva: nessun account può accedere finché non viene riattivata"
+    );
   }
 
   const user = await findUserByEmail(tenant.id, email);

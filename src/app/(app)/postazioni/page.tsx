@@ -50,7 +50,11 @@ export default async function PostazioniPage({
     sedeNome: p.sedeRef?.nome || null,
     note: p.note,
     active: p.active,
-    occupanti: p.occupanti.map((o) => o.name),
+    occupanti: p.occupanti.map((o) => ({
+      id: o.id,
+      name: o.name,
+      tua: o.id === user.id,
+    })),
   }));
 
   return (
@@ -84,7 +88,7 @@ export default async function PostazioniPage({
             Applica
           </button>
         </form>
-        <PostazioniTable postazioni={lista} sedi={sedi} />
+        <PostazioniTable postazioni={lista} sedi={sedi} currentUserId={user.id} />
       </Card>
     </div>
   );

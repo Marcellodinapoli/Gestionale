@@ -79,12 +79,30 @@ export class NeonLockRepository implements LockRepository {
       );
       const row = existing[0];
       if (!row) {
-        await q(
-          `INSERT INTO "PraticheLock" ("PraticaId","TenantId","UserId","LastHeartbeatAt","CreatedAt")
-           VALUES ($1::uuid,$2::uuid,$3::uuid,NOW(),NOW())`,
-          [praticaId, this.scope.tenantId, userId]
-        );
-        return { owned: true, lockedBy: null };
+        try {
+          await q(
+            `INSERT INTO "PraticheLock" ("PraticaId","TenantId","UserId","LastHeartbeatAt","CreatedAt")
+             VALUES ($1::uuid,$2::uuid,$3::uuid,NOW(),NOW())`,
+            [praticaId, this.scope.tenantId, userId]
+          );
+          return { owned: true, lockedBy: null };
+        } catch (err) {
+          // Corsa tra due acquire (es. Strict Mode): rileggi lo stato.
+          const code =
+            err && typeof err === "object" && "code" in err
+              ? String((err as { code: unknown }).code)
+              : "";
+          if (code !== "23505") throw err;
+          const again = await q<{ UserId: string; UserName: string }>(
+            `SELECT l."UserId", u."Name" AS "UserName"
+             FROM "PraticheLock" l
+             INNER JOIN "Users" u ON u."Id" = l."UserId"
+             WHERE l."PraticaId" = $1::uuid
+             FOR UPDATE`,
+            [praticaId]
+          );
+          return mapStatus(again[0], userId);
+        }
       }
       if (String(row.UserId).toLowerCase() !== userId.toLowerCase()) {
         return mapStatus(row, userId);

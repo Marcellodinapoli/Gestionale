@@ -23,7 +23,7 @@ export function ProvvigioniRiepilogoOperatori({
   if (!items.length) return null;
 
   const hrefOperatore = (id?: string) => {
-    const sp = new URLSearchParams({ mese });
+    const sp = new URLSearchParams({ mese, cerca: "1" });
     if (id) sp.set("operatore", id);
     return `/provigioni?${sp.toString()}`;
   };

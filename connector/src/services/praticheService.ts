@@ -196,7 +196,30 @@ function bindFilter(req: sql.Request, filter: ListFilter | undefined, idx: { n: 
   }
   if (filter.q) {
     const q = bind("q", sql.NVarChar(100), `%${filter.q}%`);
-    clauses.push(`(p.Numero LIKE ${q} OR p.NumeroMandante LIKE ${q})`);
+    // Allineato a Neon / ricerca anagrafica lista: numero, lotto, nome/cognome, CF, telefono.
+    clauses.push(`(
+      p.Numero LIKE ${q}
+      OR p.NumeroMandante LIKE ${q}
+      OR EXISTS (
+        SELECT 1 FROM dbo.Debitori d
+        WHERE d.Id = p.DebitoreId AND (
+          d.Nome LIKE ${q} OR d.Cognome LIKE ${q} OR d.CodiceFiscale LIKE ${q}
+          OR d.Telefono LIKE ${q} OR d.Email LIKE ${q}
+        )
+      )
+      OR EXISTS (
+        SELECT 1 FROM dbo.Garanti g
+        WHERE g.PraticaId = p.Id AND (
+          g.Nome LIKE ${q} OR g.Cognome LIKE ${q} OR g.CodiceFiscale LIKE ${q}
+          OR g.Telefono LIKE ${q}
+        )
+      )
+      OR EXISTS (
+        SELECT 1 FROM dbo.DebitoreRecapiti dr
+        INNER JOIN dbo.Debitori d ON d.Id = dr.DebitoreId
+        WHERE d.Id = p.DebitoreId AND dr.Valore LIKE ${q}
+      )
+    )`);
   }
   if (filter.codScarico) {
     clauses.push(`p.CodiceScarico = ${bind("codSc", sql.NVarChar(20), filter.codScarico)}`);
@@ -533,10 +556,15 @@ function buildOrderBy(sortField?: string, sortDir: "asc" | "desc" = "desc") {
 
 function scopeForList(scope: ScopeInput, filter?: ListFilter): ScopeInput {
   // F1: tutte le pratiche del tenant (perimetro resta nei filtri), senza vincolo assegnatario.
+  // Conserva l'esclusione scadute/giudiziale se l'utente è OP/SUP.
+  const hideFuori =
+    scope.hideFuoriStragiudiziale === true ||
+    scope.role === "OPERATOR" ||
+    scope.role === "SUPERVISOR";
   if (filter?.cercaAmpia) {
-    return { ...scope, role: "ADMIN" };
+    return { ...scope, role: "ADMIN", hideFuoriStragiudiziale: hideFuori };
   }
-  return scope;
+  return { ...scope, hideFuoriStragiudiziale: hideFuori };
 }
 
 function buildWhere(cfg: ConnectorConfig["db"], scope: ScopeInput, filter?: ListFilter) {

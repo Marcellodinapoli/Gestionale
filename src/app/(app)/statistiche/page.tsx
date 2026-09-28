@@ -37,11 +37,18 @@ import {
 } from "@/lib/sedeScope";
 
 function defaultAffidoDa() {
-  return "2026-08-04";
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}-01`;
 }
 
 function defaultAffidoA() {
-  return "2026-08-31";
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const last = new Date(y, m + 1, 0).getDate();
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }
 
 function parseDateInput(value?: string | null) {
@@ -60,10 +67,15 @@ export default async function StatistichePage({
     lotto?: string;
     gruppo?: string;
     sede?: string;
+    cerca?: string;
   }>;
 }) {
   const user = await requireNavPage("statistiche");
   const sp = await searchParams;
+  // Griglia dopo Filtra (cerca=1) oppure se l’URL ha già filtri espliciti (submit).
+  const showElenco =
+    sp.cerca === "1" ||
+    Boolean(sp.affidoDa || sp.affidoA || sp.lotto || sp.mandanteId || sp.gruppo);
   const affidoDaStr = sp.affidoDa || defaultAffidoDa();
   const affidoAStr = sp.affidoA || defaultAffidoA();
   const affidoDa = parseDateInput(affidoDaStr);
@@ -310,45 +322,53 @@ export default async function StatistichePage({
 
   const mandantiPerimetriOpts = mandantiAll.map((m) => ({ perimetri: m.perimetri }));
 
-  const { sezioni: sezioniRaw, totale: totaleRaw, praticheCount } = await buildStatisticheGruppo(
-    gruppo,
-    {
-      affidoDa,
-      affidoA,
-      mandanteId: sp.mandanteId,
-      lotti: lottiSelezionati,
-    },
-    tutteLePratiche && !sedeScopeId
-      ? {
-          tenantId: user.tenantId,
-          tenantSlug: user.tenantSlug ?? user.tenantId,
-          tutteLePratiche: true,
-          mandantiPerimetri: mandantiPerimetriOpts,
-        }
-      : {
-          tenantId: user.tenantId,
-          tenantSlug: user.tenantSlug ?? user.tenantId,
-          extraWhere: periScope,
-          richiedePerimetriGruppo: usaPerimetriGruppo,
-          mandantiPerimetri: mandantiPerimetriOpts,
-        }
-  );
+  const { sezioni: sezioniRaw, totale: totaleRaw } = showElenco
+    ? await buildStatisticheGruppo(
+        gruppo,
+        {
+          affidoDa,
+          affidoA,
+          mandanteId: sp.mandanteId,
+          lotti: lottiSelezionati,
+        },
+        tutteLePratiche && !sedeScopeId
+          ? {
+              tenantId: user.tenantId,
+              tenantSlug: user.tenantSlug ?? user.tenantId,
+              tutteLePratiche: true,
+              mandantiPerimetri: mandantiPerimetriOpts,
+            }
+          : {
+              tenantId: user.tenantId,
+              tenantSlug: user.tenantSlug ?? user.tenantId,
+              extraWhere: periScope,
+              richiedePerimetriGruppo: usaPerimetriGruppo,
+              mandantiPerimetri: mandantiPerimetriOpts,
+            }
+      )
+    : { sezioni: [], totale: null as Awaited<ReturnType<typeof buildStatisticheGruppo>>["totale"] | null };
 
-  const sezioni = completaSezioniPerimetriConfigurate(
-    sezioniRaw,
-    perimetriConfig,
-    mandantiAll.map((m) => ({ id: m.id, perimetri: m.perimetri }))
-  );
-  const totale = allineaTotaleStatistiche(sezioni, totaleRaw);
+  const sezioni = showElenco
+    ? completaSezioniPerimetriConfigurate(
+        sezioniRaw,
+        perimetriConfig,
+        mandantiAll.map((m) => ({ id: m.id, perimetri: m.perimetri }))
+      )
+    : [];
+  const totale = showElenco && totaleRaw
+    ? allineaTotaleStatistiche(sezioni, totaleRaw)
+    : totaleRaw;
 
   const operatoriGruppo = gruppo.members.filter((m) => m.role === "OPERATOR");
-  const subtitle = canFilterGruppo
-    ? sp.gruppo
-      ? `Gruppo di ${gruppo.supervisorName || "—"} · ${operatoriGruppo.map((m) => m.name).join(", ") || "nessun operatore"}`
-      : "Tutti i gruppi"
-    : gruppo.supervisorName
-      ? `Gruppo di ${gruppo.supervisorName} · ${operatoriGruppo.map((m) => m.name).join(", ") || gruppo.members.map((m) => m.name).join(", ")}`
-      : `Gruppo · ${user.name}`;
+  const subtitle = !showElenco
+    ? "Imposta i filtri e clicca Filtra per vedere le griglie"
+    : canFilterGruppo
+      ? sp.gruppo
+        ? `Gruppo di ${gruppo.supervisorName || "—"} · ${operatoriGruppo.map((m) => m.name).join(", ") || "nessun operatore"}`
+        : "Tutti i gruppi"
+      : gruppo.supervisorName
+        ? `Gruppo di ${gruppo.supervisorName} · ${operatoriGruppo.map((m) => m.name).join(", ") || gruppo.members.map((m) => m.name).join(", ")}`
+        : `Gruppo · ${user.name}`;
 
   return (
     <div className="h-full min-h-0 min-w-0 max-w-full overflow-x-hidden overflow-y-auto pb-2">
@@ -359,13 +379,18 @@ export default async function StatistichePage({
           sedi={sediOpts}
           sedeId={sedeScopeId}
           basePath="/statistiche"
-          keepParams={{
-            affidoDa: affidoDaStr,
-            affidoA: affidoAStr,
-            mandanteId: sp.mandanteId,
-            lotto: lottiSelezionati.join(",") || undefined,
-            gruppo: gruppoIdEffettivo,
-          }}
+          keepParams={
+            showElenco
+              ? {
+                  affidoDa: affidoDaStr,
+                  affidoA: affidoAStr,
+                  mandanteId: sp.mandanteId,
+                  lotto: lottiSelezionati.join(",") || undefined,
+                  gruppo: gruppoIdEffettivo,
+                  cerca: "1",
+                }
+              : {}
+          }
         />
       ) : null}
 
@@ -385,15 +410,21 @@ export default async function StatistichePage({
           gruppoId={gruppoIdEffettivo}
           supervisori={supervisori}
           consentiTuttiGruppi={user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"}
+          searchActive={showElenco}
         />
       </Suspense>
 
-      {nessunPerimetroGruppo ? (
+      {!showElenco ? (
+        <p className="rounded-lg border border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
+          Nessuna griglia caricata. Imposta periodo, mandato o perimetri e premi{" "}
+          <span className="font-semibold text-[var(--navy)]">Filtra</span>.
+        </p>
+      ) : nessunPerimetroGruppo ? (
         <p className="rounded-lg border border-[var(--line)] bg-white p-6 text-sm text-[var(--muted)]">
           Nessun perimetro impostato sul gruppo. Configuralo in Affidi per vedere le
           statistiche di tutti gli operatori del gruppo.
         </p>
-      ) : sezioni.length ? (
+      ) : sezioni.length && totale ? (
         <StatisticheGriglia
           sezioni={sezioni}
           totale={totale}

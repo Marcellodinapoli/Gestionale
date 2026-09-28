@@ -9,6 +9,7 @@ import {
   parseLinkRequestIdFromQr,
   refreshLinkRequestStatus,
 } from "@/lib/creditcalc/store";
+import { assertTenantCreditCalcModule } from "@/lib/creditcalc/tenantAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,9 @@ export async function GET(
   if (link.status === "consumed") return jsonErr("QR già utilizzato", 409, req);
   if (link.status === "revoked") return jsonErr("QR revocato", 410, req);
   if (link.status !== "pending") return jsonErr("QR non valido", 400, req);
+
+  const moduleOk = await assertTenantCreditCalcModule(link.tenantId);
+  if (!moduleOk.ok) return jsonErr(moduleOk.error, moduleOk.status, req);
 
   return jsonOk(
     {

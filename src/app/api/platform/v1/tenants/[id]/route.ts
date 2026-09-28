@@ -37,3 +37,22 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return platformError(msg, status);
   }
 }
+
+export async function DELETE(req: Request, ctx: Ctx) {
+  const auth = requirePlatformApiAuth(req);
+  if (!auth.ok) return auth.response;
+  const { id } = await ctx.params;
+  try {
+    const repo = getNeonPlatformTenantsRepository();
+    const deleted = await repo.delete(id);
+    return platformJson({ ok: true, deleted });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Errore eliminazione tenant";
+    const status = /non trovato/i.test(msg)
+      ? 404
+      : /Impossibile eliminare|dati collegati/i.test(msg)
+        ? 409
+        : 500;
+    return platformError(msg, status);
+  }
+}

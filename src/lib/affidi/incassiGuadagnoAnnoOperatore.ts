@@ -1,6 +1,5 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
-import { incassiDbFromUser } from "@/lib/incassiRepo";
 import { provvigioniDbFromUser } from "@/lib/provvigioniRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { provvigioniWhere } from "@/lib/provvigioni";
@@ -26,15 +25,7 @@ export async function incassiGuadagnoAnnoOperatore(
   const incassato = Array.from({ length: 12 }, () => 0);
   const guadagno = Array.from({ length: 12 }, () => 0);
 
-  const [incassi, provvigioni, operatore] = await Promise.all([
-    incassiDbFromUser(user).findMany({
-      where: {
-        userId: opts.operatoreId,
-        data: { gte: inizio, lte: fine },
-        pratica: opts.praticaWhere,
-      },
-      select: { importo: true, data: true },
-    }),
+  const [provvigioni, operatore] = await Promise.all([
     provvigioniDbFromUser(user).findMany({
       where: {
         AND: [
@@ -44,7 +35,11 @@ export async function incassiGuadagnoAnnoOperatore(
           { incasso: { data: { gte: inizio, lte: fine } } },
         ],
       },
-      select: { importo: true, incasso: { select: { data: true } } },
+      select: {
+        importo: true,
+        incassoId: true,
+        incasso: { select: { data: true, importo: true } },
+      },
     }),
     usersDbFromUser(user).findFirst({
       where: { id: opts.operatoreId, tenantId: user.tenantId, active: true },
@@ -52,16 +47,18 @@ export async function incassiGuadagnoAnnoOperatore(
     }),
   ]);
 
-  for (const row of incassi) {
-    const m = new Date(row.data).getMonth();
-    if (m >= 0 && m < 12) incassato[m] += row.importo || 0;
-  }
-
+  const seenIncasso = new Set<string>();
   for (const row of provvigioni) {
     const data = row.incasso?.data;
     if (!data) continue;
     const m = new Date(data).getMonth();
-    if (m >= 0 && m < 12) guadagno[m] += row.importo || 0;
+    if (m < 0 || m >= 12) continue;
+    guadagno[m] += row.importo || 0;
+    const incassoId = String((row as { incassoId?: string }).incassoId || "");
+    const key = incassoId || `${m}:${row.incasso?.importo}`;
+    if (seenIncasso.has(key)) continue;
+    seenIncasso.add(key);
+    incassato[m] += row.incasso?.importo || 0;
   }
 
   const fisso =

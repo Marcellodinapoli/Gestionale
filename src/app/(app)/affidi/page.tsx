@@ -32,7 +32,15 @@ import {
   filtraPratichePerPerimetro,
   parsePerimetroAffidi,
 } from "@/lib/affidiPerimetro";
-import { loadAffidiMonitoraggio, praticaMonitorWhere } from "@/lib/affidi/loadAffidiMonitoraggio";
+import {
+  etichettaAffidiAllerta,
+  filtraPratichePerAllerta,
+  isPraticaNonAssegnata,
+  isPraticaSenzaCodiceScarico,
+  loadAffidiMonitoraggio,
+  parseAffidiAllerta,
+  praticaMonitorWhere,
+} from "@/lib/affidi/loadAffidiMonitoraggio";
 import {
   riepilogoCodiciScaricoDettaglio,
   scarichiOperatoreDaRiepilogo,
@@ -62,6 +70,8 @@ function mapPraticaAffidabile(
     scadenza: Date | string | null;
     assegnatarioId: string | null;
     operatoreTitolareId: string | null;
+    codiceScarico?: string | null;
+    codiceScaricoBk?: string | null;
     debitore: { nome: string; cognome: string };
     assegnatario: { name: string } | null;
     operatoreTitolare: { name: string } | null;
@@ -78,6 +88,8 @@ function mapPraticaAffidabile(
     assegnatarioNome: p.assegnatario?.name ?? null,
     operatoreTitolareId: p.operatoreTitolareId,
     operatoreTitolareNome: p.operatoreTitolare?.name ?? null,
+    codiceScarico: p.codiceScarico ?? null,
+    codiceScaricoBk: p.codiceScaricoBk ?? null,
   };
 }
 
@@ -103,8 +115,12 @@ export default async function AffidiPage({
     caricoMandato?: string;
     caricoPerimetro?: string;
     caricoMese?: string;
+    caricoCerca?: string;
     affidaSort?: string;
     affidaDir?: string;
+    affidaPage?: string;
+    allerta?: string;
+    affidaCerca?: string;
   }>;
 }) {
   await requireModule("affidi");
@@ -117,9 +133,16 @@ export default async function AffidiPage({
     caricoMandato: caricoMandatoRaw,
     caricoPerimetro: caricoPerimetroRaw,
     caricoMese: caricoMeseRaw,
+    caricoCerca: caricoCercaRaw,
     affidaSort: affidaSortRaw,
     affidaDir: affidaDirRaw,
+    affidaPage: affidaPageRaw,
+    allerta: allertaRaw,
+    affidaCerca: affidaCercaRaw,
   } = await searchParams;
+  const allertaOk = parseAffidiAllerta(allertaRaw);
+  // Elenco Affida solo dopo Filtra o click su allerta.
+  const showAffidaElenco = affidaCercaRaw === "1" || Boolean(allertaOk);
 
   const gruppo = await getGruppoLavoro(user);
   const vuoto = isManutenzione(user);
@@ -191,7 +214,7 @@ export default async function AffidiPage({
   const idsOperatoriFiltro = isSupervisor ? memberIds : operatori.map((o) => o.id);
   const baseScope = await praticaScopeWhere(user);
 
-  const praticheScope = await praticaDbFromUser(user).findMany({
+  const praticheScopeRaw = await praticaDbFromUser(user).findMany({
     where: { AND: [baseScope] },
     select: {
       id: true,
@@ -200,6 +223,7 @@ export default async function AffidiPage({
       residuo: true,
       scadenza: true,
       codiceScarico: true,
+      codiceScaricoBk: true,
       mandanteId: true,
       numeroMandante: true,
       assegnatarioId: true,
@@ -209,9 +233,14 @@ export default async function AffidiPage({
       mandante: { select: { codice: true } },
       assegnatario: { select: { id: true, name: true } },
       operatoreTitolare: { select: { id: true, name: true } },
+      importBatch: { select: { perimetro: true } },
     },
     orderBy: { numero: "asc" },
   });
+  const praticheScope = praticheScopeRaw.map((p) => ({
+    ...p,
+    importBatchPerimetro: p.importBatch?.perimetro ?? null,
+  }));
   const praticheAffidabili = praticheScope;
   const daAssegnare = praticheScope.filter((p) => p.assegnatarioId == null);
   const affidate = praticheScope.filter((p) => p.assegnatarioId != null);
@@ -275,15 +304,23 @@ export default async function AffidiPage({
   );
   const { label: meseCaricoLabel } = rangeMeseIncassi(caricoMeseRaw);
   const annoCarico = parseIncMeseParam(caricoMeseRaw).year;
+  // Tabelle incassi/pratiche per operatore solo dopo Filtra (caricoCerca=1).
+  const showCaricoKpi =
+    (isAdmin || isBackOffice) &&
+    !vuoto &&
+    (caricoCercaRaw === "1" ||
+      Boolean(caricoMandatoRaw || caricoPerimetroRaw || caricoMeseRaw));
   const numeriMonitor = numeriMandantePerFiltroPerimetro(
     mandantiMonitor,
     perimetroMonitorOk,
-    mandatoMonitorOk
+    mandatoMonitorOk,
+    praticheScope
   );
   const numeriCarico = numeriMandantePerFiltroPerimetro(
     mandantiMonitor,
     perimetroCaricoOk,
-    mandatoCaricoOk
+    mandatoCaricoOk,
+    praticheScope
   );
   const praticaWhereMonitor = praticaMonitorWhere(
     user.tenantId,
@@ -314,38 +351,45 @@ export default async function AffidiPage({
       )
     : affidate;
   const operatorIdsCarico = membriCarico.map((m) => m.id);
-  const [scarichiDettaglio, incassatoMese, guadagnoMese] =
-    (isAdmin || isBackOffice) && !vuoto
-      ? await Promise.all([
-          riepilogoCodiciScaricoDettaglio(user, {
-            praticaWhere: praticaWhereCarico,
-            incMese: caricoMeseRaw,
-            operatorIds: operatorIdsCarico,
-          }),
-          incassatoMesePerOperatore(user, {
-            praticaWhere: praticaWhereCarico,
-            incMese: caricoMeseRaw,
-            operatorIds: operatorIdsCarico,
-          }),
-          guadagnoMesePerOperatore(user, {
-            praticaWhere: praticaWhereCarico,
-            incMese: caricoMeseRaw,
-            operatorIds: operatorIdsCarico,
-          }),
-        ])
-      : [null, null, null];
+  const [scarichiDettaglio, incassatoMese, guadagnoMese] = showCaricoKpi
+    ? await Promise.all([
+        riepilogoCodiciScaricoDettaglio(user, {
+          praticaWhere: praticaWhereCarico,
+          incMese: caricoMeseRaw,
+          operatorIds: operatorIdsCarico,
+        }),
+        incassatoMesePerOperatore(user, {
+          praticaWhere: praticaWhereCarico,
+          incMese: caricoMeseRaw,
+          operatorIds: operatorIdsCarico,
+        }),
+        guadagnoMesePerOperatore(user, {
+          praticaWhere: praticaWhereCarico,
+          incMese: caricoMeseRaw,
+          operatorIds: operatorIdsCarico,
+        }),
+      ])
+    : [null, null, null];
   const scarichiGruppo = scarichiDettaglio
     ? scarichiOperatoreDaRiepilogo(scarichiDettaglio.riepilogo)
     : undefined;
   const navCarico: Pick<
     AffidiNavParams,
-    "mandato" | "perimetro" | "caricoMandato" | "caricoPerimetro" | "caricoMese" | "operatore" | "coda"
+    | "mandato"
+    | "perimetro"
+    | "caricoMandato"
+    | "caricoPerimetro"
+    | "caricoMese"
+    | "caricoCerca"
+    | "operatore"
+    | "coda"
   > = {
     mandato: mandatoMonitorOk,
     perimetro: perimetroMonitorOk,
     caricoMandato: mandatoCaricoOk,
     caricoPerimetro: perimetroCaricoOk,
     caricoMese: caricoMeseRaw,
+    caricoCerca: showCaricoKpi ? "1" : undefined,
     operatore: selezionatoId,
     coda: codaRaw as AffidiNavParams["coda"],
   };
@@ -357,16 +401,6 @@ export default async function AffidiPage({
           numeriMandante: numeriMonitor,
         })
       : null;
-  const monitorPanel =
-    monitor && mostraMonitor ? (
-      <AffidiMonitoraggioPanel
-        mandanti={mandantiMonitor}
-        monitor={monitor}
-        mandatoId={mandatoMonitorOk}
-        perimetro={perimetroMonitorOk}
-        extraParams={monitorExtraParams}
-      />
-    ) : null;
   const caricoFiltriPanel =
     (isAdmin || isBackOffice) && !vuoto ? (
       <Card title="Filtri · incassi e pratiche per operatore">
@@ -378,6 +412,7 @@ export default async function AffidiPage({
           caricoMese={caricoMeseRaw}
           operatoreId={selezionatoId}
           extraParams={caricoExtraParams}
+          searchActive={showCaricoKpi}
         />
       </Card>
     ) : null;
@@ -490,8 +525,41 @@ export default async function AffidiPage({
         perimetroMonitorOk
       )
     : praticheAffidabili;
-  const daAssegnareMonitor = praticheAffidabiliMonitor.filter((p) => p.assegnatarioId == null);
+  const praticheAffidabiliAllerta = filtraPratichePerAllerta(
+    praticheAffidabiliMonitor,
+    allertaOk
+  );
+  const daAssegnareMonitor = praticheAffidabiliAllerta.filter((p) => p.assegnatarioId == null);
   const daAssegnareOverview = refPerimetro ? daAssegnarePerimetro : filtraPerMandante(daAssegnare);
+  const STATI_CHIUSE_MONITOR = new Set(["INCASSO", "RESA", "INESIGIBILE"]);
+  // Nuove = senza codice scarico; Non assegnate = senza affidatario (metriche distinte).
+  const monitorAllineato =
+    monitor && mostraMonitor
+      ? {
+          ...monitor,
+          nuove: praticheAffidabiliMonitor.filter(
+            (p) =>
+              !STATI_CHIUSE_MONITOR.has(p.stato) &&
+              isPraticaSenzaCodiceScarico(p.codiceScarico)
+          ).length,
+          nonAssegnate: praticheAffidabiliMonitor.filter((p) =>
+            isPraticaNonAssegnata(p)
+          ).length,
+        }
+      : monitor;
+  const allertaLabel = etichettaAffidiAllerta(allertaOk);
+  const monitorPanel =
+    monitorAllineato && mostraMonitor ? (
+      <AffidiMonitoraggioPanel
+        mandanti={mandantiMonitor}
+        monitor={monitorAllineato}
+        mandatoId={mandatoMonitorOk}
+        perimetro={perimetroMonitorOk}
+        allertaAttiva={allertaOk}
+        searchActive={showAffidaElenco}
+        extraParams={monitorExtraParams}
+      />
+    ) : null;
 
   const altriGruppi = isSupervisor
     ? await usersDbFromUser(user).findMany({
@@ -585,7 +653,13 @@ export default async function AffidiPage({
               id="affida"
               title={`Affida / riaffida · ${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro}`}
             >
-              {!praticheAffidabiliPerimetro.length ? (
+              {mostraMonitor && !showAffidaElenco ? (
+                <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
+                  Nessun elenco caricato. Imposta i filtri in Monitoraggio operativo e premi{" "}
+                  <span className="font-semibold text-[var(--navy)]">Filtra</span>, oppure clicca
+                  una card Allerte.
+                </p>
+              ) : !praticheAffidabiliPerimetro.length ? (
                 <p className="text-sm text-[var(--muted)]">Nessuna pratica nel perimetro.</p>
               ) : (
                 <>
@@ -599,9 +673,10 @@ export default async function AffidiPage({
                     operatori={operatori}
                     affidaSort={affidaSortRaw}
                     affidaDir={affidaDirRaw}
-                    pratiche={ordinaPraticheAffidabili(praticheAffidabiliPerimetro).map(
-                      mapPraticaAffidabile
-                    )}
+                    affidaPage={affidaPageRaw}
+                    pratiche={ordinaPraticheAffidabili(
+                      filtraPratichePerAllerta(praticheAffidabiliPerimetro, allertaOk)
+                    ).map(mapPraticaAffidabile)}
                   />
                 </>
               )}
@@ -631,6 +706,7 @@ export default async function AffidiPage({
                         annoCarico={annoCarico}
                         caricoMandato={mandatoCaricoOk}
                         caricoPerimetro={perimetroCaricoOk}
+                        numeriMandante={numeriCarico}
                         filtroCaricoLabel={filtroCaricoLabel}
                       />
                     </div>
@@ -706,6 +782,7 @@ export default async function AffidiPage({
                       annoCarico={annoCarico}
                       caricoMandato={mandatoCaricoOk}
                       caricoPerimetro={perimetroCaricoOk}
+                      numeriMandante={numeriCarico}
                       filtroCaricoLabel={filtroCaricoLabel}
                     />
                   </div>
@@ -745,30 +822,53 @@ export default async function AffidiPage({
               />
             </Card>
 
-            <Card title="Affida / riaffida pratiche">
-              {!praticheAffidabiliOverview.length ? (
-                <p className="text-sm text-[var(--muted)]">
-                  {isBackOffice
-                    ? "Nessuna pratica con i filtri selezionati."
-                    : "Nessuna pratica nei perimetri del gruppo."}
+            <Card id="affida" title="Affida / riaffida pratiche">
+              {mostraMonitor && !showAffidaElenco ? (
+                <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
+                  Nessun elenco caricato. Imposta i filtri in Monitoraggio operativo e premi{" "}
+                  <span className="font-semibold text-[var(--navy)]">Filtra</span>, oppure clicca
+                  una card Allerte.
                 </p>
               ) : (
-                <>
-                  <p className="mb-3 text-xs text-[var(--muted)]">
-                    {daAssegnareOverview.length} non assegnate ·{" "}
-                    {praticheAffidabiliOverview.length - daAssegnareOverview.length} già affidate
-                    (definitivo o temporaneo). Puoi riaffidare anche quelle già in carico: seleziona
-                    tipo affido e operatore.
-                  </p>
-                  <AffidiDaAffidareTable
-                    operatori={operatori}
-                    affidaSort={affidaSortRaw}
-                    affidaDir={affidaDirRaw}
-                    pratiche={ordinaPraticheAffidabili(praticheAffidabiliOverview).map(
-                      mapPraticaAffidabile
-                    )}
-                  />
-                </>
+                (() => {
+                  const lista = filtraPratichePerAllerta(
+                    praticheAffidabiliOverview,
+                    allertaOk
+                  );
+                  const daAss = lista.filter((p) => p.assegnatarioId == null);
+                  if (!lista.length) {
+                    return (
+                      <p className="text-sm text-[var(--muted)]">
+                        {allertaOk
+                          ? "Nessuna pratica per questa allerta."
+                          : isBackOffice
+                            ? "Nessuna pratica con i filtri selezionati."
+                            : "Nessuna pratica nei perimetri del gruppo."}
+                      </p>
+                    );
+                  }
+                  return (
+                    <>
+                      {allertaLabel ? (
+                        <p className="mb-2 text-xs font-medium text-[var(--navy)]">
+                          Allerta: {allertaLabel}
+                        </p>
+                      ) : null}
+                      <p className="mb-3 text-xs text-[var(--muted)]">
+                        {daAss.length} non assegnate · {lista.length - daAss.length} già
+                        affidate (definitivo o temporaneo). Puoi riaffidare anche quelle già in
+                        carico: seleziona tipo affido e operatore.
+                      </p>
+                      <AffidiDaAffidareTable
+                        operatori={operatori}
+                        affidaSort={affidaSortRaw}
+                        affidaDir={affidaDirRaw}
+                        affidaPage={affidaPageRaw}
+                        pratiche={ordinaPraticheAffidabili(lista).map(mapPraticaAffidabile)}
+                      />
+                    </>
+                  );
+                })()
               )}
             </Card>
           </>
@@ -782,10 +882,13 @@ export default async function AffidiPage({
   return (
     <div className="h-full min-h-0 space-y-4 overflow-y-auto pb-4">
       <PageHeader title="Affidi" subtitle={subtitle} />
+      <Suspense fallback={null}>
+        <AffidiScrollAffida />
+      </Suspense>
 
       {caricoFiltriPanel}
 
-      {incassatoMese ? (
+      {showCaricoKpi && incassatoMese ? (
         <Card title="Incassi per operatore">
           {!caricoConScarichi.length ? (
             <p className="text-sm text-[var(--muted)]">Nessun operatore nel gruppo.</p>
@@ -806,6 +909,7 @@ export default async function AffidiPage({
                 annoCarico={annoCarico}
                 caricoMandato={mandatoCaricoOk}
                 caricoPerimetro={perimetroCaricoOk}
+                numeriMandante={numeriCarico}
                 filtroCaricoLabel={filtroCaricoLabel}
               />
             </>
@@ -813,6 +917,7 @@ export default async function AffidiPage({
         </Card>
       ) : null}
 
+      {showCaricoKpi ? (
       <Card title="Pratiche per operatore">
         {!caricoConScarichi.length ? (
           <p className="text-sm text-[var(--muted)]">Nessun operatore nel gruppo.</p>
@@ -842,6 +947,7 @@ export default async function AffidiPage({
                     caricoMandato: mandatoCaricoOk,
                     caricoPerimetro: perimetroCaricoOk,
                     caricoMese: caricoMeseRaw,
+                    caricoCerca: "1",
                   })}
                   className="underline"
                 >
@@ -856,6 +962,14 @@ export default async function AffidiPage({
           </>
         )}
       </Card>
+      ) : caricoFiltriPanel ? (
+        <Card title="Incassi e pratiche per operatore">
+          <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
+            Nessun riepilogo caricato. Imposta i filtri sopra e premi{" "}
+            <span className="font-semibold text-[var(--navy)]">Filtra</span>.
+          </p>
+        </Card>
+      ) : null}
 
       {mostraElenco ? (
         <Card title={titoloElenco}>
@@ -870,25 +984,57 @@ export default async function AffidiPage({
 
       {monitorPanel}
 
-      <Card title="Affida / riaffida pratiche">
-        {filtroMonitorLabel !== "Tutti i mandati e perimetri" ? (
-          <p className="mb-2 text-xs text-[var(--muted)]">{filtroMonitorLabel}</p>
-        ) : null}
-        {!praticheAffidabiliMonitor.length ? (
-          <p className="text-sm text-[var(--muted)]">Nessuna pratica con i filtri selezionati.</p>
+      <Card id="affida" title="Affida / riaffida pratiche">
+        {!showAffidaElenco ? (
+          <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
+            Nessun elenco caricato. Imposta i filtri in Monitoraggio operativo e premi{" "}
+            <span className="font-semibold text-[var(--navy)]">Filtra</span>, oppure clicca una
+            card Allerte.
+          </p>
         ) : (
           <>
-            <p className="mb-3 text-xs text-[var(--muted)]">
-              {daAssegnareMonitor.length} non assegnate ·{" "}
-              {praticheAffidabiliMonitor.length - daAssegnareMonitor.length} già affidate (definitivo o
-              temporaneo). Puoi riaffidare anche quelle già in carico.
-            </p>
-            <AffidiDaAffidareTable
-              operatori={operatori}
-              affidaSort={affidaSortRaw}
-              affidaDir={affidaDirRaw}
-              pratiche={ordinaPraticheAffidabili(praticheAffidabiliMonitor).map(mapPraticaAffidabile)}
-            />
+            {filtroMonitorLabel !== "Tutti i mandati e perimetri" ? (
+              <p className="mb-2 text-xs text-[var(--muted)]">{filtroMonitorLabel}</p>
+            ) : null}
+            {allertaLabel ? (
+              <p className="mb-2 text-xs font-medium text-[var(--navy)]">
+                Allerta: {allertaLabel} ·{" "}
+                <a
+                  href={buildAffidiHref({
+                    mandato: mandatoMonitorOk,
+                    perimetro: perimetroMonitorOk,
+                    ...monitorExtraParams,
+                    sezione: "affida",
+                    affidaCerca: "1",
+                  })}
+                  className="underline"
+                >
+                  Mostra tutte
+                </a>
+              </p>
+            ) : null}
+            {!praticheAffidabiliAllerta.length ? (
+              <p className="text-sm text-[var(--muted)]">
+                Nessuna pratica con i filtri selezionati.
+              </p>
+            ) : (
+              <>
+                <p className="mb-3 text-xs text-[var(--muted)]">
+                  {daAssegnareMonitor.length} non assegnate ·{" "}
+                  {praticheAffidabiliAllerta.length - daAssegnareMonitor.length} già affidate
+                  (definitivo o temporaneo). Puoi riaffidare anche quelle già in carico.
+                </p>
+                <AffidiDaAffidareTable
+                  operatori={operatori}
+                  affidaSort={affidaSortRaw}
+                  affidaDir={affidaDirRaw}
+                  affidaPage={affidaPageRaw}
+                  pratiche={ordinaPraticheAffidabili(praticheAffidabiliAllerta).map(
+                    mapPraticaAffidabile
+                  )}
+                />
+              </>
+            )}
           </>
         )}
       </Card>

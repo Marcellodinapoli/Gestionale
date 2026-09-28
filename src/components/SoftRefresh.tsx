@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-/** Route pesanti: evita soft-refresh periodico (restano i refresh su focus). */
+/** Route pesanti: evita soft-refresh periodico e su focus (SSR costoso). */
 function isHeavyRoute(pathname: string) {
   return (
     pathname.startsWith("/affidi") ||
     pathname.startsWith("/provigioni") ||
+    pathname.startsWith("/incassi") ||
+    pathname.startsWith("/statistiche") ||
+    pathname.startsWith("/lavorazione") ||
+    pathname.startsWith("/import") ||
     // Scheda pratica + sottopagine contabili/stampa: refresh periodico
     // rifà l’include pesante e rende lente F6–F11 / popup strumenti.
     /^\/pratiche\/[^/]+/.test(pathname)

@@ -256,12 +256,14 @@ export function AnagraficaRecapiti({
     tipo,
     highlight,
     stato,
+    onAdd,
   }: {
     id: string;
     valore: string;
     tipo: "TELEFONO" | "EMAIL";
     highlight?: boolean;
     stato?: string | null;
+    onAdd?: () => void;
   }) {
     const isTel = tipo === "TELEFONO";
     const editing = editingId === id;
@@ -272,7 +274,7 @@ export function AnagraficaRecapiti({
         : "";
 
     return (
-      <div key={id} className="flex items-center gap-1">
+      <div key={id} className="flex min-w-0 items-center gap-1">
         {canEdit && editing ? (
           <input
             autoFocus
@@ -287,11 +289,11 @@ export function AnagraficaRecapiti({
               }
               if (e.key === "Escape") setEditingId(null);
             }}
-            className={`h-6 w-[9.5rem] shrink-0 rounded border border-[var(--line)] bg-white px-1.5 text-xs${textCls}`}
+            className={`h-6 min-w-0 flex-1 rounded border border-[var(--line)] bg-white px-1.5 text-xs${textCls}`}
           />
         ) : valore ? (
           <span
-            className={`w-[9.5rem] shrink-0 truncate text-xs leading-6${textCls}${telBg} cursor-pointer select-none`}
+            className={`min-w-0 flex-1 truncate text-xs leading-6${textCls}${telBg} cursor-pointer select-none`}
             title={
               isTel
                 ? `${statoTelefonoLabel(stato) ? `${statoTelefonoLabel(stato)} · ` : ""}Doppio clic: chiama · Tasto destro: SMS`
@@ -327,11 +329,13 @@ export function AnagraficaRecapiti({
             {valore}
           </span>
         ) : (
-          <span className="w-[9.5rem] shrink-0 text-xs leading-6 text-[var(--muted)]">—</span>
+          <span className="min-w-0 flex-1 text-xs leading-6 text-[var(--muted)]">
+            —
+          </span>
         )}
 
         {canEdit ? (
-          <span className="ml-auto flex shrink-0 items-center">
+          <span className="flex shrink-0 items-center">
             {isTel && valore && !editing ? (
               <button
                 type="button"
@@ -349,6 +353,18 @@ export function AnagraficaRecapiti({
                 }
                 aria-label="Seleziona colore recapito"
               />
+            ) : null}
+            {onAdd ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={onAdd}
+                className={iconBtn}
+                title={tipo === "EMAIL" ? "Aggiungi e-mail" : "Aggiungi telefono"}
+                aria-label={tipo === "EMAIL" ? "Aggiungi e-mail" : "Aggiungi telefono"}
+              >
+                <Plus className="h-3 w-3" />
+              </button>
             ) : null}
             <button
               type="button"
@@ -373,7 +389,7 @@ export function AnagraficaRecapiti({
           </span>
         ) : isTel && stato ? (
           <span
-            className={`ml-auto shrink-0 rounded px-1 py-px text-[8px] leading-tight ${statoTelefonoClassi(stato)}`}
+            className={`shrink-0 rounded px-1 py-px text-[8px] leading-tight ${statoTelefonoClassi(stato)}`}
           >
             {statoTelefonoLabel(stato)}
           </span>
@@ -401,6 +417,7 @@ export function AnagraficaRecapiti({
             tipo,
             highlight,
             stato: tipo === "TELEFONO" ? principaleStato : undefined,
+            onAdd: canEdit ? () => apriPopup(tipo) : undefined,
           })}
           {extra.map((rec) => (
             <div key={rec.id} className="border-t border-[var(--line)] pt-0.5">
@@ -413,17 +430,6 @@ export function AnagraficaRecapiti({
               })}
             </div>
           ))}
-          {canEdit ? (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => apriPopup(tipo)}
-              className="mt-0.5 flex w-full items-center justify-center gap-1 border-t border-[var(--line)] pt-0.5 text-[10px] text-[var(--muted)] hover:text-[var(--navy)] disabled:opacity-50"
-            >
-              <Plus className="h-3 w-3" />
-              Aggiungi
-            </button>
-          ) : null}
         </div>
       </div>
     );
@@ -584,7 +590,8 @@ export function AnagraficaRecapiti({
           {codiceFiscale || "—"}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-1 [&>*]:min-w-0">
+      {/* Telefono | E-mail: stessa larghezza totale del CF; nuovi valori sotto al principale. */}
+      <div className="grid w-full grid-cols-2 gap-1 [&>*]:min-w-0">
         {telefonoBlocco}
         {emailBlocco}
       </div>

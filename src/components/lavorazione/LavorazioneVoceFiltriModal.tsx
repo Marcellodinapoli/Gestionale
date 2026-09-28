@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { AltriFiltriFormBody } from "@/components/filtri/AltriFiltriFormBody";
-import type { AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import { hasAltriFiltri, type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 
 export function LavorazioneVoceFiltriModal({
   open,
@@ -50,13 +50,15 @@ export function LavorazioneVoceFiltriModal({
           >
             Annulla
           </button>
-          <button
-            type="button"
-            onClick={() => setDraft({})}
-            className="h-9 rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
-          >
-            Azzera
-          </button>
+          {hasAltriFiltri(draft) ? (
+            <button
+              type="button"
+              onClick={() => setDraft({})}
+              className="h-9 rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
+            >
+              Azzera
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {

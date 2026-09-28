@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { AcceptInviteError, acceptInvite } from "@/lib/neon/acceptInvite";
 import { isNeonConfigured } from "@/lib/neon/client";
+import { clearSession } from "@/lib/auth";
+import { getNeonPlatformTenantsRepository } from "@/lib/neon/NeonPlatformTenantsRepository";
 
 export const runtime = "nodejs";
 
 /**
  * Accettazione invito pubblico (set password + crea ADMIN).
- * Nessuna PLATFORM_API_KEY, nessuna sessione gestionale.
+ * Nessuna PLATFORM_API_KEY. Chiude eventuali sessioni precedenti (es. demo).
  */
 export async function POST(req: Request) {
   if (!isNeonConfigured()) {
@@ -29,7 +31,25 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Evita di restare loggati su un altro tenant (es. demo) dopo l'attivazione.
+    await clearSession();
+
     const result = await acceptInvite(token, password, passwordConfirm);
+    const repo = getNeonPlatformTenantsRepository();
+    let tenantSlug: string | null = null;
+    let ragioneSociale: string | null = null;
+    try {
+      const tenant = await repo.getById(result.tenantId);
+      tenantSlug = tenant?.slug ?? null;
+      ragioneSociale = tenant?.ragioneSociale ?? null;
+      // Prima attivazione admin → azienda operativa (altrimenti login fallisce su Inactive).
+      if (tenant && tenant.status === "IN_CONFIGURAZIONE") {
+        await repo.activate(result.tenantId);
+      }
+    } catch (e) {
+      console.error("[accept-invite] post-activate", e);
+    }
+
     return NextResponse.json(
       {
         ok: true,
@@ -37,6 +57,8 @@ export async function POST(req: Request) {
         tenantId: result.tenantId,
         email: result.email,
         role: result.role,
+        tenantSlug,
+        ragioneSociale,
       },
       { status: 201 }
     );

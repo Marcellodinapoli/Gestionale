@@ -14,6 +14,10 @@ import {
 import { etichettaTipoAffido, isAffidoTemporaneo, sortKeyTipoAffido } from "@/lib/affido";
 import { rememberCurrentAsPraticheBack, PRATICHE_BACK_KEY } from "@/lib/praticheNavBack";
 import { statoOperativoPratica } from "@/lib/statoOperativoPratica";
+import { codiceScaricoPratica } from "@/lib/scarico";
+import { PaginazioneBar } from "@/components/PaginazioneBar";
+
+const AFFIDA_PAGE_SIZE = 50;
 
 function euro(value: number) {
   return new Intl.NumberFormat("it-IT", {
@@ -33,10 +37,18 @@ export type PraticaDaAffidare = {
   assegnatarioNome?: string | null;
   operatoreTitolareId?: string | null;
   operatoreTitolareNome?: string | null;
+  codiceScarico?: string | null;
   codiceScaricoBk?: string | null;
 };
 
-type SortCol = "numero" | "debitore" | "assegnatario" | "affido" | "residuo";
+type SortCol =
+  | "numero"
+  | "debitore"
+  | "assegnatario"
+  | "affido"
+  | "residuo"
+  | "codScarico"
+  | "codBk";
 type SortDir = "asc" | "desc";
 
 const SORT_COLS: { key: SortCol; label: string }[] = [
@@ -45,6 +57,8 @@ const SORT_COLS: { key: SortCol; label: string }[] = [
   { key: "assegnatario", label: "Assegnatario" },
   { key: "affido", label: "Affido" },
   { key: "residuo", label: "Residuo" },
+  { key: "codScarico", label: "Cod. scarico" },
+  { key: "codBk", label: "Cod. bk off" },
 ];
 
 const SORT_COL_KEYS = new Set<string>(SORT_COLS.map((c) => c.key));
@@ -56,6 +70,10 @@ function parseAffidaSort(
   if (!col || !SORT_COL_KEYS.has(col)) return null;
   if (dir !== "asc" && dir !== "desc") return null;
   return { col: col as SortCol, dir };
+}
+
+function codScaricoDisplay(p: PraticaDaAffidare) {
+  return (codiceScaricoPratica(p.stato, p.codiceScarico) || "").trim();
 }
 
 function comparePratiche(a: PraticaDaAffidare, b: PraticaDaAffidare, col: SortCol): number {
@@ -75,6 +93,10 @@ function comparePratiche(a: PraticaDaAffidare, b: PraticaDaAffidare, col: SortCo
     }
     case "residuo":
       return a.residuo - b.residuo;
+    case "codScarico":
+      return codScaricoDisplay(a).localeCompare(codScaricoDisplay(b), "it");
+    case "codBk":
+      return (a.codiceScaricoBk || "").localeCompare(b.codiceScaricoBk || "", "it");
     default:
       return 0;
   }
@@ -115,18 +137,17 @@ export function AffidiDaAffidareTable({
   operatori,
   affidaSort,
   affidaDir,
+  affidaPage: affidaPageProp,
 }: {
   pratiche: PraticaDaAffidare[];
   operatori: Array<{ id: string; name: string }>;
   /** Ordine colonna da URL (`affidaSort`), ripristinato al ritorno dalla pratica. */
   affidaSort?: string | null;
   affidaDir?: string | null;
+  affidaPage?: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { selected, allRef, allChecked, toggleAll, toggleOne } =
-    useSelezionePratiche(pratiche.map((p) => p.id));
-  const praticheStato = buildPraticheStato(pratiche);
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(() =>
     parseAffidaSort(affidaSort, affidaDir)
   );
@@ -145,18 +166,41 @@ export function AffidiDaAffidareTable({
     });
   }, [pratiche, sort]);
 
+  const totalPages = Math.max(1, Math.ceil(praticheOrdinate.length / AFFIDA_PAGE_SIZE));
+  const pageRaw = Number(affidaPageProp || "1");
+  const page = Math.min(totalPages, Math.max(1, Number.isFinite(pageRaw) ? pageRaw : 1));
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * AFFIDA_PAGE_SIZE;
+    return praticheOrdinate.slice(start, start + AFFIDA_PAGE_SIZE);
+  }, [praticheOrdinate, page]);
+
+  const { selected, allRef, allChecked, toggleAll, toggleOne } = useSelezionePratiche(
+    pageRows.map((p) => p.id)
+  );
+  const praticheStato = buildPraticheStato(pratiche);
+
+  function hrefWithParams(patch: Record<string, string | null>) {
+    const sp = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null || v === "") sp.delete(k);
+      else sp.set(k, v);
+    }
+    const qs = sp.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }
+
   function toggleSort(col: SortCol) {
     const nextDir: SortDir =
       sort?.col === col ? (sort.dir === "asc" ? "desc" : "asc") : "asc";
     const next = { col, dir: nextDir };
     setSort(next);
-    const sp = new URLSearchParams(
-      typeof window !== "undefined" ? window.location.search : ""
-    );
-    sp.set("affidaSort", next.col);
-    sp.set("affidaDir", next.dir);
-    const qs = sp.toString();
-    const nextUrl = qs ? `${pathname}?${qs}` : pathname;
+    const nextUrl = hrefWithParams({
+      affidaSort: next.col,
+      affidaDir: next.dir,
+      affidaPage: "1",
+    });
     router.replace(nextUrl, { scroll: false });
     try {
       sessionStorage.setItem(PRATICHE_BACK_KEY, nextUrl);
@@ -176,8 +220,15 @@ export function AffidiDaAffidareTable({
         showRipristina
       />
 
+      {praticheOrdinate.length > AFFIDA_PAGE_SIZE ? (
+        <p className="mb-2 text-xs text-[var(--muted)]">
+          Pagina {page}/{totalPages} · {pageRows.length} di {praticheOrdinate.length} pratiche
+          (max {AFFIDA_PAGE_SIZE}/pagina)
+        </p>
+      ) : null}
+
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[880px] text-sm">
           <thead className="text-left text-[var(--muted)]">
             <tr>
               <th className="w-10 py-2 pr-2">
@@ -185,7 +236,7 @@ export function AffidiDaAffidareTable({
                   inputRef={allRef}
                   checked={allChecked}
                   onChange={toggleAll}
-                  label="Seleziona tutte"
+                  label="Seleziona tutte in pagina"
                 />
               </th>
               {SORT_COLS.map((col) => (
@@ -202,7 +253,7 @@ export function AffidiDaAffidareTable({
             </tr>
           </thead>
           <tbody>
-            {praticheOrdinate.map((p) => {
+            {pageRows.map((p) => {
               const temporaneo = isAffidoTemporaneo(p);
               return (
                 <tr key={p.id} className="border-t border-[var(--line)]">
@@ -251,6 +302,12 @@ export function AffidiDaAffidareTable({
                     ) : null}
                   </td>
                   <td>{euro(p.residuo)}</td>
+                  <td className="font-mono text-xs tabular-nums">
+                    {codScaricoDisplay(p) || "—"}
+                  </td>
+                  <td className="font-mono text-xs tabular-nums">
+                    {(p.codiceScaricoBk || "").trim() || "—"}
+                  </td>
                   <td>
                     <AffidaForm
                       praticaId={p.id}
@@ -269,6 +326,16 @@ export function AffidiDaAffidareTable({
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 ? (
+        <div className="mt-3">
+          <PaginazioneBar
+            page={page}
+            totalPages={totalPages}
+            hrefForPage={(p) => hrefWithParams({ affidaPage: String(p) })}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

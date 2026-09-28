@@ -148,9 +148,13 @@ export async function requireNavPage(pageId: NavPageId) {
 export async function requireModule(moduleId: ModuleId) {
   const user = await requireUser();
   const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const { isAwaitingSectionActivation } = await import("@/lib/platform/modules");
+  if (isAwaitingSectionActivation(platform.enabledModules)) {
+    redirect("/attivazione-sezioni");
+  }
   if (!tenantHasModule(platform, moduleId)) {
     if (user.formazioneOnly) redirect("/account");
-    redirect("/");
+    redirect("/account");
   }
   return user;
 }

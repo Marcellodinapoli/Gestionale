@@ -8,6 +8,7 @@ import {
   type FiltroCollegata,
   praticaMatchFiltro,
 } from "@/lib/praticaCollegata";
+import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
 
 export {
   importoIt,
@@ -29,6 +30,10 @@ export function nessunDatoWhere() {
 export function praticaWhere(user: SessionUser): Prisma.PraticaWhereInput {
   if (isManutenzione(user)) return nessunDatoWhere();
   const tenantScope: Prisma.PraticaWhereInput = { tenantId: user.tenantId };
+  const hideDopoStragiudiziale =
+    user.role === "OPERATOR" || user.role === "SUPERVISOR"
+      ? (whereVisibiliAdOperatoreSupervisor() as Prisma.PraticaWhereInput)
+      : null;
   if (hasTenantWidePraticheScope(user.role)) {
     return tenantScope;
   }
@@ -37,6 +42,7 @@ export function praticaWhere(user: SessionUser): Prisma.PraticaWhereInput {
       AND: [
         tenantScope,
         { OR: [{ assegnatarioId: user.id }, { operatoreTitolareId: user.id }] },
+        ...(hideDopoStragiudiziale ? [hideDopoStragiudiziale] : []),
       ],
     };
   }
@@ -53,6 +59,7 @@ export function praticaWhere(user: SessionUser): Prisma.PraticaWhereInput {
             { assegnatarioId: null },
           ],
         },
+        ...(hideDopoStragiudiziale ? [hideDopoStragiudiziale] : []),
       ],
     };
   }
@@ -76,7 +83,7 @@ export function normalizeCf(value?: string | null) {
 }
 
 /** Varianti CF per query mirata (evita scan dell’intera collection). */
-function cfQueryVariants(values: Array<string | null | undefined>) {
+export function cfQueryVariants(values: Array<string | null | undefined>) {
   const out = new Set<string>();
   for (const raw of values) {
     if (!raw) continue;

@@ -12,6 +12,8 @@ import {
 import {
   PLATFORM_CONFIG_CATEGORIA,
   PLATFORM_MODULES_KEY,
+  PLATFORM_PACKAGES_KEY,
+  PLATFORM_PERF_UNTIL_KEY,
   PLATFORM_VERTICAL_KEY,
 } from "@/lib/platform/tenantProfile";
 import {
@@ -51,8 +53,23 @@ const TENANT_COLUMNS = `
   "Indirizzo", "Cap", "Comune", "Provincia",
   "ReferenteNome", "ReferenteCognome", "ReferenteEmail", "ReferenteTelefono",
   "Piano", "DataInizioAbbonamento", "DataScadenzaAbbonamento", "StatoPagamento",
-  "PerfMonitoringEnabled", "SuspensionReason"
+  "PerfMonitoringEnabled", "SuspensionReason",
+  NULL::timestamptz AS "SuspendedAt"
 `;
+
+/** Conteggio utenti / inviti correlati (lista / dettaglio platform). */
+const USERS_COUNT_EXPR = `(
+  SELECT COUNT(*)::int FROM "Users" u WHERE u."TenantId" = "Tenants"."Id"
+) AS "UsersCount"`;
+
+const PENDING_INVITES_COUNT_EXPR = `(
+  SELECT COUNT(*)::int FROM "TenantInvites" i
+  WHERE i."TenantId" = "Tenants"."Id"
+    AND i."UsedAt" IS NULL
+    AND i."ExpiresAt" > now()
+) AS "PendingInvitesCount"`;
+
+const TENANT_LIST_EXTRAS = `${USERS_COUNT_EXPR}, ${PENDING_INVITES_COUNT_EXPR}`;
 
 function requireNeon() {
   if (!isNeonConfigured()) {
@@ -135,6 +152,15 @@ function mapTenantRow(row: Record<string, unknown>): TenantPlatformDto {
       false
     ),
     suspensionReason: strOrNull(row.SuspensionReason ?? row.suspensionReason),
+    suspendedAt: dateIso(row.SuspendedAt ?? row.suspendedAt),
+    usersCount: Math.max(
+      0,
+      Number(row.UsersCount ?? row.usersCount ?? 0) || 0
+    ),
+    pendingInvitesCount: Math.max(
+      0,
+      Number(row.PendingInvitesCount ?? row.pendingInvitesCount ?? 0) || 0
+    ),
     createdAt: dateIso(row.CreatedAt ?? row.createdAt) || new Date(0).toISOString(),
   };
 }
@@ -165,8 +191,8 @@ async function loadModulesForTenant(tenantId: string): Promise<TenantModulesDto>
     `SELECT "Chiave", "Valore"
      FROM "ConfigurazioneSistema"
      WHERE "TenantId" = $1::uuid
-       AND "Chiave" IN ($2, $3)`,
-    [tenantId, PLATFORM_MODULES_KEY, PLATFORM_VERTICAL_KEY]
+       AND "Chiave" IN ($2, $3, $4)`,
+    [tenantId, PLATFORM_MODULES_KEY, PLATFORM_VERTICAL_KEY, PLATFORM_PACKAGES_KEY]
   ).catch(() => [] as Record<string, unknown>[]);
 
   const map = new Map<string, string>();
@@ -176,15 +202,39 @@ async function loadModulesForTenant(tenantId: string): Promise<TenantModulesDto>
     const v = String(row.Valore ?? row.valore ?? "");
     if (k) map.set(k, v);
   }
-  const enabledModules = map.has(PLATFORM_MODULES_KEY)
-    ? parseEnabledModules(map.get(PLATFORM_MODULES_KEY))
-    : [...RECOVERY_DEFAULT_MODULES];
+  const packagesFromKey = (() => {
+    const rawPackages = map.get(PLATFORM_PACKAGES_KEY);
+    if (!rawPackages?.trim()) return null;
+    try {
+      const parsed = JSON.parse(rawPackages) as unknown;
+      if (!Array.isArray(parsed)) return null;
+      return parsed
+        .map((x) => String(x).trim())
+        .filter((x) => COMMERCIAL_PACKAGE_CATALOG.some((p) => p.id === x));
+    } catch {
+      return null;
+    }
+  })();
+
+  // Pacchetti BO = fonte di verità; i moduli derivati devono coincidere con le spunte.
+  const enabledModules =
+    packagesFromKey != null
+      ? modulesFromPackages(packagesFromKey)
+      : map.has(PLATFORM_MODULES_KEY)
+        ? parseEnabledModules(map.get(PLATFORM_MODULES_KEY))
+        : [...RECOVERY_DEFAULT_MODULES];
+
+  const enabledPackages =
+    packagesFromKey != null
+      ? packagesFromKey
+      : packagesFromModules(enabledModules);
+
   return {
     verticalProfile: map.has(PLATFORM_VERTICAL_KEY)
       ? parseVertical(map.get(PLATFORM_VERTICAL_KEY))
       : "RECUPERO_CREDITI",
     enabledModules,
-    enabledPackages: packagesFromModules(enabledModules),
+    enabledPackages,
     packageCatalog: COMMERCIAL_PACKAGE_CATALOG.map((p) => ({
       id: p.id,
       label: p.label,
@@ -217,6 +267,14 @@ async function upsertConfigChiave(
        ("Id", "TenantId", "Chiave", "Valore", "Categoria", "UpdatedAt")
      VALUES ($1::uuid, $2::uuid, $3, $4, $5, now())`,
     [randomUUID(), tenantId, chiave, valore, PLATFORM_CONFIG_CATEGORIA]
+  );
+}
+
+async function deleteConfigChiave(tenantId: string, chiave: string): Promise<void> {
+  await neonQuery(
+    `DELETE FROM "ConfigurazioneSistema"
+     WHERE "TenantId" = $1::uuid AND "Chiave" = $2`,
+    [tenantId, chiave]
   );
 }
 
@@ -307,11 +365,12 @@ export class NeonPlatformTenantsRepository {
       input.modules?.enabledPackages != null
     ) {
       const enabledModules =
-        input.modules.enabledModules != null
-          ? input.modules.enabledModules
-          : modulesFromPackages(input.modules.enabledPackages || []);
+        input.modules.enabledPackages != null
+          ? modulesFromPackages(input.modules.enabledPackages)
+          : (input.modules.enabledModules as string[]);
       await this.updateModules(id, {
         enabledModules,
+        enabledPackages: input.modules.enabledPackages,
         verticalProfile: input.modules.verticalProfile,
       });
     }
@@ -328,7 +387,8 @@ export class NeonPlatformTenantsRepository {
     requireNeon();
     if (!isUuid(id)) return null;
     const rows = await neonQuery(
-      `SELECT ${TENANT_COLUMNS} FROM "Tenants" WHERE "Id" = $1::uuid LIMIT 1`,
+      `SELECT ${TENANT_COLUMNS}, ${TENANT_LIST_EXTRAS}
+       FROM "Tenants" WHERE "Id" = $1::uuid LIMIT 1`,
       [id]
     );
     if (!rows[0]) return null;
@@ -347,7 +407,8 @@ export class NeonPlatformTenantsRepository {
     const s = normalizeTenantSlug(slug);
     if (!s) return null;
     const rows = await neonQuery(
-      `SELECT ${TENANT_COLUMNS} FROM "Tenants" WHERE lower("Slug") = lower($1) LIMIT 1`,
+      `SELECT ${TENANT_COLUMNS}, ${TENANT_LIST_EXTRAS}
+       FROM "Tenants" WHERE lower("Slug") = lower($1) LIMIT 1`,
       [s]
     );
     if (!rows[0]) return null;
@@ -395,7 +456,8 @@ export class NeonPlatformTenantsRepository {
     const limitIdx = params.length - 1;
     const offsetIdx = params.length;
     const rows = await neonQuery(
-      `SELECT ${TENANT_COLUMNS} FROM "Tenants" ${where}
+      `SELECT ${TENANT_COLUMNS}, ${TENANT_LIST_EXTRAS}
+       FROM "Tenants" ${where}
        ORDER BY "CreatedAt" DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
@@ -470,9 +532,77 @@ export class NeonPlatformTenantsRepository {
       ]
     );
 
+    if (input.perfMonitoringEnabled === false) {
+      await deleteConfigChiave(id, PLATFORM_PERF_UNTIL_KEY);
+    }
+
+    try {
+      const { clearPerfMonitoringEnabledCache } = await import(
+        "@/lib/performance/enabled"
+      );
+      clearPerfMonitoringEnabledCache(id);
+    } catch {
+      /* ignore */
+    }
+
     const updated = await this.getById(id);
     if (!updated) throw new Error("Tenant non aggiornato");
     return updated;
+  }
+
+  /**
+   * Attiva/disattiva monitoraggio performance, con durata opzionale (ore).
+   * `durationHours` null/undefined con enabled=true → illimitato.
+   */
+  async setPerfMonitoring(
+    id: string,
+    input: { enabled: boolean; durationHours?: number | null }
+  ): Promise<{
+    tenantId: string;
+    enabled: boolean;
+    until: string | null;
+    active: boolean;
+  }> {
+    requireNeon();
+    const current = await this.getById(id);
+    if (!current) throw new Error("Tenant non trovato");
+
+    const enabled = Boolean(input.enabled);
+    let until: string | null = null;
+
+    if (enabled) {
+      const hours = input.durationHours;
+      if (hours != null && Number.isFinite(hours) && hours > 0) {
+        const ms = Math.min(Math.floor(hours), 24 * 30) * 60 * 60 * 1000;
+        until = new Date(Date.now() + ms).toISOString();
+        await upsertConfigChiave(id, PLATFORM_PERF_UNTIL_KEY, until);
+      } else {
+        await deleteConfigChiave(id, PLATFORM_PERF_UNTIL_KEY);
+      }
+    } else {
+      await deleteConfigChiave(id, PLATFORM_PERF_UNTIL_KEY);
+    }
+
+    await neonQuery(
+      `UPDATE "Tenants" SET "PerfMonitoringEnabled" = $2 WHERE "Id" = $1::uuid`,
+      [id, enabled]
+    );
+
+    try {
+      const { clearPerfMonitoringEnabledCache } = await import(
+        "@/lib/performance/enabled"
+      );
+      clearPerfMonitoringEnabledCache(id);
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      tenantId: id,
+      enabled,
+      until: enabled ? until : null,
+      active: enabled,
+    };
   }
 
   async updateAbbonamento(
@@ -543,7 +673,11 @@ export class NeonPlatformTenantsRepository {
     return updated;
   }
 
-  async suspend(id: string, reason: string): Promise<TenantPlatformDto> {
+  async suspend(
+    id: string,
+    reason: string,
+    _suspendedAt?: string | Date | null
+  ): Promise<TenantPlatformDto> {
     requireNeon();
     const current = await this.getById(id);
     if (!current) throw new Error("Tenant non trovato");
@@ -568,6 +702,42 @@ export class NeonPlatformTenantsRepository {
     return this.updateStatus(id, "ATTIVA");
   }
 
+  /**
+   * Elimina tenant e dati collegati (inviti, utenti, config).
+   * Fallisce se restano vincoli FK (pratiche, ecc.).
+   */
+  async delete(id: string): Promise<{ id: string; slug: string; ragioneSociale: string }> {
+    requireNeon();
+    if (!isUuid(id)) throw new Error("Tenant non trovato");
+    const existing = await this.getById(id);
+    if (!existing) throw new Error("Tenant non trovato");
+
+    await neonQuery(`DELETE FROM "TenantInvites" WHERE "TenantId" = $1::uuid`, [id]);
+    await neonQuery(`DELETE FROM "Users" WHERE "TenantId" = $1::uuid`, [id]);
+    await neonQuery(
+      `DELETE FROM "ConfigurazioneSistema" WHERE "TenantId" = $1::uuid`,
+      [id]
+    ).catch(() => undefined);
+
+    try {
+      await neonQuery(`DELETE FROM "Tenants" WHERE "Id" = $1::uuid`, [id]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/foreign key|violates|constraint/i.test(msg)) {
+        throw new Error(
+          "Impossibile eliminare: l'azienda ha ancora dati collegati (pratiche, mandanti, …). Svuota prima il tenant o sospendilo."
+        );
+      }
+      throw e;
+    }
+
+    return {
+      id: existing.id,
+      slug: existing.slug,
+      ragioneSociale: existing.ragioneSociale,
+    };
+  }
+
   async getModules(tenantId: string): Promise<TenantModulesDto> {
     requireNeon();
     const t = await this.getById(tenantId);
@@ -587,11 +757,12 @@ export class NeonPlatformTenantsRepository {
     const t = await this.getById(tenantId);
     if (!t) throw new Error("Tenant non trovato");
 
+    // I pacchetti BO sono la fonte di verità (liste Firebase meno affidabili).
     const enabledModules =
-      input.enabledModules != null
-        ? input.enabledModules
-        : input.enabledPackages != null
-          ? modulesFromPackages(input.enabledPackages)
+      input.enabledPackages != null
+        ? modulesFromPackages(input.enabledPackages)
+        : input.enabledModules != null
+          ? input.enabledModules
           : null;
     if (enabledModules == null) {
       throw new Error("enabledModules o enabledPackages obbligatorio");
@@ -599,6 +770,18 @@ export class NeonPlatformTenantsRepository {
 
     const serialized = serializeEnabledModules(enabledModules);
     await upsertConfigChiave(tenantId, PLATFORM_MODULES_KEY, serialized);
+
+    // Pacchetti BO persistiti esplicitamente (round-trip CreditCalc ecc.).
+    if (input.enabledPackages != null) {
+      const pkgs = input.enabledPackages
+        .map((p) => String(p).trim())
+        .filter((p) => COMMERCIAL_PACKAGE_CATALOG.some((c) => c.id === p));
+      await upsertConfigChiave(
+        tenantId,
+        PLATFORM_PACKAGES_KEY,
+        JSON.stringify(pkgs)
+      );
+    }
 
     if (input.verticalProfile) {
       const v = parseVertical(input.verticalProfile);

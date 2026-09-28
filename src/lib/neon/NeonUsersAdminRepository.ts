@@ -12,25 +12,57 @@ import type {
   UserDto,
 } from "@/lib/data/contracts/users";
 
+function pick(row: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const k of keys) {
+    if (row[k] != null) return row[k];
+  }
+  return null;
+}
+
 function mapUser(row: Record<string, unknown>): UserDto {
   const mapped = mapSqlRow(row);
   if (row.GruppoMandantiJson != null && mapped.gruppoMandanti == null) {
     mapped.gruppoMandanti = row.GruppoMandantiJson;
   }
-  if (row.SedeNome != null) mapped.sede = { nome: row.SedeNome };
-  if (row.SupervisorName != null) mapped.supervisor = { name: row.SupervisorName };
-  if (row.PostazioneNome != null || row.PostazioneInterno != null) {
+  const sedeNome = pick(row, "SedeNome", "sedeNome");
+  if (sedeNome != null) mapped.sede = { nome: sedeNome };
+  const supervisorName = pick(row, "SupervisorName", "supervisorName");
+  if (supervisorName != null) mapped.supervisor = { name: supervisorName };
+
+  const postazioneNome = pick(row, "PostazioneNome", "postazioneNome");
+  const postazioneInterno = pick(row, "PostazioneInterno", "postazioneInterno");
+  const postazioneId = pick(row, "PostazioneId", "postazioneId");
+  if (postazioneNome != null || postazioneInterno != null || postazioneId != null) {
+    const sedeRefNome = pick(row, "PostazioneSedeNome", "postazioneSedeNome");
     mapped.postazione = {
-      nome: row.PostazioneNome ?? null,
-      interno: row.PostazioneInterno ?? null,
-      email: row.PostazioneEmail ?? null,
-      numeroFisso: row.PostazioneNumeroFisso ?? null,
-      sedeRef: row.PostazioneSedeNome ? { nome: row.PostazioneSedeNome } : null,
+      nome: postazioneNome != null ? String(postazioneNome) : null,
+      interno: postazioneInterno != null ? String(postazioneInterno) : null,
+      email: (() => {
+        const v = pick(row, "PostazioneEmail", "postazioneEmail");
+        return v != null ? String(v) : null;
+      })(),
+      numeroFisso: (() => {
+        const v = pick(row, "PostazioneNumeroFisso", "postazioneNumeroFisso");
+        return v != null ? String(v) : null;
+      })(),
+      sedeRef: sedeRefNome != null ? { nome: String(sedeRefNome) } : null,
     };
   }
-  // Date fields
-  for (const k of ["passwordChangedAt", "lastLoginAt", "lastLogoutAt", "createdAt"] as const) {
-    if (typeof mapped[k] === "string") mapped[k] = new Date(String(mapped[k]));
+
+  // Date: Neon può restituire già camelCase (early-return mapSqlRow) o PascalCase.
+  const datePairs: Array<[keyof UserDto, string[]]> = [
+    ["passwordChangedAt", ["PasswordChangedAt", "passwordChangedAt"]],
+    ["lastLoginAt", ["LastLoginAt", "lastLoginAt"]],
+    ["lastLogoutAt", ["LastLogoutAt", "lastLogoutAt"]],
+    ["createdAt", ["CreatedAt", "createdAt"]],
+  ];
+  for (const [field, keys] of datePairs) {
+    const raw = pick(row, ...keys) ?? mapped[field as string];
+    if (raw == null) {
+      mapped[field as string] = null;
+      continue;
+    }
+    mapped[field as string] = raw instanceof Date ? raw : new Date(String(raw));
   }
   return mapped;
 }
@@ -56,7 +88,9 @@ async function loadUser(
     extra.push(`s."Nome" AS "SedeNome"`);
   }
   if (include?.postazione) {
-    joins.push(`LEFT JOIN "Postazioni" p ON p."Id" = u."PostazioneId"`);
+    joins.push(
+      `LEFT JOIN "Postazioni" p ON p."Id" = u."PostazioneId" AND p."TenantId" = u."TenantId"`
+    );
     joins.push(`LEFT JOIN "Sedi" ps ON ps."Id" = p."SedeId"`);
     extra.push(
       `p."Nome" AS "PostazioneNome", p."Interno" AS "PostazioneInterno",
@@ -172,8 +206,34 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
       params
     );
     const total = Number((countRows[0] as { c: number })?.c ?? 0);
+
+    const joins: string[] = [];
+    const extra: string[] = [];
+    if (req.include?.sede) {
+      joins.push(`LEFT JOIN "Sedi" s ON s."Id" = u."SedeId"`);
+      extra.push(`s."Nome" AS "SedeNome"`);
+    }
+    if (req.include?.postazione) {
+      joins.push(
+        `LEFT JOIN "Postazioni" p ON p."Id" = u."PostazioneId" AND p."TenantId" = u."TenantId"`
+      );
+      joins.push(`LEFT JOIN "Sedi" ps ON ps."Id" = p."SedeId"`);
+      extra.push(
+        `p."Nome" AS "PostazioneNome", p."Interno" AS "PostazioneInterno",
+         p."Email" AS "PostazioneEmail", p."NumeroFisso" AS "PostazioneNumeroFisso",
+         ps."Nome" AS "PostazioneSedeNome"`
+      );
+    }
+    if (req.include?.supervisor) {
+      joins.push(`LEFT JOIN "Users" sup ON sup."Id" = u."SupervisorId"`);
+      extra.push(`sup."Name" AS "SupervisorName"`);
+    }
+
     const items = await neonQuery(
-      `SELECT ${USER_COLS} FROM "Users" u WHERE ${sql}
+      `SELECT ${USER_COLS}${extra.length ? `, ${extra.join(", ")}` : ""}
+       FROM "Users" u
+       ${joins.join("\n")}
+       WHERE ${sql}
        ORDER BY u.${orderCol} ${dir} NULLS LAST
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, take, skip]
@@ -249,6 +309,8 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
       email: "Email",
       passwordHash: "PasswordHash",
       passwordChangedAt: "PasswordChangedAt",
+      lastLoginAt: "LastLoginAt",
+      lastLogoutAt: "LastLogoutAt",
       role: "Role",
       interno: "Interno",
       prefissoChiamata: "PrefissoChiamata",
@@ -266,7 +328,11 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
             sets.push(`"${col}" = $${i++}::uuid`);
             params.push(val);
           }
-        } else if (col === "PasswordChangedAt") {
+        } else if (
+          col === "PasswordChangedAt" ||
+          col === "LastLoginAt" ||
+          col === "LastLogoutAt"
+        ) {
           sets.push(`"${col}" = $${i++}`);
           params.push(val instanceof Date ? val.toISOString() : val);
         } else {

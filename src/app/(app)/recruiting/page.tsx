@@ -4,6 +4,12 @@ import { getReceiverConfig } from "@/lib/recruiting/receiverRepo";
 import { countCandidatureByOfferta, listCandidaturePerHome } from "@/lib/recruiting/candidatureRepo";
 import { listColloquiRecenti } from "@/lib/recruiting/colloquiRepo";
 import { listCandidaturaIdsVisteByUser } from "@/lib/recruiting/attivitaRepo";
+import { getCreditCoreOfferteSnapshots } from "@/lib/recruiting/creditCoreOfferteSync";
+import {
+  creditCoreOffertaPublicUrl,
+  indeedOffertaPublicUrl,
+  isIndeedPublicLinkConfigured,
+} from "@/lib/recruiting/offertaPublicUrls";
 import { OfferteLavoroClient } from "./OfferteLavoroClient";
 import { RecruitingReceiverClient } from "./RecruitingReceiverClient";
 
@@ -19,6 +25,11 @@ export default async function RecruitingPage() {
       listColloquiRecenti(user.tenantId),
       listCandidaturaIdsVisteByUser(user.tenantId, user.id),
     ]);
+  const creditCoreByOfferta = await getCreditCoreOfferteSnapshots(
+    user.tenantId,
+    offerteRows.map((o) => o.id)
+  );
+  const indeedLinksReady = isIndeedPublicLinkConfigured();
   const offerte = offerteRows.map((o) => ({
     id: o.id,
     titolo: o.titolo,
@@ -34,6 +45,13 @@ export default async function RecruitingPage() {
     retribuzione: o.retribuzione,
     benefit: o.benefit,
     stato: o.stato,
+    indeedJobId: o.indeedJobId,
+    creditCore: creditCoreByOfferta[o.id] || null,
+    creditCorePublicUrl: creditCoreOffertaPublicUrl(user.tenantId, o.id),
+    indeedPublicUrl: indeedLinksReady
+      ? indeedOffertaPublicUrl(o.indeedJobId)
+      : null,
+    indeedPublicReady: indeedLinksReady,
     updatedAt: o.updatedAt.toISOString(),
     candidatureCount: counts[o.id] || 0,
   }));

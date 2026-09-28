@@ -212,7 +212,7 @@ export function CercaPraticaPopup({
           {campo !== "note" ? (
             <>
               {" · "}
-              <Link href={`/pratiche?q=${encodeURIComponent(q.trim())}`} className="underline">
+              <Link href={`/pratiche?cerca=1&q=${encodeURIComponent(q.trim())}`} className="underline">
                 Apri in elenco pratiche
               </Link>
             </>

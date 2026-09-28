@@ -1,7 +1,11 @@
 import {
   chiaviMatchPerimetro,
   etichettaPerimetro,
+  parsePerimetri,
   parsePerimetriList,
+  perimetroPerNome,
+  resolvePerimetroPratica,
+  type MandantePerimetro,
 } from "@/lib/mandantePerimetri";
 
 export type PerimetroFiltroAffidi = {
@@ -18,6 +22,14 @@ export type MandantePerimetriAffidi = {
   perimetri: PerimetroFiltroAffidi[];
   /** JSON perimetri mandante (per match lotto ↔ perimetro). */
   perimetriRaw: string | null;
+};
+
+/** Campi pratica necessari per match perimetro (lotto + chiave import). */
+export type PraticaPerimetroMatch = {
+  mandanteId: string;
+  numeroMandante: string | null;
+  /** Chiave perimetro sull'import batch (nome config, non il lotto). */
+  importBatchPerimetro?: string | null;
 };
 
 /**
@@ -72,7 +84,8 @@ export function risolviFiltriMonitorAffidi(
     if (!perimetroRaw?.trim()) return undefined;
     const p = perimetroRaw.trim();
     const match = (m: MandantePerimetriAffidi) =>
-      m.perimetri.some((x) => x.value === p);
+      m.perimetri.some((x) => x.value === p) ||
+      Boolean(perimetroPerNome(parsePerimetri(m.perimetriRaw), p));
     if (mandanteOk) {
       const m = mandanti.find((x) => x.id === mandanteOk);
       return m && match(m) ? p : undefined;
@@ -82,44 +95,80 @@ export function risolviFiltriMonitorAffidi(
   return { mandanteOk, perimetroOk };
 }
 
-/** Numeri mandante (lotti / chiavi) che corrispondono al perimetro selezionato. */
+function stessoPerimetroConfig(a: MandantePerimetro, b: MandantePerimetro) {
+  return (
+    a.nomeInterno.trim().toLowerCase() === b.nomeInterno.trim().toLowerCase() &&
+    a.nomeMandante.trim().toLowerCase() === b.nomeMandante.trim().toLowerCase()
+  );
+}
+
+/** True se la pratica rientra nel perimetro config (via lotto e/o chiave import). */
+export function praticaInPerimetroFiltro(
+  pratica: PraticaPerimetroMatch,
+  mandanti: MandantePerimetriAffidi[],
+  perimetro: string,
+  mandanteId?: string
+): boolean {
+  if (mandanteId && pratica.mandanteId !== mandanteId) return false;
+  const m =
+    mandanti.find((x) => x.id === pratica.mandanteId) ??
+    (mandanteId ? mandanti.find((x) => x.id === mandanteId) : undefined);
+  if (!m) return false;
+  const selected = perimetroPerNome(parsePerimetri(m.perimetriRaw), perimetro);
+  if (!selected) return false;
+  const hit = resolvePerimetroPratica(
+    m.perimetriRaw,
+    pratica.numeroMandante,
+    pratica.importBatchPerimetro
+  );
+  if (!hit) return false;
+  return stessoPerimetroConfig(hit, selected);
+}
+
+/**
+ * Lotti (`numeroMandante`) che appartengono al perimetro selezionato.
+ * Preferisce le pratiche in memoria (lotto + importBatch.perimetro);
+ * senza pratiche: fallback chiavi config (legacy).
+ */
 export function numeriMandantePerFiltroPerimetro(
   mandanti: MandantePerimetriAffidi[],
   perimetro?: string,
-  mandanteId?: string
+  mandanteId?: string,
+  pratichePresenti?: PraticaPerimetroMatch[]
 ): string[] {
   const key = perimetro?.trim();
   if (!key) return [];
   const list = mandanteId
     ? mandanti.filter((m) => m.id === mandanteId)
     : mandanti;
+
+  if (pratichePresenti?.length) {
+    const out = new Set<string>();
+    for (const p of pratichePresenti) {
+      if (!praticaInPerimetroFiltro(p, mandanti, key, mandanteId)) continue;
+      const lot = p.numeroMandante?.trim();
+      if (lot) out.add(lot);
+    }
+    return [...out];
+  }
+
+  // Senza pratiche in memoria: chiavi config (legacy; utile se lotto = nomeMandante).
   return [
-    ...new Set(
-      list.flatMap((m) => chiaviMatchPerimetro(m.perimetriRaw, key))
-    ),
+    ...new Set(list.flatMap((m) => chiaviMatchPerimetro(m.perimetriRaw, key))),
   ];
 }
 
-export function filtraPraticheAffidiMonitor<
-  T extends { mandanteId: string; numeroMandante: string | null },
->(
+export function filtraPraticheAffidiMonitor<T extends PraticaPerimetroMatch>(
   pratiche: T[],
   mandanti: MandantePerimetriAffidi[],
   mandanteId?: string,
   perimetro?: string
 ): T[] {
   if (!mandanteId && !perimetro) return pratiche;
-  const numeri = perimetro
-    ? numeriMandantePerFiltroPerimetro(mandanti, perimetro, mandanteId)
-    : [];
-  const numeriSet = numeri.length ? new Set(numeri) : null;
   return pratiche.filter((p) => {
     if (mandanteId && p.mandanteId !== mandanteId) return false;
-    if (numeriSet) {
-      const lot = p.numeroMandante?.trim() ?? "";
-      if (!lot || !numeriSet.has(lot)) return false;
-    }
-    return true;
+    if (!perimetro) return true;
+    return praticaInPerimetroFiltro(p, mandanti, perimetro, mandanteId);
   });
 }
 

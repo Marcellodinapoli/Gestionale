@@ -58,6 +58,7 @@ export function OperatoriWorkspace({
   roleDefaults,
   userOverrides,
   acronimiUsati,
+  creditCalcModuleOn = false,
   headerActions,
 }: {
   utenti: OperatoreListaItem[];
@@ -67,6 +68,7 @@ export function OperatoriWorkspace({
   roleDefaults: NavRoleDefaults;
   userOverrides: NavUserOverrides;
   acronimiUsati: string[];
+  creditCalcModuleOn?: boolean;
   headerActions: ReactNode;
 }) {
   const [filtri, setFiltri] = useState<OperatoriFiltri>(OPERATORI_FILTRI_EMPTY);
@@ -147,6 +149,7 @@ export function OperatoriWorkspace({
           roleDefaults={roleDefaults}
           userOverrides={userOverrides}
           acronimiUsati={acronimiUsati}
+          creditCalcModuleOn={creditCalcModuleOn}
         />
       </Card>
 
@@ -396,13 +399,15 @@ export function OperatoriWorkspace({
           </Sezione>
 
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--line)] pt-3">
-            <button
-              type="button"
-              onClick={reset}
-              className="h-9 rounded-lg border border-[var(--line)] bg-white px-4 text-sm hover:bg-[#eef4f8]"
-            >
-              Azzera
-            </button>
+            {hasOperatoriFiltri(draft) ? (
+              <button
+                type="button"
+                onClick={reset}
+                className="h-9 rounded-lg border border-[var(--line)] bg-white px-4 text-sm hover:bg-[#eef4f8]"
+              >
+                Azzera
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setOpen(false)}

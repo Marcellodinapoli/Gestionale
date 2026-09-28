@@ -10,6 +10,7 @@ import {
   FILTRI_LOTTO_BOX_CLASS,
   FILTRI_PAGE_INPUT_CLASS,
   FILTRI_PAGE_SELECT_CLASS,
+  FILTRI_RESET_BUTTON_CLASS,
 } from "@/components/filtri/filtriFieldStyles";
 
 export function StatisticheFiltriForm({
@@ -22,6 +23,7 @@ export function StatisticheFiltriForm({
   gruppoId,
   supervisori,
   consentiTuttiGruppi = true,
+  searchActive = false,
 }: {
   mandanti: Array<{ id: string; codice: string; ragioneSociale: string }>;
   lottiOpzioni: LottoPerimetroFiltro[];
@@ -32,6 +34,8 @@ export function StatisticheFiltriForm({
   gruppoId?: string;
   supervisori?: Array<{ id: string; name: string; gruppoNome: string | null }>;
   consentiTuttiGruppi?: boolean;
+  /** Griglia già caricata (cerca=1). */
+  searchActive?: boolean;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -49,6 +53,15 @@ export function StatisticheFiltriForm({
   }
 
   const lottiValues = lottiOpzioni.map((o) => o.value);
+  const sedeQs = sp.get("sede");
+  const resetHref = sedeQs
+    ? `/statistiche?sede=${encodeURIComponent(sedeQs)}`
+    : "/statistiche";
+
+  function resetFiltri() {
+    setLotti([]);
+    router.push(resetHref);
+  }
 
   return (
     <form
@@ -57,7 +70,13 @@ export function StatisticheFiltriForm({
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
         const qs = new URLSearchParams();
-        for (const key of ["affidoDa", "affidoA", "mandanteId", "gruppo"]) {
+        qs.set("cerca", "1");
+        // Date sempre in URL: così il periodo scelto (anche default) attiva la griglia.
+        const da = String(fd.get("affidoDa") || "").trim() || affidoDa;
+        const a = String(fd.get("affidoA") || "").trim() || affidoA;
+        qs.set("affidoDa", da);
+        qs.set("affidoA", a);
+        for (const key of ["mandanteId", "gruppo"] as const) {
           const val = String(fd.get(key) || "").trim();
           if (val) qs.set(key, val);
         }
@@ -75,6 +94,7 @@ export function StatisticheFiltriForm({
           <input
             type="date"
             name="affidoDa"
+            key={`affidoDa-${affidoDa}-${searchActive ? "1" : "0"}`}
             defaultValue={affidoDa}
             className={FILTRI_PAGE_INPUT_CLASS}
           />
@@ -84,6 +104,7 @@ export function StatisticheFiltriForm({
           <input
             type="date"
             name="affidoA"
+            key={`affidoA-${affidoA}-${searchActive ? "1" : "0"}`}
             defaultValue={affidoA}
             className={FILTRI_PAGE_INPUT_CLASS}
           />
@@ -92,6 +113,7 @@ export function StatisticheFiltriForm({
           <span className="mb-1 block font-semibold text-[var(--muted)]">Mandato</span>
           <select
             name="mandanteId"
+            key={`mandante-${mandanteId || ""}-${searchActive ? "1" : "0"}`}
             defaultValue={mandanteId || ""}
             className={`min-w-[140px] ${FILTRI_PAGE_SELECT_CLASS}`}
           >
@@ -108,6 +130,7 @@ export function StatisticheFiltriForm({
             <span className="mb-1 block font-semibold text-[var(--muted)]">Gruppo</span>
             <select
               name="gruppo"
+              key={`gruppo-${gruppoId || ""}-${searchActive ? "1" : "0"}`}
               defaultValue={gruppoId || ""}
               className={`min-w-[160px] ${FILTRI_PAGE_SELECT_CLASS}`}
             >
@@ -121,8 +144,17 @@ export function StatisticheFiltriForm({
           </label>
         )}
         <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
-          Aggiorna
+          Filtra
         </button>
+        {searchActive ? (
+          <button
+            type="button"
+            onClick={resetFiltri}
+            className={FILTRI_RESET_BUTTON_CLASS}
+          >
+            Reset
+          </button>
+        ) : null}
       </div>
 
       <div className="text-xs">
@@ -173,7 +205,7 @@ export function StatisticheFiltriForm({
         </div>
         <p className="mt-1 text-[10px] text-[var(--muted)]">
           Solo perimetri in lavorazione (esclusi chiusi). Ogni perimetro ha una tabella
-          separata.
+          separata. Premi Filtra per caricare le griglie.
         </p>
       </div>
     </form>

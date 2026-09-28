@@ -3,7 +3,15 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-export function LoginForm() {
+export function LoginForm({
+  defaultTenantSlug = "demo",
+  defaultEmail = "admin@gestionale.local",
+  defaultPassword = "Demo123!",
+}: {
+  defaultTenantSlug?: string;
+  defaultEmail?: string;
+  defaultPassword?: string;
+} = {}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -57,7 +65,7 @@ export function LoginForm() {
           autoComplete="organization"
           className="mt-1 h-11 w-full rounded-lg border border-[var(--line)] px-3"
           placeholder="es. demo"
-          defaultValue="demo"
+          defaultValue={defaultTenantSlug}
         />
       </label>
       <label className="block text-sm">
@@ -70,7 +78,7 @@ export function LoginForm() {
           required
           className="mt-1 h-11 w-full rounded-lg border border-[var(--line)] px-3"
           placeholder="es. admin@gestionale.local"
-          defaultValue="admin@gestionale.local"
+          defaultValue={defaultEmail}
         />
       </label>
       <label className="block text-sm">
@@ -81,7 +89,7 @@ export function LoginForm() {
           autoComplete="current-password"
           required
           className="mt-1 h-11 w-full rounded-lg border border-[var(--line)] px-3"
-          defaultValue="Demo123!"
+          defaultValue={defaultPassword}
         />
       </label>
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}

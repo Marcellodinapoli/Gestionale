@@ -62,6 +62,7 @@ export function AffidiPerimetroOverview({
             mandato: ref.mandanteId,
             perimetro: ref.perimetro,
             sezione: "affida",
+            affidaCerca: "1",
           });
 
           return (

@@ -30,7 +30,10 @@ export function NavVisibilityFlagsEditor({
   disabled?: boolean;
   allowEditRoleDefaults?: boolean;
 }) {
-  const pages = useMemo(() => NAV_PAGES.filter((p) => !p.locked), []);
+  const pages = useMemo(
+    () => NAV_PAGES.filter((p) => !p.locked && p.id !== "ticket"),
+    []
+  );
 
   const initial = useMemo(() => {
     const out: NavVisibilityMap = {};

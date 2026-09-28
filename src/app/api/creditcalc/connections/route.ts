@@ -9,6 +9,7 @@ import {
   listConnectionsForCreditCalcUser,
   parseLinkRequestIdFromQr,
 } from "@/lib/creditcalc/store";
+import { isTenantCreditCalcEnabled } from "@/lib/creditcalc/tenantAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +23,21 @@ export async function GET(req: Request) {
   if ("error" in auth) return jsonErr(auth.error, auth.status, req);
 
   const items = await listConnectionsForCreditCalcUser(auth.uid);
+  const withModule = await Promise.all(
+    items.map(async (c) => ({
+      c,
+      moduleOn: await isTenantCreditCalcEnabled(c.tenantId),
+    }))
+  );
   return jsonOk(
     {
-      items: items.map((c) => ({
+      items: withModule.map(({ c, moduleOn }) => ({
         connectionId: c.connectionId,
         tenantName: c.tenantName,
         operatorName: c.operatorName,
         operatorEmail: c.operatorEmail,
-        status: c.status,
+        // "blocked" se pacchetto CreditCalc spento in BO: collegamento residuo non usabile.
+        status: moduleOn ? c.status : "blocked",
         createdAt: c.createdAt,
         // tenantId/gestionaleUserId NON esposti come campi modificabili;
         // connectionId è l'unico handle client.

@@ -110,7 +110,9 @@ export function codiceScaricoFiltroWhere(
 
   // eq
   if (wantsNull && !real.length) {
-    return { [field]: null };
+    return {
+      OR: [{ [field]: null }, { [field]: "" }],
+    };
   }
   if (wantsNull && real.length === 1) {
     return { OR: [{ [field]: null }, { [field]: real[0]! }] };

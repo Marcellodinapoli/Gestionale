@@ -31,6 +31,7 @@ import {
   UserCircle,
   Calculator,
   MessageSquare,
+  Bell,
   ArrowLeft,
   ClipboardList,
   GraduationCap,
@@ -38,6 +39,7 @@ import {
   MapPin,
   Scale,
   Layers,
+  Ticket,
 } from "lucide-react";
 import { logoutAction } from "@/actions/core";
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
@@ -51,7 +53,7 @@ import {
   PraticaHeaderSlotProvider,
 } from "@/components/layout/PraticaHeaderSlot";
 import { ROLE_LABELS, can, canManageSedi, isFormazioneOnly, type SessionUser } from "@/lib/permissions";
-import { hasModule, type ModuleId, type TenantPlatformConfig } from "@/lib/platform/modules";
+import { hasModule, isAwaitingSectionActivation, type ModuleId, type TenantPlatformConfig } from "@/lib/platform/modules";
 import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
 import { navigateBack } from "@/lib/navBack";
 import { labelForNavBackHref, navBackDisplayLabel } from "@/lib/navBackLabel";
@@ -73,7 +75,34 @@ type NavLink = {
   navPageId?: import("@/lib/navVisibility/catalog").NavPageId;
   /** Icona in evidenza: badge + colore, senza tintare tutta la riga. */
   accent?: NavAccent;
+  /** false = sezione non attiva per il tenant: visibile ma non cliccabile. */
+  enabled?: boolean;
+  /** Badge numerico (es. avvisi non letti). */
+  badgeCount?: number;
 };
+
+function NavCountBadge({
+  count,
+  onLight,
+}: {
+  count: number;
+  onLight?: boolean;
+}) {
+  if (count <= 0) return null;
+  const label = count > 99 ? "99+" : String(count);
+  return (
+    <span
+      className={`ml-0.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none ${
+        onLight
+          ? "bg-amber-500 text-white"
+          : "bg-amber-400 text-[#132033]"
+      }`}
+      aria-label={`${count} nuovi`}
+    >
+      {label}
+    </span>
+  );
+}
 
 type NavAccent = {
   iconDark: string;
@@ -181,6 +210,14 @@ const MAIN_LINKS: NavLink[] = [
     show: (u) => !isFormazioneOnly(u) && can(u, "agenda:view"),
   },
   {
+    href: "/avvisi",
+    label: "Avvisi",
+    icon: Bell,
+    moduleId: "core",
+    navPageId: "avvisi",
+    show: (u) => u.role === "ADMIN",
+  },
+  {
     href: "/statistiche",
     label: "Statistiche",
     icon: PieChart,
@@ -234,7 +271,7 @@ const MAIN_LINKS: NavLink[] = [
     href: "/creditcalc",
     label: "CreditCalc",
     icon: Calculator,
-    moduleId: "core",
+    moduleId: "creditcalc",
     navPageId: "creditcalc",
     show: () => true,
     accent: NAV_ACCENT.creditcalc,
@@ -252,7 +289,7 @@ const MAIN_LINKS: NavLink[] = [
     href: "/strumenti/ricerca-normativa",
     label: "Strumenti AI",
     icon: Wrench,
-    moduleId: "strumenti",
+    moduleId: "formazione",
     navPageId: "strumenti",
     show: (u) => !isFormazioneOnly(u) && can(u, "strumenti:view"),
     accent: NAV_ACCENT.formazione,
@@ -350,6 +387,14 @@ const ADMIN_LINKS: NavLink[] = [
     navPageId: "log",
     show: (u) => can(u, "audit:view"),
   },
+  {
+    href: "/ticket",
+    label: "Ticket",
+    icon: Ticket,
+    moduleId: "core",
+    navPageId: "ticket",
+    show: (u) => u.role === "ADMIN",
+  },
 ];
 
 function navActive(pathname: string, href: string) {
@@ -378,18 +423,44 @@ function NavItem({
   const router = useRouter();
   const Icon = link.icon;
   const active = navActive(pathname, link.href);
-  const showBack = Boolean(backHref) && active && link.href === backNavHref;
+  const moduleOn = link.enabled !== false;
+  const showBack = Boolean(backHref) && active && link.href === backNavHref && moduleOn;
   const backDisplayLabel = showBack
     ? navBackDisplayLabel(link.label, backHref!, backLabel)
     : link.label;
-  const title = showBack ? `Torna a ${backDisplayLabel}` : link.label;
+  const title = !moduleOn
+    ? `${link.label} — sezione non attiva per questa azienda`
+    : showBack
+      ? `Torna a ${backDisplayLabel}`
+      : link.label;
   const label = showBack ? backDisplayLabel : link.label;
   const showLabel = forceLabel || compact;
-  const itemClass = `flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
-    active
-      ? "bg-white font-semibold text-[#132033]"
-      : "text-white/75 hover:bg-white/10 hover:text-white"
-  }`;
+  const itemClass = moduleOn
+    ? `flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors sm:gap-1.5 sm:px-2.5 ${
+        active
+          ? "bg-white font-semibold text-[#132033]"
+          : "text-white/75 hover:bg-white/10 hover:text-white"
+      }`
+    : "flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-white/35 sm:gap-1.5 sm:px-2.5";
+
+  if (!moduleOn) {
+    return (
+      <span
+        className={itemClass}
+        title={title}
+        aria-disabled="true"
+        aria-label={title}
+      >
+        <NavAccentIcon icon={Icon} accent={undefined} onLight={false} />
+        {showLabel ? (
+          <span className="whitespace-nowrap">{label}</span>
+        ) : (
+          <span className="hidden whitespace-nowrap lg:inline">{label}</span>
+        )}
+        <NavCountBadge count={link.badgeCount ?? 0} />
+      </span>
+    );
+  }
 
   if (showBack) {
     return (
@@ -413,9 +484,13 @@ function NavItem({
   return (
     <Link
       href={link.href}
-      prefetch={false}
       className={itemClass}
       title={title}
+      aria-label={
+        (link.badgeCount ?? 0) > 0
+          ? `${link.label}, ${link.badgeCount} nuovi`
+          : undefined
+      }
     >
       <NavAccentIcon icon={Icon} accent={link.accent} onLight={active} />
       {showLabel ? (
@@ -423,6 +498,7 @@ function NavItem({
       ) : (
         <span className="hidden whitespace-nowrap lg:inline">{label}</span>
       )}
+      <NavCountBadge count={link.badgeCount ?? 0} onLight={active} />
     </Link>
   );
 }
@@ -442,7 +518,6 @@ function HeaderUserActions({
     <>
       <Link
         href="/account"
-        prefetch={false}
         className={`font-medium hover:text-white ${
           compact ? "max-w-[9rem] truncate" : "max-w-[14rem] truncate xl:max-w-none xl:whitespace-nowrap"
         }`}
@@ -559,12 +634,27 @@ function NavDropdownMenu({
           >
             {links.map((link) => {
               const ItemIcon = link.icon;
-              const itemActive = navActive(pathname, link.href);
+              const moduleOn = link.enabled !== false;
+              const itemActive = moduleOn && navActive(pathname, link.href);
+              if (!moduleOn) {
+                return (
+                  <span
+                    key={link.href}
+                    role="menuitem"
+                    aria-disabled="true"
+                    title={`${link.label} — sezione non attiva per questa azienda`}
+                    className="mx-1 flex cursor-not-allowed items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-400"
+                  >
+                    <NavAccentIcon icon={ItemIcon} accent={undefined} onLight />
+                    <span className="flex-1">{link.label}</span>
+                    <NavCountBadge count={link.badgeCount ?? 0} onLight />
+                  </span>
+                );
+              }
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  prefetch={false}
                   role="menuitem"
                   onClick={() => setOpen(false)}
                   className={`mx-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
@@ -574,7 +664,8 @@ function NavDropdownMenu({
                   }`}
                 >
                   <NavAccentIcon icon={ItemIcon} accent={link.accent} onLight />
-                  {link.label}
+                  <span className="flex-1">{link.label}</span>
+                  <NavCountBadge count={link.badgeCount ?? 0} onLight />
                 </Link>
               );
             })}
@@ -871,11 +962,19 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [embedded, setEmbedded] = useState(false);
+  const [liveModules, setLiveModules] = useState<string[] | null>(
+    platform?.enabledModules ? [...platform.enabledModules] : null
+  );
+  const modulesSnapshotRef = useRef<string>(
+    (platform?.enabledModules ?? []).slice().sort().join(",")
+  );
   const [praticheBackHref, setPraticheBackHref] = useState<string | null>(null);
   const [praticheBackLabel, setPraticheBackLabel] = useState<string | undefined>();
   const [affidiBackHref, setAffidiBackHref] = useState<string | null>(null);
   const [affidiBackLabel, setAffidiBackLabel] = useState<string | undefined>();
+  const [unreadAvvisi, setUnreadAvvisi] = useState(0);
 
   const onAffidiBackChange = useCallback((href: string | null, label?: string) => {
     setAffidiBackHref(href);
@@ -891,24 +990,134 @@ export function AppShell({
     setEmbedded(window.self !== window.top);
   }, []);
 
+  // Badge avvisi non letti (BO → gestionale). Solo admin. Apertura /avvisi azzera subito.
+  useEffect(() => {
+    if (user.role !== "ADMIN") {
+      setUnreadAvvisi(0);
+      return;
+    }
+    if (pathname === "/avvisi" || pathname?.startsWith("/avvisi/")) {
+      setUnreadAvvisi(0);
+    }
+  }, [pathname, user.role]);
+
+  useEffect(() => {
+    if (user.role !== "ADMIN") {
+      setUnreadAvvisi(0);
+      return;
+    }
+    let cancelled = false;
+    const syncAvvisi = async () => {
+      if (pathname === "/avvisi" || pathname?.startsWith("/avvisi/")) {
+        if (!cancelled) setUnreadAvvisi(0);
+        return;
+      }
+      try {
+        const res = await fetch("/api/avvisi/unread-count", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { count?: number };
+        const n = typeof data.count === "number" ? data.count : 0;
+        if (!cancelled) setUnreadAvvisi(Math.max(0, n));
+      } catch {
+        /* ignore rete */
+      }
+    };
+    void syncAvvisi();
+    const id = window.setInterval(syncAvvisi, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void syncAvvisi();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
+  }, [pathname, user.role]);
+
+  // Allinea menu ai moduli BO senza attendere SoftRefresh (3 min).
+  useEffect(() => {
+    if (platform?.enabledModules) {
+      const list = [...platform.enabledModules];
+      setLiveModules(list);
+      modulesSnapshotRef.current = list.slice().sort().join(",");
+    }
+  }, [platform?.enabledModules]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const res = await fetch("/api/me/modules", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { enabledModules?: string[] };
+        if (!Array.isArray(data.enabledModules)) return;
+        const next = data.enabledModules.map(String);
+        const key = next.slice().sort().join(",");
+        if (key === modulesSnapshotRef.current) return;
+        modulesSnapshotRef.current = key;
+        setLiveModules(next);
+        router.refresh();
+      } catch {
+        /* ignore rete */
+      }
+    };
+    void sync();
+    const id = window.setInterval(sync, 8_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
+  }, [router]);
+
   if (embedded) {
     return (
-      <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-[var(--bg)] px-[1cm] py-2">
+      <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-[var(--bg)] px-[1cm] pt-2 pb-[1cm]">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </main>
     );
   }
 
+  const enabledModules = liveModules ?? platform?.enabledModules;
+  const awaiting = isAwaitingSectionActivation(enabledModules);
+  const hasGestionaleBase = hasModule(enabledModules, "recovery");
+
+  const moduleEnabledFor = (l: NavLink): boolean => {
+    if (awaiting && l.href !== "/account") return false;
+    if (!hasModule(enabledModules, l.moduleId)) return false;
+    if (l.moduleId === "core" && l.href !== "/account" && !hasGestionaleBase) {
+      return false;
+    }
+    return true;
+  };
+
+  // Visibili in base a ruolo/visibilità; sezioni modulo off restano in menu ma disabilitate.
   const mainLinks = MAIN_LINKS.filter((l) => {
-    if (!hasModule(platform?.enabledModules, l.moduleId)) return false;
-    if (l.navPageId && navVisibility) return navVisibility[l.navPageId] !== false;
+    if (l.navPageId && navVisibility && navVisibility[l.navPageId] === false) {
+      return false;
+    }
     return l.show(user);
-  });
+  }).map((l) => ({
+    ...l,
+    enabled: moduleEnabledFor(l),
+    badgeCount: l.href === "/avvisi" ? unreadAvvisi : undefined,
+  }));
+
   const adminLinks = ADMIN_LINKS.filter((l) => {
-    if (!hasModule(platform?.enabledModules, l.moduleId)) return false;
-    if (l.navPageId && navVisibility) return navVisibility[l.navPageId] !== false;
+    if (l.navPageId && navVisibility && navVisibility[l.navPageId] === false) {
+      return false;
+    }
     return l.show(user);
-  });
+  }).map((l) => ({ ...l, enabled: moduleEnabledFor(l) }));
   const roleLabel = ROLE_LABELS[user.role] || user.role;
   const ruoloVisibile = !user.name.toLowerCase().includes(roleLabel.toLowerCase());
 
@@ -966,7 +1175,7 @@ export function AppShell({
         </p>
       ) : null}
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-[1cm] py-2 print:h-auto print:overflow-visible print:p-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-[1cm] pt-2 pb-[1cm] print:h-auto print:overflow-visible print:p-0">
         <div className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto print:h-auto print:overflow-visible">
           {children}
         </div>

@@ -24,6 +24,7 @@ export function LavorateDataPicker({
     }
     const sp = new URLSearchParams(window.location.search);
     sp.set("page", "1");
+    sp.set("cerca", "1");
     if (next) sp.set("lavorateData", next);
     else sp.delete("lavorateData");
     sp.delete("lavorateOggi");

@@ -91,6 +91,9 @@ export function IncassiTipologiaFiltri({
     router.push(buildHref("", "", ""));
   }
 
+  // Reset solo dopo una ricerca già applicata (filtri in URL), non sulla bozza del form.
+  const searchApplied = Boolean(mandanteId || perimetro || mese);
+
   return (
     <form
       onSubmit={applica}
@@ -146,7 +149,7 @@ export function IncassiTipologiaFiltri({
       <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
         Filtra
       </button>
-      {mandante || peri || meseSel ? (
+      {searchApplied ? (
         <button type="button" onClick={reset} className={FILTRI_RESET_BUTTON_CLASS}>
           Reset
         </button>

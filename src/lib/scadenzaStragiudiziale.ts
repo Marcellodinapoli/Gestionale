@@ -1,5 +1,6 @@
 import { addWorkingDays, startOfLocalDay } from "@/lib/workingDays";
 import { isStragiudizialePrevistoSulLotto } from "@/lib/conferimentoLegale";
+import { STATI_ATTIVITA_GIUDIZIALE } from "@/lib/giudiziale/avvioGiudiziale";
 
 /** Anticipo per avvio giudiziale (giorni lavorativi). */
 export const PREAVVISO_STRAGIUDIZIALE_GG_LAVORATIVI = 10;
@@ -74,6 +75,13 @@ export const STATI_GIUDIZIALE_ESCLUSI_PREAVVISO = [
   "CONCLUSA_CON_ESITO",
 ] as const;
 
+/** Fascicolo giudiziale già avviato → nascosto a operatore/supervisor. */
+export const STATI_GIUDIZIALE_NASCOSTI_A_OPERATORI = [
+  ...STATI_ATTIVITA_GIUDIZIALE,
+  "ARCHIVIATA_SENZA_AZIONE",
+  "CONCLUSA_CON_ESITO",
+] as const;
+
 /** Esclude lotti solo giudiziali dalla scadenza/preavviso stragiudiziale. */
 function whereStragiudizialePrevisto(): Record<string, unknown> {
   return {
@@ -135,4 +143,36 @@ export function wherePreavvisoStragiudiziale(
       whereScadenzaStragiudizialeRange({ lt: endExclusive }),
     ],
   };
+}
+
+/**
+ * Pratiche fuori dalla lavorazione stragiudiziale operativa
+ * (scadenza stragiudiziale già passata, oppure fascicolo giudiziale già avviato).
+ */
+export function wherePraticheFuoriStragiudizialeOperativo(
+  now = new Date()
+): Record<string, unknown> {
+  const today = startOfLocalDay(now);
+  return {
+    OR: [
+      whereScadenzaStragiudizialeRange({ lt: today }),
+      {
+        giudiziale: {
+          is: {
+            statoAvvio: { in: [...STATI_GIUDIZIALE_NASCOSTI_A_OPERATORI] },
+          },
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Scope aggiuntivo per OPERATOR / SUPERVISOR: nasconde pratiche scadute
+ * dallo stragiudiziale o già passate al giudiziale.
+ */
+export function whereVisibiliAdOperatoreSupervisor(
+  now = new Date()
+): Record<string, unknown> {
+  return { NOT: wherePraticheFuoriStragiudizialeOperativo(now) };
 }

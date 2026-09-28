@@ -19,3 +19,24 @@ if (process.env.NODE_ENV === "development") {
     }
   }) as typeof performance.measure;
 }
+
+import { setPendingNavigation } from "@/lib/performance/navTimingBridge";
+
+/**
+ * Inizio navigazione App Router (Link, router.push/replace, back/forward).
+ * Usato da PerfMonitor per calcolare PAGE.durationMs.
+ */
+export function onRouterTransitionStart(
+  url: string,
+  navigationType: "push" | "replace" | "traverse"
+) {
+  try {
+    setPendingNavigation({
+      t0: performance.now(),
+      url: String(url || ""),
+      navigationType: String(navigationType || ""),
+    });
+  } catch {
+    /* non bloccare la navigazione */
+  }
+}

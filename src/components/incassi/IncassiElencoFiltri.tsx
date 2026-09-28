@@ -15,7 +15,6 @@ import { incMeseSelectOptions } from "@/lib/incassiMeseFiltro";
 import { METODI_INCASSO } from "@/lib/metodoIncasso";
 import { MODI_INCASSO_PROVV } from "@/lib/incassoFattura";
 import {
-  hasIncassiElencoFiltri,
   type IncassiElencoFiltri,
 } from "@/lib/incassiElencoUi";
 import {
@@ -87,6 +86,7 @@ export function IncassiElencoFiltriBar({
   lottiPerMandato,
   mandantiPerimetri,
   meseParam,
+  searchActive = false,
 }: {
   filtri: IncassiElencoFiltri;
   operatori: Array<{ id: string; name: string }>;
@@ -95,6 +95,8 @@ export function IncassiElencoFiltriBar({
   lottiPerMandato: Record<string, string[]>;
   mandantiPerimetri: MandantePerimetriRef[];
   meseParam?: string;
+  /** True dopo Filtra/Applica: mostra «Annulla» anche senza altri campi valorizzati. */
+  searchActive?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mandato, setMandato] = useState(filtri.mandato || "");
@@ -109,12 +111,13 @@ export function IncassiElencoFiltriBar({
     () => lottoFiltroOptions(lotti, lottiPerMandato, mandato),
     [lotti, lottiPerMandato, mandato]
   );
-  const hasFilters = hasIncassiElencoFiltri(filtri);
+  const hasFilters = searchActive;
 
   return (
     <>
       <div className={FILTRI_BAR_CONTAINER_CLASS}>
         <form method="get" action="/incassi" className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="cerca" value="1" />
           <label className="block">
             <span className={labelClass}>Mandato</span>
             <select
@@ -195,6 +198,7 @@ export function IncassiElencoFiltriBar({
 
       <Modal open={open} title="Tutti i filtri · Incassi" onClose={() => setOpen(false)} wide>
         <form method="get" action="/incassi" className="space-y-3">
+          <input type="hidden" name="cerca" value="1" />
           <section className="space-y-2 rounded-lg border border-[var(--line)]/70 bg-[#f5efe6] p-3">
             <h3 className="text-sm font-bold text-[var(--navy)]">Filtri principali</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -375,12 +379,14 @@ export function IncassiElencoFiltriBar({
             >
               Chiudi
             </button>
-            <Link
-              href="/incassi"
-              className="inline-flex h-9 items-center rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
-            >
-              Azzera
-            </Link>
+            {hasFilters ? (
+              <Link
+                href="/incassi"
+                className="inline-flex h-9 items-center rounded-lg border border-[var(--danger)]/30 bg-[#fef2f2] px-4 text-sm text-[var(--danger)] hover:bg-[#fee2e2]"
+              >
+                Azzera
+              </Link>
+            ) : null}
             <button
               type="submit"
               className="h-9 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white hover:opacity-90"

@@ -30,52 +30,55 @@ export async function listImportBatchPratiche(
   const praticaModel = praticaDb({ ...dbCtx, role: "ADMIN", userId: "" });
   const batches = await repo.list(slug, tenantId, { tipo: "PRATICHE", take: 50 });
 
-  const items: ImportBatchListItem[] = [];
-  for (const b of batches) {
-    const pratiche = await praticaModel.findMany({
-      where: importBatchPraticheWhere(tenantId, {
-        mandanteId: b.mandanteId,
-        lotto: b.lotto,
-        affidoIl: new Date(b.affidoIl),
-      }),
-      select: { id: true, note: true, codiceScaricoAt: true },
-    });
-    const ids = pratiche.map((p) => p.id as string);
-    const nPratiche = ids.length;
-    if (nPratiche !== b.nPratiche) {
-      await repo.update(slug, tenantId, b.id, { nPratiche }).catch(() => undefined);
-    }
-    const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
-    const nCodice = pratiche.filter((p) =>
-      praticaHaCambioCodice(p.codiceScaricoAt)
-    ).length;
-    let nIncassi = 0;
-    if (ids.length) {
-      nIncassi = await incassoModel.count({
-        where: { praticaId: { in: ids } },
+  // Batch in parallelo (prima: N+1 sequenziale su Neon).
+  return Promise.all(
+    batches.map(async (b) => {
+      const pratiche = await praticaModel.findMany({
+        where: importBatchPraticheWhere(tenantId, {
+          mandanteId: b.mandanteId,
+          lotto: b.lotto,
+          affidoIl: new Date(b.affidoIl),
+        }),
+        select: { id: true, note: true, codiceScaricoAt: true },
       });
-    }
-    const blocchi = { note: nNote, codice: nCodice, incassi: nIncassi };
-    items.push({
-      id: b.id,
-      mandanteId: b.mandanteId,
-      mandanteCodice: b.mandanteCodice,
-      perimetro: b.perimetro,
-      lotto: b.lotto,
-      affidoIl: new Date(b.affidoIl).toISOString().slice(0, 10),
-      scadenzaMandato: b.scadenzaMandato ? b.scadenzaMandato.slice(0, 10) : null,
-      conferimentoTipo: b.conferimentoTipo ?? null,
-      fileName: b.fileName ?? null,
-      nPratiche,
-      createdAt: b.createdAt,
-      createdByName: b.createdByName ?? null,
-      hasMovimenti: nIncassi > 0,
-      hasNote: nNote > 0,
-      hasCambioCodice: nCodice > 0,
-      blocchi,
-    });
-  }
-  return items;
+      const ids = pratiche.map((p) => p.id as string);
+      const nPratiche = ids.length;
+      if (nPratiche !== b.nPratiche) {
+        // Non bloccare la lista: sync conteggio in background.
+        void repo.update(slug, tenantId, b.id, { nPratiche }).catch(() => undefined);
+      }
+      const nNote = pratiche.filter((p) => praticaHaNote(p.note)).length;
+      const nCodice = pratiche.filter((p) =>
+        praticaHaCambioCodice(p.codiceScaricoAt)
+      ).length;
+      const nIncassi = ids.length
+        ? await incassoModel.count({
+            where: { praticaId: { in: ids } },
+          })
+        : 0;
+      const blocchi = { note: nNote, codice: nCodice, incassi: nIncassi };
+      return {
+        id: b.id,
+        mandanteId: b.mandanteId,
+        mandanteCodice: b.mandanteCodice,
+        perimetro: b.perimetro,
+        lotto: b.lotto,
+        affidoIl: new Date(b.affidoIl).toISOString().slice(0, 10),
+        scadenzaMandato: b.scadenzaMandato
+          ? b.scadenzaMandato.slice(0, 10)
+          : null,
+        conferimentoTipo: b.conferimentoTipo ?? null,
+        fileName: b.fileName ?? null,
+        nPratiche,
+        createdAt: b.createdAt,
+        createdByName: b.createdByName ?? null,
+        hasMovimenti: nIncassi > 0,
+        hasNote: nNote > 0,
+        hasCambioCodice: nCodice > 0,
+        blocchi,
+      } satisfies ImportBatchListItem;
+    })
+  );
 }
 
 const ELIMINA_IMPORT_CHUNK = 5;

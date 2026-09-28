@@ -10,9 +10,16 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!auth.ok) return auth.response;
   const { id } = await ctx.params;
   try {
-    const body = (await req.json().catch(() => ({}))) as { reason?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      reason?: string;
+      suspendedAt?: string;
+    };
     const repo = getNeonPlatformTenantsRepository();
-    const updated = await repo.suspend(id, String(body.reason || ""));
+    const updated = await repo.suspend(
+      id,
+      String(body.reason || ""),
+      body.suspendedAt
+    );
     return platformJson(updated);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Errore sospensione";

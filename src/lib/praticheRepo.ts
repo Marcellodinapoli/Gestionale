@@ -173,8 +173,14 @@ function prismaIncludeToList(include: unknown): PraticaListRequest["include"] | 
   if (inc.fatture) out.push("fatture");
   if (inc.documenti) out.push("documenti");
   if (inc.importBatch) out.push("importBatch");
-  if (inc.debitore && typeof inc.debitore === "object" && (inc.debitore as { recapiti?: unknown }).recapiti) {
-    out.push("debitoreRecapiti");
+  if (inc.debitore) {
+    const deb = inc.debitore as {
+      recapiti?: unknown;
+      include?: { recapiti?: unknown };
+    };
+    if (deb.recapiti || deb.include?.recapiti) {
+      out.push("debitoreRecapiti");
+    }
   }
   if (
     inc.garanti &&
@@ -331,28 +337,60 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
     if (into === "in") {
       if (operatoreIds.size) merge("operatoreIdsIn", [...operatoreIds]);
       if (periKeys.size) merge("perimetroKeys", [...periKeys]);
-      // Debitore OR garante nello stesso OR → non AND-are i due filtri.
-      if (debitoreTerm && garanteTerm) {
-        filter.debitoreContains = debitoreTerm;
+      // Ricerca libera lista (`q`): stesso termine su tipi di campo diversi
+      // (nome/cognome + telefono + CF + note…). Non AND-are i pezzi altrimenti
+      // zero risultati (es. cognome "Ferrari" che deve anche matchare sul telefono).
+      const kindCount = [debitoreTerm, telefonoTerm, cfTerm, noteTerm].filter(Boolean)
+        .length;
+      const textTerms = [
+        debitoreTerm,
+        telefonoTerm,
+        cfTerm,
+        noteTerm,
+        garanteTerm,
+      ].filter((t): t is string => Boolean(t));
+      const uniqueTerms = new Set(textTerms);
+      if (uniqueTerms.size === 1 && kindCount >= 2) {
+        filter.q = [...uniqueTerms][0];
       } else {
-        if (debitoreTerm) filter.debitoreContains = debitoreTerm;
-        if (garanteTerm) filter.garanteContains = garanteTerm;
+        // Debitore OR garante nello stesso OR → non AND-are i due filtri.
+        if (debitoreTerm && garanteTerm) {
+          filter.debitoreContains = debitoreTerm;
+        } else {
+          if (debitoreTerm) filter.debitoreContains = debitoreTerm;
+          if (garanteTerm) filter.garanteContains = garanteTerm;
+        }
+        if (telefonoTerm) filter.telefonoContains = telefonoTerm;
+        if (cfTerm) filter.cfPivaContains = cfTerm;
+        if (noteTerm) filter.noteContains = noteTerm;
       }
-      if (telefonoTerm) filter.telefonoContains = telefonoTerm;
-      if (cfTerm) filter.cfPivaContains = cfTerm;
-      if (noteTerm) filter.noteContains = noteTerm;
     } else {
       if (operatoreIds.size) merge("operatoreIdsNotIn", [...operatoreIds]);
       if (periKeys.size) merge("perimetroKeysNot", [...periKeys]);
-      if (debitoreTerm && garanteTerm) {
-        filter.debitoreNotContains = debitoreTerm;
+      const kindCount = [debitoreTerm, telefonoTerm, cfTerm, noteTerm].filter(Boolean)
+        .length;
+      const textTerms = [
+        debitoreTerm,
+        telefonoTerm,
+        cfTerm,
+        noteTerm,
+        garanteTerm,
+      ].filter((t): t is string => Boolean(t));
+      const uniqueTerms = new Set(textTerms);
+      if (uniqueTerms.size === 1 && kindCount >= 2) {
+        // NOT (OR ampio) → escludi se il termine compare in anagrafica ampia
+        filter.debitoreNotContains = [...uniqueTerms][0];
       } else {
-        if (debitoreTerm) filter.debitoreNotContains = debitoreTerm;
-        if (garanteTerm) filter.garanteNotContains = garanteTerm;
+        if (debitoreTerm && garanteTerm) {
+          filter.debitoreNotContains = debitoreTerm;
+        } else {
+          if (debitoreTerm) filter.debitoreNotContains = debitoreTerm;
+          if (garanteTerm) filter.garanteNotContains = garanteTerm;
+        }
+        if (telefonoTerm) filter.telefonoNotContains = telefonoTerm;
+        if (cfTerm) filter.cfPivaNotContains = cfTerm;
+        if (noteTerm) filter.noteNotContains = noteTerm;
       }
-      if (telefonoTerm) filter.telefonoNotContains = telefonoTerm;
-      if (cfTerm) filter.cfPivaNotContains = cfTerm;
-      if (noteTerm) filter.noteNotContains = noteTerm;
     }
   };
 
@@ -494,12 +532,16 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
             if (Array.isArray(cf.in)) cf.in.forEach((v) => cfIn.add(String(v)));
           }
         }
-        // Cod. scarico: null OR in / eq
+        // Cod. scarico: null OR in / eq ("" = senza codice, come null)
         if (o.codiceScarico === null) filter.codScaricoIsNull = true;
         if (typeof o.codiceScarico === "string") {
-          filter.codScaricoIn = [
-            ...new Set([...(filter.codScaricoIn || []), o.codiceScarico]),
-          ];
+          if (!o.codiceScarico.trim()) {
+            filter.codScaricoIsNull = true;
+          } else {
+            filter.codScaricoIn = [
+              ...new Set([...(filter.codScaricoIn || []), o.codiceScarico]),
+            ];
+          }
         }
         if (o.codiceScarico && typeof o.codiceScarico === "object") {
           const c = o.codiceScarico as Record<string, unknown>;

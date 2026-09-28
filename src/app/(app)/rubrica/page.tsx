@@ -17,8 +17,11 @@ export default async function RubricaPage() {
     select: {
       id: true,
       name: true,
+      cognome: true,
       role: true,
       acronimo: true,
+      email: true,
+      interno: true,
       postazione: {
         select: {
           nome: true,
@@ -31,23 +34,27 @@ export default async function RubricaPage() {
     },
   });
 
-  const lista = utenti.map((u) => ({
-    id: u.id,
-    name: u.name,
-    role: u.role,
-    roleLabel: ROLE_LABELS[u.role as Role] || u.role,
-    acronimo: u.acronimo,
-    online: !!u.postazione,
-    postazione: u.postazione
+  const lista = utenti.map((u) => {
+    const postazione = u.postazione
       ? {
           nome: u.postazione.nome,
-          interno: u.postazione.interno,
-          email: u.postazione.email,
+          interno: u.postazione.interno || u.interno || null,
+          email: u.postazione.email || null,
           numeroFisso: u.postazione.numeroFisso,
           sede: u.postazione.sedeRef?.nome || null,
         }
-      : null,
-  }));
+      : null;
+    return {
+      id: u.id,
+      name: [u.name, u.cognome].filter(Boolean).join(" ").trim() || u.name,
+      role: u.role,
+      roleLabel: ROLE_LABELS[u.role as Role] || u.role,
+      acronimo: u.acronimo,
+      email: u.email || null,
+      online: Boolean(postazione),
+      postazione,
+    };
+  });
 
   return (
     <div className="space-y-4">
@@ -56,7 +63,7 @@ export default async function RubricaPage() {
         subtitle="Postazioni e contatti aggiornati in tempo reale"
       />
 
-      <RubricaGriglia utenti={lista} />
+      <RubricaGriglia utenti={lista} currentUserId={user.id} />
     </div>
   );
 }

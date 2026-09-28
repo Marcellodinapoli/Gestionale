@@ -29,7 +29,9 @@ export type NavPageId =
   | "sedi"
   | "postazioni"
   | "configurazione"
-  | "log";
+  | "log"
+  | "ticket"
+  | "avvisi";
 
 export type NavPageDef = {
   id: NavPageId;
@@ -50,6 +52,7 @@ export const NAV_PAGES: NavPageDef[] = [
   { id: "affidi", label: "Affidi", pathPrefix: "/affidi", group: "main", moduleId: "affidi" },
   { id: "agenda", label: "Agenda", pathPrefix: "/agenda", group: "main", moduleId: "core" },
   { id: "messaggi", label: "Messaggi", pathPrefix: "/messaggi", group: "main", moduleId: "core" },
+  { id: "avvisi", label: "Avvisi", pathPrefix: "/avvisi", group: "main", moduleId: "core" },
   { id: "statistiche", label: "Statistiche", pathPrefix: "/statistiche", group: "main", moduleId: "recovery" },
   { id: "provigioni", label: "Provvigioni", pathPrefix: "/provigioni", group: "main", moduleId: "recovery" },
   { id: "report", label: "Registrazioni", pathPrefix: "/report", group: "main", moduleId: "recovery" },
@@ -57,9 +60,9 @@ export const NAV_PAGES: NavPageDef[] = [
   { id: "lavorazione", label: "Lavorazione", pathPrefix: "/lavorazione", group: "main", moduleId: "lavorazione" },
   { id: "dialer", label: "Dialer", pathPrefix: "/predictive-dialer", group: "main", moduleId: "dialer" },
   { id: "account", label: "Account", pathPrefix: "/account", group: "main", moduleId: "core", locked: true },
-  { id: "creditcalc", label: "CreditCalc", pathPrefix: "/creditcalc", group: "main", moduleId: "core", locked: true },
+  { id: "creditcalc", label: "CreditCalc", pathPrefix: "/creditcalc", group: "main", moduleId: "creditcalc" },
   { id: "formazione", label: "Formazione", pathPrefix: "/formazione", group: "main", moduleId: "formazione" },
-  { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main", moduleId: "strumenti" },
+  { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main", moduleId: "formazione" },
   { id: "legal", label: "Legal", pathPrefix: "/legal", group: "main", moduleId: "legale" },
   { id: "recruiting", label: "Recruiting", pathPrefix: "/recruiting", group: "main", moduleId: "recruiting" },
   { id: "portafogli", label: "Portafogli", pathPrefix: "/portafogli", group: "main", moduleId: "utp-npl" },
@@ -71,6 +74,7 @@ export const NAV_PAGES: NavPageDef[] = [
   { id: "postazioni", label: "Postazioni", pathPrefix: "/postazioni", group: "admin", moduleId: "core" },
   { id: "configurazione", label: "Configurazione", pathPrefix: "/configurazione", group: "admin", moduleId: "core" },
   { id: "log", label: "Log audit", pathPrefix: "/log", group: "admin", moduleId: "core" },
+  { id: "ticket", label: "Ticket", pathPrefix: "/ticket", group: "admin", moduleId: "core" },
 ];
 
 export function moduleIdForNavPage(pageId: NavPageId): ModuleId {

@@ -136,7 +136,13 @@ export async function createOperatoreAction(formData: FormData) {
   }
 
   const consulenteEsterno = !formazioneOnly && role === "OPERATOR" && consulenteEsternoRaw;
-  const creditCalcEnabled = consulenteEsterno && creditCalcEnabledRaw;
+  const { getTenantPlatformConfig, tenantHasModule } = await import(
+    "@/lib/platform/tenantProfile"
+  );
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const creditCalcModuleOn = tenantHasModule(platform, "creditcalc");
+  const creditCalcEnabled =
+    consulenteEsterno && creditCalcEnabledRaw && creditCalcModuleOn;
 
   assertRuoloCreabile(user.role, role);
 
@@ -479,8 +485,14 @@ export async function updateOperatoreAction(formData: FormData) {
       String(formData.get("consulenteEsterno") || "") === "1" ||
       String(formData.get("consulenteEsterno") || "").toLowerCase() === "true" ||
       String(formData.get("consulenteEsterno") || "").toLowerCase() === "on";
+    const { getTenantPlatformConfig, tenantHasModule } = await import(
+      "@/lib/platform/tenantProfile"
+    );
+    const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+    const creditCalcModuleOn = tenantHasModule(platform, "creditcalc");
     const creditCalcEnabled =
       consulenteEsterno &&
+      creditCalcModuleOn &&
       (String(formData.get("creditCalcEnabled") || "") === "1" ||
         String(formData.get("creditCalcEnabled") || "").toLowerCase() === "true" ||
         String(formData.get("creditCalcEnabled") || "").toLowerCase() === "on");

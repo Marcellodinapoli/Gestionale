@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
 import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
 import { isManutenzione, hasTenantWidePraticheScope, type SessionUser } from "@/lib/permissions";
+import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
 
 export type GruppoPerimetroContext = {
   /** Operatore/supervisor in un gruppo con supervisor configurato. */
@@ -148,10 +149,20 @@ export async function praticaCercaScopeWhere(
   if (hasTenantWidePraticheScope(user.role)) {
     return tenantScope;
   }
+  const hideDopoStragiudiziale =
+    user.role === "OPERATOR" || user.role === "SUPERVISOR"
+      ? (whereVisibiliAdOperatoreSupervisor() as Prisma.PraticaWhereInput)
+      : null;
   const ctx = await resolveGruppoPerimetroContext(user);
   if (ctx.nelGruppo) {
     if (ctx.nessunPerimetroGruppo) return nessunDatoWhere();
-    return { AND: [tenantScope, ctx.periScope!] };
+    return {
+      AND: [
+        tenantScope,
+        ctx.periScope!,
+        ...(hideDopoStragiudiziale ? [hideDopoStragiudiziale] : []),
+      ],
+    };
   }
   // Fuori gruppo: almeno le pratiche già in portfolio (fallback).
   return praticaWhere(user);

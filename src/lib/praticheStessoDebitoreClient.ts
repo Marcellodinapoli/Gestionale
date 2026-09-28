@@ -31,7 +31,7 @@ export type PraticheStessoDebitoreClientPayload = {
   altreChiuse: PraticaCollegataVoceClient[];
 };
 
-const TTL_MS = 45_000;
+const TTL_MS = 90_000;
 const cache = new Map<
   string,
   { at: number; data: PraticheStessoDebitoreClientPayload }

@@ -36,9 +36,9 @@ export function provvigioniDb(ctx: ProvvigioniDbContext): typeof prisma.provvigi
         skip: args.skip ?? undefined,
         take: args.take ?? undefined,
         orderBy: { createdAt: "desc" },
-        includeOperatore: hasInclude(args.include, "operatore"),
-        includePraticaDebitore: hasPraticaDebitoreInclude(args.include),
-        includeIncasso: hasInclude(args.include, "incasso"),
+        includeOperatore: hasInclude(args.include, "operatore") || hasInclude(args.select, "operatore"),
+        includePraticaDebitore: hasPraticaDebitoreInclude(args.include) || hasInclude(args.select, "pratica"),
+        includeIncasso: hasInclude(args.include, "incasso") || hasInclude(args.select, "incasso"),
       });
       return result.items.map((row) => mapFindManyRow(row, args)) as never[];
     },
@@ -168,7 +168,19 @@ function prismaWhereToFilter(where: unknown, tenantId: string): ProvvigioneFilte
     if (node.createdAt && typeof node.createdAt === "object") {
       const d = node.createdAt as Record<string, unknown>;
       if (d.gte instanceof Date) filter.createdAtGte = d.gte.toISOString();
+      if (typeof d.gte === "string") filter.createdAtGte = d.gte;
       if (d.lte instanceof Date) filter.createdAtLte = d.lte.toISOString();
+      if (typeof d.lte === "string") filter.createdAtLte = d.lte;
+    }
+    if (node.incasso && typeof node.incasso === "object") {
+      const inc = node.incasso as Record<string, unknown>;
+      if (inc.data && typeof inc.data === "object") {
+        const d = inc.data as Record<string, unknown>;
+        if (d.gte instanceof Date) filter.incassoDataGte = d.gte.toISOString();
+        if (typeof d.gte === "string") filter.incassoDataGte = d.gte;
+        if (d.lte instanceof Date) filter.incassoDataLte = d.lte.toISOString();
+        if (typeof d.lte === "string") filter.incassoDataLte = d.lte;
+      }
     }
     if (node.operatore && typeof node.operatore === "object") {
       const op = node.operatore as Record<string, unknown>;

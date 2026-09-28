@@ -44,6 +44,12 @@ export function etichettaCodaAffidi(coda?: CodaAffidi) {
 
 export type AffidiSezione = "affida";
 
+export type AffidiAllertaNav =
+  | "nuove"
+  | "non_assegnate"
+  | "in_lavorazione"
+  | "in_scadenza";
+
 export type AffidiNavParams = {
   operatore?: string;
   coda?: CodaAffidi;
@@ -54,7 +60,13 @@ export type AffidiNavParams = {
   caricoMandato?: string;
   caricoPerimetro?: string;
   caricoMese?: string;
+  /** Dopo Filtra: mostra tabelle incassi/pratiche per operatore */
+  caricoCerca?: string;
+  /** Dopo Filtra (monitor): mostra elenco Affida / riaffida */
+  affidaCerca?: string;
   sezione?: AffidiSezione;
+  /** Card Allerte: filtra elenco Affida sulla stessa pagina */
+  allerta?: AffidiAllertaNav;
 };
 
 export function buildAffidiHref(params?: AffidiNavParams): string {
@@ -64,9 +76,12 @@ export function buildAffidiHref(params?: AffidiNavParams): string {
   if (params?.caricoMandato) sp.set("caricoMandato", params.caricoMandato);
   if (params?.caricoPerimetro) sp.set("caricoPerimetro", params.caricoPerimetro);
   if (params?.caricoMese) sp.set("caricoMese", params.caricoMese);
+  if (params?.caricoCerca) sp.set("caricoCerca", params.caricoCerca);
+  if (params?.affidaCerca) sp.set("affidaCerca", params.affidaCerca);
   if (params?.operatore) sp.set("operatore", params.operatore);
   if (params?.coda) sp.set("coda", params.coda);
   if (params?.sezione) sp.set("sezione", params.sezione);
+  if (params?.allerta) sp.set("allerta", params.allerta);
   const qs = sp.toString();
   return qs ? `/affidi?${qs}` : "/affidi";
 }
@@ -234,7 +249,14 @@ export function AffidiCaricoOperatori({
   coda?: CodaAffidi;
   nav?: Pick<
     AffidiNavParams,
-    "mandato" | "perimetro" | "caricoMandato" | "caricoPerimetro" | "caricoMese" | "operatore" | "coda"
+    | "mandato"
+    | "perimetro"
+    | "caricoMandato"
+    | "caricoPerimetro"
+    | "caricoMese"
+    | "caricoCerca"
+    | "operatore"
+    | "coda"
   >;
   meseLabel?: string;
   scarichiGruppo?: CodiciScaricoOperatore;

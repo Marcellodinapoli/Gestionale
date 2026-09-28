@@ -17,12 +17,14 @@ export function NuovoOperatoreButton({
   supervisori,
   roleDefaults,
   acronimiUsati,
+  creditCalcModuleOn = false,
 }: {
   creatorRole: Role;
   sedi: SedeOpt[];
   supervisori: SupervisorOpt[];
   roleDefaults: NavRoleDefaults;
   acronimiUsati: string[];
+  creditCalcModuleOn?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -52,6 +54,7 @@ export function NuovoOperatoreButton({
             supervisori={supervisori}
             roleDefaults={roleDefaults}
             acronimiUsati={acronimiUsati}
+            creditCalcModuleOn={creditCalcModuleOn}
             onSuccess={() => {
               setOpen(false);
               router.refresh();

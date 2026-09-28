@@ -3,6 +3,7 @@ import { can } from "@/lib/permissions";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { findTenantById } from "@/lib/data/operationalAccess";
 import { createLinkRequest } from "@/lib/creditcalc/store";
+import { assertTenantCreditCalcModule } from "@/lib/creditcalc/tenantAccess";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,14 @@ export async function POST(req: Request) {
           "L’operatore deve essere consulente esterno con CreditCalc abilitato",
       },
       { status: 403 }
+    );
+  }
+
+  const moduleOk = await assertTenantCreditCalcModule(user.tenantId);
+  if (!moduleOk.ok) {
+    return NextResponse.json(
+      { error: moduleOk.error },
+      { status: moduleOk.status }
     );
   }
 

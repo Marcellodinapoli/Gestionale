@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { requireApiUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import { praticaWhere } from "@/lib/domain";
+import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
 import { gruppoPerimetroScopeWhere } from "@/lib/codiciMandantePerimetro";
 import {
@@ -66,10 +67,12 @@ export async function POST(req: Request) {
     periScope = await gruppoPerimetroScopeWhere(user.tenantId, gruppoMandanti);
   }
 
-  const scopeParts: Prisma.PraticaWhereInput[] = [praticaWhere(user)];
+  const scopeParts: Prisma.PraticaWhereInput[] = [
+    praticaWhere(user),
+    whereVisibiliAdOperatoreSupervisor() as Prisma.PraticaWhereInput,
+  ];
   if (periScope) scopeParts.push(periScope);
-  const scope: Prisma.PraticaWhereInput =
-    scopeParts.length === 1 ? scopeParts[0]! : { AND: scopeParts };
+  const scope: Prisma.PraticaWhereInput = { AND: scopeParts };
 
   const operatoreId = user.role === "OPERATOR" ? user.id : undefined;
 

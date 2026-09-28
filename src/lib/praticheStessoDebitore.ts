@@ -1,8 +1,5 @@
 import { praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
-import {
-  normalizeCf,
-  praticaIdsCollegatePerCf,
-} from "@/lib/domain";
+import { normalizeCf, cfQueryVariants } from "@/lib/domain";
 import {
   isPraticaF9Collegata,
   isPraticaF10Collegata,
@@ -88,29 +85,29 @@ function toIsoDate(value: Date | string | null | undefined): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-function mapVoce(
-  p: {
-    id: string;
-    numero: string;
-    stato: string;
-    assegnatarioId?: string | null;
-    codiceScarico?: string | null;
-    codiceScaricoBk?: string | null;
-    residuo: number;
-    nettoDaPagare?: number | null;
-    rateArretrate?: number | null;
-    scadenza: Date | string | null;
-    updatedAt: Date | string;
-    debitore: { cognome: string; nome: string; codiceFiscale?: string | null };
-    mandante: {
-      codice: string;
-      ragioneSociale: string;
-      perimetri?: string | null;
-    };
-    importBatch?: { perimetro: string } | null;
-  },
-  cf: string | null
-): PraticaCollegataVoce {
+type PraticaCollegataRow = {
+  id: string;
+  numero: string;
+  stato: string;
+  assegnatarioId?: string | null;
+  codiceScarico?: string | null;
+  codiceScaricoBk?: string | null;
+  residuo: number;
+  nettoDaPagare?: number | null;
+  rateArretrate?: number | null;
+  scadenza: Date | string | null;
+  updatedAt: Date | string;
+  mandanteId?: string;
+  debitore: { cognome: string; nome: string; codiceFiscale?: string | null };
+  mandante: {
+    codice: string;
+    ragioneSociale: string;
+    perimetri?: string | null;
+  };
+  importBatch?: { perimetro: string } | null;
+};
+
+function mapVoce(p: PraticaCollegataRow, cf: string | null): PraticaCollegataVoce {
   const netto =
     p.nettoDaPagare != null && Number.isFinite(p.nettoDaPagare)
       ? p.nettoDaPagare
@@ -142,9 +139,31 @@ function mapVoce(
   };
 }
 
-const CACHE_NS = "praticheCollegateV6";
+/** Campi minimi per F9/F10 (niente include “true” su relazioni enormi). */
+const COLLEGATA_SELECT = {
+  id: true,
+  numero: true,
+  stato: true,
+  assegnatarioId: true,
+  codiceScarico: true,
+  codiceScaricoBk: true,
+  residuo: true,
+  nettoDaPagare: true,
+  rateArretrate: true,
+  scadenza: true,
+  updatedAt: true,
+  mandanteId: true,
+  debitore: { select: { cognome: true, nome: true, codiceFiscale: true } },
+  mandante: {
+    select: { codice: true, ragioneSociale: true, perimetri: true },
+  },
+  importBatch: { select: { perimetro: true } },
+} as const;
 
-/** Carica F9/F10 in un passaggio (niente doppio find della pratica corrente). */
+const CACHE_NS = "praticheCollegateV7";
+const CACHE_TTL_MS = 120_000;
+
+/** Carica F9/F10 in due round-trip (corrente + cluster CF), senza doppio findMany. */
 export async function loadPraticheStessoDebitorePayload(
   tenantId: string,
   praticaId: string,
@@ -164,51 +183,51 @@ export async function loadPraticheStessoDebitorePayload(
   );
   if (cached) return payloadForPratica(cached, praticaId);
 
-  const pratica = await praticaModel.findUnique({
+  const pratica = (await praticaModel.findUnique({
     where: { id: praticaId },
-    include: {
-      debitore: true,
-      mandante: true,
-      importBatch: { select: { perimetro: true } },
+    select: {
+      ...COLLEGATA_SELECT,
+      tenantId: true,
       garanti: { select: { codiceFiscale: true } },
     },
-  });
+  })) as
+    | (PraticaCollegataRow & {
+        tenantId: string;
+        garanti?: Array<{ codiceFiscale: string | null }>;
+      })
+    | null;
   if (!pratica || pratica.tenantId !== tenantId) return null;
 
   const cf = normalizeCf(pratica.debitore.codiceFiscale) || null;
+  const rawCfs = [
+    pratica.debitore.codiceFiscale,
+    ...(pratica.garanti ?? []).map((g) => g.codiceFiscale),
+  ];
+  const variants = cfQueryVariants(rawCfs);
 
-  const linkedIds = await praticaIdsCollegatePerCf(pratica.id, {
-    stessoMandante: false,
-    tenantId: pratica.tenantId,
-    tenantSlug: ctx.tenantSlug,
-    seed: {
-      id: pratica.id,
-      tenantId: pratica.tenantId,
-      mandanteId: pratica.mandanteId,
-      debitore: { codiceFiscale: pratica.debitore.codiceFiscale },
-      garanti: pratica.garanti,
-    },
-  });
-
-  const fetchIds = linkedIds.filter((id) => id !== pratica.id);
-  const rows = fetchIds.length
-    ? await praticaModel.findMany({
-        where: { id: { in: fetchIds } },
-        include: {
-          debitore: true,
-          mandante: true,
-          importBatch: { select: { perimetro: true } },
-        },
-        orderBy: { numero: "asc" },
-      })
-    : [];
+  let rows: PraticaCollegataRow[] = [];
+  if (variants.length) {
+    // Un solo findMany: id collegati + dati voce (prima: ids, poi di nuovo findMany).
+    rows = (await praticaModel.findMany({
+      where: {
+        tenantId: pratica.tenantId,
+        OR: [
+          { debitore: { codiceFiscale: { in: variants } } },
+          { garanti: { some: { codiceFiscale: { in: variants } } } },
+        ],
+      },
+      select: COLLEGATA_SELECT,
+      orderBy: { numero: "asc" },
+    })) as PraticaCollegataRow[];
+  }
 
   const correnteRef = {
     mandanteId: pratica.mandanteId,
     mandante: pratica.mandante.codice,
   };
 
-  const altreRows = rows.filter((p) =>
+  const altreSource = rows.filter((p) => p.id !== pratica.id);
+  const altreRows = altreSource.filter((p) =>
     isPraticaF9Collegata(
       {
         stato: p.stato,
@@ -221,7 +240,7 @@ export async function loadPraticheStessoDebitorePayload(
       correnteRef
     )
   );
-  const f10Rows = rows.filter((p) =>
+  const f10Rows = altreSource.filter((p) =>
     isPraticaF10Collegata(
       {
         stato: p.stato,
@@ -241,10 +260,9 @@ export async function loadPraticheStessoDebitorePayload(
     altreChiuse: f10Rows.map((p) => mapVoce(p, cf)),
   };
 
-  ttlSet(tenantId, CACHE_NS, payload, 60_000, praticaId);
-  // Stesso cluster: cache anche per gli altri id (click tra collegate).
+  ttlSet(tenantId, CACHE_NS, payload, CACHE_TTL_MS, praticaId);
   for (const v of [...payload.altre, ...payload.altreChiuse]) {
-    ttlSet(tenantId, CACHE_NS, payload, 60_000, v.id);
+    ttlSet(tenantId, CACHE_NS, payload, CACHE_TTL_MS, v.id);
   }
   return payload;
 }

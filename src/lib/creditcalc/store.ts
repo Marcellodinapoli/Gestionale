@@ -4,6 +4,7 @@ import {
   firebaseFieldValue,
   getFirebaseFirestore,
 } from "@/lib/firebase/admin";
+import { assertTenantCreditCalcModule } from "./tenantAccess";
 import {
   COL_CONNECTIONS,
   COL_LINK_REQUESTS,
@@ -96,6 +97,14 @@ export async function consumeLinkRequest(input: {
   | { ok: true; request: CreditCalcLinkRequest; connection: CreditCalcConnection }
   | { ok: false; error: string; status: number }
 > {
+  // Blocca pairing se il pacchetto CreditCalc è spento in BO (prima di consumare il QR).
+  const pending = await getLinkRequest(input.linkRequestId);
+  if (!pending) {
+    return { ok: false, error: "Richiesta non trovata", status: 404 };
+  }
+  const moduleOk = await assertTenantCreditCalcModule(pending.tenantId);
+  if (!moduleOk.ok) return moduleOk;
+
   const ref = db().collection(COL_LINK_REQUESTS).doc(input.linkRequestId);
 
   const consumed = await db().runTransaction(async (tx) => {
@@ -209,8 +218,9 @@ export async function getConnectionById(
 /**
  * Verifica ownership: Firebase UID → Connection attiva.
  * Ignora qualsiasi tenantId/gestionaleUserId inviato dal client.
+ * Non controlla il pacchetto BO (usare `requireOwnedActiveConnection` per le API).
  */
-export async function requireOwnedActiveConnection(
+async function requireOwnedConnectionOnly(
   creditCalcUserId: string,
   connectionId: string
 ): Promise<
@@ -227,6 +237,24 @@ export async function requireOwnedActiveConnection(
   return { ok: true, connection };
 }
 
+/**
+ * Ownership + pacchetto CreditCalc attivo sul tenant (BO).
+ * Collegamenti esistenti restano in Firestore ma le API app rispondono 403.
+ */
+export async function requireOwnedActiveConnection(
+  creditCalcUserId: string,
+  connectionId: string
+): Promise<
+  | { ok: true; connection: CreditCalcConnection }
+  | { ok: false; error: string; status: number }
+> {
+  const owned = await requireOwnedConnectionOnly(creditCalcUserId, connectionId);
+  if (!owned.ok) return owned;
+  const moduleOk = await assertTenantCreditCalcModule(owned.connection.tenantId);
+  if (!moduleOk.ok) return moduleOk;
+  return owned;
+}
+
 export async function revokeConnection(
   creditCalcUserId: string,
   connectionId: string
@@ -234,7 +262,8 @@ export async function revokeConnection(
   | { ok: true; connection: CreditCalcConnection }
   | { ok: false; error: string; status: number }
 > {
-  const owned = await requireOwnedActiveConnection(creditCalcUserId, connectionId);
+  // Revoca consentita anche con pacchetto BO spento (scollegamento).
+  const owned = await requireOwnedConnectionOnly(creditCalcUserId, connectionId);
   if (!owned.ok) return owned;
   const updated: CreditCalcConnection = {
     ...owned.connection,

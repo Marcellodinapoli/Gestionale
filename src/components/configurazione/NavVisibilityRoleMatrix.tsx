@@ -27,7 +27,7 @@ export function NavVisibilityRoleMatrix({
   const [pending, startTransition] = useTransition();
 
   const pages = useMemo(
-    () => NAV_PAGES.filter((p) => !p.locked),
+    () => NAV_PAGES.filter((p) => !p.locked && p.id !== "ticket"),
     []
   );
 

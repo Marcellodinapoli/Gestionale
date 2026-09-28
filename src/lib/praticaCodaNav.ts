@@ -57,7 +57,9 @@ export function codaNavSearchParams(nav: CodaNav) {
 
 export function buildPraticheListaHref(nav?: CodaNav) {
   if (!nav) return "/pratiche";
-  const q = codaNavSearchParams(nav).toString();
+  const sp = codaNavSearchParams(nav);
+  sp.set("cerca", "1");
+  const q = sp.toString();
   return q ? `/pratiche?${q}` : "/pratiche";
 }
 

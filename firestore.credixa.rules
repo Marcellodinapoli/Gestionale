@@ -46,5 +46,21 @@ service cloud.firestore {
       allow read: if sameCredixaTenant(tenantId);
       allow write: if false;
     }
+
+    // Ticket assistenza Credixa (gestionale Admin SDK + Back Office admin claim).
+    match /credixa_announcements/{id} {
+      allow read, write: if signedIn() && request.auth.token.admin == true;
+    }
+
+    match /credixa_announcement_reads/{id} {
+      allow read, write: if signedIn() && request.auth.token.admin == true;
+    }
+
+    match /credixa_support/{ticketId} {
+      allow read, write: if signedIn() && request.auth.token.admin == true;
+      match /messages/{messageId} {
+        allow read, write: if signedIn() && request.auth.token.admin == true;
+      }
+    }
   }
 }

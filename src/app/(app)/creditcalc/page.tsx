@@ -12,6 +12,10 @@ import {
 import { requireNavPage } from "@/lib/guard";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { can } from "@/lib/permissions";
+import {
+  getTenantPlatformConfig,
+  tenantHasModule,
+} from "@/lib/platform/tenantProfile";
 import { Card, PageHeader } from "@/components/ui";
 import { CollegaCreditCalcButton } from "@/components/creditcalc/CollegaCreditCalcButton";
 
@@ -50,13 +54,15 @@ const FUNZIONI = [
 
 export default async function CreditCalcPage() {
   const user = await requireNavPage("creditcalc");
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const creditCalcModuleOn = tenantHasModule(platform, "creditcalc");
   let creditCalcEnabled = false;
   try {
     const me = await usersDbFromUser(user).findUnique({
       where: { id: user.id },
       select: { creditCalcEnabled: true },
     });
-    creditCalcEnabled = Boolean(me?.creditCalcEnabled);
+    creditCalcEnabled = Boolean(me?.creditCalcEnabled) && creditCalcModuleOn;
   } catch {
     creditCalcEnabled = false;
   }

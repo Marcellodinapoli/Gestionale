@@ -14,7 +14,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="it" className={`${sans.variable} h-full antialiased`}>
+    <html
+      lang="it"
+      translate="no"
+      className={`notranslate ${sans.variable} h-full antialiased`}
+    >
+      <head>
+        <meta name="google" content="notranslate" />
+      </head>
       <body className="h-full overflow-hidden">{children}</body>
     </html>
   );

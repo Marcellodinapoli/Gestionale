@@ -12,6 +12,7 @@ import {
   chiudiOffertaLavoroAction,
   creaOffertaLavoroAction,
   markCandidaturaVistaAction,
+  ripubblicaOffertaLavoroAction,
   syncIndeedApplicationsAction,
 } from "@/actions/recruiting";
 import {
@@ -60,6 +61,23 @@ type OffertaRow = {
   retribuzione: string;
   benefit: string;
   stato: StatoOffertaLavoro;
+  indeedJobId?: string | null;
+  /** Snapshot CreditCore (status + online + chi ha agito). */
+  creditCore?: {
+    status: string;
+    online: boolean;
+    statusSource: string;
+    statusActor: string | null;
+    statusChangedAt: string | null;
+  } | null;
+  /** Link pubblico CreditCore (`?job=`). */
+  creditCorePublicUrl?: string | null;
+  /** Link Indeed se template configurato; altrimenti null. */
+  indeedPublicUrl?: string | null;
+  /** True se NEXT_PUBLIC_INDEED_JOB_URL_TEMPLATE è impostato. */
+  indeedPublicReady?: boolean;
+  /** @deprecated preferire creditCore.status */
+  creditCoreStatus?: string | null;
   updatedAt: string;
   candidatureCount: number;
 };
@@ -94,6 +112,195 @@ const STATO_COLORS: Record<StatoOffertaLavoro, string> = {
   PUBBLICATA: "bg-emerald-100 text-emerald-800",
   CHIUSA: "bg-stone-200 text-stone-700",
 };
+
+const CREDIT_CORE_STATUS_UI: Record<
+  string,
+  { label: string; className: string }
+> = {
+  pending: {
+    label: "In attesa BO",
+    className: "bg-amber-100 text-amber-900",
+  },
+  approved: {
+    label: "Online",
+    className: "bg-emerald-100 text-emerald-800",
+  },
+  rejected: {
+    label: "Rifiutata",
+    className: "bg-red-100 text-red-800",
+  },
+  blocked: {
+    label: "Bloccata",
+    className: "bg-stone-200 text-stone-800",
+  },
+  unknown: {
+    label: "Non sincronizzata",
+    className: "bg-slate-100 text-slate-600",
+  },
+};
+
+function creditCoreOf(o: OffertaRow) {
+  if (o.creditCore) return o.creditCore;
+  const st = String(o.creditCoreStatus || "").toLowerCase();
+  if (!st) return null;
+  return {
+    status: st,
+    online: st === "approved",
+    statusSource: "unknown",
+    statusActor: null as string | null,
+    statusChangedAt: null as string | null,
+  };
+}
+
+function labelProvenienza(
+  source: string,
+  actor: string | null,
+  status: string
+): string {
+  if (source === "creditcore_bo") {
+    return actor ? `BO CreditCore · ${actor}` : "BO CreditCore";
+  }
+  if (source === "gestionale") {
+    return actor ? `Gestionale · ${actor}` : "Gestionale";
+  }
+  // Dati storici: blocco/rifiuto esistono solo dal BO CreditCore.
+  if (status === "blocked" || status === "rejected") {
+    return "BO CreditCore (prima della traccia)";
+  }
+  return "Origine non registrata";
+}
+
+function PlatformStatusCell({ o }: { o: OffertaRow }) {
+  const cc = creditCoreOf(o);
+  const ccStatus = String(cc?.status || "unknown").toLowerCase();
+  const ccUi =
+    o.stato === "PUBBLICATA"
+      ? CREDIT_CORE_STATUS_UI[ccStatus] || CREDIT_CORE_STATUS_UI.pending!
+      : null;
+  const indeedLinked = Boolean(String(o.indeedJobId || "").trim());
+  const ccLive =
+    o.stato === "PUBBLICATA" && cc?.online === true && ccStatus === "approved";
+  const ccUrl = String(o.creditCorePublicUrl || "").trim() || null;
+  const indeedUrl = String(o.indeedPublicUrl || "").trim() || null;
+  const pubWhere: string[] = [];
+  if (ccLive) pubWhere.push("CreditCore");
+  if (o.stato === "PUBBLICATA" && indeedLinked) {
+    pubWhere.push("Indeed (job ID)");
+  }
+
+  const provenienza =
+    cc &&
+    (ccStatus === "blocked" ||
+      ccStatus === "rejected" ||
+      ccStatus === "approved" ||
+      ccStatus === "pending")
+      ? labelProvenienza(cc.statusSource, cc.statusActor, ccStatus)
+      : null;
+
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
+        Piattaforme
+      </p>
+      <div className="flex flex-wrap items-center gap-1">
+        <span
+          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATO_COLORS[o.stato]}`}
+          title="Stato in gestionale"
+        >
+          {STATO_OFFERTA_LAVORO_LABELS[o.stato]}
+        </span>
+      </div>
+      <div className="space-y-0.5 text-[11px] leading-snug">
+        <p className="flex flex-wrap items-center gap-1">
+          <span className="font-semibold text-[var(--navy)]">CreditCore</span>
+          {": "}
+          {o.stato === "CHIUSA" || o.stato === "BOZZA" ? (
+            <span className="text-[var(--muted)]">offline</span>
+          ) : ccUi ? (
+            <span
+              className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold ${ccUi.className}`}
+              title={
+                [
+                  provenienza || undefined,
+                  cc?.statusChangedAt
+                    ? `Aggiornato ${new Date(cc.statusChangedAt).toLocaleString("it-IT")}`
+                    : undefined,
+                  cc?.online ? "visibile online" : "non online",
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || undefined
+              }
+            >
+              {ccUi.label}
+              {ccLive ? " · live" : null}
+            </span>
+          ) : (
+            <span className="text-[var(--muted)]">—</span>
+          )}
+          {ccLive && ccUrl ? (
+            <a
+              href={ccUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-semibold text-[var(--accent)] underline"
+              onClick={(e) => e.stopPropagation()}
+              title={ccUrl}
+            >
+              Apri
+            </a>
+          ) : null}
+        </p>
+        {(ccStatus === "blocked" || ccStatus === "rejected") && provenienza ? (
+          <p className="text-[10px] text-stone-600" title={provenienza}>
+            Azione: {provenienza}
+          </p>
+        ) : null}
+        <p className="flex flex-wrap items-center gap-1">
+          <span className="font-semibold text-[var(--navy)]">Indeed</span>
+          {": "}
+          {o.stato === "CHIUSA" ? (
+            <span className="text-[var(--muted)]">chiusa</span>
+          ) : indeedLinked ? (
+            <span
+              className="inline-flex rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-900"
+              title={`indeedJobId: ${o.indeedJobId}`}
+            >
+              collegata
+            </span>
+          ) : (
+            <span className="text-[var(--muted)]">non collegata</span>
+          )}
+          {indeedUrl ? (
+            <a
+              href={indeedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-semibold text-[var(--accent)] underline"
+              onClick={(e) => e.stopPropagation()}
+              title={indeedUrl}
+            >
+              Apri
+            </a>
+          ) : o.indeedPublicReady === false || o.indeedPublicReady == null ? (
+            <span
+              className="text-[10px] text-[var(--muted)]"
+              title="Link Indeed predisposto: imposta NEXT_PUBLIC_INDEED_JOB_URL_TEMPLATE quando attivo"
+            >
+              (link non attivo)
+            </span>
+          ) : null}
+        </p>
+        {pubWhere.length > 0 ? (
+          <p className="text-[10px] text-emerald-800">
+            Pubblicata: {pubWhere.join(" · ")}
+          </p>
+        ) : o.stato === "PUBBLICATA" ? (
+          <p className="text-[10px] text-amber-800">Non ancora live sulle piattaforme</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 const STATO_CAND_COLORS: Record<StatoCandidatura, string> = {
   RICEVUTA: "bg-slate-100 text-slate-700",
@@ -317,7 +524,7 @@ export function OfferteLavoroClient({
       />
       <PageHeader
         title="Recruiting"
-        subtitle="Offerte di lavoro, candidature e colloqui ricevuti."
+        subtitle="CreditCore (approvazione BO) · Indeed (candidature via ricevitore)."
       />
 
       {canManage ? (
@@ -389,8 +596,8 @@ export function OfferteLavoroClient({
                 <div
                   className={
                     canManage
-                      ? "grid cursor-pointer grid-cols-[minmax(12rem,1.4fr)_6.5rem_7.5rem_6.5rem_minmax(14rem,1.6fr)_6.5rem_10.5rem_2rem] items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10 max-xl:grid-cols-[minmax(10rem,1fr)_6rem_7rem_6rem_minmax(12rem,1.4fr)_6rem_10.5rem_2rem] max-lg:flex max-lg:flex-wrap"
-                      : "grid cursor-pointer grid-cols-[minmax(12rem,1.4fr)_6.5rem_7.5rem_6.5rem_minmax(14rem,1.6fr)_6.5rem_2rem] items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10 max-xl:grid-cols-[minmax(10rem,1fr)_6rem_7rem_6rem_minmax(12rem,1.4fr)_6rem_2rem] max-lg:flex max-lg:flex-wrap"
+                      ? "grid cursor-pointer grid-cols-[minmax(12rem,1.4fr)_6.5rem_7.5rem_minmax(11rem,13rem)_minmax(14rem,1.6fr)_6.5rem_10.5rem_2rem] items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10 max-xl:grid-cols-[minmax(10rem,1fr)_6rem_7rem_minmax(10rem,12rem)_minmax(12rem,1.4fr)_6rem_10.5rem_2rem] max-lg:flex max-lg:flex-wrap"
+                      : "grid cursor-pointer grid-cols-[minmax(12rem,1.4fr)_6.5rem_7.5rem_minmax(11rem,13rem)_minmax(14rem,1.6fr)_6.5rem_2rem] items-center gap-x-4 gap-y-2 border-l-4 border-[var(--navy)] bg-[var(--navy)]/5 px-4 py-3 hover:bg-[var(--navy)]/10 max-xl:grid-cols-[minmax(10rem,1fr)_6rem_7rem_minmax(10rem,12rem)_minmax(12rem,1.4fr)_6rem_2rem] max-lg:flex max-lg:flex-wrap"
                   }
                   onClick={() => {
                     router.push(`/recruiting/offerte/${o.id}`);
@@ -423,16 +630,7 @@ export function OfferteLavoroClient({
                       {MODALITA_LAVORO_LABELS[o.modalitaLavoro]}
                     </p>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-                      Stato
-                    </p>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${STATO_COLORS[o.stato]}`}
-                    >
-                      {STATO_OFFERTA_LAVORO_LABELS[o.stato]}
-                    </span>
-                  </div>
+                  <PlatformStatusCell o={o} />
                   <div className="min-w-0 text-sm">
                     <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
                       Candidature
@@ -511,13 +709,9 @@ export function OfferteLavoroClient({
                           startTransition(async () => {
                             try {
                               const res = await syncIndeedApplicationsAction(o.id);
-                              if (res.received === 0) {
+                              if (res.errors > 0) {
                                 setError(
-                                  "Nessuna candidatura Indeed sul ricevitore per questa offerta."
-                                );
-                              } else if (res.errors > 0) {
-                                setError(
-                                  `Sync: ${res.created} nuove, ${res.updated} aggiornate, ${res.errors} errori.`
+                                  `Sincronizzato: ${res.created} nuove candidature, ${res.updated} aggiornate, ${res.errors} errori Indeed.`
                                 );
                               } else {
                                 setError(null);
@@ -532,7 +726,8 @@ export function OfferteLavoroClient({
                             }
                           });
                         }}
-                        className="text-xs font-semibold text-[var(--navy)] underline"
+                        className="whitespace-nowrap text-xs font-semibold text-[var(--navy)] underline"
+                        title="Ripubblica l'offerta su CreditCore e aggiorna le candidature Indeed"
                       >
                         Sincronizza
                       </button>
@@ -543,11 +738,32 @@ export function OfferteLavoroClient({
                           setError(null);
                           setEdit(o);
                         }}
-                        className="text-xs font-semibold text-[var(--accent)] underline"
+                        className="whitespace-nowrap text-xs font-semibold text-[var(--accent)] underline"
                       >
                         Modifica
                       </button>
-                      {o.stato !== "CHIUSA" ? (
+                      {o.stato === "CHIUSA" ? (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => {
+                            setError(null);
+                            if (
+                              !window.confirm(
+                                "Riaprire questa offerta? Tornerà pubblicata e in «In attesa» sul BO CreditCore. Poi usa Sincronizza per aggiornare le piattaforme."
+                              )
+                            ) {
+                              return;
+                            }
+                            const fd = new FormData();
+                            fd.set("id", o.id);
+                            run(() => ripubblicaOffertaLavoroAction(fd));
+                          }}
+                          className="whitespace-nowrap text-xs font-semibold text-emerald-700 underline"
+                        >
+                          Riapri offerta
+                        </button>
+                      ) : (
                         <button
                           type="button"
                           disabled={pending}
@@ -555,17 +771,10 @@ export function OfferteLavoroClient({
                             setError(null);
                             setChiudi(o);
                           }}
-                          className="text-xs font-semibold text-rose-700 underline"
+                          className="whitespace-nowrap text-xs font-semibold text-rose-700 underline"
                         >
                           Chiudi offerta
                         </button>
-                      ) : (
-                        <span
-                          className="invisible pointer-events-none text-xs font-semibold"
-                          aria-hidden
-                        >
-                          Chiudi offerta
-                        </span>
                       )}
                     </div>
                   ) : null}
@@ -738,8 +947,9 @@ export function OfferteLavoroClient({
             <input type="hidden" name="id" value={edit.id} />
             <OffertaFields
               offerta={edit}
-              allowBozza={edit.stato !== "PUBBLICATA" && edit.stato !== "CHIUSA"}
-              lockedChiusa={edit.stato === "CHIUSA"}
+              allowBozza={edit.stato !== "PUBBLICATA"}
+              lockedChiusa={false}
+              ripubblicaDaChiusa={edit.stato === "CHIUSA"}
             />
             <div className="flex justify-end gap-2 pt-1">
               <button
@@ -806,19 +1016,31 @@ function OffertaFields({
   offerta,
   allowBozza = true,
   lockedChiusa = false,
+  ripubblicaDaChiusa = false,
 }: {
   offerta?: OffertaRow | null;
   allowBozza?: boolean;
   lockedChiusa?: boolean;
+  /** Offerta CHIUSA in modifica: consente di scegliere Pubblicata / Bozza. */
+  ripubblicaDaChiusa?: boolean;
 }) {
-  const defaultStato = offerta?.stato === "PUBBLICATA" ? "PUBBLICATA" : "BOZZA";
+  const defaultStato =
+    offerta?.stato === "PUBBLICATA" || ripubblicaDaChiusa
+      ? "PUBBLICATA"
+      : "BOZZA";
   return (
     <>
       {lockedChiusa ? <input type="hidden" name="stato" value="CHIUSA" /> : null}
       <p className="text-xs text-[var(--muted)]">
         Campi allineati alla scheda offerta Indeed (titolo, sede, modalità, contratto,
-        descrizione, retribuzione, benefit). Le offerte Pubblicate sono sincronizzate su CreditCore (catalogo candidati).
+        descrizione, retribuzione, benefit). Le offerte Pubblicate restano in attesa di conferma
+        nel Back Office Credixa prima di andare online su CreditCore.
       </p>
+      {ripubblicaDaChiusa ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          Offerta chiusa: puoi ripubblicarla scegliendo «Pubblicata» (o salvarla come Bozza).
+        </p>
+      ) : null}
 
       <fieldset className="grid gap-3">
         <legend className="text-[11px] font-bold uppercase tracking-wide text-[var(--navy)]">
@@ -998,8 +1220,15 @@ function OffertaFields({
         ) : (
           <label>
             <span className={labelCls}>Stato</span>
-            <select name="stato" defaultValue={defaultStato} className={inputCls}>
-              {allowBozza ? <option value="BOZZA">Bozza</option> : null}
+            <select
+              name="stato"
+              key={`stato-${offerta?.id || "new"}-${defaultStato}`}
+              defaultValue={defaultStato}
+              className={inputCls}
+            >
+              {allowBozza || ripubblicaDaChiusa ? (
+                <option value="BOZZA">Bozza</option>
+              ) : null}
               <option value="PUBBLICATA">Pubblicata</option>
             </select>
           </label>

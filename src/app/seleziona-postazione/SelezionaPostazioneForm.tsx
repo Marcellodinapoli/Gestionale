@@ -11,7 +11,10 @@ type PostazioneItem = {
   email: string | null;
   numeroFisso: string | null;
   sede: string | null;
+  /** Occupata da un altro operatore (non selezionabile). */
   occupante: string | null;
+  /** Occupata solo dall’utente corrente → selezionabile, badge “Tu”. */
+  tua?: boolean;
 };
 
 export function SelezionaPostazioneForm({
@@ -21,7 +24,7 @@ export function SelezionaPostazioneForm({
   postazioni: PostazioneItem[];
   showPostazioneFissa?: boolean;
 }) {
-  const libere = postazioni.filter((p) => !p.occupante);
+  const selezionabili = postazioni.filter((p) => !p.occupante || p.tua);
   const [selected, setSelected] = useState<string | null>(null);
   const [postazioneFissa, setPostazioneFissa] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,7 +33,7 @@ export function SelezionaPostazioneForm({
   async function handleSubmit() {
     if (!selected) return;
     const scelta = postazioni.find((p) => p.id === selected);
-    if (!scelta || scelta.occupante) {
+    if (!scelta || (scelta.occupante && !scelta.tua)) {
       setError("Questa postazione è già occupata");
       setSelected(null);
       return;
@@ -53,47 +56,56 @@ export function SelezionaPostazioneForm({
     <div>
       <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
         {postazioni.map((p) => {
-          const occupata = Boolean(p.occupante);
-          const isSelected = selected === p.id && !occupata;
+          const bloccata = Boolean(p.occupante) && !p.tua;
+          const isSelected = selected === p.id && !bloccata;
           return (
             <button
               key={p.id}
               type="button"
-              disabled={occupata || loading}
+              disabled={bloccata || loading}
               onClick={() => {
-                if (occupata) return;
+                if (bloccata) return;
                 setSelected(p.id);
                 setError(null);
               }}
-              aria-disabled={occupata}
+              aria-disabled={bloccata}
               className={`w-full rounded-xl border p-3 text-left transition-colors ${
-                occupata
+                bloccata
                   ? "cursor-not-allowed border-[var(--line)] bg-[#f1f5f9] opacity-70"
                   : isSelected
                     ? "border-[var(--accent)]/50 bg-[var(--accent)]/[0.06] shadow-[inset_3px_0_0_0_var(--accent)]"
-                    : "border-[var(--line)] bg-white hover:border-[#c5d0db] hover:bg-[#f8fafc]"
+                    : p.tua
+                      ? "border-emerald-200 bg-emerald-50/60 hover:border-emerald-300"
+                      : "border-[var(--line)] bg-white hover:border-[#c5d0db] hover:bg-[#f8fafc]"
               }`}
             >
               <div className="flex items-center gap-3">
                 <Monitor
                   className={`h-5 w-5 shrink-0 ${
-                    occupata
+                    bloccata
                       ? "text-slate-400"
                       : isSelected
                         ? "text-[var(--accent)]"
-                        : "text-[var(--muted)]"
+                        : p.tua
+                          ? "text-emerald-600"
+                          : "text-[var(--muted)]"
                   }`}
                 />
                 <div className="min-w-0 flex-1">
                   <p
                     className={`text-sm font-semibold ${
-                      occupata ? "text-slate-500" : "text-[var(--navy)]"
+                      bloccata ? "text-slate-500" : "text-[var(--navy)]"
                     }`}
                   >
                     {p.nome}
-                    {occupata ? (
+                    {bloccata ? (
                       <span className="ml-2 text-[10px] font-semibold uppercase text-slate-400">
                         Occupata
+                      </span>
+                    ) : null}
+                    {p.tua ? (
+                      <span className="ml-2 text-[10px] font-semibold uppercase text-emerald-700">
+                        Tua
                       </span>
                     ) : null}
                   </p>
@@ -120,7 +132,11 @@ export function SelezionaPostazioneForm({
                     ) : null}
                   </div>
                 </div>
-                {p.occupante ? (
+                {p.tua ? (
+                  <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-semibold text-emerald-800">
+                    <User className="h-2.5 w-2.5" /> Tu
+                  </span>
+                ) : p.occupante ? (
                   <span className="flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-semibold text-slate-600">
                     <User className="h-2.5 w-2.5" /> {p.occupante}
                   </span>
@@ -131,7 +147,7 @@ export function SelezionaPostazioneForm({
         })}
       </div>
 
-      {!libere.length ? (
+      {!selezionabili.length ? (
         <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Tutte le postazioni sono occupate. Attendi che qualcuno esca oppure
           chiedi all&apos;amministratore.
@@ -163,7 +179,7 @@ export function SelezionaPostazioneForm({
 
       <button
         onClick={handleSubmit}
-        disabled={!selected || loading || !libere.length}
+        disabled={!selected || loading || !selezionabili.length}
         className="mt-5 h-10 w-full rounded-lg bg-[var(--navy)] text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         {loading ? "Caricamento..." : "Conferma postazione"}

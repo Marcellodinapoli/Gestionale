@@ -68,6 +68,7 @@ export function AccountPostazioneForm({
                 {p.nome}
                 {p.sede ? ` · ${p.sede}` : ""}
                 {p.interno ? ` · int. ${p.interno}` : ""}
+                {corrente ? " · Tu" : ""}
                 {occupata && !corrente ? ` (occupata da ${p.occupante})` : ""}
               </option>
             );

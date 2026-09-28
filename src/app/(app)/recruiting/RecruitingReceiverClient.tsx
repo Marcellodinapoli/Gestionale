@@ -61,11 +61,12 @@ export function RecruitingReceiverClient({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-            Configurazione ricevitore
+            Ricevitore Indeed (candidature)
           </h2>
           <p className="mt-0.5 text-xs text-[var(--muted)]">
-            URL HTTPS del ricevitore dell’azienda (tenant). Indeed arriva tramite
-            questo bridge — un ricevitore/config per ogni azienda.
+            Bridge HTTPS solo per candidature Indeed. Le offerte su CreditCore
+            (approvazione BO) usano un canale diverso e non dipendono da questo
+            ricevitore.
           </p>
         </div>
         <span
@@ -137,7 +138,7 @@ export function RecruitingReceiverClient({
 
       <Modal
         open={open}
-        title="Ricevitore aziendale"
+        title="Ricevitore Indeed"
         onClose={() => !pending && setOpen(false)}
       >
         <form
@@ -149,6 +150,10 @@ export function RecruitingReceiverClient({
             )
           }
         >
+          <p className="rounded-lg border border-[var(--line)] bg-slate-50 px-3 py-2 text-xs text-[var(--muted)]">
+            Solo sync candidature Indeed. Non serve per pubblicare/approvare
+            offerte su CreditCore.
+          </p>
           <label>
             <span className={labelCls}>URL HTTPS *</span>
             <input

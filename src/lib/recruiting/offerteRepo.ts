@@ -183,9 +183,7 @@ export async function updateOffertaLavoro(
   const oid = offertaIdOrThrow(id);
   const current = await getOffertaLavoro(tid, oid);
   if (!current) throw new Error("Offerta non trovata");
-  // Contenuti sempre modificabili; offerta chiusa resta chiusa.
-  const nextStato =
-    current.stato === "CHIUSA" ? "CHIUSA" : input.stato || current.stato;
+  const nextStato = input.stato || current.stato;
   assertTransizioneOfferta(current.stato, nextStato);
   if (!recruitingUsesSql()) {
     const result = await prisma.offertaLavoro.updateMany({
@@ -319,6 +317,47 @@ export async function chiudiOffertaLavoro(
       .query(`
         UPDATE dbo.OfferteLavoro SET Stato = N'CHIUSA', UpdatedAt = SYSUTCDATETIME()
         WHERE Id = @id AND TenantId = @tenantId AND Stato <> N'CHIUSA'
+      `);
+    if (result.rowsAffected[0] !== 1) throw new Error("Offerta non trovata");
+  }
+  const updated = await getOffertaLavoro(tid, oid);
+  if (!updated) throw new Error("Offerta non trovata");
+  return updated;
+}
+
+/** Riapre un'offerta chiusa impostandola a PUBBLICATA (poi sync CreditCore). */
+export async function ripubblicaOffertaLavoro(
+  tenantId: string,
+  id: string
+): Promise<OffertaLavoroRecord> {
+  const tid = tenantIdOrThrow(tenantId);
+  const oid = offertaIdOrThrow(id);
+  const current = await getOffertaLavoro(tid, oid);
+  if (!current) throw new Error("Offerta non trovata");
+  if (current.stato !== "CHIUSA") {
+    throw new Error("Solo un'offerta chiusa si può ripubblicare");
+  }
+  assertTransizioneOfferta(current.stato, "PUBBLICATA");
+  if (current.descrizione.trim().length < 30) {
+    throw new Error(
+      "Per ripubblicare serve una descrizione più lunga: modifica l'offerta e riprova"
+    );
+  }
+  if (!recruitingUsesSql()) {
+    const result = await prisma.offertaLavoro.updateMany({
+      where: { id: oid, tenantId: tid, stato: "CHIUSA" },
+      data: { stato: "PUBBLICATA" },
+    });
+    if (result.count !== 1) throw new Error("Offerta non trovata");
+  } else {
+    const pool = await recruitingPool();
+    const result = await pool
+      .request()
+      .input("id", sql.NVarChar(64), oid)
+      .input("tenantId", sql.NVarChar(64), tid)
+      .query(`
+        UPDATE dbo.OfferteLavoro SET Stato = N'PUBBLICATA', UpdatedAt = SYSUTCDATETIME()
+        WHERE Id = @id AND TenantId = @tenantId AND Stato = N'CHIUSA'
       `);
     if (result.rowsAffected[0] !== 1) throw new Error("Offerta non trovata");
   }

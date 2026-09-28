@@ -9,6 +9,12 @@ import {
   aggiornaPostazioneAction,
 } from "@/actions/postazione";
 
+type OccupanteRow = {
+  id: string;
+  name: string;
+  tua?: boolean;
+};
+
 type PostazioneRow = {
   id: string;
   nome: string;
@@ -19,7 +25,7 @@ type PostazioneRow = {
   sedeNome: string | null;
   note: string | null;
   active: boolean;
-  occupanti: string[];
+  occupanti: OccupanteRow[];
 };
 
 type SedeOpt = { id: string; nome: string };
@@ -27,9 +33,11 @@ type SedeOpt = { id: string; nome: string };
 export function PostazioniTable({
   postazioni,
   sedi,
+  currentUserId,
 }: {
   postazioni: PostazioneRow[];
   sedi: SedeOpt[];
+  currentUserId?: string;
 }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -192,8 +200,25 @@ export function PostazioniTable({
                 <td className="text-xs">{p.sedeNome || "—"}</td>
                 <td>
                   {p.occupanti.length > 0 ? (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                      {p.occupanti.join(", ")}
+                    <span className="flex flex-wrap items-center gap-1">
+                      {p.occupanti.map((o) => {
+                        const tua =
+                          o.tua === true ||
+                          (currentUserId != null && o.id === currentUserId);
+                        return (
+                          <span
+                            key={o.id}
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              tua
+                                ? "bg-[var(--navy)] text-white"
+                                : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {tua ? "Tu · " : null}
+                            {o.name}
+                          </span>
+                        );
+                      })}
                     </span>
                   ) : (
                     <span className="text-xs text-[var(--muted)]">Libera</span>

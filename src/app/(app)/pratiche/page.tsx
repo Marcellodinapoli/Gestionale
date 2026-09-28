@@ -58,6 +58,10 @@ import {
   statoOperativoPratica,
 } from "@/lib/statoOperativoPratica";
 import {
+  isCodScaricoNullToken,
+  parseCodScaricoList,
+} from "@/lib/filtriCodScarico";
+import {
   PREAVVISO_STRAGIUDIZIALE_PARAM,
   isPreavvisoStragiudiziale,
   scadenzaStragiudizialeEffettiva,
@@ -97,11 +101,18 @@ export default async function PratichePage({
   const preavvisoAttivo = sp[PREAVVISO_STRAGIUDIZIALE_PARAM] === "1";
   const attivitaGiudizialeAttivo = sp[ATTIVITA_GIUDIZIALE_PARAM] === "1";
   const elencoSpecialeAttivo = preavvisoAttivo || attivitaGiudizialeAttivo;
+  // Dal KPI Affidi «Nuove»: solo codScarico=NULL → non forzare «In lavorazione».
+  const soloSenzaCodiceScarico =
+    !("stato" in sp) &&
+    parseCodScaricoList(sp.codScarico).length > 0 &&
+    parseCodScaricoList(sp.codScarico).every(isCodScaricoNullToken);
   const needsStatoDefault = elencoSpecialeAttivo
     ? false
-    : isOperatore
-      ? sp.stato !== STATO_DEFAULT
-      : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
+    : soloSenzaCodiceScarico
+      ? false
+      : isOperatore
+        ? sp.stato !== STATO_DEFAULT
+        : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
   const needsOperatoreDefault =
     Boolean(defaultOperatoreFiltroId(user.role, user.id)) && !("operatore" in sp);
 
@@ -127,6 +138,8 @@ export default async function PratichePage({
           : codaNavRaw.filtro,
       }
     : codaNavRaw;
+  // Elenco solo dopo Filtra / Applica (cerca=1) o elenchi speciali (preavviso / giudiziale).
+  const showElenco = sp.cerca === "1" || elencoSpecialeAttivo;
   const altri = parseAltriFiltri(sp);
   const { page, pageSize } = paginateParams(sp.page);
   const periCtx = await resolveGruppoPerimetroContext(user);
@@ -304,28 +317,31 @@ export default async function PratichePage({
     },
   };
 
-  const total = await praticaModel.count({ where });
+  const canNotaMassiva = can(user, "pratiche:nota-massiva");
+
+  const total = showElenco ? await praticaModel.count({ where }) : 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const safeSkip = (safePage - 1) * pageSize;
-  const canNotaMassiva = can(user, "pratiche:nota-massiva");
 
-  const [pratiche, tutteIdsRows] = await Promise.all([
-    praticaModel.findMany({
-      where,
-      include,
-      orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
-      skip: safeSkip,
-      take: pageSize,
-    }),
-    canNotaMassiva && total > 0
-      ? praticaModel.findMany({
+  const [pratiche, tutteIdsRows] = showElenco
+    ? await Promise.all([
+        praticaModel.findMany({
           where,
-          select: { id: true },
-          // Senza orderBy: più veloce; serve solo per la selezione massiva.
-        })
-      : Promise.resolve([] as Array<{ id: string }>),
-  ]);
+          include,
+          orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
+          skip: safeSkip,
+          take: pageSize,
+        }),
+        canNotaMassiva && total > 0
+          ? praticaModel.findMany({
+              where,
+              select: { id: true },
+              // Senza orderBy: più veloce; serve solo per la selezione massiva.
+            })
+          : Promise.resolve([] as Array<{ id: string }>),
+      ])
+    : [[], [] as Array<{ id: string }>];
 
   const tutteIds = tutteIdsRows.map((r) => r.id);
   const codaNavPagina = { ...codaNav, listPage: safePage };
@@ -334,6 +350,7 @@ export default async function PratichePage({
     q: sp.q,
     stato: sp.stato,
     esito: sp.esito,
+    cerca: showElenco ? "1" : undefined,
     lavorate: codaNav.filtro?.lavorate,
     lavorateData: codaNav.filtro?.lavorateData,
     lavorateDa: codaNav.filtro?.lavorateDa,
@@ -426,16 +443,18 @@ export default async function PratichePage({
         subtitle={
           periCtx.nessunPerimetroGruppo
             ? "Nessun perimetro configurato sul gruppo — imposta mandanti e perimetri in Affidi"
-            : user.role === "OPERATOR"
-              ? `${total} posizioni nei perimetri del gruppo`
-              : user.role === "SUPERVISOR"
-                ? `${total} nei perimetri del gruppo`
-                : (
-                    <PraticheConteggiSubtitle
-                      showSelezione={canNotaMassiva}
-                      fallback={`${total} visibili`}
-                    />
-                  )
+            : !showElenco
+              ? "Imposta i filtri e clicca Filtra per vedere l’elenco"
+              : user.role === "OPERATOR"
+                ? `${total} posizioni nei perimetri del gruppo`
+                : user.role === "SUPERVISOR"
+                  ? `${total} nei perimetri del gruppo`
+                  : (
+                      <PraticheConteggiSubtitle
+                        showSelezione={canNotaMassiva}
+                        fallback={`${total} visibili`}
+                      />
+                    )
         }
       />
       {periCtx.nessunPerimetroGruppo ? (
@@ -486,7 +505,15 @@ export default async function PratichePage({
         mandantiPerimetri={mandantiPerimetri}
         altri={altri}
         apriPraticheHref={apriPraticheHref}
+        searchActive={showElenco}
       />
+      {!showElenco ? (
+        <div className="mt-4 rounded-xl border border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
+          Nessun elenco caricato. Imposta i filtri in Filtro veloce e premi{" "}
+          <span className="font-semibold text-[var(--navy)]">Filtra</span>, oppure usa{" "}
+          <span className="font-semibold text-[var(--navy)]">Tutti i filtri</span>.
+        </div>
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <PraticheListaConNotaMassiva
           pratiche={praticheRows}
@@ -508,6 +535,7 @@ export default async function PratichePage({
           />
         ) : null}
       </div>
+      )}
     </div>
     </PraticheConteggiProvider>
   );

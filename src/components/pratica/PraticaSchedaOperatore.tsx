@@ -397,6 +397,9 @@ export function PraticaSchedaOperatore({
               Anagrafica debitore
             </div>
             <div className="grid grid-cols-1 gap-0 p-1">
+              <p className="mb-1 border border-[var(--line)] bg-white px-1.5 py-1 text-xs font-semibold uppercase">
+                {pratica.debitore.cognome} {pratica.debitore.nome}
+              </p>
               <AnagraficaField
                 wide
                 compact

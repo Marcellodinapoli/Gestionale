@@ -22,21 +22,28 @@ export default async function SelezionaPostazionePage() {
     include: {
       sedeRef: { select: { nome: true } },
       occupanti: {
-        where: { active: true, id: { not: user.id }, tenantId: user.tenantId },
+        where: { active: true, tenantId: user.tenantId },
         select: { id: true, name: true },
       },
     },
   });
 
-  const lista = postazioni.map((p) => ({
-    id: p.id,
-    nome: p.nome,
-    interno: p.interno,
-    email: p.email,
-    numeroFisso: p.numeroFisso,
-    sede: p.sedeRef?.nome || null,
-    occupante: p.occupanti[0]?.name || null,
-  }));
+  const lista = postazioni.map((p) => {
+    const altri = p.occupanti.filter((o) => o.id !== user.id);
+    const me = p.occupanti.find((o) => o.id === user.id);
+    // Occupata da terzi = bloccata; se c’è solo l’utente stesso → selezionabile (“Tu”).
+    const occupanteAltro = altri[0]?.name || null;
+    return {
+      id: p.id,
+      nome: p.nome,
+      interno: p.interno,
+      email: p.email,
+      numeroFisso: p.numeroFisso,
+      sede: p.sedeRef?.nome || null,
+      occupante: occupanteAltro,
+      tua: Boolean(me) && !occupanteAltro,
+    };
+  });
 
   return (
     <div className="page-gutter flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 py-4">
@@ -64,7 +71,7 @@ export default async function SelezionaPostazionePage() {
               </button>
             </form>
           </div>
-        ) : lista.every((p) => p.occupante) ? (
+        ) : lista.every((p) => p.occupante && !p.tua) ? (
           <div className="space-y-4">
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
               Ci sono {lista.length} postazione/i, ma <strong>tutte occupate</strong> in
@@ -78,7 +85,9 @@ export default async function SelezionaPostazionePage() {
                   className="rounded-lg border border-[var(--line)] bg-slate-50 px-3 py-2"
                 >
                   <span className="font-semibold text-[var(--navy)]">{p.nome}</span>
-                  {p.occupante ? (
+                  {p.tua ? (
+                    <span className="text-emerald-700"> — tu (riprendi questa postazione)</span>
+                  ) : p.occupante ? (
                     <span className="text-[var(--muted)]"> — occupata da {p.occupante}</span>
                   ) : null}
                 </li>

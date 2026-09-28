@@ -117,6 +117,9 @@ export function AttivaAccountForm({ token }: { token: string }) {
           error?: string;
           code?: string;
           ok?: boolean;
+          email?: string;
+          tenantSlug?: string | null;
+          ragioneSociale?: string | null;
         };
         if (!res.ok || data.error) {
           if (data.code === "USER_EXISTS") {
@@ -134,15 +137,21 @@ export function AttivaAccountForm({ token }: { token: string }) {
           setError("Invito non valido o scaduto");
           return;
         }
+        const slug = (data.tenantSlug || tenantSlug || "").trim();
+        const mail = (data.email || preview.email || "").trim();
+        const azienda = (data.ragioneSociale || ragioneSociale || "l'azienda").trim();
         setSuccess(
-          tenantSlug
-            ? `Account creato per ${ragioneSociale || "l'azienda"}. Al login usa il codice azienda: ${tenantSlug}. L'azienda deve essere attiva per accedere.`
-            : "Account creato. L'azienda deve essere attivata prima di poter effettuare l'accesso."
+          slug
+            ? `Account creato per ${azienda}. Accedi con codice azienda «${slug}» e la password impostata.`
+            : "Account creato. Accedi con le credenziali della nuova azienda."
         );
+        const q = new URLSearchParams({ from: "invite" });
+        if (slug) q.set("tenant", slug);
+        if (mail) q.set("email", mail);
         window.setTimeout(() => {
-          router.replace("/login");
+          router.replace(`/login?${q.toString()}`);
           router.refresh();
-        }, 1800);
+        }, 1200);
       } catch {
         setError("Operazione non riuscita. Riprova tra qualche secondo.");
       }

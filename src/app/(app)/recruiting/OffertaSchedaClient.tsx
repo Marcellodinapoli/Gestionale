@@ -7,6 +7,7 @@ import {
   aggiornaOffertaLavoroAction,
   chiudiOffertaLavoroAction,
   eliminaOffertaLavoroAction,
+  ripubblicaOffertaLavoroAction,
 } from "@/actions/recruiting";
 import {
   DICITURA_PARI_OPPORTUNITA,
@@ -100,7 +101,28 @@ export function OffertaSchedaClient({
           >
             Chiudi offerta
           </button>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              setError(null);
+              if (
+                !window.confirm(
+                  "Riaprire questa offerta? Tornerà pubblicata e in «In attesa» sul BO CreditCore."
+                )
+              ) {
+                return;
+              }
+              const fd = new FormData();
+              fd.set("id", offerta.id);
+              run(() => ripubblicaOffertaLavoroAction(fd));
+            }}
+            className="text-sm font-semibold text-emerald-700 underline"
+          >
+            Riapri offerta
+          </button>
+        )}
         {canDelete ? (
           <button
             type="button"
@@ -138,10 +160,7 @@ export function OffertaSchedaClient({
           }
         >
           <input type="hidden" name="id" value={offerta.id} />
-          {offerta.stato === "CHIUSA" ? (
-            <input type="hidden" name="stato" value="CHIUSA" />
-          ) : null}
-          <SchedaFields offerta={offerta} lockedStato={offerta.stato === "CHIUSA"} />
+          <SchedaFields offerta={offerta} lockedStato={false} />
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
@@ -245,9 +264,17 @@ function SchedaFields({
   offerta: OffertaSchedaRow;
   lockedStato: boolean;
 }) {
-  const defaultStato = offerta.stato === "PUBBLICATA" ? "PUBBLICATA" : "BOZZA";
+  const defaultStato =
+    offerta.stato === "PUBBLICATA" || offerta.stato === "CHIUSA"
+      ? "PUBBLICATA"
+      : "BOZZA";
   return (
     <>
+      {offerta.stato === "CHIUSA" && !lockedStato ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          Offerta chiusa: scegli «Pubblicata» per ripubblicarla (o «Bozza»).
+        </p>
+      ) : null}
       <fieldset className="grid gap-3">
         <legend className="text-[11px] font-bold uppercase tracking-wide text-[var(--navy)]">
           Posizione
@@ -409,7 +436,12 @@ function SchedaFields({
           </legend>
           <label>
             <span className={labelCls}>Stato</span>
-            <select name="stato" defaultValue={defaultStato} className={inputCls}>
+            <select
+              name="stato"
+              key={`stato-${offerta.id}-${defaultStato}`}
+              defaultValue={defaultStato}
+              className={inputCls}
+            >
               {offerta.stato !== "PUBBLICATA" ? (
                 <option value="BOZZA">Bozza</option>
               ) : null}

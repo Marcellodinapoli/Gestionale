@@ -19,6 +19,7 @@ export function NuovoOperatoreForm({
   supervisori,
   roleDefaults,
   acronimiUsati,
+  creditCalcModuleOn = false,
   onSuccess,
   onCancel,
 }: {
@@ -27,6 +28,7 @@ export function NuovoOperatoreForm({
   supervisori: SupervisorOpt[];
   roleDefaults: NavRoleDefaults;
   acronimiUsati: string[];
+  creditCalcModuleOn?: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
 }) {
@@ -239,21 +241,28 @@ export function NuovoOperatoreForm({
             </span>
           </label>
           <label
-            className={`flex items-start gap-2 text-sm ${consulenteEsterno ? "" : "opacity-50"}`}
+            className={`flex items-start gap-2 text-sm ${
+              !creditCalcModuleOn || !consulenteEsterno ? "opacity-50" : ""
+            }`}
           >
             <input
               type="checkbox"
               name="creditCalcEnabled"
               value="1"
-              checked={creditCalcEnabled}
-              disabled={!consulenteEsterno}
-              onChange={(e) => setCreditCalcEnabled(e.target.checked)}
+              checked={Boolean(creditCalcModuleOn && consulenteEsterno && creditCalcEnabled)}
+              disabled={!consulenteEsterno || !creditCalcModuleOn}
+              onChange={(e) => {
+                if (!creditCalcModuleOn) return;
+                setCreditCalcEnabled(e.target.checked);
+              }}
               className="mt-1"
             />
             <span>
               <span className="font-medium text-[var(--navy)]">Abilita accesso CreditCalc</span>
               <span className="block text-xs text-[var(--muted)]">
-                Apertura pratiche mobile, note e codice scarico.
+                {creditCalcModuleOn
+                  ? "Apertura pratiche mobile, note e codice scarico."
+                  : "Pacchetto CreditCalc non attivo in Back Office: voce visibile ma non attivabile."}
               </span>
             </span>
           </label>
