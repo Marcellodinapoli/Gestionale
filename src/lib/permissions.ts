@@ -54,6 +54,7 @@ export type Permission =
   | "operatori:manage"
   | "pratiche:nota-massiva"
   | "lavorazione:view"
+  | "lavorazione:manage"
   | "formazione:view"
   | "strumenti:view"
   | "legal:view"
@@ -90,6 +91,8 @@ const MAP: Record<Permission, Role[]> = {
   "telephony:manage": ["ADMIN"],
   "operatori:manage": ["ADMIN", "AMMINISTRAZIONE"],
   "lavorazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
+  /** Crea/modifica/elimina piani di lavorazione suggerita (non gli operatori). */
+  "lavorazione:manage": ["ADMIN", "SUPERVISOR", "BACK_OFFICE"],
   "formazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
   /** Strumenti AI (ricerca normativa, ecc.): anche Legal. */
   "strumenti:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR", "LEGAL"],
@@ -156,13 +159,13 @@ export function canClearCodiceScarico(role: Role | string | null | undefined) {
   return role !== "SUPERVISOR" && role !== "OPERATOR";
 }
 
-/** Admin, back office, amministrazione e legal possono fissare la postazione. */
+/** Admin, back office e amministrazione possono fissare la postazione.
+ * Legal sceglie la postazione a ogni login (come operatori / supervisor). */
 export function canImpostarePostazioneFissa(role: Role) {
   return (
     role === "ADMIN" ||
     role === "BACK_OFFICE" ||
-    role === "AMMINISTRAZIONE" ||
-    role === "LEGAL"
+    role === "AMMINISTRAZIONE"
   );
 }
 
@@ -221,6 +224,18 @@ export function canManageSedi(user: { role: Role } | null | undefined) {
 export function canManageMandantePerimetri(user: { role: Role } | null | undefined) {
   if (!user || isManutenzione(user)) return false;
   return user.role === "ADMIN" || user.role === "AMMINISTRAZIONE";
+}
+
+/** Chi può creare/modificare/eliminare i piani di lavorazione. */
+export function canManageLavorazione(user: { role: Role } | null | undefined) {
+  if (!user || isManutenzione(user)) return false;
+  return can(user, "lavorazione:manage");
+}
+
+/** Admin e back office scelgono il gruppo; il supervisor lavora solo sul proprio. */
+export function canPickGruppoLavorazione(user: { role: Role } | null | undefined) {
+  if (!user || isManutenzione(user)) return false;
+  return user.role === "ADMIN" || user.role === "BACK_OFFICE";
 }
 
 export function can(

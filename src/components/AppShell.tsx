@@ -1,7 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -722,23 +731,132 @@ function useLgNavLabels() {
   return lg;
 }
 
-function ResponsiveMainNav({
-  links,
-  pathname,
-  praticheBackHref,
-  praticheBackLabel,
-  affidiBackHref,
-  affidiBackLabel,
-  adminLinks,
-}: {
-  links: NavLink[];
-  pathname: string;
+type NavBackState = {
   praticheBackHref: string | null;
   praticheBackLabel?: string;
   affidiBackHref: string | null;
   affidiBackLabel?: string;
+};
+
+const EMPTY_NAV_BACK: NavBackState = {
+  praticheBackHref: null,
+  affidiBackHref: null,
+};
+
+const NavBackContext = createContext<NavBackState>(EMPTY_NAV_BACK);
+
+function useNavBack() {
+  return useContext(NavBackContext);
+}
+
+/**
+ * Back-nav locale al provider (niente setState su AppShell durante Placement).
+ * Affidi: derivato dall'URL. Pratiche: sessionStorage + state del provider.
+ */
+function NavBackProviderInner({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [praticheBackHref, setPraticheBackHref] = useState<string | null>(null);
+  const [praticheBackLabel, setPraticheBackLabel] = useState<string | undefined>();
+
+  const affidi = useMemo(() => {
+    if (pathname !== "/affidi") {
+      return { href: null as string | null, label: undefined as string | undefined };
+    }
+    const back = resolveAffidiBackNav(searchParams.toString());
+    return { href: back?.href ?? null, label: back?.label };
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
+    const qs = searchParams.toString();
+    const full = qs ? `${pathname}?${qs}` : pathname;
+    const isPraticheLista = pathname === "/pratiche";
+    const isPraticheSottopagina =
+      pathname.startsWith("/pratiche/") && pathname !== "/pratiche";
+
+    if (isPraticheLista) {
+      setPraticheBackHref(null);
+      setPraticheBackLabel(undefined);
+      try {
+        sessionStorage.setItem(PRATICHE_BACK_KEY, full);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    if (isPraticheSottopagina) {
+      try {
+        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
+        const savedPath = saved?.split("?")[0] || "";
+        let href = "/pratiche";
+        if (saved && savedPath === "/pratiche") {
+          href = saved;
+        } else if (saved && !isPratichePath(savedPath)) {
+          href = saved;
+        }
+        const label =
+          href.split("?")[0] === "/pratiche"
+            ? "Pratiche"
+            : labelForNavBackHref(href);
+        setPraticheBackHref(href);
+        setPraticheBackLabel(label);
+      } catch {
+        setPraticheBackHref("/pratiche");
+        setPraticheBackLabel("Pratiche");
+      }
+      return;
+    }
+
+    setPraticheBackHref(null);
+    setPraticheBackLabel(undefined);
+    try {
+      sessionStorage.setItem(PRATICHE_BACK_KEY, full);
+    } catch {
+      /* ignore */
+    }
+  }, [pathname, searchParams]);
+
+  const value = useMemo<NavBackState>(
+    () => ({
+      praticheBackHref,
+      praticheBackLabel,
+      affidiBackHref: affidi.href,
+      affidiBackLabel: affidi.label,
+    }),
+    [praticheBackHref, praticheBackLabel, affidi.href, affidi.label]
+  );
+
+  return <NavBackContext.Provider value={value}>{children}</NavBackContext.Provider>;
+}
+
+function NavBackProvider({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <NavBackContext.Provider value={EMPTY_NAV_BACK}>{children}</NavBackContext.Provider>
+      }
+    >
+      <NavBackProviderInner>{children}</NavBackProviderInner>
+    </Suspense>
+  );
+}
+
+function ResponsiveMainNav({
+  links,
+  pathname,
+  adminLinks,
+}: {
+  links: NavLink[];
+  pathname: string;
   adminLinks: NavLink[];
 }) {
+  const {
+    praticheBackHref,
+    praticheBackLabel,
+    affidiBackHref,
+    affidiBackLabel,
+  } = useNavBack();
   const navRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(links.length);
@@ -868,86 +986,6 @@ function ResponsiveMainNav({
   );
 }
 
-function AffidiBackSync({
-  onChange,
-}: {
-  onChange: (href: string | null, label?: string) => void;
-}) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    if (pathname !== "/affidi") {
-      onChange(null, undefined);
-      return;
-    }
-    const back = resolveAffidiBackNav(searchParams.toString());
-    onChange(back?.href ?? null, back?.label);
-  }, [pathname, searchParams, onChange]);
-
-  return null;
-}
-
-/** Persiste / ripristina la destinazione ← Pratiche (filtri e ordine in query). */
-function PraticheBackSync({
-  onChange,
-}: {
-  onChange: (href: string | null, label?: string) => void;
-}) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const qs = searchParams.toString();
-    const full = qs ? `${pathname}?${qs}` : pathname;
-    const isPraticheLista = pathname === "/pratiche";
-    const isPraticheSottopagina =
-      pathname.startsWith("/pratiche/") && pathname !== "/pratiche";
-
-    if (isPraticheLista) {
-      onChange(null, undefined);
-      try {
-        // Così da una scheda ← torna alla lista (non a Home/altra pagina visitata prima).
-        sessionStorage.setItem(PRATICHE_BACK_KEY, full);
-      } catch {
-        /* ignore */
-      }
-      return;
-    }
-
-    if (isPraticheSottopagina) {
-      try {
-        const saved = sessionStorage.getItem(PRATICHE_BACK_KEY);
-        const savedPath = saved?.split("?")[0] || "";
-        let href = "/pratiche";
-        if (saved && savedPath === "/pratiche") {
-          href = saved;
-        } else if (saved && !isPratichePath(savedPath)) {
-          // Provenienza esterna (es. Affidi): mantieni quella destinazione
-          href = saved;
-        }
-        const label =
-          href.split("?")[0] === "/pratiche"
-            ? "Pratiche"
-            : labelForNavBackHref(href);
-        onChange(href, label);
-      } catch {
-        onChange("/pratiche", "Pratiche");
-      }
-      return;
-    }
-
-    onChange(null, undefined);
-    try {
-      sessionStorage.setItem(PRATICHE_BACK_KEY, full);
-    } catch {
-      /* ignore */
-    }
-  }, [pathname, searchParams, onChange]);
-
-  return null;
-}
-
 export function AppShell({
   user,
   platform,
@@ -970,21 +1008,7 @@ export function AppShell({
   const modulesSnapshotRef = useRef<string>(
     (platform?.enabledModules ?? []).slice().sort().join(",")
   );
-  const [praticheBackHref, setPraticheBackHref] = useState<string | null>(null);
-  const [praticheBackLabel, setPraticheBackLabel] = useState<string | undefined>();
-  const [affidiBackHref, setAffidiBackHref] = useState<string | null>(null);
-  const [affidiBackLabel, setAffidiBackLabel] = useState<string | undefined>();
   const [unreadAvvisi, setUnreadAvvisi] = useState(0);
-
-  const onAffidiBackChange = useCallback((href: string | null, label?: string) => {
-    setAffidiBackHref(href);
-    setAffidiBackLabel(label);
-  }, []);
-
-  const onPraticheBackChange = useCallback((href: string | null, label?: string) => {
-    setPraticheBackHref(href);
-    setPraticheBackLabel(label);
-  }, []);
 
   useEffect(() => {
     setEmbedded(window.self !== window.top);
@@ -1058,6 +1082,7 @@ export function AppShell({
         const key = next.slice().sort().join(",");
         if (key === modulesSnapshotRef.current) return;
         modulesSnapshotRef.current = key;
+        if (cancelled) return;
         setLiveModules(next);
         router.refresh();
       } catch {
@@ -1124,12 +1149,7 @@ export function AppShell({
   return (
     <PraticaHeaderSlotProvider>
     <PrivacyLockProvider userName={user.name}>
-    <Suspense fallback={null}>
-      <AffidiBackSync onChange={onAffidiBackChange} />
-    </Suspense>
-    <Suspense fallback={null}>
-      <PraticheBackSync onChange={onPraticheBackChange} />
-    </Suspense>
+    <NavBackProvider>
     <div className="flex h-dvh flex-col bg-[var(--bg)]">
       <header className="relative z-40 shrink-0 bg-[var(--navy)] text-white shadow-md print:hidden">
         <div className="flex flex-col gap-1.5 px-[1cm] py-1.5 xl:flex-row xl:items-center xl:gap-x-3">
@@ -1151,10 +1171,6 @@ export function AppShell({
             <ResponsiveMainNav
               links={mainLinks}
               pathname={pathname}
-              praticheBackHref={praticheBackHref}
-              praticheBackLabel={praticheBackLabel}
-              affidiBackHref={affidiBackHref}
-              affidiBackLabel={affidiBackLabel}
               adminLinks={adminLinks}
             />
           </nav>
@@ -1183,6 +1199,7 @@ export function AppShell({
         <PreavvisoStragiudizialeWatcher />
       </main>
     </div>
+    </NavBackProvider>
     </PrivacyLockProvider>
     </PraticaHeaderSlotProvider>
   );

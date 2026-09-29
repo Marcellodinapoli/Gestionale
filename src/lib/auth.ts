@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { Role, SessionUser } from "@/lib/permissions";
-import { isPasswordExpired } from "@/lib/passwordPolicy";
+import { isPasswordExpired } from "@/lib/passwordRules";
 
 const COOKIE = "gestionale_session";
 
@@ -15,7 +15,20 @@ function secret() {
   return new TextEncoder().encode("dev-only-secret-not-for-prod");
 }
 
-export async function createSession(user: SessionUser) {
+function toIsoPasswordChangedAt(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+export type SessionCreateInput = SessionUser & {
+  passwordChangedAt?: Date | string | null;
+};
+
+export async function createSession(user: SessionCreateInput) {
   const token = await new SignJWT({
     id: user.id,
     email: user.email,
@@ -24,6 +37,8 @@ export async function createSession(user: SessionUser) {
     supervisorId: user.supervisorId,
     tenantId: user.tenantId,
     formazioneOnly: Boolean(user.formazioneOnly),
+    // Usato dal middleware per bloccare l'app se la password è scaduta.
+    passwordChangedAt: toIsoPasswordChangedAt(user.passwordChangedAt),
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -36,7 +51,7 @@ export async function createSession(user: SessionUser) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 12,
+    // Cookie di sessione: a chiusura browser va via → al prossimo accesso serve la password.
   });
 }
 

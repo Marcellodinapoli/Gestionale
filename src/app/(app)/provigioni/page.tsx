@@ -261,7 +261,7 @@ export default async function ProvigioniPage({
   let avvisoPerimetri = false;
   let membriGruppo: Array<{ id: string; name: string; role: string }> = [];
 
-  if (isAdmin && gruppoId) {
+  if (canFilter && gruppoId) {
     const sup = await usersDbFromUser(user).findFirst({
       where: { id: gruppoId, tenantId: user.tenantId },
       select: { gruppoMandanti: true },
@@ -296,7 +296,10 @@ export default async function ProvigioniPage({
         : {};
 
   const praticaExtra: Prisma.PraticaWhereInput = isAmministrazione
-    ? { ...(praticaAmministrazione || {}) }
+    ? {
+        ...(praticaAmministrazione || {}),
+        ...(periScope && gruppoId ? periScope : {}),
+      }
     : {
         ...(isAdmin ? praticaAdminMandante : mandanteId ? { mandanteId } : {}),
         ...(periScope && (!canFilter || gruppoId) ? periScope : {}),
@@ -317,7 +320,7 @@ export default async function ProvigioniPage({
     createdAt: { gte: da, lte: a },
     ...(operatoreEffettivo
       ? { operatoreId: operatoreEffettivo }
-      : isAdmin && gruppoId
+      : canFilter && gruppoId
         ? { operatore: { OR: [{ id: gruppoId }, { supervisorId: gruppoId }] } }
         : {}),
     ...(Object.keys(praticaExtra).length ? { pratica: praticaExtra } : {}),
@@ -366,7 +369,7 @@ export default async function ProvigioniPage({
             where: { ...wherePeriodo, stato: "LIQUIDATA" },
             _sum: { importo: true },
           }),
-          !isAmministrazione && gruppoMandanti.length
+          gruppoMandanti.length && (gruppoId || !canFilter)
             ? configProvvigioniPerimetriGruppo(user.tenantId, gruppoMandanti)
             : Promise.resolve([]),
           user.role === "SUPERVISOR"
@@ -457,7 +460,7 @@ export default async function ProvigioniPage({
 
   let configs = configsGruppo;
 
-  if (showElenco && isAmministrazione) {
+  if (showElenco && isAmministrazione && !gruppoId) {
     configs = await configProvvigioniMandanti(user.tenantId, {
       mandanteIds: mandanteId ? [mandanteId] : undefined,
       soloPerimetro: perimetroValido,
@@ -601,17 +604,7 @@ export default async function ProvigioniPage({
             </select>
           </label>
         ) : null}
-        {isAmministrazione ? (
-          <ProvvigioniFiltriAmministrazione
-            mandanti={mandanti}
-            perimetri={perimetriRefs}
-            operatori={operatori}
-            mandanteId={mandanteId}
-            perimetro={perimetroValido}
-            operatoreId={operatoreId}
-          />
-        ) : null}
-        {isAdmin ? (
+        {canFilter ? (
           <ProvvigioniFiltriAmministrazione
             mandanti={mandanti}
             perimetri={perimetriRefs}

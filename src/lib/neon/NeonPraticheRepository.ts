@@ -342,6 +342,10 @@ function scopeSql(scope: PraticaScope, startIdx: number): { sql: string; params:
   const params: unknown[] = [];
   let i = startIdx;
   let sql = "";
+  // Ricerca anagrafica: solo tenant (niente portfolio / stragiudiziale).
+  if (scope.skipRoleScope) {
+    return { sql: "", params: [], next: startIdx };
+  }
   if (scope.role === "OPERATOR") {
     sql = ` AND (p."AssegnatarioId" = $${i}::uuid OR p."OperatoreTitolareId" = $${i}::uuid)`;
     params.push(scope.userId);
@@ -373,11 +377,15 @@ function filterSql(
   startIdx: number
 ): { sql: string; params: unknown[]; next: number } {
   if (!filter) return { sql: "", params: [], next: startIdx };
+  if (filter.none) return { sql: " AND FALSE", params: [], next: startIdx };
   const parts: string[] = [];
   const params: unknown[] = [];
   let i = startIdx;
   if (filter.ids?.length || filter.idsIn?.length) {
-    const ids = filter.ids ?? filter.idsIn ?? [];
+    const ids = (filter.ids ?? filter.idsIn ?? []).filter((id) => isUuid(id));
+    if (!ids.length) {
+      return { sql: " AND FALSE", params: [], next: startIdx };
+    }
     parts.push(`p."Id" = ANY($${i++}::uuid[])`);
     params.push(ids);
   }
@@ -798,10 +806,15 @@ export class NeonPraticheRepository implements PraticheRepository {
   async count(
     req: Omit<PraticaListRequest, "page" | "pageSize" | "skip" | "take" | "sort" | "include">
   ) {
-    const scope = scopeSql(req.scope, 2);
+    const tid = await resolveTenantUuid(
+      req.scope.tenantId,
+      req.tenantSlug || this._tenantSlug
+    );
+    if (!tid) return 0;
+    const scope = scopeSql({ ...req.scope, tenantId: tid }, 2);
     const filt = filterSql(req.filter, scope.next);
     const where = `p."TenantId" = $1::uuid${scope.sql}${filt.sql}`;
-    const params = [req.scope.tenantId, ...scope.params, ...filt.params];
+    const params = [tid, ...scope.params, ...filt.params];
     const rows = await neonQuery(
       `SELECT COUNT(*)::int AS c
        FROM "Pratiche" p

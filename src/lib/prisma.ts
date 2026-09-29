@@ -1,35 +1,15 @@
 import "server-only";
-import { PrismaClient } from "@prisma/client";
 import type { PrismaClient as PrismaClientType } from "@prisma/client";
 import { assertOperationalBackendReady } from "@/lib/dataAccess";
-import { isSqliteProvider } from "@/lib/data/config";
 import { createFirebasePrisma } from "@/lib/firebase/firebasePrisma";
 
 /** Bump per forzare reload dello shim dopo HMR (evita client stale in globalThis). */
 const FIREBASE_PRISMA_VERSION = 17;
 
 const globalForPrisma = globalThis as unknown as {
-  sqlitePrisma?: PrismaClient;
-  sqlitePrismaVersion?: number;
   firebasePrisma?: PrismaClientType;
   firebasePrismaVersion?: number;
 };
-
-function getSqliteClient(): PrismaClient {
-  if (typeof window !== "undefined") {
-    throw new Error("SQLite ops solo lato server");
-  }
-  assertOperationalBackendReady();
-  if (
-    globalForPrisma.sqlitePrisma &&
-    globalForPrisma.sqlitePrismaVersion === FIREBASE_PRISMA_VERSION
-  ) {
-    return globalForPrisma.sqlitePrisma;
-  }
-  globalForPrisma.sqlitePrisma = new PrismaClient();
-  globalForPrisma.sqlitePrismaVersion = FIREBASE_PRISMA_VERSION;
-  return globalForPrisma.sqlitePrisma;
-}
 
 function getFirebaseClient(): PrismaClientType {
   if (typeof window !== "undefined") {
@@ -48,20 +28,16 @@ function getFirebaseClient(): PrismaClientType {
   return client;
 }
 
-function getClient(): PrismaClientType {
-  return isSqliteProvider() ? getSqliteClient() : getFirebaseClient();
-}
-
 /**
- * Client dati operativo.
- * - sqlite: Prisma → file SQLite locale (solo dev)
- * - firestore: adapter Firebase
+ * Client dati legacy (Firestore) quando DATABASE_PROVIDER=firestore.
+ * Con neon/connector i repo tipizzati non usano questo path.
+ * SQLite locale non è più supportato.
  */
 export const prisma: PrismaClientType = new Proxy({} as PrismaClientType, {
   get(_target, prop, receiver) {
     if (prop === "$transaction" || prop === "$connect" || prop === "$disconnect" || prop === "$queryRaw" || prop === "$executeRaw" || prop === "$executeRawUnsafe") {
       return (...args: unknown[]) => {
-        const client = getClient();
+        const client = getFirebaseClient();
         const value = Reflect.get(client, prop, receiver) as
           | ((...a: unknown[]) => unknown)
           | undefined;
@@ -81,7 +57,7 @@ export const prisma: PrismaClientType = new Proxy({} as PrismaClientType, {
             return undefined;
           }
           return (...args: unknown[]) => {
-            const client = getClient();
+            const client = getFirebaseClient();
             const delegate = Reflect.get(client, prop) as Record<string, unknown>;
             const fn = delegate?.[method as string];
             if (typeof fn !== "function") {

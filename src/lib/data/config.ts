@@ -1,15 +1,16 @@
-export type DatabaseProvider = "firestore" | "connector" | "sqlite" | "neon";
+export type DatabaseProvider = "firestore" | "connector" | "neon";
 
 export function getDatabaseProvider(): DatabaseProvider {
   const raw = (process.env.DATABASE_PROVIDER || "firestore").trim().toLowerCase();
   if (raw === "connector") return "connector";
-  if (raw === "sqlite") return "sqlite";
   if (raw === "neon") return "neon";
+  // sqlite locale non è più supportato come provider operativo
+  if (raw === "sqlite") {
+    throw new Error(
+      "DATABASE_PROVIDER=sqlite non è più supportato. Usa neon (stesso DB di Netlify) o connector."
+    );
+  }
   return "firestore";
-}
-
-export function isSqliteProvider() {
-  return getDatabaseProvider() === "sqlite";
 }
 
 export function isNeonProvider() {

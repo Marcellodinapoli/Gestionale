@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { DialerVelocitaPanel } from "@/components/predictive-dialer/DialerVelocitaPanel";
 import {
@@ -107,23 +108,29 @@ function MonitorTable({
 
 export function DialerSupervisorMonitor({
   campagnaId,
+  campagneAttive = [],
   initialStats = null,
   initialMonitor = [],
   showCampagnaHeader = false,
 }: {
   campagnaId?: string;
+  /** Campagne ATTIVA selezionabili (solo pagina Monitor). */
+  campagneAttive?: CampagnaRow[];
   initialStats?: DialerCampagnaStatsDto | null;
   initialMonitor?: DialerMonitorOperatoreDto[];
   showCampagnaHeader?: boolean;
 }) {
+  const router = useRouter();
   const [data, setData] = useState<StreamPayload>({
-    campagne: [],
+    campagne: campagneAttive,
     monitor: initialMonitor,
     stats: initialStats,
     campagnaId: campagnaId ?? null,
   });
 
   useEffect(() => {
+    // Senza campagnaId non aprire lo stream “globale”: evita di agganciare una campagna a caso.
+    if (showCampagnaHeader && !campagnaId) return;
     const url = campagnaId
       ? `/api/predictive-dialer/stream?campagnaId=${encodeURIComponent(campagnaId)}`
       : "/api/predictive-dialer/stream";
@@ -136,25 +143,57 @@ export function DialerSupervisorMonitor({
       }
     });
     return () => es.close();
-  }, [campagnaId]);
+  }, [campagnaId, showCampagnaHeader]);
 
   const stats = data.stats;
   const activeId = campagnaId ?? data.campagnaId;
-  const campagnaAttiva = activeId ? data.campagne.find((c) => c.id === activeId) : null;
+  const listaAttive =
+    campagneAttive.length > 0
+      ? campagneAttive
+      : data.campagne.filter((c) => c.stato === "ATTIVA");
+  const campagnaAttiva = activeId
+    ? listaAttive.find((c) => c.id === activeId) ??
+      data.campagne.find((c) => c.id === activeId)
+    : null;
+
+  function onSelezionaCampagna(id: string) {
+    if (!id) {
+      router.push("/predictive-dialer/monitor");
+      return;
+    }
+    router.push(`/predictive-dialer/monitor?campagnaId=${encodeURIComponent(id)}`);
+  }
 
   return (
     <div className="space-y-5">
-      {showCampagnaHeader && activeId ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+      {showCampagnaHeader ? (
+        <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+          <div className="min-w-[220px] flex-1">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
               Campagna monitorata
             </p>
-            <p className="text-lg font-bold text-[var(--navy)]">
-              {campagnaAttiva?.nome ?? "Campagna attiva"}
-            </p>
+            {listaAttive.length ? (
+              <select
+                value={activeId ?? ""}
+                onChange={(e) => onSelezionaCampagna(e.target.value)}
+                className="h-10 w-full max-w-lg rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--navy)]"
+              >
+                <option value="">— Scegli una campagna attiva —</option>
+                {listaAttive.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                    {" · "}
+                    {c.operatoriCount} operatori · {c.praticheCount} pratiche
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-sm text-[var(--muted)]">
+                Nessuna campagna attiva. Attivane una dalla sezione Campagne.
+              </p>
+            )}
             {campagnaAttiva ? (
-              <p className="text-xs text-[var(--muted)]">
+              <p className="mt-1 text-xs text-[var(--muted)]">
                 {DIALER_CAMPAGNA_LABELS[campagnaAttiva.stato as keyof typeof DIALER_CAMPAGNA_LABELS] ??
                   campagnaAttiva.stato}
                 {" · "}
@@ -162,19 +201,25 @@ export function DialerSupervisorMonitor({
               </p>
             ) : null}
           </div>
-          <Link
-            href={`/predictive-dialer/campagne/${activeId}`}
-            className="text-sm font-semibold text-[var(--navy)] underline"
-          >
-            Apri dettaglio campagna
-          </Link>
+          {activeId ? (
+            <Link
+              href={`/predictive-dialer/campagne/${activeId}`}
+              className="text-sm font-semibold text-[var(--navy)] underline"
+            >
+              Apri dettaglio campagna
+            </Link>
+          ) : null}
         </div>
       ) : null}
 
       {!stats ? (
         <Card title="Monitor">
           <p className="text-sm text-[var(--muted)]">
-            Nessuna campagna attiva da monitorare. Attiva una campagna dalla sezione Campagne.
+            {showCampagnaHeader
+              ? listaAttive.length
+                ? "Seleziona una campagna attiva da monitorare."
+                : "Nessuna campagna attiva da monitorare. Attiva una campagna dalla sezione Campagne."
+              : "Nessuna campagna attiva da monitorare. Attiva una campagna dalla sezione Campagne."}
           </p>
         </Card>
       ) : (

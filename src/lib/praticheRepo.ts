@@ -14,6 +14,11 @@ export type PraticaDbContext = {
   role?: Role;
   userId?: string;
   memberIds?: string[];
+  /**
+   * Ricerca anagrafica / F1: forza solo tenant su Neon/Connector
+   * (niente portfolio, stragiudiziale, assegnatario).
+   */
+  skipRoleScope?: boolean;
 };
 
 export function resolveTenantSlug(user: { tenantId: string; tenantSlug?: string | null }) {
@@ -26,7 +31,43 @@ export function toPraticaScope(ctx: PraticaDbContext): PraticaScope {
     role: ctx.role ?? "ADMIN",
     userId: ctx.userId ?? ctx.tenantId,
     memberIds: ctx.memberIds,
+    ...(ctx.skipRoleScope ? { skipRoleScope: true } : {}),
   };
+}
+
+/** Filtri che devono bypassare lo scope ruolo Neon (portfolio / stragiudiziale). */
+function filterNeedsSkipRoleScope(
+  filter: PraticaListRequest["filter"] | undefined
+): boolean {
+  if (!filter) return false;
+  if (filter.cercaAmpia) return true;
+  if (filter.q?.trim()) return true;
+  if (filter.searchTerm?.trim()) return true;
+  if (filter.debitoreContains?.trim()) return true;
+  if (filter.telefonoContains?.trim()) return true;
+  if (filter.cfPivaContains?.trim()) return true;
+  if (filter.garanteContains?.trim()) return true;
+  if (filter.noteContains?.trim()) return true;
+  return false;
+}
+
+function scopeForRequest(
+  ctx: PraticaDbContext,
+  filter: PraticaListRequest["filter"] | undefined
+): PraticaScope {
+  const scope = toPraticaScope(ctx);
+  if (ctx.skipRoleScope || filterNeedsSkipRoleScope(filter)) {
+    return { ...scope, skipRoleScope: true };
+  }
+  return scope;
+}
+
+function withCercaAmpiaIfNeeded(
+  ctx: PraticaDbContext,
+  filter: PraticaListRequest["filter"] | undefined
+): PraticaListRequest["filter"] | undefined {
+  if (!ctx.skipRoleScope) return filter;
+  return { ...(filter || {}), cercaAmpia: true };
 }
 
 function repo(ctx: PraticaDbContext): PraticheRepository {
@@ -74,10 +115,11 @@ export function praticaDb(ctx: PraticaDbContext): typeof prisma.pratica {
       ) {
         return { numero: await r.nextNumero(ctx.tenantSlug, ctx.tenantId) } as never;
       }
+      const filter = withCercaAmpiaIfNeeded(ctx, prismaWhereToFilter(args.where));
       const items = await r.list({
         tenantSlug: ctx.tenantSlug,
-        scope: toPraticaScope(ctx),
-        filter: prismaWhereToFilter(args.where),
+        scope: scopeForRequest(ctx, filter),
+        filter,
         take: 1,
         include: prismaArgsToInclude(args.include, args.select),
       });
@@ -88,10 +130,11 @@ export function praticaDb(ctx: PraticaDbContext): typeof prisma.pratica {
       // Prisma senza `take` restituisce tutte le righe; col connector il default 25
       // tagliava silenziosamente elenchi (es. Affidi → solo le prime 25 = tutte PIANO nel seed).
       const take = args.take ?? 10_000;
+      const filter = withCercaAmpiaIfNeeded(ctx, prismaWhereToFilter(args.where));
       const result = await r.list({
         tenantSlug: ctx.tenantSlug,
-        scope: toPraticaScope(ctx),
-        filter: prismaWhereToFilter(args.where),
+        scope: scopeForRequest(ctx, filter),
+        filter,
         sort: prismaOrderByToSort(args.orderBy),
         skip: args.skip ?? undefined,
         take,
@@ -100,12 +143,14 @@ export function praticaDb(ctx: PraticaDbContext): typeof prisma.pratica {
       });
       return result.items.map((row) => applySelect(row, args.select)) as never[];
     },
-    count: async (args: Prisma.PraticaCountArgs) =>
-      r.count({
+    count: async (args: Prisma.PraticaCountArgs) => {
+      const filter = withCercaAmpiaIfNeeded(ctx, prismaWhereToFilter(args.where));
+      return r.count({
         tenantSlug: ctx.tenantSlug,
-        scope: toPraticaScope(ctx),
-        filter: prismaWhereToFilter(args.where),
-      }),
+        scope: scopeForRequest(ctx, filter),
+        filter,
+      });
+    },
     create: async (args: Prisma.PraticaCreateArgs) =>
       r.create(ctx.tenantSlug, { tenantId: ctx.tenantId, ...(args.data as object) } as never) as never,
     update: async (args: Prisma.PraticaUpdateArgs) => {
@@ -352,17 +397,34 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
       const uniqueTerms = new Set(textTerms);
       if (uniqueTerms.size === 1 && kindCount >= 2) {
         filter.q = [...uniqueTerms][0];
+        filter.cercaAmpia = true;
       } else {
         // Debitore OR garante nello stesso OR → non AND-are i due filtri.
         if (debitoreTerm && garanteTerm) {
           filter.debitoreContains = debitoreTerm;
+          filter.cercaAmpia = true;
         } else {
-          if (debitoreTerm) filter.debitoreContains = debitoreTerm;
-          if (garanteTerm) filter.garanteContains = garanteTerm;
+          if (debitoreTerm) {
+            filter.debitoreContains = debitoreTerm;
+            filter.cercaAmpia = true;
+          }
+          if (garanteTerm) {
+            filter.garanteContains = garanteTerm;
+            filter.cercaAmpia = true;
+          }
         }
-        if (telefonoTerm) filter.telefonoContains = telefonoTerm;
-        if (cfTerm) filter.cfPivaContains = cfTerm;
-        if (noteTerm) filter.noteContains = noteTerm;
+        if (telefonoTerm) {
+          filter.telefonoContains = telefonoTerm;
+          filter.cercaAmpia = true;
+        }
+        if (cfTerm) {
+          filter.cfPivaContains = cfTerm;
+          filter.cercaAmpia = true;
+        }
+        if (noteTerm) {
+          filter.noteContains = noteTerm;
+          filter.cercaAmpia = true;
+        }
       }
     } else {
       if (operatoreIds.size) merge("operatoreIdsNotIn", [...operatoreIds]);
@@ -452,8 +514,14 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
       }
     }
     if (node.id) {
-      if (typeof node.id === "string") filter.ids = [node.id];
-      else if (typeof node.id === "object") {
+      if (
+        typeof node.id === "string" &&
+        (node.id === "__nessun-dato__" || node.id === "__none__" || node.id === "__nessuno__")
+      ) {
+        filter.none = true;
+      } else if (typeof node.id === "string") {
+        filter.ids = [node.id];
+      } else if (typeof node.id === "object") {
         const idObj = node.id as Record<string, unknown>;
         if (Array.isArray(idObj.in)) filter.idsIn = idObj.in.map(String);
       }
@@ -501,7 +569,7 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
       const parts = Array.isArray(node.NOT) ? node.NOT : [node.NOT];
       parts.forEach(walkNegated);
     }
-    if (node.OR && Array.isArray(node.OR)) {
+        if (node.OR && Array.isArray(node.OR)) {
       const perimetroOr: NonNullable<PraticaListRequest["filter"]>["perimetroOr"] = [];
       const cfIn = new Set<string>();
       for (const orNode of node.OR) {
@@ -571,6 +639,20 @@ function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {
         filter.codiciFiscaliIn = [...new Set([...(filter.codiciFiscaliIn || []), ...cfIn])];
       }
       extractOrOperatorePerimetro(node.OR, "in");
+      // Ricerca libera (molti campi anagrafica nello stesso OR) → cerca ampia.
+      if (
+        !filter.cercaAmpia &&
+        node.OR.length >= 8 &&
+        node.OR.some(
+          (n) =>
+            n &&
+            typeof n === "object" &&
+            "debitore" in (n as object) &&
+            typeof (n as { debitore?: unknown }).debitore === "object"
+        )
+      ) {
+        filter.cercaAmpia = true;
+      }
     }
     if (node.OR && !Array.isArray(node.OR)) walk(node.OR);
     if (node.assegnatarioId === null) filter.hasAssegnatario = false;

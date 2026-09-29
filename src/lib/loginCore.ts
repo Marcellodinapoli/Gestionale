@@ -7,12 +7,13 @@ import {
 } from "@/lib/data/operationalAccess";
 import { writeAudit } from "@/lib/domain";
 import {
+  canImpostarePostazioneFissa,
   mustChoosePostazioneAlLogin,
   type Role,
-  type SessionUser,
 } from "@/lib/permissions";
-import { isPasswordExpired } from "@/lib/passwordPolicy";
+import { isPasswordExpired } from "@/lib/passwordRules";
 import { normalizeTenantSlug } from "@/lib/tenant";
+import type { SessionCreateInput } from "@/lib/auth";
 
 export type LoginInput = {
   email?: string;
@@ -23,7 +24,7 @@ export type LoginInput = {
 export type LoginSuccess = {
   ok: true;
   href: string;
-  session: SessionUser;
+  session: SessionCreateInput;
 };
 
 export type LoginFailure = { error: string };
@@ -76,7 +77,9 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     return loginError("Credenziali non valide");
   }
 
-  const keepPostazione = Boolean(user.postazioneFissa && user.postazioneId);
+  const keepPostazione =
+    canImpostarePostazioneFissa(user.role as Role) &&
+    Boolean(user.postazioneFissa && user.postazioneId);
   let postazioneIdDopoLogin: string | null = user.postazioneId;
 
   if (keepPostazione && user.postazioneId) {
@@ -96,10 +99,12 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     await updateUserLogin(user.id, {
       lastLoginAt: new Date(),
       postazioneId: null,
+      // Legal (e ruoli senza fissa): azzera anche eventuale flag residuo.
+      postazioneFissa: false,
     });
   }
 
-  const session: SessionUser = {
+  const session: SessionCreateInput = {
     id: user.id,
     email: user.email,
     name: user.name,
@@ -109,6 +114,7 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     tenantSlug: tenant.slug,
     tenantNome: tenant.nome,
     formazioneOnly: user.formazioneOnly,
+    passwordChangedAt: user.passwordChangedAt ?? null,
   };
 
   await writeAudit({

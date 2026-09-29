@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { isFormazioneOnlyPath } from "@/lib/formazioneOnlyAccess";
+import { isPasswordExpired } from "@/lib/passwordRules";
 
 const COOKIE = "gestionale_session";
 
@@ -11,6 +12,18 @@ const PLATFORM_CORS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
   "Access-Control-Max-Age": "86400",
 };
+
+/** Pagine consentite con password scaduta (solo cambio password / uscita). */
+function allowsExpiredPassword(pathname: string) {
+  return (
+    pathname === "/cambia-password" ||
+    pathname.startsWith("/cambia-password/") ||
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/attiva-account" ||
+    pathname.startsWith("/attiva-account/")
+  );
+}
 
 function secret() {
   const value = process.env.SESSION_SECRET?.trim();
@@ -41,6 +54,19 @@ export async function middleware(request: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token, secret());
+
+    // Password scaduta: niente gestionale finché non si cambia (tutti i ruoli).
+    if (
+      !allowsExpiredPassword(pathname) &&
+      isPasswordExpired(
+        typeof payload.passwordChangedAt === "string"
+          ? payload.passwordChangedAt
+          : null
+      )
+    ) {
+      return NextResponse.redirect(new URL("/cambia-password", request.url));
+    }
+
     if (payload.formazioneOnly !== true) return NextResponse.next();
 
     if (isFormazioneOnlyPath(pathname)) return NextResponse.next();
@@ -54,6 +80,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/api/platform/:path*",
-    "/((?!api|login|attiva-account|cambia-password|seleziona-postazione|setup-sedi|_next/static|_next/image|favicon.ico).*)",
+    // Inclusi setup-sedi e seleziona-postazione: con password scaduta → /cambia-password.
+    "/((?!api|login|attiva-account|cambia-password|_next/static|_next/image|favicon.ico).*)",
   ],
 };

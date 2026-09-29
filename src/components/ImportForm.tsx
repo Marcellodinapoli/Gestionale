@@ -603,10 +603,10 @@ export function ImportForm({
 
       <div className="space-y-1">
         <span className="text-xs font-semibold text-[var(--muted)]">File CSV</span>
-        <input
+      <input
           ref={fileRef}
-          type="file"
-          accept=".csv,text/csv"
+        type="file"
+        accept=".csv,text/csv"
           disabled={pending}
           className="sr-only"
           onChange={(e) => {
@@ -698,7 +698,7 @@ export function ImportForm({
           className="h-10 rounded-lg border border-[var(--line)] bg-white px-4 font-medium text-[var(--navy)] hover:bg-slate-50 disabled:opacity-60"
         >
           Annulla
-        </button>
+      </button>
       </div>
       {message ? (
         <div

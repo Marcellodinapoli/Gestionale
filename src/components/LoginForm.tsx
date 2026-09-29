@@ -45,7 +45,12 @@ export function LoginForm({
           return;
         }
         if (data.ok && data.href) {
-          router.push(data.href);
+          // Password scaduta: replace così non si torna indietro nell'app.
+          if (data.href.includes("cambia-password")) {
+            router.replace(data.href);
+          } else {
+            router.push(data.href);
+          }
           router.refresh();
         }
       } catch {

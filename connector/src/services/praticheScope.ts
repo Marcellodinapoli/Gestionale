@@ -7,7 +7,8 @@ export type ScopeInput = {
   memberIds?: string[];
   /**
    * Nasconde pratiche scadute dallo stragiudiziale / giudiziale avviato.
-   * Usato per OPERATOR/SUPERVISOR anche quando cercaAmpia promuove lo scope ad ADMIN.
+   * Tipico per OPERATOR/SUPERVISOR in coda operativa; in ricerca anagrafica
+   * (`cercaAmpia`) va impostato a false.
    */
   hideFuoriStragiudiziale?: boolean;
 };

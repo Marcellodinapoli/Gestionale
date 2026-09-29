@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/guard";
 import { isConnectorProvider } from "@/lib/data/factory";
-import { praticaDbFromUser } from "@/lib/praticheRepo";
+import { praticaDb, resolveTenantSlug } from "@/lib/praticheRepo";
 import { euro } from "@/lib/domain";
 import { praticaCercaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import { STATO_LABELS } from "@/lib/permissions";
@@ -39,7 +39,13 @@ export async function GET(req: Request) {
   const user = await requireApiUser();
   if (user instanceof NextResponse) return user;
 
-  const praticaModel = praticaDbFromUser(user);
+  const praticaModel = praticaDb({
+    tenantId: user.tenantId,
+    tenantSlug: resolveTenantSlug(user),
+    role: user.role,
+    userId: user.id,
+    skipRoleScope: true,
+  });
 
   const baseScope = await praticaCercaScopeWhere(user);
 

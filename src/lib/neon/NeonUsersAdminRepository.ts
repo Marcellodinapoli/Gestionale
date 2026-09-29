@@ -143,6 +143,12 @@ function buildFilter(tenantId: string, filter?: UserFilter): { sql: string; para
     parts.push(`u."SupervisorId" = $${i++}::uuid`);
     params.push(filter.supervisorId);
   }
+  if (filter.supervisorIdsIn?.length) {
+    const ids = filter.supervisorIdsIn.filter(isUuid);
+    if (!ids.length) return { ...EMPTY_FILTER };
+    parts.push(`u."SupervisorId" = ANY($${i++}::uuid[])`);
+    params.push(ids);
+  }
   if (filter.email) {
     parts.push(`lower(u."Email") = lower($${i++})`);
     params.push(filter.email);

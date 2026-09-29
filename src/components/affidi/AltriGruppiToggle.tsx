@@ -48,9 +48,9 @@ export function AltriGruppiToggle({ gruppi }: { gruppi: GruppoInfo[] }) {
                   Supervisor: {sup.name}
                 </span>
               </div>
-              {sup.operators.length > 0 ? (
+              {(sup.operators ?? []).length > 0 ? (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {sup.operators.map((op) => (
+                  {(sup.operators ?? []).map((op) => (
                     <span
                       key={op.id}
                       className="rounded-full border border-[var(--line)] bg-[#eef4f8] px-2.5 py-0.5 text-xs"

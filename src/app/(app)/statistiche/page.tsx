@@ -326,9 +326,9 @@ export default async function StatistichePage({
     ? await buildStatisticheGruppo(
         gruppo,
         {
-          affidoDa,
-          affidoA,
-          mandanteId: sp.mandanteId,
+    affidoDa,
+    affidoA,
+    mandanteId: sp.mandanteId,
           lotti: lottiSelezionati,
         },
         tutteLePratiche && !sedeScopeId
@@ -368,7 +368,7 @@ export default async function StatistichePage({
         : "Tutti i gruppi"
       : gruppo.supervisorName
         ? `Gruppo di ${gruppo.supervisorName} · ${operatoriGruppo.map((m) => m.name).join(", ") || gruppo.members.map((m) => m.name).join(", ")}`
-        : `Gruppo · ${user.name}`;
+    : `Gruppo · ${user.name}`;
 
   return (
     <div className="h-full min-h-0 min-w-0 max-w-full overflow-x-hidden overflow-y-auto pb-2">

@@ -555,15 +555,16 @@ function buildOrderBy(sortField?: string, sortDir: "asc" | "desc" = "desc") {
 }
 
 function scopeForList(scope: ScopeInput, filter?: ListFilter): ScopeInput {
-  // F1: tutte le pratiche del tenant (perimetro resta nei filtri), senza vincolo assegnatario.
-  // Conserva l'esclusione scadute/giudiziale se l'utente è OP/SUP.
+  // F1 / ricerca anagrafica: tutte le pratiche del tenant (perimetro resta nei
+  // filtri), senza vincolo assegnatario e senza nascondere scadute stragiudiziale
+  // / già in giudiziale — altrimenti un cognome come «Pellegrini» non esce.
+  if (filter?.cercaAmpia || (scope as ScopeInput & { skipRoleScope?: boolean }).skipRoleScope) {
+    return { ...scope, role: "ADMIN", hideFuoriStragiudiziale: false };
+  }
   const hideFuori =
     scope.hideFuoriStragiudiziale === true ||
     scope.role === "OPERATOR" ||
     scope.role === "SUPERVISOR";
-  if (filter?.cercaAmpia) {
-    return { ...scope, role: "ADMIN", hideFuoriStragiudiziale: hideFuori };
-  }
   return { ...scope, hideFuoriStragiudiziale: hideFuori };
 }
 

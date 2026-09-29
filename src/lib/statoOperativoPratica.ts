@@ -13,6 +13,7 @@ export const STATI_FILTRO_PRATICHE = [
   { value: "IN_LAVORAZIONE", label: "In lavorazione" },
   { value: "NUOVA", label: "Nuove" },
   { value: "SCADUTA", label: "Scadute" },
+  { value: "TUTTI", label: "Tutti" },
 ] as const;
 
 export const STATO_OPERATIVO_LABELS: Record<StatoOperativo, string> = {
@@ -80,6 +81,9 @@ export function whereStatoFiltroPratiche(
   statoFiltro: string,
   now = new Date()
 ): Record<string, unknown> {
+  if (statoFiltro === "TUTTI") {
+    return {};
+  }
   const oggi = inizioGiornataUtc(now);
   if (statoFiltro === "SCADUTA") {
     return {

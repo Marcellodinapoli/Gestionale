@@ -1,6 +1,8 @@
 import { Card, PageHeader } from "@/components/ui";
 import { saveDialerIntegrationConfigAction } from "@/actions/predictiveDialer";
 import { requireNavPage } from "@/lib/guard";
+import { can } from "@/lib/permissions";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   DIALER_CONFIG_API_BASE,
@@ -16,6 +18,7 @@ import {
 
 export default async function PredictiveDialerAdminPage() {
   const user = await requireNavPage("dialer");
+  if (!can(user, "dialer:admin")) redirect("/predictive-dialer");
   const rows = await prisma.configurazioneSistema.findMany({
     where: { tenantId: user.tenantId, categoria: DIALER_CONFIG_CATEGORIA },
   });

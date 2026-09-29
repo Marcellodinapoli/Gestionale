@@ -98,6 +98,14 @@ export async function changePasswordAction(formData: FormData) {
 
   await rotateUserPassword(user.id, newPassword);
 
+  // Rinnova il cookie di sessione con passwordChangedAt aggiornato,
+  // altrimenti il middleware continuerà a mandare su /cambia-password.
+  const { createSession } = await import("@/lib/auth");
+  await createSession({
+    ...user,
+    passwordChangedAt: new Date(),
+  });
+
   await writeAudit({
     userId: user.id,
     action: "password_change",

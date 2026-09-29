@@ -7,6 +7,8 @@ export type UserFilter = {
   role?: string;
   rolesIn?: string[];
   supervisorId?: string | null;
+  /** Filtra operatori con supervisorId in elenco. */
+  supervisorIdsIn?: string[];
   supervisorIdSet?: boolean;
   formazioneOnly?: boolean;
   consulenteEsterno?: boolean;

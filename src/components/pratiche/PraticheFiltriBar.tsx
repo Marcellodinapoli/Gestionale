@@ -5,12 +5,11 @@ import Link from "next/link";
 import { SlidersHorizontal, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { STATI_FILTRO_PRATICHE } from "@/lib/statoOperativoPratica";
-import { formatDataIso, startOfToday, LAVORATE_FASCE, labelLavorateFascia, type LavorateFascia } from "@/lib/lavorateOggiUi";
+import { formatDataIso, startOfToday, LAVORATE_FASCE, type LavorateFascia } from "@/lib/lavorateOggiUi";
 import { hasAltriFiltri, ALTRI_FILTRI_PRESERVE_KEYS, type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
 import { CodScaricoFiltroControls } from "@/components/filtri/CodScaricoFiltroControls";
 import { OperatoreFiltroControls } from "@/components/filtri/OperatoreFiltroControls";
 import { AggiuntivoFiltroControls } from "@/components/filtri/AggiuntivoFiltroControls";
-import { AltriFiltriAttiviElenco } from "@/components/filtri/AltriFiltriAttiviElenco";
 import { TextFiltroControls } from "@/components/filtri/TextFiltroControls";
 import { FILTRI_FIELD_CLASS, QUICK_BAR_COMPOUND_FIELD_CLASS, QUICK_BAR_FIELD_CLASS } from "@/components/filtri/filtriFieldStyles";
 import { SelectFiltroControls } from "@/components/filtri/SelectFiltroControls";
@@ -174,7 +173,15 @@ export function PraticheFiltriBar({
   operatoreDefaultId?: string | null;
 }) {
   const STATO_DEFAULT = "IN_LAVORAZIONE";
-  const statoEffettivo = nascondiFiltroStato ? STATO_DEFAULT : stato || STATO_DEFAULT;
+  const hasQ = Boolean(q?.trim());
+  // Ricerca generica → mostra e invia «Tutti».
+  const statoEffettivo = nascondiFiltroStato
+    ? hasQ
+      ? "TUTTI"
+      : STATO_DEFAULT
+    : hasQ
+      ? "TUTTI"
+      : stato || STATO_DEFAULT;
   // Opzione selezionata per prima: alcuni browser riordinano le <option> e rompono l’hydration.
   const statiFiltroOpts = useMemo(() => {
     const list = STATI_FILTRO_PRATICHE.map((o) => ({ value: o.value, label: o.label }));
@@ -198,7 +205,6 @@ export function PraticheFiltriBar({
     lavorateDa || (legacySingoloGiorno ? lavorateData || oggiIso : undefined);
   const dataLavorateA =
     lavorateA || (legacySingoloGiorno ? lavorateData || oggiIso : undefined);
-  const hasLavorateRange = !!(dataLavorateDa || dataLavorateA);
   const hasFilters = searchActive;
   const perimetriBarOpts = useMemo(
     () => perimetroFiltroOptions(mandantiPerimetri, a.mandato),
@@ -304,6 +310,25 @@ export function PraticheFiltriBar({
         action="/pratiche"
         className="notranslate flex w-full flex-wrap items-end gap-1.5 pb-0.5"
         translate="no"
+        onSubmit={(e) => {
+          const form = e.currentTarget;
+          const qInput = form.elements.namedItem("q") as HTMLInputElement | null;
+          const statoSel = form.elements.namedItem("stato") as
+            | HTMLSelectElement
+            | HTMLInputElement
+            | null;
+          if (qInput?.value.trim() && statoSel) {
+            statoSel.value = "TUTTI";
+          }
+          // Ricerca generica: non limitare per operatore (Nuove / altre pratiche).
+          if (qInput?.value.trim()) {
+            const op = form.elements.namedItem("operatore") as
+              | HTMLSelectElement
+              | HTMLInputElement
+              | null;
+            if (op) op.value = "";
+          }
+        }}
       >
         <input type="hidden" name="cerca" value="1" />
         {hiddenNav}
@@ -327,7 +352,7 @@ export function PraticheFiltriBar({
         />
         </div>
         {nascondiFiltroStato ? (
-          <input type="hidden" name="stato" value={STATO_DEFAULT} />
+          <input type="hidden" name="stato" value={hasQ ? "TUTTI" : STATO_DEFAULT} />
         ) : (
           <select
             name="stato"
@@ -474,37 +499,6 @@ export function PraticheFiltriBar({
         ) : null}
       </div>
       </div>
-
-      {hasLavorateRange ? (
-        <p className="mb-2 text-xs text-[var(--muted)]">
-          Filtro attivo: ultima lavorazione (operatore/supervisor)
-          {dataLavorateDa && dataLavorateA
-            ? ` dal ${new Date(dataLavorateDa + "T12:00:00").toLocaleDateString("it-IT")} al ${new Date(dataLavorateA + "T12:00:00").toLocaleDateString("it-IT")}`
-            : dataLavorateDa
-              ? ` dal ${new Date(dataLavorateDa + "T12:00:00").toLocaleDateString("it-IT")} in poi`
-              : ` fino al ${new Date(dataLavorateA! + "T12:00:00").toLocaleDateString("it-IT")}`}
-          {lavorateFascia ? ` (${labelLavorateFascia(lavorateFascia)})` : ""}
-          .
-        </p>
-      ) : lavorateFascia ? (
-        <p className="mb-2 text-xs text-[var(--muted)]">
-          Filtro attivo: lavorazioni di oggi in fascia{" "}
-          {lavorateFascia ? labelLavorateFascia(lavorateFascia) : ""}.
-        </p>
-      ) : null}
-      {nonToccateDa ? (
-        <p className="mb-2 text-xs text-[var(--muted)]">
-          Filtro attivo: pratiche dormienti (aperte, non aggiornate da almeno{" "}
-          {nonToccateDa} giorni; escluse le promesse con data successiva a oggi).
-        </p>
-      ) : null}
-
-      <AltriFiltriAttiviElenco
-        filtri={altri}
-        operatori={operatori}
-        mandanti={mandanti}
-        excludeIds={["cod-scarico", "perimetro", "operatore"]}
-      />
 
       <Modal
         open={altriFiltriOpen}

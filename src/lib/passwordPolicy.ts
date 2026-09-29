@@ -5,34 +5,17 @@ import { isConnectorProvider, isNeonProvider, isSqlBackendProvider } from "@/lib
 import { usersDb } from "@/lib/usersRepo";
 import { neonQuery } from "@/lib/neon/pool";
 import { connectorFetch } from "@/lib/data/connector/ConnectorClient";
-import { validatePasswordComplexity } from "@/lib/passwordRules";
+import {
+  isPasswordExpired,
+  validatePasswordComplexity,
+} from "@/lib/passwordRules";
 
-export { PASSWORD_MIN_LENGTH } from "@/lib/passwordRules";
-export const PASSWORD_MAX_AGE_DAYS = 30;
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-type DateLike = Date | string | null | undefined;
-
-function toDate(value: DateLike): Date | null {
-  if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-export function isPasswordExpired(passwordChangedAt: DateLike) {
-  const changedAt = toDate(passwordChangedAt);
-  if (!changedAt) return true;
-  return Date.now() - changedAt.getTime() >= PASSWORD_MAX_AGE_DAYS * MS_PER_DAY;
-}
-
-export function giorniAllaScadenzaPassword(passwordChangedAt: DateLike) {
-  const changedAt = toDate(passwordChangedAt);
-  if (!changedAt) return 0;
-  const expiresAt = changedAt.getTime() + PASSWORD_MAX_AGE_DAYS * MS_PER_DAY;
-  return Math.max(0, Math.ceil((expiresAt - Date.now()) / MS_PER_DAY));
-}
+export {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_AGE_DAYS,
+  isPasswordExpired,
+  giorniAllaScadenzaPassword,
+} from "@/lib/passwordRules";
 
 async function userModelForPasswordOps(_userId: string) {
   if (!isSqlBackendProvider()) return prisma.user;

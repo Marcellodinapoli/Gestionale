@@ -181,6 +181,9 @@ function prismaWhereToFilter(where: unknown): UserFilter | undefined {
       filter.supervisorId = null;
     } else if (typeof node.supervisorId === "string") {
       filter.supervisorId = node.supervisorId;
+    } else if (node.supervisorId && typeof node.supervisorId === "object") {
+      const s = node.supervisorId as Record<string, unknown>;
+      if (Array.isArray(s.in)) filter.supervisorIdsIn = s.in.map(String);
     }
     if (typeof node.formazioneOnly === "boolean") filter.formazioneOnly = node.formazioneOnly;
     if (node.sedeId === null) {

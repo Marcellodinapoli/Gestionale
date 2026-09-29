@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addAttivitaMassivaAction } from "@/actions/core";
 import { StatoBadge } from "@/components/ui";
@@ -160,12 +161,15 @@ export function PraticheListaConNotaMassiva({
   tutteIds,
   /** Totale pratiche del filtro (per etichetta «N visibili»). */
   totaleFiltro,
+  filtriAttivi,
 }: {
   pratiche: PraticaListaRow[];
   sortColumns: SortCol[];
   canNotaMassiva: boolean;
   tutteIds?: string[];
   totaleFiltro?: number;
+  /** Riepilogo filtri applicati (visibile a tutti). */
+  filtriAttivi?: ReactNode;
 }) {
   const router = useRouter();
   const pageIds = pratiche.map((p) => p.id);
@@ -306,9 +310,8 @@ export function PraticheListaConNotaMassiva({
               importante ? "text-[#5a3e00]/80" : "text-[var(--muted)]"
             }`}
           >
-            <strong>Importante</strong> = sfondo giallo. <strong>Fissa</strong> = pin in alto
-            nella pratica (come Togli/Fissa in scheda). La spunta in intestazione seleziona{" "}
-            <strong>tutte</strong> le pratiche del filtro (anche le altre pagine).
+            La spunta in intestazione seleziona <strong>tutte</strong> le pratiche del filtro
+            (anche le altre pagine).
           </p>
           {msg ? (
             <p
@@ -321,6 +324,8 @@ export function PraticheListaConNotaMassiva({
           ) : null}
         </div>
       ) : null}
+
+      {filtriAttivi ? <div className="shrink-0 px-0.5">{filtriAttivi}</div> : null}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-white">
         <div

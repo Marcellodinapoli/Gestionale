@@ -39,6 +39,11 @@ export async function POST(req: Request) {
   if (user.role === "SUPERVISOR" && user.id !== supervisorId) {
     return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
   }
+  if (user.role === "OPERATOR") {
+    if (!user.supervisorId || user.supervisorId !== supervisorId) {
+      return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
+    }
+  }
 
   const sup = await usersDbFromUser(user).findFirst({
     where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR", active: true },

@@ -55,11 +55,10 @@ export function OperatoreFiltroControls({
     const allowed = new Set(operatori.map((o) => o.id));
     setSelected((prev) => {
       const filtered = prev.filter((id) => allowed.has(id));
-      if (filtered.length !== prev.length) {
-        onOperatoreChange?.(filtered);
-        return filtered;
-      }
-      return prev;
+      if (filtered.length === prev.length) return prev;
+      // Notifica il parent dopo il commit (mai dentro l'updater di setState).
+      queueMicrotask(() => onOperatoreChange?.(filtered));
+      return filtered;
     });
   }, [hydrated, operatori, onOperatoreChange]);
 

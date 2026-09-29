@@ -4,8 +4,6 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import sql from "mssql";
 import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
-import { isSqliteProvider } from "@/lib/data/config";
-import { prisma } from "@/lib/prisma";
 import { neonQuery } from "@/lib/neon/pool";
 
 function loadEnvFile(filePath: string) {
@@ -188,7 +186,7 @@ export { sql };
 let candidatoAnagraficaCols: boolean | null = null;
 let candidatoIndeedApplyCols: boolean | null = null;
 
-/** True se le colonne Cognome/Nome esistono (migration 033 / SQLite locale). */
+/** True se le colonne Cognome/Nome esistono (migration 033). */
 export async function recruitingHasCandidatoAnagrafica(): Promise<boolean> {
   if (candidatoAnagraficaCols != null) return candidatoAnagraficaCols;
   if (isNeonProvider()) {
@@ -196,22 +194,8 @@ export async function recruitingHasCandidatoAnagrafica(): Promise<boolean> {
     return true;
   }
   if (!recruitingUsesSql()) {
-    if (!isSqliteProvider()) {
-      candidatoAnagraficaCols = true;
-      return true;
-    }
-    try {
-      const rows = await prisma.$transaction((tx) =>
-        tx.$queryRaw<Array<{ name: string }>>`
-          PRAGMA table_info("RecruitingCandidatura")
-        `
-      );
-      const names = new Set(rows.map((r) => String(r.name || "").toLowerCase()));
-      candidatoAnagraficaCols = names.has("cognome") && names.has("nome");
-    } catch {
-      candidatoAnagraficaCols = false;
-    }
-    return candidatoAnagraficaCols;
+    candidatoAnagraficaCols = true;
+    return true;
   }
   const pool = await recruitingPool();
   const res = await pool.request().query(`
@@ -234,26 +218,8 @@ export async function recruitingHasCandidatoIndeedApplyFields(): Promise<boolean
     return true;
   }
   if (!recruitingUsesSql()) {
-    if (!isSqliteProvider()) {
-      candidatoIndeedApplyCols = true;
-      return true;
-    }
-    try {
-      const rows = await prisma.$transaction((tx) =>
-        tx.$queryRaw<Array<{ name: string }>>`
-          PRAGMA table_info("RecruitingCandidatura")
-        `
-      );
-      const names = new Set(rows.map((r) => String(r.name || "").toLowerCase()));
-      candidatoIndeedApplyCols =
-        names.has("email") &&
-        names.has("emailverified") &&
-        names.has("phone") &&
-        names.has("coverletter");
-    } catch {
-      candidatoIndeedApplyCols = false;
-    }
-    return candidatoIndeedApplyCols;
+    candidatoIndeedApplyCols = true;
+    return true;
   }
   const pool = await recruitingPool();
   const res = await pool.request().query(`

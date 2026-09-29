@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { euro } from "@/lib/domainFormat";
 import { buildAffidiHref, type AffidiNavParams } from "@/components/affidi/AffidiCaricoOperatori";
@@ -38,26 +38,25 @@ function AnnoOperatoreModal({
 }) {
   const [righe, setRighe] = useState<RigaMeseIncassoGuadagno[] | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   const carica = useCallback(() => {
     if (!operatore) return;
     setErrore(null);
     setRighe(null);
-    startTransition(async () => {
-      try {
-        const data = await loadIncassiGuadagnoAnnoOperatoreAction({
-          operatoreId: operatore.id,
-          anno,
-          caricoMandato,
-          caricoPerimetro,
-          numeriMandante,
-        });
-        setRighe(data);
-      } catch (e) {
+    setPending(true);
+    void loadIncassiGuadagnoAnnoOperatoreAction({
+      operatoreId: operatore.id,
+      anno,
+      caricoMandato,
+      caricoPerimetro,
+      numeriMandante,
+    })
+      .then((data) => setRighe(data))
+      .catch((e) => {
         setErrore(e instanceof Error ? e.message : "Errore nel caricamento");
-      }
-    });
+      })
+      .finally(() => setPending(false));
   }, [operatore, anno, caricoMandato, caricoPerimetro, numeriMandante]);
 
   useEffect(() => {

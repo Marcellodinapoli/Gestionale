@@ -7,7 +7,6 @@ import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { isManutenzione } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
 import { AffidiDaAffidareTable } from "@/components/affidi/AffidiDaAffidareTable";
-import { AffidiFiltroOperatore } from "@/components/affidi/AffidiFiltroOperatore";
 import { AffidiPraticheOperatore } from "@/components/affidi/AffidiPraticheOperatore";
 import { AffidiPerimetroOverview } from "@/components/affidi/AffidiPerimetroOverview";
 import { AffidiFiltriBackOffice } from "@/components/affidi/AffidiFiltriBackOffice";
@@ -150,7 +149,8 @@ export default async function AffidiPage({
   const isBackOffice = user.role === "BACK_OFFICE";
   const isAdmin = user.role === "ADMIN";
   const isVistaGruppo = isSupervisor || isBackOffice;
-  const mostraMonitor = isAdmin || isBackOffice;
+  /** Stesse funzioni Affidi per chi ha pratiche:assign (ADMIN / SUPERVISOR / BACK_OFFICE). */
+  const mostraMonitor = isAdmin || isBackOffice || isSupervisor;
 
   const mandantiDb = vuoto
     ? []
@@ -306,7 +306,7 @@ export default async function AffidiPage({
   const annoCarico = parseIncMeseParam(caricoMeseRaw).year;
   // Tabelle incassi/pratiche per operatore solo dopo Filtra (caricoCerca=1).
   const showCaricoKpi =
-    (isAdmin || isBackOffice) &&
+    mostraMonitor &&
     !vuoto &&
     (caricoCercaRaw === "1" ||
       Boolean(caricoMandatoRaw || caricoPerimetroRaw || caricoMeseRaw));
@@ -402,7 +402,7 @@ export default async function AffidiPage({
         })
       : null;
   const caricoFiltriPanel =
-    (isAdmin || isBackOffice) && !vuoto ? (
+    mostraMonitor && !vuoto ? (
       <Card title="Filtri · incassi e pratiche per operatore">
         <AffidiCaricoFiltri
           mandanti={mandantiMonitor}
@@ -561,7 +561,7 @@ export default async function AffidiPage({
       />
     ) : null;
 
-  const altriGruppi = isSupervisor
+  const altriGruppiRaw = isSupervisor
     ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
@@ -569,20 +569,34 @@ export default async function AffidiPage({
           active: true,
           id: { not: user.id },
         },
+        orderBy: { name: "asc" },
         select: {
           id: true,
           name: true,
           gruppoNome: true,
           gruppoMandanti: true,
-          operators: {
-            where: { tenantId: user.tenantId, active: true, role: "OPERATOR" },
-            select: { id: true, name: true },
-            orderBy: { name: "asc" },
-          },
         },
-        orderBy: { name: "asc" },
       })
     : [];
+  const altriGruppiOperatori =
+    altriGruppiRaw.length > 0
+      ? await usersDbFromUser(user).findMany({
+          where: {
+            tenantId: user.tenantId,
+            role: "OPERATOR",
+            active: true,
+            supervisorId: { in: altriGruppiRaw.map((s) => s.id) },
+          },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, supervisorId: true },
+        })
+      : [];
+  const altriGruppi = altriGruppiRaw.map((sup) => ({
+    ...sup,
+    operators: altriGruppiOperatori
+      .filter((o) => o.supervisorId === sup.id)
+      .map((o) => ({ id: o.id, name: o.name })),
+  }));
 
   if (isVistaGruppo) {
     return (
@@ -595,6 +609,8 @@ export default async function AffidiPage({
         </Suspense>
 
         {caricoFiltriPanel}
+
+        {monitorPanel}
 
         {isBackOffice ? (
           <Card title="Filtri">
@@ -710,16 +726,6 @@ export default async function AffidiPage({
                         filtroCaricoLabel={filtroCaricoLabel}
                       />
                     </div>
-                  ) : isSupervisor ? (
-                    <AffidiFiltroOperatore
-                      operatori={membriCarico}
-                      selezionatoId={selezionatoId}
-                      coda={codaRaw}
-                      nav={{
-                        mandato: refPerimetro.mandanteId,
-                        perimetro: refPerimetro.perimetro,
-                      }}
-                    />
                   ) : null}
                   <p className="mb-2 text-xs text-[var(--muted)]">
                     Pratiche in carico
@@ -873,8 +879,6 @@ export default async function AffidiPage({
             </Card>
           </>
         )}
-
-        {monitorPanel}
       </div>
     );
   }

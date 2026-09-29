@@ -1,5 +1,5 @@
 import "server-only";
-import type { SessionUser } from "@/lib/permissions";
+import { can, type SessionUser } from "@/lib/permissions";
 import { loadInvitiOperatore, loadSessioneOperatore } from "@/lib/predictive-dialer/operatorSession";
 import { loadCampagnaStats, loadMonitorOperatori } from "@/lib/predictive-dialer/stats";
 import { listCampagneForUser } from "@/lib/predictive-dialer/campaigns";
@@ -12,9 +12,11 @@ export async function loadDialerStreamPayload(user: SessionUser, campagnaId?: st
   const inviti = await loadInvitiOperatore(user);
   const sessione = await loadSessioneOperatore(user, campagnaId);
 
-  if (user.role === "ADMIN" || user.role === "SUPERVISOR") {
+  if (can(user, "dialer:manage")) {
     const campagne = await listCampagneForUser(user);
-    const activeId = campagnaId ?? campagne.find((c) => c.stato === "ATTIVA")?.id;
+    // Solo campagnaId esplicito: niente auto-pick della prima ATTIVA.
+    const activeId =
+      campagnaId && campagne.some((c) => c.id === campagnaId) ? campagnaId : undefined;
     const stats = activeId ? await loadCampagnaStats(user.tenantId, activeId) : null;
     const monitor = activeId
       ? await loadMonitorOperatori(activeId, stats?.pacing.pacingRatio)

@@ -5,6 +5,7 @@ import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireModule, requireNavPage } from "@/lib/guard";
 import { praticaWhere } from "@/lib/domain";
+import { canManageLavorazione, canPickGruppoLavorazione } from "@/lib/permissions";
 import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
@@ -46,8 +47,8 @@ export default async function LavorazionePage({
   const oggi = formatDataIso(new Date());
   const dataPiano = parseDataIso(giornoRaw) ? giornoRaw!.trim() : oggi;
 
-  const canEdit = user.role === "SUPERVISOR" || user.role === "ADMIN";
-  const canPickGruppo = user.role === "ADMIN";
+  const canEdit = canManageLavorazione(user);
+  const canPickGruppo = canPickGruppoLavorazione(user);
 
   const supervisori = canPickGruppo
     ? await usersDbFromUser(user).findMany({
@@ -255,9 +256,13 @@ export default async function LavorazionePage({
     canEdit && (user.role === "SUPERVISOR" ? user.id === supervisorId : true);
   const pianoSalvato = datePiani.includes(dataPiano);
   const canEditFields = canEditPiano && (!pianoSalvato || inModifica);
-  /** Operatori: monitoraggio. Supervisor: solo modifica salvato o bozza aperta con Nuovo piano. */
+  /**
+   * Monitoraggio sempre visibile sul piano pubblicato (come per gli operatori).
+   * I gestori entrano in edit solo con Nuovo piano / Modifica.
+   * Giorno senza piano: card solo dopo «Nuovo piano».
+   */
   const mostraCardPiano =
-    !canEditPiano || inModifica || (!pianoSalvato && apriNuovo);
+    !canEditPiano || pianoSalvato || inModifica || apriNuovo;
   const giornoDopoElimina =
     datePiani.filter((d) => d !== dataPiano).sort((a, b) => b.localeCompare(a))[0] ??
     null;
@@ -305,9 +310,13 @@ export default async function LavorazionePage({
         ? gruppo.gruppoNome
           ? `Piano lavorazione · ${gruppo.gruppoNome}`
           : "Configura le lavorazioni suggerite per il team"
-        : supervisor?.gruppoNome
-          ? `Gruppo ${supervisor.gruppoNome} · ${supervisor?.name}`
-          : "Lavorazioni suggerite per gruppo";
+        : canEdit
+          ? supervisor?.gruppoNome
+            ? `Gruppo ${supervisor.gruppoNome} · ${supervisor?.name}`
+            : "Configura e monitora i piani di lavorazione per gruppo"
+          : supervisor?.gruppoNome
+            ? `Gruppo ${supervisor.gruppoNome} · ${supervisor?.name}`
+            : "Lavorazioni suggerite per gruppo";
 
   return (
     <LavorazionePageClient>

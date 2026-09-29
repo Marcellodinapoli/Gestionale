@@ -8,6 +8,11 @@ export type PraticaScope = {
   userId: string;
   /** Supervisor: id operatori del team */
   memberIds?: string[];
+  /**
+   * Ricerca anagrafica: niente filtro assegnatario / portfolio / stragiudiziale
+   * (Neon/Connector applicano altrimenti lo scope ruolo anche se il where Prisma è ampio).
+   */
+  skipRoleScope?: boolean;
 };
 
 export type PraticaInclude =
@@ -27,6 +32,8 @@ export type PraticaInclude =
   | "importBatch";
 
 export type PraticaListFilter = {
+  /** Sentinel “nessun dato” (manutenzione / gruppo senza perimetro). */
+  none?: boolean;
   ids?: string[];
   excludeIds?: string[];
   idsIn?: string[];

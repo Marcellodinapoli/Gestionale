@@ -130,12 +130,33 @@ export function parseCodaNav(sp: SpLike): CodaNav {
   };
 }
 
+/** Ricerca anagrafica (filtro veloce `q` o blocco anagrafica in «Tutti i filtri»). */
+export function hasRicercaAnagrafica(filtro: {
+  q?: string | null;
+  altri?: AltriFiltri | null;
+}): boolean {
+  if (filtro.q?.trim()) return true;
+  const a = filtro.altri;
+  if (!a) return false;
+  return Boolean(
+    a.debitore?.trim() ||
+      a.citta?.trim() ||
+      a.prov?.trim() ||
+      a.telefono?.trim() ||
+      a.capDa?.trim() ||
+      a.capA?.trim() ||
+      a.cfPiva?.trim() ||
+      a.garante?.trim() ||
+      a.note?.trim()
+  );
+}
+
 export function codaFiltroWhere(filtro: CodaFiltro): Prisma.PraticaWhereInput {
   const extra: Prisma.PraticaWhereInput = {};
   const andExtra: Prisma.PraticaWhereInput[] = [];
 
-  // Stato operativo in AND dedicato: evita conflitto con OR della ricerca testuale.
-  if (filtro.stato) {
+  // Con ricerca anagrafica o «Tutti»: nessun vincolo di stato lavorazione.
+  if (filtro.stato && filtro.stato !== "TUTTI" && !hasRicercaAnagrafica(filtro)) {
     andExtra.push(whereStatoFiltroPratiche(filtro.stato) as Prisma.PraticaWhereInput);
   }
   if (filtro.esito) extra.esitoContatto = filtro.esito;

@@ -28,7 +28,9 @@ async function resolveSupervisorId(
     if (supervisorId !== user.id) fail("Non autorizzato");
     return user.id;
   }
-  if (user.role !== "ADMIN") fail("Non autorizzato");
+  if (user.role !== "ADMIN" && user.role !== "BACK_OFFICE") {
+    fail("Non autorizzato");
+  }
   const sup = await usersDbFromUser(user).findFirst({
     where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
     select: { id: true },

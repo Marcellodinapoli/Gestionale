@@ -9,8 +9,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
 import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandanti";
-import { isManutenzione, hasTenantWidePraticheScope, type SessionUser } from "@/lib/permissions";
-import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
+import { isManutenzione, type SessionUser } from "@/lib/permissions";
 
 export type GruppoPerimetroContext = {
   /** Operatore/supervisor in un gruppo con supervisor configurato. */
@@ -133,39 +132,23 @@ export async function praticaScopeWhere(user: SessionUser): Promise<Prisma.Prati
   const ctx = await resolveGruppoPerimetroContext(user);
   const base = praticaWhere(user);
   if (!ctx.nelGruppo) return base;
-  if (ctx.nessunPerimetroGruppo) return nessunDatoWhere();
+  // Gruppo senza perimetri: non azzerare l’elenco (bloccherebbe anche ricerche);
+  // resta lo scope ruolo (portfolio). Avviso UI in pagina Pratiche / Affidi.
+  if (ctx.nessunPerimetroGruppo) return base;
   return { AND: [base, ctx.periScope!] };
 }
 
 /**
- * Scope F1 / ricerca pratica: tutte le pratiche del tenant (o del perimetro gruppo),
- * in qualsiasi stato e indipendentemente dall’assegnatario (include da affidare).
+ * Scope F1 / ricerca pratica: tutte le pratiche del tenant.
+ * Nessun vincolo di assegnatario, perimetro gruppo, stato o scadenza stragiudiziale
+ * (a differenza della coda operativa). Usato da ricerca anagrafica in elenco
+ * Pratiche e da /api/pratiche-cerca.
  */
 export async function praticaCercaScopeWhere(
   user: SessionUser
 ): Promise<Prisma.PraticaWhereInput> {
   if (isManutenzione(user)) return nessunDatoWhere();
-  const tenantScope: Prisma.PraticaWhereInput = { tenantId: user.tenantId };
-  if (hasTenantWidePraticheScope(user.role)) {
-    return tenantScope;
-  }
-  const hideDopoStragiudiziale =
-    user.role === "OPERATOR" || user.role === "SUPERVISOR"
-      ? (whereVisibiliAdOperatoreSupervisor() as Prisma.PraticaWhereInput)
-      : null;
-  const ctx = await resolveGruppoPerimetroContext(user);
-  if (ctx.nelGruppo) {
-    if (ctx.nessunPerimetroGruppo) return nessunDatoWhere();
-    return {
-      AND: [
-        tenantScope,
-        ctx.periScope!,
-        ...(hideDopoStragiudiziale ? [hideDopoStragiudiziale] : []),
-      ],
-    };
-  }
-  // Fuori gruppo: almeno le pratiche già in portfolio (fallback).
-  return praticaWhere(user);
+  return { tenantId: user.tenantId };
 }
 
 export function gruppoPerimetroOptsFromContext(

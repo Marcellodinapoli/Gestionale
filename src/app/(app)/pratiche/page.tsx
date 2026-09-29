@@ -2,11 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
-import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, type PraticaDbContext } from "@/lib/praticheRepo";
+import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireNavPage } from "@/lib/guard";
 import { euro, dataIt } from "@/lib/domain";
 import {
   filtraIdsPraticaScope,
+  praticaCercaScopeWhere,
   praticaScopeWhere,
   resolveGruppoPerimetroContext,
 } from "@/lib/gruppoPerimetroScope";
@@ -14,6 +15,7 @@ import { esitoContattoLabel } from "@/lib/contatto";
 import {
   buildPraticaCodaHref,
   codaFiltroWhere,
+  hasRicercaAnagrafica,
   parseCodaNav,
 } from "@/lib/praticaCoda";
 import {
@@ -40,6 +42,7 @@ import {
 } from "@/components/PaginazioneBar";
 import { PraticheFiltriBar } from "@/components/pratiche/PraticheFiltriBar";
 import { PraticheListaConNotaMassiva } from "@/components/pratiche/PraticheListaConNotaMassiva";
+import { PraticheFiltriAttiviRiepilogo } from "@/components/pratiche/PraticheFiltriAttiviRiepilogo";
 import {
   PraticheConteggiProvider,
   PraticheConteggiSubtitle,
@@ -94,7 +97,6 @@ export default async function PratichePage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await requireNavPage("pratiche");
-  const praticaModel = praticaDbFromUser(user);
   const sp = await searchParams;
 
   const isOperatore = user.role === "OPERATOR";
@@ -106,28 +108,53 @@ export default async function PratichePage({
     !("stato" in sp) &&
     parseCodScaricoList(sp.codScarico).length > 0 &&
     parseCodScaricoList(sp.codScarico).every(isCodScaricoNullToken);
+  const qRicerca = sp.q?.trim() || "";
+  // Ricerca generica (filtro veloce): stato = Tutti.
+  const needsStatoTuttiPerRicerca =
+    Boolean(qRicerca) && !elencoSpecialeAttivo && sp.stato !== "TUTTI";
   const needsStatoDefault = elencoSpecialeAttivo
     ? false
-    : soloSenzaCodiceScarico
+    : needsStatoTuttiPerRicerca
       ? false
-      : isOperatore
-        ? sp.stato !== STATO_DEFAULT
-        : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
+      : soloSenzaCodiceScarico
+        ? false
+        : isOperatore
+          ? sp.stato !== STATO_DEFAULT
+          : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
+  // Ricerca anagrafica: non forzare l’operatore (Nuove / non assegnate).
   const needsOperatoreDefault =
-    Boolean(defaultOperatoreFiltroId(user.role, user.id)) && !("operatore" in sp);
+    Boolean(defaultOperatoreFiltroId(user.role, user.id)) &&
+    !("operatore" in sp) &&
+    !qRicerca;
+  // Se c’è già un operatore in URL ma stiamo cercando per anagrafica, toglilo.
+  const needsClearOperatorePerRicerca =
+    Boolean(qRicerca) && Boolean(sp.operatore?.trim());
 
-  if (needsStatoDefault || needsOperatoreDefault) {
+  if (
+    needsStatoTuttiPerRicerca ||
+    needsStatoDefault ||
+    needsOperatoreDefault ||
+    needsClearOperatorePerRicerca
+  ) {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
-      if (v != null && v !== "" && k !== "stato") params.set(k, v);
+      if (v == null || v === "") continue;
+      if (k === "stato") continue;
+      if (k === "operatore" && (qRicerca || needsClearOperatorePerRicerca)) continue;
+      params.set(k, v);
     }
-    params.set("stato", STATO_DEFAULT);
-    if (!isOperatore && !needsStatoDefault && sp.stato) {
+    if (needsStatoTuttiPerRicerca) {
+      params.set("stato", "TUTTI");
+    } else if (needsStatoDefault) {
+      params.set("stato", STATO_DEFAULT);
+    } else if (sp.stato) {
       params.set("stato", sp.stato);
     }
     if (needsOperatoreDefault) params.set("operatore", user.id);
     redirect(`/pratiche?${params.toString()}`);
   }
+
+  const praticaModel = praticaDbFromUser(user);
 
   const codaNavRaw = parseCodaNav(sp);
   const codaNav = elencoSpecialeAttivo
@@ -143,7 +170,13 @@ export default async function PratichePage({
   const altri = parseAltriFiltri(sp);
   const { page, pageSize } = paginateParams(sp.page);
   const periCtx = await resolveGruppoPerimetroContext(user);
-  const baseScope = await praticaScopeWhere(user);
+  const qTrim = (typeof sp.q === "string" ? sp.q : Array.isArray(sp.q) ? sp.q[0] : "")?.trim() || "";
+  const ricercaAnagrafica =
+    Boolean(qTrim) || hasRicercaAnagrafica({ q: qTrim || sp.q, altri });
+  // Ricerca anagrafica: scope ampio (altre pratiche, non solo portfolio / operatore).
+  const baseScope = ricercaAnagrafica
+    ? await praticaCercaScopeWhere(user)
+    : await praticaScopeWhere(user);
 
   const canUseOperatoreFiltroUi = canUseOperatoreFiltro(user.role);
   const needTemporanea =
@@ -154,9 +187,13 @@ export default async function PratichePage({
   const praticaCtx: PraticaDbContext = {
     tenantId: user.tenantId,
     tenantSlug: user.tenantSlug ?? user.tenantId,
-    role: user.role,
+    // Ricerca anagrafica: scope ADMIN + skipRoleScope (niente portfolio / stragiudiziale / perimetro).
+    role: ricercaAnagrafica ? "ADMIN" : user.role,
     userId: user.id,
+    skipRoleScope: ricercaAnagrafica,
   };
+  // Sempre praticaDb con ctx dedicato in ricerca (evita scope SUPERVISOR/stragiudiziale).
+  const praticaQuery = praticaDb(praticaCtx);
 
   const operatoriScopeIds = memberIdsOperatoreFiltro(
     user.role,
@@ -268,13 +305,20 @@ export default async function PratichePage({
 
   const altriWhere =
     altri && hasAltriFiltri(altri)
-      ? altriFiltriWhere(altri, {
-          canFilterOperatore: canUseOperatoreFiltroUi,
-          temporaneaIds: temporaneaIds ?? undefined,
-          importoTotIds: importoTotIds ?? undefined,
-          totIncassatoIds: totIncassatoIds ?? undefined,
-          mandantiPerimetri,
-        })
+      ? altriFiltriWhere(
+          // In ricerca anagrafica ignora il default operatore (supervisor/operatore):
+          // altrimenti le «Nuove» senza assegnatario non compaiono mai.
+          ricercaAnagrafica
+            ? { ...altri, operatore: undefined, operatoreOp: undefined }
+            : altri,
+          {
+            canFilterOperatore: canUseOperatoreFiltroUi,
+            temporaneaIds: temporaneaIds ?? undefined,
+            importoTotIds: importoTotIds ?? undefined,
+            totIncassatoIds: totIncassatoIds ?? undefined,
+            mandantiPerimetri,
+          }
+        )
       : {};
 
   const where = {
@@ -319,14 +363,14 @@ export default async function PratichePage({
 
   const canNotaMassiva = can(user, "pratiche:nota-massiva");
 
-  const total = showElenco ? await praticaModel.count({ where }) : 0;
+  const total = showElenco ? await praticaQuery.count({ where }) : 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const safeSkip = (safePage - 1) * pageSize;
 
   const [pratiche, tutteIdsRows] = showElenco
     ? await Promise.all([
-        praticaModel.findMany({
+        praticaQuery.findMany({
           where,
           include,
           orderBy: buildOrderBy(codaNav.sort, codaNav.dir),
@@ -334,7 +378,7 @@ export default async function PratichePage({
           take: pageSize,
         }),
         canNotaMassiva && total > 0
-          ? praticaModel.findMany({
+          ? praticaQuery.findMany({
               where,
               select: { id: true },
               // Senza orderBy: più veloce; serve solo per la selezione massiva.
@@ -441,30 +485,27 @@ export default async function PratichePage({
       <PageHeader
         title="Pratiche"
         subtitle={
-          periCtx.nessunPerimetroGruppo
-            ? "Nessun perimetro configurato sul gruppo — imposta mandanti e perimetri in Affidi"
-            : !showElenco
-              ? "Imposta i filtri e clicca Filtra per vedere l’elenco"
-              : user.role === "OPERATOR"
-                ? `${total} posizioni nei perimetri del gruppo`
-                : user.role === "SUPERVISOR"
-                  ? `${total} nei perimetri del gruppo`
-                  : (
-                      <PraticheConteggiSubtitle
-                        showSelezione={canNotaMassiva}
-                        fallback={`${total} visibili`}
-                      />
-                    )
+          !showElenco
+            ? "Imposta i filtri e clicca Filtra per vedere l’elenco"
+            : user.role === "OPERATOR"
+              ? `${total} posizioni${ricercaAnagrafica ? " (ricerca tenant)" : periCtx.nelGruppo ? " nei perimetri del gruppo" : ""}`
+              : user.role === "SUPERVISOR"
+                ? `${total}${ricercaAnagrafica ? " (ricerca tenant)" : periCtx.nelGruppo ? " nei perimetri del gruppo" : ""}`
+                : (
+                    <PraticheConteggiSubtitle
+                      showSelezione={canNotaMassiva}
+                      fallback={`${total} visibili`}
+                    />
+                  )
         }
       />
       {periCtx.nessunPerimetroGruppo ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Nessun perimetro impostato sul gruppo: filtri e elenco pratiche restano vuoti finché non
-          configuri mandanti e perimetri in{" "}
+          Nessun perimetro impostato sul gruppo: configura mandanti e perimetri in{" "}
           <Link href="/affidi" className="font-semibold underline">
             Affidi
           </Link>
-          .
+          . La ricerca anagrafica mostra comunque le pratiche di tutto il tenant.
         </p>
       ) : null}
       {preavvisoAttivo ? (
@@ -521,6 +562,21 @@ export default async function PratichePage({
           canNotaMassiva={canNotaMassiva}
           tutteIds={canNotaMassiva ? tutteIds : undefined}
           totaleFiltro={total}
+          filtriAttivi={
+            <PraticheFiltriAttiviRiepilogo
+              q={sp.q}
+              stato={elencoSpecialeAttivo ? undefined : sp.stato}
+              lavorateDa={codaNav.filtro?.lavorateDa}
+              lavorateA={codaNav.filtro?.lavorateA}
+              lavorateData={codaNav.filtro?.lavorateData}
+              lavorateOggi={codaNav.filtro?.lavorateOggi}
+              lavorateFascia={codaNav.filtro?.lavorateFascia}
+              nonToccateDa={codaNav.filtro?.nonToccateDa}
+              altri={altri}
+              operatori={operatoriList}
+              mandanti={mandantiList}
+            />
+          }
         />
         {total > 0 ? (
           <PaginazioneBar

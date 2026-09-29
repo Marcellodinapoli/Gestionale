@@ -19,7 +19,7 @@ import {
   splitImportiPianoEffetti,
 } from "@/lib/incassoPianoEffetti";
 import { metodoIncassoLabel } from "@/lib/metodoIncasso";
-import { createSession, clearSession, getCurrentUser } from "@/lib/auth";
+import { createSession, getCurrentUser } from "@/lib/auth";
 import { assertCan, can, canClearCodiceScarico, canEditCodiceScaricoBk, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
   canAccessPratica,
@@ -28,6 +28,7 @@ import {
   praticheStessoDebitoreIds,
   ripartiIncasso,
   writeAudit,
+
 } from "@/lib/domain";
 import { syncMessaggioAgenda, markMessaggiLetti } from "@/lib/memoAgenda";
 import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
@@ -53,7 +54,7 @@ import { CODICI_SCARICO } from "@/lib/scarico";
 import { isCodiceScaricoFiltroToken } from "@/lib/filtriCodScarico";
 import { requireWritablePermission, requireWritableUser, canManageMandantePerimetriWithNav } from "@/lib/guard";
 import { STATI_TELEFONO } from "@/lib/statoTelefono";
-import { assertPraticaLockHeld, assertPraticaNotLockedByOther, releaseAllUserLocks, lockScopeFromUser } from "@/lib/praticaLock";
+import { assertPraticaLockHeld, assertPraticaNotLockedByOther } from "@/lib/praticaLock";
 import { isPasswordExpired } from "@/lib/passwordPolicy";
 import { validatePasswordComplexity } from "@/lib/passwordRules";
 import { normalizeTenantSlug } from "@/lib/tenant";
@@ -168,17 +169,8 @@ function isRuoloLavorazione(role: string) {
 }
 
 export async function logoutAction() {
-  const user = await getCurrentUser();
-  if (user) {
-    await releaseAllUserLocks(user.id, lockScopeFromUser(user));
-  }
-  await clearSession();
-  if (user) {
-    await Promise.all([
-      usersDbFromUser(user).update({ where: { id: user.id }, data: { lastLogoutAt: new Date() } }),
-      writeAudit({ userId: user.id, action: "logout", entity: "user", entityId: user.id }),
-    ]);
-  }
+  const { endUserSession } = await import("@/lib/sessionLogout");
+  await endUserSession();
   redirect("/login");
 }
 

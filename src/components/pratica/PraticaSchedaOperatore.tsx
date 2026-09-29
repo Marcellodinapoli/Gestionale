@@ -550,10 +550,7 @@ export function PraticaSchedaOperatore({
           stralcioConfig={stralcioConfig}
           initialCollegate={collegatePayload}
           suppressF9Flash={Boolean(nav.filtroCollegata)}
-          showRecordingControl={
-            !praticaBloccata &&
-            ["OPERATOR", "SUPERVISOR", "BACK_OFFICE"].includes(currentUserRole || "")
-          }
+          showRecordingControl={!praticaBloccata && canEditNotes}
           recordingMode={recordingMode}
           currentUserRole={currentUserRole}
           canAvviaGiudiziale={canAvviaGiudiziale}
