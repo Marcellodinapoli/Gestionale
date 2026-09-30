@@ -25,6 +25,7 @@ export type UserRecord = {
   sedeId?: string | null;
   passwordChangedAt?: Date | string | null;
   lastLoginAt?: Date | string | null;
+  lastLogoutAt?: Date | string | null;
 };
 
 export type UserSessionRecord = UserRecord & {

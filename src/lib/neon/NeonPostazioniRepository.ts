@@ -16,7 +16,7 @@ function mapPostazione(row: Record<string, unknown>): PostazioneDto {
     mapped.sedeRef = { id: String(row.SedeId ?? mapped.sedeId ?? ""), nome: String(row.SedeNome) };
   }
   if (Array.isArray(row.occupanti)) {
-    mapped.occupanti = row.occupanti as Array<{ id: string; name: string }>;
+    mapped.occupanti = row.occupanti as NonNullable<PostazioneDto["occupanti"]>;
   }
   return mapped;
 }
@@ -74,7 +74,7 @@ export class NeonPostazioniRepository implements PostazioniRepository {
     if (filter?.includeOccupants) {
       for (const item of items) {
         const occParams: unknown[] = [tenantId, item.id];
-        let occSql = `SELECT "Id", "Name" FROM "Users"
+        let occSql = `SELECT "Id", "Name", "Cognome", "Role", "PostazioneFissa", "LastLoginAt", "LastLogoutAt" FROM "Users"
           WHERE "TenantId" = $1::uuid AND "PostazioneId" = $2::uuid AND "Active" = true`;
         if (filter.excludeOccupantUserId) {
           occSql += ` AND "Id" <> $3::uuid`;
@@ -83,7 +83,15 @@ export class NeonPostazioniRepository implements PostazioniRepository {
         const occ = await neonQuery(occSql, occParams);
         item.occupanti = occ.map((o) => {
           const m = mapSqlRow(o as Record<string, unknown>);
-          return { id: String(m.id ?? ""), name: String(m.name ?? "") };
+          return {
+            id: String(m.id ?? ""),
+            name: String(m.name ?? ""),
+            cognome: m.cognome != null ? String(m.cognome) : null,
+            role: m.role != null ? String(m.role) : null,
+            postazioneFissa: Boolean(m.postazioneFissa),
+            lastLoginAt: (m.lastLoginAt as Date | string | null | undefined) ?? null,
+            lastLogoutAt: (m.lastLogoutAt as Date | string | null | undefined) ?? null,
+          };
         });
       }
     }

@@ -13,6 +13,8 @@ export async function POST(request: Request) {
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 401 });
     }
+    const { endUserSession } = await import("@/lib/sessionLogout");
+    await endUserSession();
     await createSession(result.session);
     return NextResponse.json({ ok: true, href: result.href });
   } catch (e) {

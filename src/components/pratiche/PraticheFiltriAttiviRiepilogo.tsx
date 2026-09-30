@@ -9,6 +9,7 @@ import {
   parseLavorateFascia,
   startOfToday,
 } from "@/lib/lavorateOggiUi";
+import { parseFiltroSrc, PRATICHE_VELOCE_ALTRI_VOCE_IDS, type FiltroSrc } from "@/lib/filtroVeloceEsclusivo";
 import { STATI_FILTRO_PRATICHE } from "@/lib/statoOperativoPratica";
 
 function fmtDataIt(iso: string) {
@@ -22,7 +23,7 @@ function labelStatoFiltro(stato?: string | null) {
   );
 }
 
-/** Tutti i filtri elenco pratiche (barra rapida + avanzati). */
+/** Tutti i filtri elenco pratiche (barra rapida o avanzati, mai entrambi). */
 export function vociFiltriPraticheAttivi(opts: {
   q?: string | null;
   stato?: string | null;
@@ -35,14 +36,19 @@ export function vociFiltriPraticheAttivi(opts: {
   altri?: AltriFiltri;
   operatori?: Array<{ id: string; name: string; acronimo?: string | null }>;
   mandanti?: Array<{ id: string; codice: string; ragioneSociale: string }>;
+  filtroSrc?: FiltroSrc | null;
 }): AltriFiltroAttivoVoce[] {
   const voci: AltriFiltroAttivoVoce[] = [];
+  const src = opts.filtroSrc ?? null;
+  const mostraVeloce = src !== "tutti";
+  const mostraTutti = src !== "veloce";
+
   const q = opts.q?.trim();
-  if (q) {
+  if (mostraVeloce && q) {
     voci.push({ id: "q", campo: "anagrafica", valore: q });
   }
   const statoLabel = labelStatoFiltro(opts.stato);
-  if (statoLabel) {
+  if (mostraVeloce && statoLabel) {
     voci.push({ id: "stato", campo: "stato", valore: statoLabel });
   }
 
@@ -58,7 +64,7 @@ export function vociFiltriPraticheAttivi(opts: {
     undefined;
   const fascia = parseLavorateFascia(opts.lavorateFascia);
 
-  if (da || a) {
+  if (mostraVeloce && (da || a)) {
     let valore = "";
     if (da && a) valore = `dal ${fmtDataIt(da)} al ${fmtDataIt(a)}`;
     else if (da) valore = `dal ${fmtDataIt(da)} in poi`;
@@ -69,7 +75,7 @@ export function vociFiltriPraticheAttivi(opts: {
       campo: "ultima lavorazione",
       valore,
     });
-  } else if (fascia) {
+  } else if (mostraVeloce && fascia) {
     voci.push({
       id: "lavorate-fascia",
       campo: "fascia lavorazione",
@@ -80,7 +86,7 @@ export function vociFiltriPraticheAttivi(opts: {
   const nonToccate = opts.nonToccateDa != null && String(opts.nonToccateDa).trim() !== ""
     ? String(opts.nonToccateDa).trim()
     : "";
-  if (nonToccate) {
+  if (mostraVeloce && nonToccate) {
     voci.push({
       id: "non-toccate",
       campo: "dormienti",
@@ -88,12 +94,21 @@ export function vociFiltriPraticheAttivi(opts: {
     });
   }
 
-  voci.push(
-    ...vociAltriFiltriAttivi(opts.altri, {
-      operatori: opts.operatori,
-      mandanti: opts.mandanti,
-    })
-  );
+  if (mostraTutti) {
+    voci.push(
+      ...vociAltriFiltriAttivi(opts.altri, {
+        operatori: opts.operatori,
+        mandanti: opts.mandanti,
+      })
+    );
+  } else if (mostraVeloce) {
+    voci.push(
+      ...vociAltriFiltriAttivi(opts.altri, {
+        operatori: opts.operatori,
+        mandanti: opts.mandanti,
+      }).filter((v) => PRATICHE_VELOCE_ALTRI_VOCE_IDS.has(v.id))
+    );
+  }
   return voci;
 }
 
@@ -109,6 +124,7 @@ export function PraticheFiltriAttiviRiepilogo(opts: {
   altri?: AltriFiltri;
   operatori?: Array<{ id: string; name: string; acronimo?: string | null }>;
   mandanti?: Array<{ id: string; codice: string; ragioneSociale: string }>;
+  filtroSrc?: FiltroSrc | null;
   className?: string;
 }) {
   const voci = vociFiltriPraticheAttivi(opts);
@@ -127,7 +143,7 @@ export function PraticheFiltriAttiviRiepilogo(opts: {
         <span key={v.id}>
           {i > 0 ? <span className="text-[var(--muted)]"> · </span> : null}
           <span>
-            {v.campo}
+            <span className="text-[var(--muted)]">{v.campo}</span>
             {v.op ? ` ${v.op}` : ""}{" "}
             <strong className="font-semibold text-[var(--navy)]">{v.valore}</strong>
             {v.suffisso ? (

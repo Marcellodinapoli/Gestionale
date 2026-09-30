@@ -1,6 +1,7 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { requireNavPage } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
+import { occupantBlocksDesk } from "@/lib/sessionPresence";
 import { PageHeader } from "@/components/ui";
 import { RubricaGriglia } from "@/components/rubrica/RubricaGriglia";
 
@@ -22,6 +23,9 @@ export default async function RubricaPage() {
       acronimo: true,
       email: true,
       interno: true,
+      postazioneFissa: true,
+      lastLoginAt: true,
+      lastLogoutAt: true,
       postazione: {
         select: {
           nome: true,
@@ -34,16 +38,28 @@ export default async function RubricaPage() {
     },
   });
 
+  const rubricaSelfRoles = new Set(["OPERATOR", "SUPERVISOR", "BACK_OFFICE"]);
+  const showSelfBadge = rubricaSelfRoles.has(user.role);
+
   const lista = utenti.map((u) => {
-    const postazione = u.postazione
-      ? {
-          nome: u.postazione.nome,
-          interno: u.postazione.interno || u.interno || null,
-          email: u.postazione.email || null,
-          numeroFisso: u.postazione.numeroFisso,
-          sede: u.postazione.sedeRef?.nome || null,
-        }
-      : null;
+    const showDesk =
+      Boolean(u.postazione) &&
+      occupantBlocksDesk({
+        role: u.role,
+        postazioneFissa: u.postazioneFissa,
+        lastLoginAt: u.lastLoginAt,
+        lastLogoutAt: u.lastLogoutAt,
+      });
+    const postazione =
+      showDesk && u.postazione
+        ? {
+            nome: u.postazione.nome,
+            interno: u.postazione.interno || u.interno || null,
+            email: u.postazione.email || null,
+            numeroFisso: u.postazione.numeroFisso,
+            sede: u.postazione.sedeRef?.nome || null,
+          }
+        : null;
     return {
       id: u.id,
       name: [u.name, u.cognome].filter(Boolean).join(" ").trim() || u.name,
@@ -63,7 +79,10 @@ export default async function RubricaPage() {
         subtitle="Postazioni e contatti aggiornati in tempo reale"
       />
 
-      <RubricaGriglia utenti={lista} currentUserId={user.id} />
+      <RubricaGriglia
+        utenti={lista}
+        currentUserId={showSelfBadge ? user.id : undefined}
+      />
     </div>
   );
 }

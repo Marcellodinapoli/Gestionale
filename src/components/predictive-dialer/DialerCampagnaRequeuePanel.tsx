@@ -6,6 +6,11 @@ import { Card } from "@/components/ui";
 import { reintegrateCodiciScaricoAction } from "@/actions/predictiveDialer";
 import { CODICI_SCARICO } from "@/lib/scarico";
 import {
+  DIALER_CODICE_SCARICO_VUOTO,
+  DIALER_CODICE_SCARICO_VUOTO_LABEL,
+  labelCodiceScaricoDialer,
+} from "@/lib/predictive-dialer/constants";
+import {
   FILTRI_APPLY_BUTTON_CLASS,
   FILTRI_PAGE_SELECT_CLASS,
 } from "@/components/filtri/filtriFieldStyles";
@@ -30,9 +35,13 @@ export function DialerCampagnaRequeuePanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const canRequeue = campagnaStato === "ATTIVA" || campagnaStato === "PAUSA";
-  const codiciOptions = codiciCampagna.length
-    ? codiciCampagna
-    : [...CODICI_SCARICO];
+  const codiciOptions = (() => {
+    const base = codiciCampagna.length ? [...codiciCampagna] : [...CODICI_SCARICO];
+    if (!base.some((c) => c.toUpperCase() === DIALER_CODICE_SCARICO_VUOTO)) {
+      base.unshift(DIALER_CODICE_SCARICO_VUOTO);
+    }
+    return base;
+  })();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -82,10 +91,12 @@ export function DialerCampagnaRequeuePanel({
       <form onSubmit={onSubmit} className="space-y-3">
         <label className="block text-sm">
           <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Codici scarico</span>
-          <select name="codiciScarico" multiple required className={`${FILTRI_PAGE_SELECT_CLASS} h-24`}>
+          <select name="codiciScarico" multiple required className={`${FILTRI_PAGE_SELECT_CLASS} h-28`}>
             {codiciOptions.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {c.toUpperCase() === DIALER_CODICE_SCARICO_VUOTO
+                  ? DIALER_CODICE_SCARICO_VUOTO_LABEL
+                  : labelCodiceScaricoDialer(c)}
               </option>
             ))}
           </select>

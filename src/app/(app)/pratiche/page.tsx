@@ -51,19 +51,14 @@ import { can } from "@/lib/permissions";
 import { isAffidoTemporaneo } from "@/lib/affido";
 import { codiceScaricoPratica } from "@/lib/scarico";
 import { countRateScadute } from "@/lib/rate";
+import { parseFiltroSrc } from "@/lib/filtroVeloceEsclusivo";
 import {
   canUseOperatoreFiltro,
-  defaultOperatoreFiltroId,
   memberIdsOperatoreFiltro,
 } from "@/lib/filtriOperatore";
 import {
-  STATI_FILTRO_PRATICHE,
   statoOperativoPratica,
 } from "@/lib/statoOperativoPratica";
-import {
-  isCodScaricoNullToken,
-  parseCodScaricoList,
-} from "@/lib/filtriCodScarico";
 import {
   PREAVVISO_STRAGIUDIZIALE_PARAM,
   isPreavvisoStragiudiziale,
@@ -74,12 +69,6 @@ import {
   ATTIVITA_GIUDIZIALE_PARAM,
   whereAttivitaGiudiziale,
 } from "@/lib/giudiziale/avvioGiudiziale";
-
-/** Stato predefinito all’apertura dell’elenco pratiche. */
-const STATO_DEFAULT = "IN_LAVORAZIONE";
-const STATI_FILTRO_OK = new Set(
-  STATI_FILTRO_PRATICHE.map((s) => s.value as string)
-);
 
 function buildSortHref(
   base: Record<string, string | boolean | number | undefined>,
@@ -99,58 +88,40 @@ export default async function PratichePage({
   const user = await requireNavPage("pratiche");
   const sp = await searchParams;
 
-  const isOperatore = user.role === "OPERATOR";
   const preavvisoAttivo = sp[PREAVVISO_STRAGIUDIZIALE_PARAM] === "1";
   const attivitaGiudizialeAttivo = sp[ATTIVITA_GIUDIZIALE_PARAM] === "1";
   const elencoSpecialeAttivo = preavvisoAttivo || attivitaGiudizialeAttivo;
-  // Dal KPI Affidi «Nuove»: solo codScarico=NULL → non forzare «In lavorazione».
-  const soloSenzaCodiceScarico =
-    !("stato" in sp) &&
-    parseCodScaricoList(sp.codScarico).length > 0 &&
-    parseCodScaricoList(sp.codScarico).every(isCodScaricoNullToken);
   const qRicerca = sp.q?.trim() || "";
-  // Ricerca generica (filtro veloce): stato = Tutti.
+
+  // Apertura senza «Filtra/Applica»: nessun filtro in URL (tutti i ruoli).
+  // Evita residui di ex-default stato/operatore per supervisor e operatori.
+  if (!elencoSpecialeAttivo && sp.cerca !== "1") {
+    const hasParams = Object.values(sp).some(
+      (v) => v != null && String(v).trim() !== ""
+    );
+    if (hasParams) redirect("/pratiche");
+  }
+
+  // Ricerca generica: non limitare per stato/operatore preimpostati.
   const needsStatoTuttiPerRicerca =
-    Boolean(qRicerca) && !elencoSpecialeAttivo && sp.stato !== "TUTTI";
-  const needsStatoDefault = elencoSpecialeAttivo
-    ? false
-    : needsStatoTuttiPerRicerca
-      ? false
-      : soloSenzaCodiceScarico
-        ? false
-        : isOperatore
-          ? sp.stato !== STATO_DEFAULT
-          : !("stato" in sp) || !STATI_FILTRO_OK.has(String(sp.stato || ""));
-  // Ricerca anagrafica: non forzare l’operatore (Nuove / non assegnate).
-  const needsOperatoreDefault =
-    Boolean(defaultOperatoreFiltroId(user.role, user.id)) &&
-    !("operatore" in sp) &&
-    !qRicerca;
-  // Se c’è già un operatore in URL ma stiamo cercando per anagrafica, toglilo.
+    Boolean(qRicerca) && !elencoSpecialeAttivo && Boolean(sp.stato) && sp.stato !== "TUTTI";
   const needsClearOperatorePerRicerca =
     Boolean(qRicerca) && Boolean(sp.operatore?.trim());
 
-  if (
-    needsStatoTuttiPerRicerca ||
-    needsStatoDefault ||
-    needsOperatoreDefault ||
-    needsClearOperatorePerRicerca
-  ) {
+  if (needsStatoTuttiPerRicerca || needsClearOperatorePerRicerca) {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
       if (v == null || v === "") continue;
       if (k === "stato") continue;
       if (k === "operatore" && (qRicerca || needsClearOperatorePerRicerca)) continue;
+      if (k === "operatoreOp" && (qRicerca || needsClearOperatorePerRicerca)) continue;
       params.set(k, v);
     }
     if (needsStatoTuttiPerRicerca) {
       params.set("stato", "TUTTI");
-    } else if (needsStatoDefault) {
-      params.set("stato", STATO_DEFAULT);
     } else if (sp.stato) {
       params.set("stato", sp.stato);
     }
-    if (needsOperatoreDefault) params.set("operatore", user.id);
     redirect(`/pratiche?${params.toString()}`);
   }
 
@@ -404,6 +375,7 @@ export default async function PratichePage({
     nonToccateDa: codaNav.filtro?.nonToccateDa,
     sort: codaNav.sort,
     dir: codaNav.dir,
+    filtroSrc: parseFiltroSrc(sp) ?? undefined,
     ...(altri || {}),
     ...(sp[PREAVVISO_STRAGIUDIZIALE_PARAM] === "1"
       ? { [PREAVVISO_STRAGIUDIZIALE_PARAM]: "1" }
@@ -499,15 +471,6 @@ export default async function PratichePage({
                   )
         }
       />
-      {periCtx.nessunPerimetroGruppo ? (
-        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Nessun perimetro impostato sul gruppo: configura mandanti e perimetri in{" "}
-          <Link href="/affidi" className="font-semibold underline">
-            Affidi
-          </Link>
-          . La ricerca anagrafica mostra comunque le pratiche di tutto il tenant.
-        </p>
-      ) : null}
       {preavvisoAttivo ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           Elenco filtrato: pratiche in dirittura di scadenza stragiudiziale (entro 10
@@ -529,7 +492,6 @@ export default async function PratichePage({
         q={sp.q}
         stato={elencoSpecialeAttivo ? undefined : sp.stato}
         nascondiFiltroStato={user.role === "OPERATOR"}
-        operatoreDefaultId={defaultOperatoreFiltroId(user.role, user.id)}
         lavorate={codaNav.filtro?.lavorate}
         lavorateData={codaNav.filtro?.lavorateData}
         lavorateDa={codaNav.filtro?.lavorateDa}
@@ -547,7 +509,27 @@ export default async function PratichePage({
         altri={altri}
         apriPraticheHref={apriPraticheHref}
         searchActive={showElenco}
+        searchParams={sp}
       />
+      {showElenco ? (
+        <div className="mt-1.5 shrink-0 rounded-lg border border-[var(--line)] bg-[#eef3f8] px-2.5 py-1.5">
+          <PraticheFiltriAttiviRiepilogo
+            className="text-xs leading-snug text-[var(--navy)]"
+            q={sp.q}
+            stato={elencoSpecialeAttivo ? undefined : sp.stato}
+            lavorateDa={codaNav.filtro?.lavorateDa}
+            lavorateA={codaNav.filtro?.lavorateA}
+            lavorateData={codaNav.filtro?.lavorateData}
+            lavorateOggi={codaNav.filtro?.lavorateOggi}
+            lavorateFascia={codaNav.filtro?.lavorateFascia}
+            nonToccateDa={codaNav.filtro?.nonToccateDa}
+            altri={altri}
+            filtroSrc={parseFiltroSrc(sp)}
+            operatori={operatoriList}
+            mandanti={mandantiList}
+          />
+        </div>
+      ) : null}
       {!showElenco ? (
         <div className="mt-4 rounded-xl border border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
           Nessun elenco caricato. Imposta i filtri in Filtro veloce e premi{" "}
@@ -555,28 +537,13 @@ export default async function PratichePage({
           <span className="font-semibold text-[var(--navy)]">Tutti i filtri</span>.
         </div>
       ) : (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-hidden">
         <PraticheListaConNotaMassiva
           pratiche={praticheRows}
           sortColumns={sortColumns}
           canNotaMassiva={canNotaMassiva}
           tutteIds={canNotaMassiva ? tutteIds : undefined}
           totaleFiltro={total}
-          filtriAttivi={
-            <PraticheFiltriAttiviRiepilogo
-              q={sp.q}
-              stato={elencoSpecialeAttivo ? undefined : sp.stato}
-              lavorateDa={codaNav.filtro?.lavorateDa}
-              lavorateA={codaNav.filtro?.lavorateA}
-              lavorateData={codaNav.filtro?.lavorateData}
-              lavorateOggi={codaNav.filtro?.lavorateOggi}
-              lavorateFascia={codaNav.filtro?.lavorateFascia}
-              nonToccateDa={codaNav.filtro?.nonToccateDa}
-              altri={altri}
-              operatori={operatoriList}
-              mandanti={mandantiList}
-            />
-          }
         />
         {total > 0 ? (
           <PaginazioneBar

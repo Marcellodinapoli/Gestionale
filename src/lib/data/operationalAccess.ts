@@ -9,6 +9,7 @@ import {
 import { postazioniDb } from "@/lib/postazioniRepo";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/permissions";
+import { resolvePostazioneVisibile } from "@/lib/sessionPresence";
 
 export type AuthTenant = {
   id: string;
@@ -183,6 +184,17 @@ export async function loadSessionUser(
     if (!tenantId) return null;
     const user = await getUsersRepository().getSession(tenantId, userId);
     if (!user || !user.active || !user.tenantActive) return null;
+    const desk = resolvePostazioneVisibile({
+      role: user.role,
+      interno: user.interno,
+      postazioneId: user.postazioneId,
+      postazioneFissa: user.postazioneFissa,
+      lastLoginAt: user.lastLoginAt,
+      lastLogoutAt: user.lastLogoutAt,
+      postazioneInterno: user.postazioneInterno,
+      postazioneEmail: user.postazioneEmail,
+      postazioneNome: user.postazioneNome,
+    });
     return {
       id: user.id,
       tenantId: user.tenantId,
@@ -196,7 +208,7 @@ export async function loadSessionUser(
       postazioneId: user.postazioneId ?? null,
       postazioneFissa: Boolean(user.postazioneFissa),
       sedeId: user.sedeId ?? null,
-      interno: user.interno?.trim() || user.postazioneInterno?.trim() || null,
+      interno: desk.interno,
       prefissoChiamata: user.prefissoChiamata?.trim() || null,
       passwordChangedAt: user.passwordChangedAt
         ? new Date(user.passwordChangedAt)
@@ -204,8 +216,8 @@ export async function loadSessionUser(
       tenantSlug: user.tenantSlug,
       tenantNome: user.tenantNome,
       postazioneInterno: user.postazioneInterno ?? null,
-      postazioneEmail: user.postazioneEmail ?? null,
-      postazioneNome: user.postazioneNome ?? null,
+      postazioneEmail: desk.email,
+      postazioneNome: desk.nome,
       sedeNome: user.sedeNome ?? null,
     };
   }
@@ -220,6 +232,18 @@ export async function loadSessionUser(
   });
   if (!user || user.active === false || user.tenant?.active === false) return null;
 
+  const desk = resolvePostazioneVisibile({
+    role: user.role,
+    interno: user.interno,
+    postazioneId: user.postazioneId,
+    postazioneFissa: user.postazioneFissa,
+    lastLoginAt: user.lastLoginAt,
+    lastLogoutAt: user.lastLogoutAt,
+    postazioneInterno: user.postazione?.interno,
+    postazioneEmail: user.postazione?.email,
+    postazioneNome: user.postazione?.nome,
+  });
+
   return {
     id: user.id,
     tenantId: user.tenantId,
@@ -233,14 +257,14 @@ export async function loadSessionUser(
     postazioneId: user.postazioneId,
     postazioneFissa: Boolean(user.postazioneFissa),
     sedeId: user.sedeId,
-    interno: user.interno?.trim() || user.postazione?.interno || null,
+    interno: desk.interno,
     prefissoChiamata: user.prefissoChiamata?.trim() || null,
     passwordChangedAt: user.passwordChangedAt,
     tenantSlug: user.tenant.slug,
     tenantNome: user.tenant.nome,
     postazioneInterno: user.postazione?.interno ?? null,
-    postazioneEmail: user.postazione?.email ?? null,
-    postazioneNome: user.postazione?.nome ?? null,
+    postazioneEmail: desk.email,
+    postazioneNome: desk.nome,
     sedeNome: user.sede?.nome ?? null,
   };
 }

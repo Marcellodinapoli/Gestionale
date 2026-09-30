@@ -6,7 +6,9 @@ import { releaseAllUserLocks, lockScopeFromUser } from "@/lib/praticaLock";
 
 /**
  * Termina la sessione per tutti i ruoli: rilascia lock, cancella cookie,
- * registra lastLogoutAt + audit. Idempotente se già scollegati.
+ * registra lastLogoutAt + audit. Rilascia la postazione se non fissa
+ * (così rubrica e occupazione coincidono con chi è davvero loggato).
+ * Idempotente se già scollegati.
  */
 export async function endUserSession(): Promise<void> {
   const user = await getCurrentUser();
@@ -23,7 +25,11 @@ export async function endUserSession(): Promise<void> {
     await Promise.all([
       usersDbFromUser(user).update({
         where: { id: user.id },
-        data: { lastLogoutAt: new Date() },
+        data: {
+          lastLogoutAt: new Date(),
+          // Postazione non fissa = assegnazione di sessione: va liberata.
+          ...(!user.postazioneFissa ? { postazioneId: null } : {}),
+        },
       }),
       writeAudit({
         userId: user.id,

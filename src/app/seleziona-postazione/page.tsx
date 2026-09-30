@@ -4,6 +4,7 @@ import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 import { canImpostarePostazioneFissa, mustChoosePostazioneAlLogin, requiresPostazione } from "@/lib/permissions";
+import { blockingOccupants, formatUtenteNome } from "@/lib/sessionPresence";
 import { logoutAction } from "@/actions/core";
 import { SelezionaPostazioneForm } from "./SelezionaPostazioneForm";
 
@@ -23,16 +24,25 @@ export default async function SelezionaPostazionePage() {
       sedeRef: { select: { nome: true } },
       occupanti: {
         where: { active: true, tenantId: user.tenantId },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          cognome: true,
+          role: true,
+          postazioneFissa: true,
+          lastLoginAt: true,
+          lastLogoutAt: true,
+        },
       },
     },
   });
 
   const lista = postazioni.map((p) => {
-    const altri = p.occupanti.filter((o) => o.id !== user.id);
-    const me = p.occupanti.find((o) => o.id === user.id);
+    const blocking = blockingOccupants(p.occupanti);
+    const altri = blocking.filter((o) => o.id !== user.id);
+    const me = blocking.find((o) => o.id === user.id);
     // Occupata da terzi = bloccata; se c’è solo l’utente stesso → selezionabile (“Tu”).
-    const occupanteAltro = altri[0]?.name || null;
+    const occupanteAltro = altri[0] ? formatUtenteNome(altri[0]) : null;
     return {
       id: p.id,
       nome: p.nome,

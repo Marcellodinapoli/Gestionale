@@ -77,9 +77,9 @@ export function operatoreFiltroSoloGruppo(role: string) {
   return role === "OPERATOR";
 }
 
-/** Default filtro = operatore titolare dell'account (operatori e supervisor). */
-export function defaultOperatoreFiltroId(role: string, userId: string) {
-  return role === "OPERATOR" || role === "SUPERVISOR" ? userId : undefined;
+/** Non precompilare più il filtro operatore (né per operatori né supervisor). */
+export function defaultOperatoreFiltroId(_role: string, _userId: string) {
+  return undefined;
 }
 
 export function memberIdsOperatoreFiltro(

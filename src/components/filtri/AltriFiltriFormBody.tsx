@@ -328,7 +328,7 @@ export function AltriFiltriFormBody({
             onChange={(e) => onChange(patch(value, "rateScadute", e.target.value))}
             className={fieldClass}
           >
-            <option value="">Tutte</option>
+            <option value="">— Seleziona —</option>
             <option value="1">Con rate scadute</option>
             <option value="0">Senza rate scadute</option>
           </select>
@@ -365,7 +365,7 @@ export function AltriFiltriFormBody({
           onChange={onChange}
           ariaLabel="Sit. affido"
         >
-          <option value="">Tutte</option>
+          <option value="">— Seleziona —</option>
           <option value="affidata">Affidata</option>
           <option value="non_affidata">Non affidata</option>
           <option value="temporanea">Affido temporaneo</option>
@@ -376,7 +376,7 @@ export function AltriFiltriFormBody({
             onChange={(e) => onChange(patch(value, "affidoProvvisorio", e.target.value))}
             className={fieldClass}
           >
-            <option value="">No</option>
+            <option value="">— Seleziona —</option>
             <option value="1">Sì (solo temporanei)</option>
           </select>
         </Field>
@@ -388,7 +388,7 @@ export function AltriFiltriFormBody({
           onChange={onChange}
           ariaLabel="Mandato"
         >
-          <option value="">Tutti</option>
+          <option value="">— Seleziona —</option>
           {(mandanti || []).map((m) => (
             <option key={m.id} value={m.id}>
               {m.codice} — {m.ragioneSociale}
@@ -403,7 +403,7 @@ export function AltriFiltriFormBody({
           onChange={onChange}
           ariaLabel="Perimetro"
         >
-          <option value="">Tutti</option>
+          <option value="">— Seleziona —</option>
           {perimetriOpts.map((p) => (
             <option key={p.value} value={p.value}>
               {p.label}
@@ -422,7 +422,7 @@ export function AltriFiltriFormBody({
           onChange={onChange}
           ariaLabel="Lotto"
         >
-          <option value="">Tutti</option>
+          <option value="">— Seleziona —</option>
           {lottiOpts.map((l) => (
             <option key={l} value={l}>
               {l}

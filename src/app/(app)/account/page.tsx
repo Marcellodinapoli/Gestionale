@@ -13,6 +13,7 @@ import {
   requiresPostazione,
   type Role,
 } from "@/lib/permissions";
+import { blockingOccupants, formatUtenteNome } from "@/lib/sessionPresence";
 
 export default async function AccountPage() {
   const session = await requireUser();
@@ -60,7 +61,10 @@ export default async function AccountPage() {
     nome: p.nome,
     interno: p.interno,
     sede: p.sedeRef?.nome || null,
-    occupante: p.occupanti[0]?.name || null,
+    occupante: (() => {
+      const altri = blockingOccupants(p.occupanti).filter((o) => o.id !== session.id);
+      return altri[0] ? formatUtenteNome(altri[0]) : null;
+    })(),
   }));
 
   const internoEffettivo = user.interno?.trim() || "";

@@ -10,7 +10,45 @@ import {
   parseCodiciScaricoJson,
   serializeCodiciScarico,
 } from "@/lib/predictive-dialer/scope";
+import { isDialerCodiceScaricoVuoto } from "@/lib/predictive-dialer/constants";
 import type { DialerQueueEntry } from "@/lib/predictive-dialer/service/PredictiveDialerService";
+import type { Prisma } from "@prisma/client";
+
+/** Split sentinel «SENZA» dai codici reali. */
+function splitCodiciScaricoDialer(codici: string[]) {
+  const normalized = [
+    ...new Set(codici.map((c) => c.trim().toUpperCase()).filter(Boolean)),
+  ];
+  const includeVuoti = normalized.some(isDialerCodiceScaricoVuoto);
+  const codiciReali = normalized.filter((c) => !isDialerCodiceScaricoVuoto(c));
+  return { includeVuoti, codiciReali };
+}
+
+function whereCodiciScaricoDialer(
+  codici: string[]
+): Prisma.PraticaWhereInput | null {
+  const { includeVuoti, codiciReali } = splitCodiciScaricoDialer(codici);
+  if (!includeVuoti && !codiciReali.length) return null;
+  const or: Prisma.PraticaWhereInput[] = [];
+  if (codiciReali.length) {
+    or.push({ codiceScarico: { in: codiciReali } });
+  }
+  if (includeVuoti) {
+    or.push({ codiceScarico: null });
+    or.push({ codiceScarico: "" });
+  }
+  return or.length === 1 ? or[0]! : { OR: or };
+}
+
+function praticaMatchCodiciScaricoDialer(
+  codiceScarico: string | null | undefined,
+  codici: string[]
+): boolean {
+  const { includeVuoti, codiciReali } = splitCodiciScaricoDialer(codici);
+  const code = (codiceScarico ?? "").trim().toUpperCase();
+  if (!code) return includeVuoti;
+  return codiciReali.includes(code);
+}
 
 export async function buildDialerQueue(campagnaId: string): Promise<DialerQueueEntry[]> {
   const now = new Date();
@@ -66,15 +104,20 @@ export async function attachPraticheToCampagna(
 
   let praticaIds = opts.praticaIds ?? [];
   if (!praticaIds.length && codici.length) {
-    const pratiche = await praticaDbFromUser(user).findMany({
-      where: {
-        tenantId: user.tenantId,
-        codiceScarico: { in: codici },
-        stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
-      },
-      select: { id: true },
-    });
-    praticaIds = pratiche.map((p) => p.id);
+    const codiceWhere = whereCodiciScaricoDialer(codici);
+    if (codiceWhere) {
+      const pratiche = await praticaDbFromUser(user).findMany({
+        where: {
+          tenantId: user.tenantId,
+          AND: [
+            codiceWhere,
+            { stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] } },
+          ],
+        },
+        select: { id: true },
+      });
+      praticaIds = pratiche.map((p) => p.id);
+    }
   }
 
   if (!praticaIds.length) return 0;
@@ -128,7 +171,9 @@ export async function reintegrateCodiciScaricoInCampagna(
   });
 
   const idsToReset = items
-    .filter((i) => codici.includes(i.pratica.codiceScarico?.trim().toUpperCase() ?? ""))
+    .filter((i) =>
+      praticaMatchCodiciScaricoDialer(i.pratica.codiceScarico, codici)
+    )
     .map((i) => i.id);
 
   let reset = 0;

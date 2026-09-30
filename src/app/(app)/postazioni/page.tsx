@@ -8,6 +8,7 @@ import {
 } from "@/components/filtri/filtriFieldStyles";
 import { PostazioniTable } from "@/components/postazioni/PostazioniTable";
 import { NuovaPostazioneButton } from "@/components/postazioni/NuovaPostazioneButton";
+import { blockingOccupants, formatUtenteNome } from "@/lib/sessionPresence";
 
 export default async function PostazioniPage({
   searchParams,
@@ -29,7 +30,15 @@ export default async function PostazioniPage({
         sedeRef: { select: { id: true, nome: true } },
         occupanti: {
           where: { active: true, tenantId: user.tenantId },
-          select: { id: true, name: true },
+          select: {
+            id: true,
+            name: true,
+            cognome: true,
+            role: true,
+            postazioneFissa: true,
+            lastLoginAt: true,
+            lastLogoutAt: true,
+          },
         },
       },
     }),
@@ -50,9 +59,9 @@ export default async function PostazioniPage({
     sedeNome: p.sedeRef?.nome || null,
     note: p.note,
     active: p.active,
-    occupanti: p.occupanti.map((o) => ({
+    occupanti: blockingOccupants(p.occupanti).map((o) => ({
       id: o.id,
-      name: o.name,
+      name: formatUtenteNome(o),
       tua: o.id === user.id,
     })),
   }));

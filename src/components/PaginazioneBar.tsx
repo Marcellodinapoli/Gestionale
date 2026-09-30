@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { FILTRO_SRC_PARAM } from "@/lib/filtroVeloceEsclusivo";
 
 const PAGE_SIZE = 25;
 
@@ -37,6 +38,8 @@ export function buildPraticheQuery(params: {
   if (params.sort) sp.set("sort", String(params.sort));
   if (params.dir) sp.set("dir", String(params.dir));
   if (params.page && Number(params.page) > 1) sp.set("page", String(params.page));
+
+  if (params.filtroSrc) sp.set(FILTRO_SRC_PARAM, String(params.filtroSrc));
 
   const altriKeys = [
     "debitore",

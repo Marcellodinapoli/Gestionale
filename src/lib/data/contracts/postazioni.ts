@@ -22,7 +22,15 @@ export type PostazioneDto = {
   active: boolean;
   createdAt: string | Date;
   sedeRef?: { id: string; nome: string } | null;
-  occupanti?: Array<{ id: string; name: string }>;
+  occupanti?: Array<{
+    id: string;
+    name: string;
+    cognome?: string | null;
+    role?: string | null;
+    postazioneFissa?: boolean;
+    lastLoginAt?: Date | string | null;
+    lastLogoutAt?: Date | string | null;
+  }>;
 };
 
 export type PostazioneCreateInput = {

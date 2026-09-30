@@ -1,4 +1,5 @@
 import { postazioniDb } from "@/lib/postazioniRepo";
+import { occupantBlocksDesk } from "@/lib/sessionPresence";
 
 export async function validaPostazionePerUtente(
   postazioneId: string,
@@ -14,16 +15,26 @@ export async function validaPostazionePerUtente(
     include: {
       occupanti: {
         where: { active: true, id: { not: userId }, tenantId },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          cognome: true,
+          role: true,
+          postazioneFissa: true,
+          lastLoginAt: true,
+          lastLogoutAt: true,
+        },
       },
     },
   });
   if (!postazione) {
     return { error: "Postazione non valida" as const };
   }
-  if (postazione.occupanti.length > 0) {
+  // Solo fissa o sessione ancora aperta: evita "occupata" da logout non rilasciato.
+  const occupantiAttivi = (postazione.occupanti ?? []).filter(occupantBlocksDesk);
+  if (occupantiAttivi.length > 0) {
     return {
-      error: `Postazione già occupata da ${postazione.occupanti[0].name}` as const,
+      error: `Postazione già occupata da ${formatUtenteNome(occupantiAttivi[0])}` as const,
     };
   }
   return { postazione };

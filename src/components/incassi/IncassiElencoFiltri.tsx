@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { SlidersHorizontal } from "lucide-react";
 import { Modal } from "@/components/Modal";
+import {
+  FILTRO_SRC_PARAM,
+  parseFiltroSrc,
+  tuttiFiltriIncassiAttivi,
+} from "@/lib/filtroVeloceEsclusivo";
 import {
   FILTRI_APPLY_BUTTON_CLASS,
   FILTRI_BAR_CONTAINER_CLASS,
@@ -87,6 +92,7 @@ export function IncassiElencoFiltriBar({
   mandantiPerimetri,
   meseParam,
   searchActive = false,
+  searchParams = {},
 }: {
   filtri: IncassiElencoFiltri;
   operatori: Array<{ id: string; name: string }>;
@@ -95,8 +101,8 @@ export function IncassiElencoFiltriBar({
   lottiPerMandato: Record<string, string[]>;
   mandantiPerimetri: MandantePerimetriRef[];
   meseParam?: string;
-  /** True dopo Filtra/Applica: mostra «Annulla» anche senza altri campi valorizzati. */
   searchActive?: boolean;
+  searchParams?: Record<string, string | undefined>;
 }) {
   const [open, setOpen] = useState(false);
   const [mandato, setMandato] = useState(filtri.mandato || "");
@@ -112,12 +118,28 @@ export function IncassiElencoFiltriBar({
     [lotti, lottiPerMandato, mandato]
   );
   const hasFilters = searchActive;
+  const tuttiFiltriAttivi = tuttiFiltriIncassiAttivi(searchParams, filtri);
+
+  useEffect(() => {
+    if (!open) return;
+    const src = parseFiltroSrc(searchParams);
+    if (src === "veloce") {
+      setMandato("");
+      setPerimetro("");
+      setLotto("");
+      return;
+    }
+    setMandato(filtri.mandato || "");
+    setPerimetro(filtri.perimetro || "");
+    setLotto(filtri.lotto || "");
+  }, [open, filtri.mandato, filtri.perimetro, filtri.lotto, searchParams]);
 
   return (
     <>
       <div className={FILTRI_BAR_CONTAINER_CLASS}>
         <form method="get" action="/incassi" className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="cerca" value="1" />
+          <input type="hidden" name={FILTRO_SRC_PARAM} value="veloce" />
           <label className="block">
             <span className={labelClass}>Mandato</span>
             <select
@@ -183,7 +205,9 @@ export function IncassiElencoFiltriBar({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className={`${FILTRI_APPLY_BUTTON_CLASS} inline-flex items-center gap-1.5`}
+            className={`${FILTRI_APPLY_BUTTON_CLASS} inline-flex items-center gap-1.5 ${
+              tuttiFiltriAttivi ? "ring-2 ring-amber-400" : ""
+            }`}
           >
             <SlidersHorizontal className="h-4 w-4" />
             Tutti i filtri
@@ -199,6 +223,7 @@ export function IncassiElencoFiltriBar({
       <Modal open={open} title="Tutti i filtri · Incassi" onClose={() => setOpen(false)} wide>
         <form method="get" action="/incassi" className="space-y-3">
           <input type="hidden" name="cerca" value="1" />
+          <input type="hidden" name={FILTRO_SRC_PARAM} value="tutti" />
           <section className="space-y-2 rounded-lg border border-[var(--line)]/70 bg-[#f5efe6] p-3">
             <h3 className="text-sm font-bold text-[var(--navy)]">Filtri principali</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

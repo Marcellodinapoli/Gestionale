@@ -6,7 +6,12 @@ import { SlidersHorizontal, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { STATI_FILTRO_PRATICHE } from "@/lib/statoOperativoPratica";
 import { formatDataIso, startOfToday, LAVORATE_FASCE, type LavorateFascia } from "@/lib/lavorateOggiUi";
-import { hasAltriFiltri, ALTRI_FILTRI_PRESERVE_KEYS, type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import { type AltriFiltri } from "@/lib/praticheAltriFiltriUi";
+import {
+  FILTRO_SRC_PARAM,
+  parseFiltroSrc,
+  tuttiFiltriPraticheAttivi,
+} from "@/lib/filtroVeloceEsclusivo";
 import { CodScaricoFiltroControls } from "@/components/filtri/CodScaricoFiltroControls";
 import { OperatoreFiltroControls } from "@/components/filtri/OperatoreFiltroControls";
 import { AggiuntivoFiltroControls } from "@/components/filtri/AggiuntivoFiltroControls";
@@ -24,20 +29,10 @@ import {
   perimetroFiltroOptions,
 } from "@/lib/filtriPerimetroLottoUi";
 
-const quickBarLabelClass = "mb-0.5 block text-[11px] font-semibold text-[var(--danger)]";
+const quickBarLabelClass =
+  "mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--navy)]";
 const modalField = FILTRI_FIELD_CLASS;
 const modalLabel = quickBarLabelClass;
-
-const QUICK_BAR_SELF_KEYS = new Set([
-  "perimetro",
-  "perimetroOp",
-  "operatore",
-  "operatoreOp",
-  "codScarico",
-  "codScaricoOp",
-  "codScaricoBk",
-  "codScaricoBkOp",
-]);
 
 export const APRI_ALTRI_FILTRI_EVENT = "credixa:apri-altri-filtri";
 
@@ -144,8 +139,8 @@ export function PraticheFiltriBar({
   mandantiPerimetri,
   apriPraticheHref,
   nascondiFiltroStato = false,
-  operatoreDefaultId,
   searchActive = false,
+  searchParams = {},
 }: {
   q?: string;
   stato?: string;
@@ -169,19 +164,19 @@ export function PraticheFiltriBar({
   nascondiFiltroStato?: boolean;
   /** Elenco già caricato (cerca=1 / elenco speciale). */
   searchActive?: boolean;
-  /** Operatore preimpostato in URL (non conta come filtro utente). */
-  operatoreDefaultId?: string | null;
+  /** Parametri URL correnti (per filtroSrc). */
+  searchParams?: Record<string, string | undefined>;
 }) {
-  const STATO_DEFAULT = "IN_LAVORAZIONE";
+  const STATO_PLACEHOLDER = "";
   const hasQ = Boolean(q?.trim());
-  // Ricerca generica → mostra e invia «Tutti».
+  // Nessun default: l’utente sceglie stato / filtri (ricerca generica → Tutti).
   const statoEffettivo = nascondiFiltroStato
     ? hasQ
       ? "TUTTI"
-      : STATO_DEFAULT
+      : STATO_PLACEHOLDER
     : hasQ
       ? "TUTTI"
-      : stato || STATO_DEFAULT;
+      : stato || STATO_PLACEHOLDER;
   // Opzione selezionata per prima: alcuni browser riordinano le <option> e rompono l’hydration.
   const statiFiltroOpts = useMemo(() => {
     const list = STATI_FILTRO_PRATICHE.map((o) => ({ value: o.value, label: o.label }));
@@ -206,6 +201,7 @@ export function PraticheFiltriBar({
   const dataLavorateA =
     lavorateA || (legacySingoloGiorno ? lavorateData || oggiIso : undefined);
   const hasFilters = searchActive;
+  const tuttiFiltriAttivi = tuttiFiltriPraticheAttivi(searchParams, a);
   const perimetriBarOpts = useMemo(
     () => perimetroFiltroOptions(mandantiPerimetri, a.mandato),
     [mandantiPerimetri, a.mandato]
@@ -267,16 +263,18 @@ export function PraticheFiltriBar({
   }, [a.perimetro]);
 
   useEffect(() => {
-    if (altriFiltriOpen) {
-      setModalMandato(a.mandato || "");
-      setModalPerimetro(a.perimetro || "");
-      setModalLotto(a.lotto || "");
+    if (!altriFiltriOpen) return;
+    const src = parseFiltroSrc(searchParams);
+    if (src === "veloce") {
+      setModalMandato("");
+      setModalPerimetro("");
+      setModalLotto("");
+      return;
     }
-  }, [altriFiltriOpen, a.mandato, a.perimetro, a.lotto]);
-
-  const altriHiddenKeys = ALTRI_FILTRI_PRESERVE_KEYS.filter(
-    (k) => !QUICK_BAR_SELF_KEYS.has(k)
-  );
+    setModalMandato(a.mandato || "");
+    setModalPerimetro(a.perimetro || "");
+    setModalLotto(a.lotto || "");
+  }, [altriFiltriOpen, a.mandato, a.perimetro, a.lotto, searchParams]);
 
   useEffect(() => {
     function onApri() {
@@ -331,16 +329,8 @@ export function PraticheFiltriBar({
         }}
       >
         <input type="hidden" name="cerca" value="1" />
+        <input type="hidden" name={FILTRO_SRC_PARAM} value="veloce" />
         {hiddenNav}
-        {/* Conserva filtri avanzati quando si usa solo la barra rapida */}
-        {hasAltriFiltri(altri, { ignoreOperatoreId: operatoreDefaultId })
-          ? altriHiddenKeys.map((k) => {
-              const v = a[k as keyof AltriFiltri];
-              return v ? (
-                <input key={k} type="hidden" name={k} value={String(v)} />
-              ) : null;
-            })
-          : null}
 
         <div className="min-w-[9rem] flex-1">
         <input
@@ -352,11 +342,11 @@ export function PraticheFiltriBar({
         />
         </div>
         {nascondiFiltroStato ? (
-          <input type="hidden" name="stato" value={hasQ ? "TUTTI" : STATO_DEFAULT} />
+          hasQ ? <input type="hidden" name="stato" value="TUTTI" /> : null
         ) : (
           <select
             name="stato"
-            key={`stato-${statoEffettivo}`}
+            key={`stato-${statoEffettivo || "none"}`}
             defaultValue={statoEffettivo}
             onChange={(e) => {
               e.currentTarget.form?.requestSubmit();
@@ -366,6 +356,7 @@ export function PraticheFiltriBar({
             translate="no"
             suppressHydrationWarning
           >
+            <option value="">— Seleziona —</option>
             {statiFiltroOpts.map(({ value, label }) => (
               <option key={value} value={value} translate="no" className="notranslate">
                 {label}
@@ -385,7 +376,7 @@ export function PraticheFiltriBar({
             ariaLabel="Perimetro"
             onValueChange={setBarPerimetro}
           >
-            <option value="">Tutti</option>
+            <option value="">— Seleziona —</option>
             {perimetriBarOpts.map((p) => (
               <option key={p.value} value={p.value}>
                 {p.label}
@@ -471,7 +462,7 @@ export function PraticheFiltriBar({
           type="button"
           onClick={() => setAltriFiltriOpen(true)}
           className={`inline-flex h-10 items-center gap-1 rounded-lg px-4 text-sm font-semibold shadow-md transition-colors ${
-            hasAltriFiltri(altri, { ignoreOperatoreId: operatoreDefaultId })
+            tuttiFiltriAttivi
               ? "bg-[var(--navy)] text-white ring-2 ring-amber-400 hover:opacity-90"
               : "bg-[var(--navy)] text-white hover:bg-[#1a3650]"
           }`}
@@ -508,18 +499,8 @@ export function PraticheFiltriBar({
       >
         <form method="get" action="/pratiche" className="space-y-4 p-4">
           <input type="hidden" name="cerca" value="1" />
+          <input type="hidden" name={FILTRO_SRC_PARAM} value="tutti" />
           {hiddenNav}
-          <input type="hidden" name="q" value={q || ""} />
-          <input type="hidden" name="stato" value={statoEffettivo} />
-          {dataLavorateDa ? (
-            <input type="hidden" name="lavorateDa" value={dataLavorateDa} />
-          ) : null}
-          {dataLavorateA ? (
-            <input type="hidden" name="lavorateA" value={dataLavorateA} />
-          ) : null}
-          {lavorateFascia ? (
-            <input type="hidden" name="lavorateFascia" value={lavorateFascia} />
-          ) : null}
 
           <div className="space-y-5">
             <SezioneFiltri title="Filtri anagrafica" tone="anagrafica">
@@ -661,7 +642,7 @@ export function PraticheFiltriBar({
               />
               <Field label="Rate scadute">
                 <select name="rateScadute" defaultValue={a.rateScadute || ""} className={modalField}>
-                  <option value="">Tutte</option>
+                  <option value="">— Seleziona —</option>
                   <option value="1">Con rate scadute</option>
                   <option value="0">Senza rate scadute</option>
                 </select>
@@ -687,7 +668,7 @@ export function PraticheFiltriBar({
                   fieldClass={modalField}
                   ariaLabel="Sit. affido"
                 >
-                  <option value="">Tutte</option>
+                  <option value="">— Seleziona —</option>
                   <option value="affidata">Affidata</option>
                   <option value="non_affidata">Non affidata</option>
                   <option value="temporanea">Affido temporaneo</option>
@@ -699,7 +680,7 @@ export function PraticheFiltriBar({
                   defaultValue={a.affidoProvvisorio || ""}
                   className={modalField}
                 >
-                  <option value="">No</option>
+                  <option value="">— Seleziona —</option>
                   <option value="1">Sì (solo temporanei)</option>
                 </select>
               </Field>
@@ -713,7 +694,7 @@ export function PraticheFiltriBar({
                   ariaLabel="Mandato"
                   onValueChange={setModalMandato}
                 >
-                  <option value="">Tutti</option>
+                  <option value="">— Seleziona —</option>
                   {(mandanti || []).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.codice} — {m.ragioneSociale}
@@ -731,7 +712,7 @@ export function PraticheFiltriBar({
                   ariaLabel="Perimetro"
                   onValueChange={setModalPerimetro}
                 >
-                  <option value="">Tutti</option>
+                  <option value="">— Seleziona —</option>
                   {perimetriModalOpts.map((p) => (
                     <option key={p.value} value={p.value}>
                       {p.label}
@@ -753,7 +734,7 @@ export function PraticheFiltriBar({
                   ariaLabel="Lotto"
                   onValueChange={setModalLotto}
                 >
-                  <option value="">Tutti (in lavorazione)</option>
+                  <option value="">— Seleziona —</option>
                   {lottiModalOpts.map((l) => (
                     <option key={l} value={l}>
                       {l}

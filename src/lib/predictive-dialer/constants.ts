@@ -55,6 +55,23 @@ export const DIALER_CONFIG_PROVIDER = "dialer.provider";
 export const DIALER_CONFIG_WEBHOOK_SECRET = "dialer.webhookSecret";
 export const DIALER_CONFIG_API_BASE = "dialer.apiBaseUrl";
 
+/**
+ * Sentinel in campagna.codiciScarico JSON: include pratiche senza codice scarico
+ * (null / stringa vuota).
+ */
+export const DIALER_CODICE_SCARICO_VUOTO = "SENZA";
+export const DIALER_CODICE_SCARICO_VUOTO_LABEL = "Senza codice";
+
+export function labelCodiceScaricoDialer(codice: string): string {
+  const c = codice.trim().toUpperCase();
+  if (c === DIALER_CODICE_SCARICO_VUOTO) return DIALER_CODICE_SCARICO_VUOTO_LABEL;
+  return c;
+}
+
+export function isDialerCodiceScaricoVuoto(codice: string | null | undefined): boolean {
+  return (codice ?? "").trim().toUpperCase() === DIALER_CODICE_SCARICO_VUOTO;
+}
+
 /** Timeout default blocco pratica in_lavorazione senza evento conclusivo (secondi). */
 export const DIALER_DEFAULT_LOCK_TIMEOUT_SEC = 120;
 /** Timeout assenza heartbeat operatore in connecting/in_chiamata (secondi). */

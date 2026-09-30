@@ -55,6 +55,7 @@ function mapUser(row: Record<string, unknown>): UserRecord {
       ? new Date(String(row.PasswordChangedAt))
       : null,
     lastLoginAt: row.LastLoginAt ? new Date(String(row.LastLoginAt)) : null,
+    lastLogoutAt: row.LastLogoutAt ? new Date(String(row.LastLogoutAt)) : null,
   };
 }
 
@@ -156,7 +157,7 @@ class NeonUsersRepository implements UsersRepository {
       `SELECT u."Id", u."TenantId", u."Email", u."Name", u."PasswordHash", u."PasswordChangedAt",
               u."Role", u."Acronimo", u."FormazioneOnly", u."Interno", u."PrefissoChiamata",
               u."Active", u."SupervisorId", u."GruppoNome", u."GruppoMandantiJson",
-              u."PostazioneId", u."PostazioneFissa", u."SedeId", u."LastLoginAt",
+              u."PostazioneId", u."PostazioneFissa", u."SedeId", u."LastLoginAt", u."LastLogoutAt",
               t."Slug" AS "TenantSlug", t."Nome" AS "TenantNome", t."Active" AS "TenantActive",
               p."Interno" AS "PostazioneInterno", p."Email" AS "PostazioneEmail",
               p."Nome" AS "PostazioneNome", s."Nome" AS "SedeNome"

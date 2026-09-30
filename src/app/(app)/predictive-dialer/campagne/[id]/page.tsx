@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { mapDialerCampagna } from "@/lib/predictive-dialer/mappers";
 import { canManageDialerCampagna, parseCodiciScaricoJson } from "@/lib/predictive-dialer/scope";
 import { loadCampagnaStats, loadMonitorOperatori } from "@/lib/predictive-dialer/stats";
-import { DIALER_CAMPAGNA_LABELS } from "@/lib/predictive-dialer/constants";
+import { DIALER_CAMPAGNA_LABELS, labelCodiceScaricoDialer } from "@/lib/predictive-dialer/constants";
 
 export default async function PredictiveDialerCampagnaDetailPage({
   params,
@@ -63,7 +63,10 @@ export default async function PredictiveDialerCampagnaDetailPage({
         {campagna.descrizione ? <p className="mb-2 text-sm">{campagna.descrizione}</p> : null}
         {codici.length ? (
           <p className="mb-2 text-sm">
-            Codici scarico: <span className="font-mono">{codici.join(", ")}</span>
+            Codici scarico:{" "}
+            <span className="font-mono">
+              {codici.map(labelCodiceScaricoDialer).join(", ")}
+            </span>
           </p>
         ) : null}
         <p className="mb-3 text-sm">Post-call: {campagna.postCallSec}s</p>

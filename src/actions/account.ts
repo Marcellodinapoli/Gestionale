@@ -6,6 +6,7 @@ import { usersDbFromUser } from "@/lib/usersRepo";
 import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireUser } from "@/lib/guard";
+import { validaPostazionePerUtente } from "@/lib/postazioneAssign";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
 import { validatePasswordComplexity } from "@/lib/passwordRules";
 
@@ -42,7 +43,15 @@ export async function updateAccountTelefoniaAction(formData: FormData) {
       where: { tenantId: user.tenantId, active: true, interno },
       select: { id: true, nome: true, interno: true },
     });
-    if (match) postazioneId = match.id;
+    if (match) {
+      const validazione = await validaPostazionePerUtente(
+        match.id,
+        user.id,
+        user.tenantId,
+        user.tenantSlug ?? undefined
+      );
+      if (!("error" in validazione)) postazioneId = match.id;
+    }
   } else {
     postazioneId = null;
   }

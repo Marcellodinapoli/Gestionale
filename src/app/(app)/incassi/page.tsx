@@ -8,6 +8,7 @@ import { IncassiElencoFiltriBar } from "@/components/incassi/IncassiElencoFiltri
 import { PaginazioneBar, paginateParams } from "@/components/PaginazioneBar";
 import { loadIncassiElenco } from "@/lib/incassiElenco";
 import { parseIncassiElencoFiltri } from "@/lib/incassiElencoUi";
+import { parseFiltroSrc } from "@/lib/filtroVeloceEsclusivo";
 import { euro } from "@/lib/domain";
 import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 
@@ -89,6 +90,7 @@ export default async function IncassiElencoPage({
   const queryBase: Record<string, string | undefined> = {
     ...filtri,
     cerca: showElenco ? "1" : undefined,
+    filtroSrc: parseFiltroSrc(sp) ?? undefined,
   };
 
   return (
@@ -118,6 +120,7 @@ export default async function IncassiElencoPage({
         }))}
         meseParam={filtri.mese || ""}
         searchActive={showElenco}
+        searchParams={sp}
       />
 
       {!showElenco ? (

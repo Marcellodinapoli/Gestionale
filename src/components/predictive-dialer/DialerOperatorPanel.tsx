@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
+import { labelCodiceScaricoDialer } from "@/lib/predictive-dialer/constants";
 import {
   DIALER_CAMPAGNA_LABELS,
   DIALER_SESSIONE_LABELS,
@@ -259,7 +260,9 @@ export function DialerOperatorPanel() {
                 {inv.campagna.codiciScarico.length ? (
                   <p className="mb-2 text-xs">
                     Codici scarico:{" "}
-                    <span className="font-mono">{inv.campagna.codiciScarico.join(", ")}</span>
+                    <span className="font-mono">
+                      {inv.campagna.codiciScarico.map(labelCodiceScaricoDialer).join(", ")}
+                    </span>
                   </p>
                 ) : null}
                 <p className="mb-2 text-xs text-[var(--muted)]">

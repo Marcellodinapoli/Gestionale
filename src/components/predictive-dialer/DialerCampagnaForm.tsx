@@ -3,6 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createDialerCampagnaAction } from "@/actions/predictiveDialer";
+import {
+  DIALER_CODICE_SCARICO_VUOTO,
+  DIALER_CODICE_SCARICO_VUOTO_LABEL,
+} from "@/lib/predictive-dialer/constants";
 import { CODICI_SCARICO } from "@/lib/scarico";
 import {
   DIALER_PACING_DEFAULT,
@@ -57,14 +61,19 @@ export function DialerCampagnaForm({
       </label>
       <label className="block text-sm">
         <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Codici scarico</span>
-        <select name="codiciScarico" multiple className={`${FILTRI_PAGE_SELECT_CLASS} h-24`}>
+        <select name="codiciScarico" multiple className={`${FILTRI_PAGE_SELECT_CLASS} h-28`}>
+          <option value={DIALER_CODICE_SCARICO_VUOTO}>
+            {DIALER_CODICE_SCARICO_VUOTO_LABEL}
+          </option>
           {CODICI_SCARICO.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
         </select>
-        <span className="text-xs text-[var(--muted)]">Ctrl+click per selezione multipla</span>
+        <span className="text-xs text-[var(--muted)]">
+          Ctrl+click per selezione multipla · «Senza codice» = pratiche con codice scarico vuoto
+        </span>
       </label>
       <label className="block text-sm">
         <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Post-call (secondi)</span>

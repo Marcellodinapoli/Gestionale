@@ -123,6 +123,8 @@ function mapUser(row: Record<string, unknown>): UserRecord {
 
     lastLoginAt: row.LastLoginAt ? String(row.LastLoginAt) : null,
 
+    lastLogoutAt: row.LastLogoutAt ? String(row.LastLogoutAt) : null,
+
   };
 
 }
