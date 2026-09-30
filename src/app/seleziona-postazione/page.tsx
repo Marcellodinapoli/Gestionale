@@ -3,9 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
-import { canImpostarePostazioneFissa, mustChoosePostazioneAlLogin, requiresPostazione } from "@/lib/permissions";
+import { canImpostarePostazioneFissa, canEnterWithoutPostazione, mustChoosePostazioneAlLogin, requiresPostazione } from "@/lib/permissions";
+import { hasPostazioneSkip } from "@/lib/postazioneGate";
 import { blockingOccupants, formatUtenteNome } from "@/lib/sessionPresence";
 import { logoutAction } from "@/actions/core";
+import { entraSenzaPostazioneAction } from "@/actions/postazione";
 import { SelezionaPostazioneForm } from "./SelezionaPostazioneForm";
 
 export default async function SelezionaPostazionePage() {
@@ -14,6 +16,9 @@ export default async function SelezionaPostazionePage() {
   if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
 
   if (!requiresPostazione(user) || !mustChoosePostazioneAlLogin(user)) {
+    redirect("/");
+  }
+  if (await hasPostazioneSkip()) {
     redirect("/");
   }
 
@@ -80,6 +85,16 @@ export default async function SelezionaPostazionePage() {
                 Esci e torna al login
               </button>
             </form>
+            {canEnterWithoutPostazione(user.role) ? (
+              <form action={entraSenzaPostazioneAction}>
+                <button
+                  type="submit"
+                  className="h-10 w-full rounded-lg bg-[var(--navy)] text-sm font-semibold text-white hover:bg-[#1a365d]"
+                >
+                  Entra comunque senza postazione
+                </button>
+              </form>
+            ) : null}
           </div>
         ) : lista.every((p) => p.occupante && !p.tua) ? (
           <div className="space-y-4">
@@ -111,6 +126,16 @@ export default async function SelezionaPostazionePage() {
                 Esci e torna al login
               </button>
             </form>
+            {canEnterWithoutPostazione(user.role) ? (
+              <form action={entraSenzaPostazioneAction}>
+                <button
+                  type="submit"
+                  className="h-10 w-full rounded-lg bg-[var(--navy)] text-sm font-semibold text-white hover:bg-[#1a365d]"
+                >
+                  Entra comunque senza postazione
+                </button>
+              </form>
+            ) : null}
           </div>
         ) : (
           <SelezionaPostazioneForm

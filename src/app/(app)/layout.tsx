@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isCurrentUserPasswordExpired } from "@/lib/auth";
 import { mustChoosePostazioneAlLogin, richiedeInternoPerChiamata } from "@/lib/permissions";
+import { hasPostazioneSkip } from "@/lib/postazioneGate";
 import { AppShell } from "@/components/AppShell";
 import { NavAccessGuard } from "@/components/NavAccessGuard";
 import { SectionActivationGate } from "@/components/SectionActivationGate";
@@ -36,7 +37,7 @@ export default async function AppLayout({
   if (needsSedi) {
     redirect("/setup-sedi");
   }
-  if (mustChoosePostazioneAlLogin(user)) {
+  if (mustChoosePostazioneAlLogin(user) && !(await hasPostazioneSkip())) {
     redirect("/seleziona-postazione");
   }
   const awaiting = isAwaitingSectionActivation(platform.enabledModules);

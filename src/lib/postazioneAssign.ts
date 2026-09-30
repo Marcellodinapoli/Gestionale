@@ -1,5 +1,10 @@
 import { postazioniDb } from "@/lib/postazioniRepo";
-import { formatUtenteNome, occupantBlocksDesk } from "@/lib/sessionPresence";
+import { usersDb } from "@/lib/usersRepo";
+import {
+  formatUtenteNome,
+  isUserSessionActive,
+  occupantBlocksDesk,
+} from "@/lib/sessionPresence";
 
 export async function validaPostazionePerUtente(
   postazioneId: string,
@@ -7,10 +12,8 @@ export async function validaPostazionePerUtente(
   tenantId: string,
   tenantSlug?: string | null
 ) {
-  const postazione = await postazioniDb({
-    tenantId,
-    tenantSlug: tenantSlug ?? tenantId,
-  }).findFirst({
+  const ctx = { tenantId, tenantSlug: tenantSlug ?? tenantId };
+  const postazione = await postazioniDb(ctx).findFirst({
     where: { id: postazioneId, tenantId, active: true },
     include: {
       occupanti: {
@@ -38,4 +41,39 @@ export async function validaPostazionePerUtente(
     };
   }
   return { postazione };
+}
+
+/**
+ * Rimuove dalla postazione gli altri utenti senza sessione attiva e senza fissa
+ * (residui da chiusura browser senza logout).
+ */
+export async function liberaPostazioneDaResidui(
+  postazioneId: string,
+  keepUserId: string,
+  tenantId: string,
+  tenantSlug?: string | null
+) {
+  const ctx = { tenantId, tenantSlug: tenantSlug ?? tenantId };
+  const altri = await usersDb(ctx).findMany({
+    where: {
+      tenantId,
+      active: true,
+      postazioneId,
+      id: { not: keepUserId },
+    },
+    select: {
+      id: true,
+      postazioneFissa: true,
+      lastLoginAt: true,
+      lastLogoutAt: true,
+    },
+  });
+  const daLiberare = altri.filter(
+    (o) => !o.postazioneFissa && !isUserSessionActive(o)
+  );
+  if (daLiberare.length === 0) return;
+  await usersDb(ctx).updateMany({
+    where: { id: { in: daLiberare.map((o) => o.id) }, tenantId },
+    data: { postazioneId: null, lastLogoutAt: new Date() },
+  });
 }

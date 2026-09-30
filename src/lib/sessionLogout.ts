@@ -3,6 +3,7 @@ import { clearSession, getCurrentUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/domain";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { releaseAllUserLocks, lockScopeFromUser } from "@/lib/praticaLock";
+import { clearPostazioneSkip } from "@/lib/postazioneGate";
 
 /**
  * Termina la sessione per tutti i ruoli: rilascia lock, cancella cookie,
@@ -20,6 +21,11 @@ export async function endUserSession(): Promise<void> {
     }
   }
   await clearSession();
+  try {
+    await clearPostazioneSkip();
+  } catch {
+    /* ignore */
+  }
   if (!user) return;
   try {
     await Promise.all([

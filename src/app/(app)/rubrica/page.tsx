@@ -1,7 +1,7 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { requireNavPage } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
-import { occupantBlocksDesk } from "@/lib/sessionPresence";
+import { isUserSessionActive } from "@/lib/sessionPresence";
 import { PageHeader } from "@/components/ui";
 import { RubricaGriglia } from "@/components/rubrica/RubricaGriglia";
 
@@ -38,18 +38,24 @@ export default async function RubricaPage() {
     },
   });
 
+  // Residui: postazione ancora assegnata ma sessione chiusa/scaduta → libera la desk.
+  const residui = utenti.filter(
+    (u) => u.postazione && !u.postazioneFissa && !isUserSessionActive(u)
+  );
+  if (residui.length > 0) {
+    await usersDbFromUser(user).updateMany({
+      where: { id: { in: residui.map((u) => u.id) }, tenantId: user.tenantId },
+      data: { postazioneId: null, lastLogoutAt: new Date() },
+    });
+  }
+
   const rubricaSelfRoles = new Set(["OPERATOR", "SUPERVISOR", "BACK_OFFICE"]);
   const showSelfBadge = rubricaSelfRoles.has(user.role);
 
   const lista = utenti.map((u) => {
-    const showDesk =
-      Boolean(u.postazione) &&
-      occupantBlocksDesk({
-        role: u.role,
-        postazioneFissa: u.postazioneFissa,
-        lastLoginAt: u.lastLoginAt,
-        lastLogoutAt: u.lastLogoutAt,
-      });
+    // Online in rubrica = sessione davvero aperta (non “fissa” o logout mancante).
+    const online = isUserSessionActive(u);
+    const showDesk = online && Boolean(u.postazione) && !residui.some((r) => r.id === u.id);
     const postazione =
       showDesk && u.postazione
         ? {

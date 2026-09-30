@@ -1,4 +1,7 @@
-/** True se lastLoginAt è successivo a lastLogoutAt (sessione aperta). */
+/** Allineato alla durata del cookie di sessione (createSession → 12h). */
+export const SESSION_PRESENCE_MAX_MS = 12 * 60 * 60 * 1000;
+
+/** True se lastLoginAt è successivo a lastLogoutAt (sessione aperta) e non scaduta. */
 export function isUserSessionActive(u: {
   lastLoginAt?: Date | string | null;
   lastLogoutAt?: Date | string | null;
@@ -6,6 +9,8 @@ export function isUserSessionActive(u: {
   if (!u.lastLoginAt) return false;
   const login = new Date(u.lastLoginAt).getTime();
   if (Number.isNaN(login)) return false;
+  // Senza logout (chiusura browser senza beacon) non restare "online" oltre la sessione.
+  if (Date.now() - login > SESSION_PRESENCE_MAX_MS) return false;
   if (!u.lastLogoutAt) return true;
   const logout = new Date(u.lastLogoutAt).getTime();
   if (Number.isNaN(logout)) return true;

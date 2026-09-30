@@ -159,8 +159,8 @@ export function canClearCodiceScarico(role: Role | string | null | undefined) {
   return role !== "SUPERVISOR" && role !== "OPERATOR";
 }
 
-/** Admin, back office e amministrazione possono fissare la postazione.
- * Legal sceglie la postazione a ogni login (come operatori / supervisor). */
+/** Admin, back office e amministrazione possono fissare la postazione
+ * (al login successivo non viene richiesta di nuovo). */
 export function canImpostarePostazioneFissa(role: Role) {
   return (
     role === "ADMIN" ||
@@ -169,12 +169,17 @@ export function canImpostarePostazioneFissa(role: Role) {
   );
 }
 
-/** Admin e amministrazione non restano fuori se le postazioni sono occupate. */
+/** Admin, amministrazione e back office: possono entrare se tutte le postazioni sono occupate. */
 export function canEnterWithoutPostazione(role: Role) {
-  return role === "ADMIN" || role === "AMMINISTRAZIONE";
+  return (
+    role === "ADMIN" ||
+    role === "AMMINISTRAZIONE" ||
+    role === "BACK_OFFICE"
+  );
 }
 
-/** True se l'utente deve ancora passare dalla schermata di selezione postazione. */
+/** True se l'utente deve ancora passare dalla schermata di selezione postazione.
+ * Con postazione fissa assegnata non viene richiesto; altrimenti sì (anche admin/amm/bk off). */
 export function mustChoosePostazioneAlLogin(
   user: {
     role: Role;
@@ -184,7 +189,6 @@ export function mustChoosePostazioneAlLogin(
   } | null | undefined
 ) {
   if (!user || !requiresPostazione(user)) return false;
-  if (canEnterWithoutPostazione(user.role)) return false;
   if (user.postazioneFissa && user.postazioneId) return false;
   return !user.postazioneId;
 }

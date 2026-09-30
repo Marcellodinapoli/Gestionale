@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Source_Sans_3 } from "next/font/google";
+import { SessionEndOnUnload } from "@/components/SessionEndOnUnload";
 import "./globals.css";
 
 const sans = Source_Sans_3({
@@ -22,7 +23,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <meta name="google" content="notranslate" />
       </head>
-      <body className="h-full overflow-hidden">{children}</body>
+      <body className="h-full overflow-hidden">
+        <SessionEndOnUnload />
+        {children}
+      </body>
     </html>
   );
 }

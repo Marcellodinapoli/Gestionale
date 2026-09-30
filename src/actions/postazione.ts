@@ -8,8 +8,12 @@ import { sediDbFromUser } from "@/lib/sediRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireUser, requireWritablePermission } from "@/lib/guard";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
-import { canImpostarePostazioneFissa } from "@/lib/permissions";
-import { validaPostazionePerUtente } from "@/lib/postazioneAssign";
+import { canImpostarePostazioneFissa, canEnterWithoutPostazione } from "@/lib/permissions";
+import { clearPostazioneSkip, setPostazioneSkip } from "@/lib/postazioneGate";
+import {
+  liberaPostazioneDaResidui,
+  validaPostazionePerUtente,
+} from "@/lib/postazioneAssign";
 
 export async function selezionaPostazioneAction(formData: FormData) {
   const user = await requireUser({ allowExpiredPassword: true });
@@ -33,6 +37,15 @@ export async function selezionaPostazioneAction(formData: FormData) {
     ? String(validazione.postazione.interno).trim() || null
     : null;
 
+  await liberaPostazioneDaResidui(
+    postazioneId,
+    user.id,
+    user.tenantId,
+    user.tenantSlug ?? undefined
+  );
+
+  await clearPostazioneSkip();
+
   await usersDbFromUser(user).update({
     where: { id: user.id },
     data: {
@@ -54,6 +67,20 @@ export async function selezionaPostazioneAction(formData: FormData) {
   redirect("/");
 }
 
+/** Admin/amministrazione/bk off: entrano senza postazione se tutte sono occupate. */
+export async function entraSenzaPostazioneAction() {
+  const user = await requireUser({ allowExpiredPassword: true });
+  if (!canEnterWithoutPostazione(user.role)) {
+    throw new Error("Non consentito");
+  }
+  await setPostazioneSkip();
+  await usersDbFromUser(user).update({
+    where: { id: user.id },
+    data: { postazioneId: null, postazioneFissa: false },
+  });
+  redirect("/");
+}
+
 export async function updateAccountPostazioneAction(formData: FormData) {
   const user = await requireUser();
 
@@ -71,6 +98,15 @@ export async function updateAccountPostazioneAction(formData: FormData) {
   const postazioneFissa = canImpostarePostazioneFissa(user.role)
     ? formData.get("postazioneFissa") === "on"
     : false;
+
+  await liberaPostazioneDaResidui(
+    postazioneId,
+    user.id,
+    user.tenantId,
+    user.tenantSlug ?? undefined
+  );
+
+  await clearPostazioneSkip();
 
   await usersDbFromUser(user).update({
     where: { id: user.id },
@@ -94,6 +130,7 @@ export async function updateAccountPostazioneAction(formData: FormData) {
   });
 
   revalidatePath("/account");
+  revalidatePath("/rubrica");
   revalidatePath("/", "layout");
   revalidatePath("/pratiche");
 }

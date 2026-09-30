@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { clearSession, getCurrentUser } from "@/lib/auth";
 import { mustChoosePostazioneAlLogin } from "@/lib/permissions";
+import { hasPostazioneSkip } from "@/lib/postazioneGate";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { LoginForm } from "@/components/LoginForm";
 
@@ -27,7 +28,7 @@ export default async function LoginPage({
       if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
       if (user.formazioneOnly) redirect(homePathForUser(user));
       if (await needsSediSetup(user)) redirect("/setup-sedi");
-      if (mustChoosePostazioneAlLogin(user)) redirect("/seleziona-postazione");
+      if (mustChoosePostazioneAlLogin(user) && !(await hasPostazioneSkip())) redirect("/seleziona-postazione");
       redirect("/");
     }
   }
