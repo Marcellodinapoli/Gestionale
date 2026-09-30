@@ -1,5 +1,5 @@
 import { postazioniDb } from "@/lib/postazioniRepo";
-import { occupantBlocksDesk } from "@/lib/sessionPresence";
+import { formatUtenteNome, occupantBlocksDesk } from "@/lib/sessionPresence";
 
 export async function validaPostazionePerUtente(
   postazioneId: string,
