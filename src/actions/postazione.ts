@@ -7,7 +7,7 @@ import { postazioniDbFromUser } from "@/lib/postazioniRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireUser, requireWritablePermission } from "@/lib/guard";
-import { isUserPasswordExpired } from "@/lib/passwordPolicy";
+import { isCurrentUserPasswordExpired } from "@/lib/auth";
 import { canImpostarePostazioneFissa, canEnterWithoutPostazione } from "@/lib/permissions";
 import { clearPostazioneSkip, setPostazioneSkip } from "@/lib/postazioneGate";
 import {
@@ -17,7 +17,7 @@ import {
 
 export async function selezionaPostazioneAction(formData: FormData) {
   const user = await requireUser({ allowExpiredPassword: true });
-  if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
+  if (await isCurrentUserPasswordExpired()) redirect("/cambia-password");
 
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) return { error: "Seleziona una postazione" };
@@ -58,6 +58,7 @@ export async function selezionaPostazioneAction(formData: FormData) {
   await writeAudit({
     userId: user.id,
     tenantId: user.tenantId,
+    tenantSlug: user.tenantSlug,
     action: "seleziona_postazione",
     entity: "postazione",
     entityId: postazioneId,
