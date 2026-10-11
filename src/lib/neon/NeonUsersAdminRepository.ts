@@ -177,6 +177,14 @@ function buildFilter(tenantId: string, filter?: UserFilter): { sql: string; para
     parts.push(`u."FormazioneOnly" = $${i++}`);
     params.push(filter.formazioneOnly);
   }
+  // Stessa semantica di PrismaUsersRepository: null esplicito → IS NULL, stringa → uguaglianza.
+  if (filter.postazioneIdSet && filter.postazioneId == null) {
+    parts.push(`u."PostazioneId" IS NULL`);
+  } else if (filter.postazioneId) {
+    if (!isUuid(filter.postazioneId)) return { ...EMPTY_FILTER };
+    parts.push(`u."PostazioneId" = $${i++}::uuid`);
+    params.push(filter.postazioneId);
+  }
   return { sql: parts.join(" AND "), params };
 }
 
