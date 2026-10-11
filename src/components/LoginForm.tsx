@@ -45,13 +45,17 @@ export function LoginForm({
           return;
         }
         if (data.ok && data.href) {
-          // Password scaduta: replace così non si torna indietro nell'app.
-          if (data.href.includes("cambia-password")) {
+          if (data.href === window.location.pathname) {
+            // Stesso URL (login servito su "/"): ricarica i dati server con il nuovo cookie.
+            router.refresh();
+          } else if (data.href.includes("cambia-password")) {
+            // Password scaduta: replace così non si torna indietro nell'app.
             router.replace(data.href);
           } else {
+            // URL diverso: la navigazione scarica già la pagina dal server (staleTimes.dynamic = 0);
+            // un refresh in più causerebbe un secondo render completo della stessa pagina.
             router.push(data.href);
           }
-          router.refresh();
         }
       } catch {
         setError("Impossibile contattare il server. Riprova tra qualche secondo.");

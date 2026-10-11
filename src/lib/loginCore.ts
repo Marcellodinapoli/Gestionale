@@ -117,6 +117,23 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     passwordChangedAt: user.passwordChangedAt ?? null,
   };
 
+  const passwordExpired = isPasswordExpired(user.passwordChangedAt);
+
+  // Lettura sedi (solo se serve per il redirect) avviata in parallelo all'audit;
+  // l'audit resta atteso prima di rispondere. Eventuali errori sono gestiti dopo l'audit, come prima.
+  const { needsSediSetup } = await import("@/lib/sediSetup");
+  const sediSetupCheck =
+    !passwordExpired && !user.formazioneOnly
+      ? needsSediSetup({
+          role: user.role as Role,
+          tenantId: user.tenantId,
+          tenantSlug: tenant.slug,
+        }).then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error })
+        )
+      : null;
+
   await writeAudit({
     userId: user.id,
     tenantId: user.tenantId,
@@ -126,7 +143,7 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     entityId: user.id,
   });
 
-  if (isPasswordExpired(user.passwordChangedAt)) {
+  if (passwordExpired) {
     return { ok: true, href: "/cambia-password", session };
   }
 
@@ -140,15 +157,12 @@ export async function authenticateLogin(input: LoginInput): Promise<LoginResult>
     return { ok: true, href: "/formazione/progressi", session };
   }
 
-  const { needsSediSetup } = await import("@/lib/sediSetup");
-  if (
-    await needsSediSetup({
-      role: user.role as Role,
-      tenantId: user.tenantId,
-      tenantSlug: tenant.slug,
-    })
-  ) {
-    return { ok: true, href: "/setup-sedi", session };
+  if (sediSetupCheck) {
+    const sedi = await sediSetupCheck;
+    if (!sedi.ok) throw sedi.error;
+    if (sedi.value) {
+      return { ok: true, href: "/setup-sedi", session };
+    }
   }
 
   return {
