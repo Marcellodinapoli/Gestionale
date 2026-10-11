@@ -15,9 +15,17 @@ import {
   validaPostazionePerUtente,
 } from "@/lib/postazioneAssign";
 
+// TEMPORANEO (misura tempi): true solo alla prima invocazione in questa istanza.
+let misuraPrimaInvocazione = true;
+
 export async function selezionaPostazioneAction(formData: FormData) {
+  const tStart = Date.now();
+  const primaInvocazione = misuraPrimaInvocazione ? 1 : 0;
+  misuraPrimaInvocazione = false;
   const user = await requireUser({ allowExpiredPassword: true });
+  const tUser = Date.now();
   if (await isCurrentUserPasswordExpired()) redirect("/cambia-password");
+  const tPassword = Date.now();
 
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) return { error: "Seleziona una postazione" };
@@ -28,6 +36,7 @@ export async function selezionaPostazioneAction(formData: FormData) {
     user.tenantId,
     user.tenantSlug ?? undefined
   );
+  const tValida = Date.now();
   if ("error" in validazione) return { error: validazione.error };
 
   const postazioneFissa =
@@ -43,8 +52,10 @@ export async function selezionaPostazioneAction(formData: FormData) {
     user.tenantId,
     user.tenantSlug ?? undefined
   );
+  const tLibera = Date.now();
 
   await clearPostazioneSkip();
+  const tSkip = Date.now();
 
   await usersDbFromUser(user).update({
     where: { id: user.id },
@@ -54,6 +65,7 @@ export async function selezionaPostazioneAction(formData: FormData) {
       ...(internoPostazione ? { interno: internoPostazione } : {}),
     },
   });
+  const tUpdate = Date.now();
 
   await writeAudit({
     userId: user.id,
@@ -65,8 +77,27 @@ export async function selezionaPostazioneAction(formData: FormData) {
     dettaglio: `${validazione.postazione.nome}${postazioneFissa ? " · fissa" : ""}`,
   });
 
+  const tAudit = Date.now();
+
   // Navigazione verso "/" fatta dal client (router.push): evita il render della home
   // dentro la risposta dell'action (self-fetch) seguito da un secondo render lato client.
+  // TEMPORANEO: solo durate in ms, solo per ADMIN/MANUTENZIONE.
+  if (user.role === "ADMIN" || user.role === "MANUTENZIONE") {
+    return {
+      ok: true as const,
+      _t: {
+        first: primaInvocazione,
+        user: tUser - tStart,
+        password: tPassword - tUser,
+        valida: tValida - tPassword,
+        libera: tLibera - tValida,
+        skip: tSkip - tLibera,
+        update: tUpdate - tSkip,
+        audit: tAudit - tUpdate,
+        total: Date.now() - tStart,
+      },
+    };
+  }
   return { ok: true as const };
 }
 
