@@ -424,7 +424,19 @@ class NeonDashboardRepository implements DashboardRepository {
 
     const scope = homePraticheScopeSql(ctx.scope, ctx.memberIds, 2);
 
-    const praticheAgg = await neonQuery(
+    const incassiParams: unknown[] = [tenantId];
+    let incassiUserSql = "";
+    if (ctx.incassiScope === "none") {
+      incassiUserSql = " AND FALSE";
+    } else if (ctx.incassiScope === "user" && isUuid(ctx.userId)) {
+      incassiUserSql = ` AND "UserId" = $2::uuid`;
+      incassiParams.push(ctx.userId);
+    }
+
+    // Query indipendenti: avviate insieme (stessa SQL/parametri, stesse condizioni).
+    const needAdminQueries = ctx.includeAdmin || ctx.includeAmministrazione;
+    const [praticheAgg, incassiOggiRows, adminRows] = await Promise.all([
+      neonQuery(
       `SELECT
          COUNT(*)::int AS totali,
          COUNT(*) FILTER (WHERE "Stato" = 'NUOVA')::int AS nuove,
@@ -445,61 +457,32 @@ class NeonDashboardRepository implements DashboardRepository {
          )::int AS non_assegnate
        FROM "Pratiche" WHERE "TenantId" = $1::uuid${scope.sql}`,
       [tenantId, ...scope.params]
-    );
-    sqlQueries += 1;
-
-    const incassiParams: unknown[] = [tenantId];
-    let incassiUserSql = "";
-    if (ctx.incassiScope === "none") {
-      incassiUserSql = " AND FALSE";
-    } else if (ctx.incassiScope === "user" && isUuid(ctx.userId)) {
-      incassiUserSql = ` AND "UserId" = $2::uuid`;
-      incassiParams.push(ctx.userId);
-    }
-
-    const incassiOggiRows = await neonQuery(
+    ),
+      neonQuery(
       `SELECT COALESCE(SUM("Importo"),0)::float AS oggi
        FROM "Incassi"
        WHERE "TenantId" = $1::uuid
          AND ("Data" AT TIME ZONE 'Europe/Rome')::date = (NOW() AT TIME ZONE 'Europe/Rome')::date${incassiUserSql}`,
       incassiParams
-    );
-    sqlQueries += 1;
-
-    const p = (praticheAgg[0] || {}) as Record<string, number>;
-    const incassiOggi = Number((incassiOggiRows[0] as { oggi?: number })?.oggi ?? 0);
-
-    let admin: HomeKpiBundle["admin"];
-    let amministrazione: HomeKpiBundle["amministrazione"];
-
-    if (ctx.includeAdmin || ctx.includeAmministrazione) {
-      const sediRows = await neonQuery(
+    ),
+      needAdminQueries
+        ? Promise.all([
+            neonQuery(
         `SELECT "Id", "Nome" FROM "Sedi" WHERE "TenantId" = $1::uuid ORDER BY "Nome"`,
         [tenantId]
-      );
-      sqlQueries += 1;
-      const sediOpts = sediRows.map((r) => {
-        const row = r as { Id: string; Nome: string };
-        return { id: String(row.Id), nome: String(row.Nome) };
-      });
-
-      const opRows = await neonQuery(
+      ),
+            neonQuery(
         `SELECT COUNT(*)::int AS c FROM "Users"
          WHERE "TenantId" = $1::uuid AND "Active" = true
            AND "Role" IN ('OPERATOR','OPERATORE','SUPERVISOR')`,
         [tenantId]
-      );
-      sqlQueries += 1;
-      const operatoriCount = Number((opRows[0] as { c: number })?.c ?? 0);
-
-      const mandantiRows = await neonQuery(
+      ),
+            neonQuery(
         `SELECT "Id", "Codice", "RagioneSociale", "PerimetriJson"
          FROM "Mandanti" WHERE "TenantId" = $1::uuid ORDER BY "Codice"`,
         [tenantId]
-      );
-      sqlQueries += 1;
-
-      const riepRows = await neonQuery(
+      ),
+            neonQuery(
         `SELECT m."Id", m."Codice", m."RagioneSociale",
            COUNT(p."Id")::int AS pratiche,
            COALESCE(SUM(p."ImportoTotale"), 0)::float AS affidato,
@@ -516,8 +499,59 @@ class NeonDashboardRepository implements DashboardRepository {
          GROUP BY m."Id", m."Codice", m."RagioneSociale"
          ORDER BY m."Codice"`,
         [tenantId]
-      );
-      sqlQueries += 1;
+      ),
+            neonQuery(
+        `SELECT
+           i."Importo" AS "Importo",
+           i."Metodo" AS "Metodo",
+           i."Modo" AS "Modo",
+           p."MandanteId" AS "MandanteId",
+           p."NumeroMandante" AS "NumeroMandante",
+           p."CodiceScarico" AS "CodiceScarico"
+         FROM "Incassi" i
+         INNER JOIN "Pratiche" p ON p."Id" = i."PraticaId"
+         WHERE i."TenantId" = $1::uuid`,
+        [tenantId]
+      ),
+            neonQuery(
+        `SELECT
+           COALESCE(NULLIF(TRIM(i."Metodo"), ''), 'altro') AS metodo,
+           COUNT(*) FILTER (
+             WHERE (i."Data" AT TIME ZONE 'Europe/Rome')::date
+               >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Rome')::date
+           )::int AS mese_pezzi,
+           COALESCE(SUM(i."Importo") FILTER (
+             WHERE (i."Data" AT TIME ZONE 'Europe/Rome')::date
+               >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Rome')::date
+           ), 0)::float AS mese_importo,
+           COUNT(*)::int AS pezzi,
+           COALESCE(SUM(i."Importo"), 0)::float AS importo
+         FROM "Incassi" i
+         WHERE i."TenantId" = $1::uuid
+         GROUP BY 1
+         ORDER BY importo DESC`,
+        [tenantId]
+      ),
+          ])
+        : null,
+    ]);
+    sqlQueries += 2;
+
+    const p = (praticheAgg[0] || {}) as Record<string, number>;
+    const incassiOggi = Number((incassiOggiRows[0] as { oggi?: number })?.oggi ?? 0);
+
+    let admin: HomeKpiBundle["admin"];
+    let amministrazione: HomeKpiBundle["amministrazione"];
+
+    if (needAdminQueries && adminRows) {
+      const [sediRows, opRows, mandantiRows, riepRows, ricavoRows, tipRows] = adminRows;
+      sqlQueries += 6;
+      const sediOpts = sediRows.map((r) => {
+        const row = r as { Id: string; Nome: string };
+        return { id: String(row.Id), nome: String(row.Nome) };
+      });
+
+      const operatoriCount = Number((opRows[0] as { c: number })?.c ?? 0);
 
       const { parsePerimetriList, resolvePerimetroPratica } = await import(
         "@/lib/mandantePerimetri"
@@ -533,21 +567,6 @@ class NeonDashboardRepository implements DashboardRepository {
           return [String(row.Id), row.PerimetriJson] as const;
         })
       );
-
-      const ricavoRows = await neonQuery(
-        `SELECT
-           i."Importo" AS "Importo",
-           i."Metodo" AS "Metodo",
-           i."Modo" AS "Modo",
-           p."MandanteId" AS "MandanteId",
-           p."NumeroMandante" AS "NumeroMandante",
-           p."CodiceScarico" AS "CodiceScarico"
-         FROM "Incassi" i
-         INNER JOIN "Pratiche" p ON p."Id" = i."PraticaId"
-         WHERE i."TenantId" = $1::uuid`,
-        [tenantId]
-      );
-      sqlQueries += 1;
 
       const ricavoByMandante = new Map<string, number>();
       for (const raw of ricavoRows) {
@@ -619,27 +638,6 @@ class NeonDashboardRepository implements DashboardRepository {
         };
       });
 
-      // Tipologie mese corrente (Europe/Rome)
-      const tipRows = await neonQuery(
-        `SELECT
-           COALESCE(NULLIF(TRIM(i."Metodo"), ''), 'altro') AS metodo,
-           COUNT(*) FILTER (
-             WHERE (i."Data" AT TIME ZONE 'Europe/Rome')::date
-               >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Rome')::date
-           )::int AS mese_pezzi,
-           COALESCE(SUM(i."Importo") FILTER (
-             WHERE (i."Data" AT TIME ZONE 'Europe/Rome')::date
-               >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Rome')::date
-           ), 0)::float AS mese_importo,
-           COUNT(*)::int AS pezzi,
-           COALESCE(SUM(i."Importo"), 0)::float AS importo
-         FROM "Incassi" i
-         WHERE i."TenantId" = $1::uuid
-         GROUP BY 1
-         ORDER BY importo DESC`,
-        [tenantId]
-      );
-      sqlQueries += 1;
 
       const tipologieIncasso = tipRows.map((r) => {
         const row = r as Record<string, unknown>;
