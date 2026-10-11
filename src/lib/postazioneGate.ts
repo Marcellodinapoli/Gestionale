@@ -20,7 +20,7 @@ export async function setPostazioneSkip(): Promise<void> {
 
 export async function clearPostazioneSkip(): Promise<void> {
   const jar = await cookies();
-  jar.delete(COOKIE);
+  if (jar.has(COOKIE)) jar.delete(COOKIE);
 }
 
 export async function hasPostazioneSkip(): Promise<boolean> {
