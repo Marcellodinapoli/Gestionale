@@ -65,7 +65,9 @@ export async function selezionaPostazioneAction(formData: FormData) {
     dettaglio: `${validazione.postazione.nome}${postazioneFissa ? " · fissa" : ""}`,
   });
 
-  redirect("/");
+  // Navigazione verso "/" fatta dal client (router.push): evita il render della home
+  // dentro la risposta dell'action (self-fetch) seguito da un secondo render lato client.
+  return { ok: true as const };
 }
 
 /** Admin/amministrazione/bk off: entrano senza postazione se tutte sono occupate. */

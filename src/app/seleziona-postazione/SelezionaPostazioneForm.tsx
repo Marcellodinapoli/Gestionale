@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Monitor, Phone, Mail, MapPin, User, PhoneCall } from "lucide-react";
 import { selezionaPostazioneAction } from "@/actions/postazione";
 
@@ -29,6 +30,7 @@ export function SelezionaPostazioneForm({
   const [postazioneFissa, setPostazioneFissa] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function handleSubmit() {
     if (!selected) return;
@@ -46,10 +48,14 @@ export function SelezionaPostazioneForm({
       fd.set("postazioneFissa", "on");
     }
     const result = await selezionaPostazioneAction(fd);
-    if (result?.error) {
-      setError(result.error);
-      setLoading(false);
+    if ("error" in result) {
+      if (result.error) {
+        setError(result.error);
+        setLoading(false);
+      }
+      return;
     }
+    router.push("/");
   }
 
   return (
