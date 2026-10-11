@@ -34,6 +34,19 @@ function secret() {
   return new TextEncoder().encode("dev-only-secret-not-for-prod");
 }
 
+/**
+ * Utente non autenticato su "/": mostra direttamente il login (URL resta "/"),
+ * evitando il redirect 307 / -> /login. Query string preservata.
+ */
+function rewriteRootToLogin(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.pathname = "/login";
+  const res = NextResponse.rewrite(url);
+  res.headers.set("Cache-Control", "private, no-store");
+  res.headers.set("Vary", "Cookie");
+  return res;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -50,7 +63,10 @@ export async function middleware(request: NextRequest) {
   }
 
   const token = request.cookies.get(COOKIE)?.value;
-  if (!token) return NextResponse.next();
+  if (!token) {
+    if (pathname === "/") return rewriteRootToLogin(request);
+    return NextResponse.next();
+  }
 
   try {
     const { payload } = await jwtVerify(token, secret());
@@ -73,6 +89,7 @@ export async function middleware(request: NextRequest) {
 
     return NextResponse.redirect(new URL("/formazione/progressi", request.url));
   } catch {
+    if (pathname === "/") return rewriteRootToLogin(request);
     return NextResponse.next();
   }
 }
