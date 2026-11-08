@@ -39,7 +39,7 @@ function secondsLeft(expiresAt: string) {
   return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
 }
 
-async function readJsonResponse<T extends { error?: string }>(res: Response): Promise<T> {
+async function readJsonResponse<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text.trim()) {
     if (!res.ok) {
@@ -148,7 +148,7 @@ export function CollegaCreditCalcButton({
         );
         if (!res.ok) return;
         const data = await readJsonResponse<LinkStatusResponse>(res);
-        if (data.status === "consumed" && status !== "consumed") {
+        if (data.status === "consumed") {
           onLinkConsumed?.();
         }
         setStatus(data.status);

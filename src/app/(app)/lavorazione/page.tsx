@@ -98,8 +98,14 @@ export default async function LavorazionePage({
         gruppoNome: sup.gruppoNome,
         gruppoMandanti: parseGruppoMandanti(sup.gruppoMandanti),
         members: [
-          { id: sup.id, name: sup.name, role: sup.role, email: sup.email },
-          ...operators,
+          {
+            id: sup.id,
+            name: sup.name,
+            role: sup.role,
+            email: sup.email,
+            internoVisibile: null,
+          },
+          ...operators.map((o) => ({ ...o, internoVisibile: null })),
         ],
         memberIds: [sup.id, ...operators.map((o) => o.id)],
       };

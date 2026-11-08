@@ -1,5 +1,3 @@
-import type { Timestamp } from "firebase/firestore";
-
 export type CourseDoc = {
   id: string;
   title: string;
@@ -16,7 +14,8 @@ export type CourseDoc = {
       correctIndex: number;
     }>;
   };
-  createdAt?: Timestamp | null;
+  /** Timestamp Firestore oppure istante sintetico (lista corsi via API). */
+  createdAt?: { toMillis(): number } | null;
 };
 
 export type CourseProgress = {

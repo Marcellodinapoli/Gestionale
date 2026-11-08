@@ -240,6 +240,8 @@ export function ruoliCreabiliDa(creatorRole: Role, opts?: RuoliCreabiliOpts): Ro
   const ctx: ProductStandaloneContext = opts?.productStandalone ?? {
     legalAi: Boolean(opts?.legalAiStandalone),
     recruiting: Boolean(opts?.recruitingStandalone),
+    formazione: false,
+    dialer: false,
   };
   const standalone = standaloneOperatoreRoles(ctx);
   if (standalone.length > 0) {

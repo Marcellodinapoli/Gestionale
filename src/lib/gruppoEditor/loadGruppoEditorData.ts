@@ -3,6 +3,7 @@ import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
 import { getGruppoLavoroForSupervisor } from "@/lib/gruppoLavoro";
+import type { GruppoLavoro } from "@/lib/gruppoLavoroUi";
 import type { SessionUser } from "@/lib/permissions";
 import type {
   GruppoInfoAltro,

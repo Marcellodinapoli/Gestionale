@@ -395,8 +395,8 @@ export async function daAffidarePerPerimetroGruppo(
       scadenza: true,
       dataPassaggioGiudiziale: true,
       conferimentoTipo: true,
-      statoAvvioGiudiziale: true,
       codiceScaricoBk: true,
+      giudiziale: { select: { statoAvvio: true } },
       mandante: { select: { codice: true, perimetri: true } },
       importBatch: { select: { perimetro: true } },
     },
@@ -404,7 +404,19 @@ export async function daAffidarePerPerimetroGruppo(
 
   const byKey = new Map<string, RigaDaAffidarePerimetro>();
   for (const p of pratiche) {
-    if (!isPraticaDaAffidareGruppoHome(p)) continue;
+    if (
+      !isPraticaDaAffidareGruppoHome({
+        stato: p.stato,
+        assegnatarioId: p.assegnatarioId,
+        scadenza: p.scadenza,
+        codiceScaricoBk: p.codiceScaricoBk,
+        dataPassaggioGiudiziale: p.dataPassaggioGiudiziale,
+        conferimentoTipo: p.conferimentoTipo,
+        statoAvvioGiudiziale: p.giudiziale?.statoAvvio ?? null,
+      })
+    ) {
+      continue;
+    }
     const perimetro = acronimoPerimetroLotto(
       p.mandante?.perimetri,
       p.numeroMandante || "",

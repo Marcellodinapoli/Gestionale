@@ -77,7 +77,9 @@ async function inflateRawDeflate(compressed: Uint8Array): Promise<Uint8Array> {
     throw new Error("Browser non supporta decompressione DOCX.");
   }
   const ds = new DecompressionStream("deflate-raw");
-  const stream = new Blob([compressed]).stream().pipeThrough(ds);
+  const copy = new Uint8Array(compressed.byteLength);
+  copy.set(compressed);
+  const stream = new Blob([copy]).stream().pipeThrough(ds);
   const buf = await new Response(stream).arrayBuffer();
   return new Uint8Array(buf);
 }

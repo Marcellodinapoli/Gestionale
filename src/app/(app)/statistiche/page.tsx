@@ -133,7 +133,7 @@ export default async function StatistichePage({
       supervisorName: null,
       gruppoNome: null,
       gruppoMandanti: [],
-      members: allOps,
+      members: allOps.map((o) => ({ ...o, internoVisibile: null })),
       memberIds: allOps.map((o) => o.id),
     };
   } else {
