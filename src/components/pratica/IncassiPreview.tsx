@@ -113,7 +113,7 @@ export function IncassiPreview({
             <th className="py-0.5 pr-1 text-right">Interessi</th>
             <th className="py-0.5 pr-1 text-right">Spese</th>
             <th className="py-0.5 pr-1">Causale</th>
-            <th className="py-0.5">Operatore</th>
+            <th className="py-0.5">Registrato da</th>
             {editable ? <th className="py-0.5 pl-1 text-right">Azioni</th> : null}
           </tr>
         </thead>

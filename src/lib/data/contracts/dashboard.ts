@@ -1,5 +1,6 @@
 import type {
   RigaCodiciMandantePerimetro,
+  RigaCodiciMandantePerimetroOperatore,
   RigaDaAffidarePerimetro,
   RigaInLavorazionePerimetro,
 } from "@/lib/codiciMandantePerimetroUi";
@@ -77,13 +78,17 @@ export type CaricoGruppoDto = {
 
 export type HomeKpiShared = {
   totali: number;
+  /** Scadenza già superata (aperte). */
   scadute: number;
+  /** Scadenza nei prossimi 7 giorni (aperte). */
+  inScadenza7gg: number;
   incassiOggiSum: number;
   inLavoroPerPerimetro: RigaInLavorazionePerimetro[];
   lavoratePerOperatore: OperatoreLavorateGiorno[];
   praticheLavorateGruppo: PraticaLavorataOggi[];
   praticheCambioCodice: PraticaCambioCodiceGiorno[];
   codiciMandantePerimetro: RigaCodiciMandantePerimetro[];
+  codiciMandantePerimetroOperatore: RigaCodiciMandantePerimetroOperatore[];
   daAffidareGruppo: RigaDaAffidarePerimetro[];
 };
 

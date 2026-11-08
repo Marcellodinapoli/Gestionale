@@ -106,7 +106,7 @@ export async function assertRecruitingAccess() {
   return assertNavPageAccess("recruiting");
 }
 
-async function redirectAwayFromHiddenPage(user: SessionUser, pageId: NavPageId) {
+export async function redirectAwayFromHiddenPage(user: SessionUser, pageId: NavPageId) {
   if (user.formazioneOnly) {
     if (pageId === "formazione") {
       redirect("/account");
@@ -192,6 +192,46 @@ export async function requireWritablePermission(permission: Permission) {
   const user = await requirePermission(permission);
   assertWritable(user);
   return user;
+}
+
+/** Gestione operatori: permesso standard o supervisor su prodotto Formazione standalone. */
+export async function requireOperatoriManage() {
+  const user = await requireWritableUser();
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const { supervisorCanManageOperatoriFormazione } = await import(
+    "@/lib/platform/formazioneProduct"
+  );
+  const { supervisorCanManageOperatoriDialer } = await import(
+    "@/lib/platform/dialerProduct"
+  );
+  if (supervisorCanManageOperatoriFormazione(user, platform.enabledModules)) {
+    return user;
+  }
+  if (supervisorCanManageOperatoriDialer(user, platform.enabledModules)) {
+    return user;
+  }
+  if (!(await canPermissionOrNav(user, "operatori:manage"))) {
+    redirect("/");
+  }
+  return user;
+}
+
+export async function requireOperatoriNavPage() {
+  const user = await requireUser();
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const { supervisorCanManageOperatoriFormazione } = await import(
+    "@/lib/platform/formazioneProduct"
+  );
+  const { supervisorCanManageOperatoriDialer } = await import(
+    "@/lib/platform/dialerProduct"
+  );
+  if (supervisorCanManageOperatoriFormazione(user, platform.enabledModules)) {
+    return user;
+  }
+  if (supervisorCanManageOperatoriDialer(user, platform.enabledModules)) {
+    return user;
+  }
+  return requireNavPage("operatori");
 }
 
 /** Lavoro su sezione: visibilità menu (o permesso) + non manutenzione. */

@@ -102,7 +102,7 @@ export function DialerVelocitaPanel({
       ];
 
   return (
-    <Card title={compact ? "Pacing dialer" : "Pacing e velocità"}>
+    <Card title={compact ? "Pacing predictive" : "Pacing e velocità"}>
       <div
         className={`grid gap-4 ${compact ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-5"}`}
       >

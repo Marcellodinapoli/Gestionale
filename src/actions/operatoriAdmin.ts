@@ -4,9 +4,14 @@ import { revalidatePath } from "next/cache";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
 import { writeAudit } from "@/lib/domain";
-import { requireWritablePermission } from "@/lib/guard";
+import { requireOperatoriManage } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
-import { ruoliCreabiliDa, type Role } from "@/lib/permissions";
+import { ruoliCreabiliDa, ROLE_LABELS, type Role } from "@/lib/permissions";
+import {
+  getProductStandaloneContext,
+  standaloneOperatoreRoles,
+  type ProductStandaloneContext,
+} from "@/lib/platform/productStandalone";
 import {
   isAcronimoPatternValido,
   normalizeAcronimo,
@@ -21,6 +26,12 @@ import bcrypt from "bcryptjs";
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+function parseCheckboxFormFlag(raw: FormDataEntryValue | null): boolean {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "0" || s === "false" || s === "off" || s === "") return false;
+  return s === "1" || s === "true" || s === "on";
 }
 
 async function assertAcronimoLibero(
@@ -57,15 +68,31 @@ function parseAccesso(formData: FormData) {
   return raw === "formazione";
 }
 
-function assertRuoloCreabile(creatorRole: Role, role: string) {
-  const allowed = ruoliCreabiliDa(creatorRole);
+function assertRuoloCreabile(
+  creatorRole: Role,
+  role: string,
+  productStandalone?: ProductStandaloneContext
+) {
+  const allowed = ruoliCreabiliDa(creatorRole, { productStandalone });
   if (!allowed.includes(role as Role)) {
     fail("Ruolo non consentito per il tuo profilo");
   }
 }
 
+function assertProductStandaloneOperatoreOnly(
+  role: string,
+  productStandalone: ProductStandaloneContext
+) {
+  const allowed = standaloneOperatoreRoles(productStandalone);
+  if (!allowed.length) return;
+  if (!allowed.includes(role as Role)) {
+    const labels = allowed.map((r) => ROLE_LABELS[r]).join(", ");
+    fail(`Su tenant prodotto standalone gli account sono riservati ai ruoli: ${labels}`);
+  }
+}
+
 export async function updateAcronimoAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   const acronimo = normalizeAcronimo(String(formData.get("acronimo") || ""));
   if (!targetId) fail("Utente mancante");
@@ -95,7 +122,7 @@ export async function updateAcronimoAction(formData: FormData) {
 }
 
 export async function createOperatoreAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const name = String(formData.get("name") || "").trim();
   const cognome = String(formData.get("cognome") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
@@ -141,10 +168,37 @@ export async function createOperatoreAction(formData: FormData) {
   );
   const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
   const creditCalcModuleOn = tenantHasModule(platform, "creditcalc");
+  const productStandalone = getProductStandaloneContext(platform.enabledModules);
+  const standaloneRoles = standaloneOperatoreRoles(productStandalone);
   const creditCalcEnabled =
     consulenteEsterno && creditCalcEnabledRaw && creditCalcModuleOn;
 
-  assertRuoloCreabile(user.role, role);
+  if (standaloneRoles.length > 0) {
+    if (formazioneOnly) {
+      fail("Su tenant prodotto standalone non è disponibile l'accesso solo formazione");
+    }
+    if (standaloneRoles.length === 1) {
+      role = standaloneRoles[0]!;
+    }
+  }
+  if (formazioneOnly && productStandalone.formazione) {
+    fail("Su Credixa Formazione non è disponibile l'accesso solo formazione");
+  }
+  if (formazioneOnly && productStandalone.dialer) {
+    fail("Su Credixa Predictive non è disponibile l'accesso solo formazione");
+  }
+
+  assertRuoloCreabile(user.role, role, productStandalone);
+  assertProductStandaloneOperatoreOnly(role, productStandalone);
+
+  let effectiveSupervisorId = supervisorId;
+  if (
+    (productStandalone.formazione || productStandalone.dialer) &&
+    user.role === "SUPERVISOR" &&
+    role === "OPERATOR"
+  ) {
+    effectiveSupervisorId = user.id;
+  }
 
   const userModel = usersDbFromUser(user);
   const sedeModel = sediDbFromUser(user);
@@ -161,9 +215,9 @@ export async function createOperatoreAction(formData: FormData) {
 
   await assertAcronimoLibero(userModel, user.tenantId, acronimo);
 
-  if (supervisorId) {
+  if (effectiveSupervisorId) {
     const sup = await userModel.findFirst({
-      where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
+      where: { id: effectiveSupervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
     });
     if (!sup) fail("Supervisor non valido");
   }
@@ -191,7 +245,7 @@ export async function createOperatoreAction(formData: FormData) {
       passwordChangedAt: new Date(),
       role,
       acronimo,
-      supervisorId,
+      supervisorId: effectiveSupervisorId,
       sedeId,
       formazioneOnly,
       consulenteEsterno,
@@ -233,14 +287,14 @@ export async function createOperatoreAction(formData: FormData) {
     tenantId: user.tenantId,
     action: "create",
     entity: "user",
-    dettaglio: `creato ${name} ${cognome} (${role}${formazioneOnly ? ", solo formazione" : ""}${consulenteEsterno ? ", consulente esterno" : ""}${creditCalcEnabled ? ", CreditCalc" : ""})`,
+    dettaglio: `creato ${name} ${cognome} (${role}${formazioneOnly ? ", solo formazione" : ""}${consulenteEsterno ? ", consulente esterno" : ""}${creditCalcEnabled ? ", CredixaApp" : ""})`,
   });
   revalidatePath("/operatori");
   revalidatePath("/utenti");
 }
 
 export async function updateFormazioneOnlyAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   const formazioneOnly = parseAccesso(formData);
   if (!targetId) fail("Utente mancante");
@@ -270,7 +324,7 @@ export async function updateFormazioneOnlyAction(formData: FormData) {
 }
 
 export async function deleteOperatoreAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   if (!targetId) fail("Utente mancante");
 
@@ -298,7 +352,7 @@ export async function deleteOperatoreAction(formData: FormData) {
 }
 
 export async function updateRuoloAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   const role = String(formData.get("role") || "").trim();
   if (!targetId || !role) fail("Dati mancanti");
@@ -308,7 +362,11 @@ export async function updateRuoloAction(formData: FormData) {
     where: { id: targetId, tenantId: user.tenantId },
   });
   if (!target) fail("Utente non trovato");
-  assertRuoloCreabile(user.role, role);
+  const { getTenantPlatformConfig } = await import("@/lib/platform/tenantProfile");
+  const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+  const productStandalone = getProductStandaloneContext(platform.enabledModules);
+  assertRuoloCreabile(user.role, role, productStandalone);
+  assertProductStandaloneOperatoreOnly(role, productStandalone);
   if (role === "ADMIN" && user.role !== "ADMIN") {
     fail("Solo l'admin azienda può assegnare il ruolo Admin");
   }
@@ -335,7 +393,7 @@ export async function updateRuoloAction(formData: FormData) {
 }
 
 export async function resetPasswordAmministrazioneAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   const newPassword = String(formData.get("newPassword") || "").trim();
   if (!targetId || !newPassword) fail("Dati mancanti");
@@ -361,7 +419,7 @@ export async function resetPasswordAmministrazioneAction(formData: FormData) {
 }
 
 export async function updateSedeUtenteAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   const sedeId = String(formData.get("sedeId") || "").trim() || null;
   if (!targetId) fail("Utente mancante");
@@ -397,7 +455,7 @@ export async function updateSedeUtenteAction(formData: FormData) {
 }
 
 export async function updateOperatoreAction(formData: FormData) {
-  const user = await requireWritablePermission("operatori:manage");
+  const user = await requireOperatoriManage();
   const targetId = String(formData.get("userId") || "").trim();
   const name = String(formData.get("name") || "").trim();
   const cognome = String(formData.get("cognome") || "").trim();
@@ -481,10 +539,7 @@ export async function updateOperatoreAction(formData: FormData) {
   }
 
   if (target.role === "OPERATOR") {
-    const consulenteEsterno =
-      String(formData.get("consulenteEsterno") || "") === "1" ||
-      String(formData.get("consulenteEsterno") || "").toLowerCase() === "true" ||
-      String(formData.get("consulenteEsterno") || "").toLowerCase() === "on";
+    const consulenteEsterno = parseCheckboxFormFlag(formData.get("consulenteEsterno"));
     const { getTenantPlatformConfig, tenantHasModule } = await import(
       "@/lib/platform/tenantProfile"
     );
@@ -493,9 +548,7 @@ export async function updateOperatoreAction(formData: FormData) {
     const creditCalcEnabled =
       consulenteEsterno &&
       creditCalcModuleOn &&
-      (String(formData.get("creditCalcEnabled") || "") === "1" ||
-        String(formData.get("creditCalcEnabled") || "").toLowerCase() === "true" ||
-        String(formData.get("creditCalcEnabled") || "").toLowerCase() === "on");
+      parseCheckboxFormFlag(formData.get("creditCalcEnabled"));
     data.consulenteEsterno = consulenteEsterno;
     data.creditCalcEnabled = creditCalcEnabled;
   }

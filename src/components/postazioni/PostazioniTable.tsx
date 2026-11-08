@@ -21,6 +21,8 @@ type PostazioneRow = {
   interno: string | null;
   email: string | null;
   numeroFisso: string | null;
+  numeroFax: string | null;
+  numeroWhatsapp: string | null;
   sedeId: string | null;
   sedeNome: string | null;
   note: string | null;
@@ -40,40 +42,53 @@ export function PostazioniTable({
   currentUserId?: string;
 }) {
   const router = useRouter();
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     nome: "",
     interno: "",
     email: "",
     numeroFisso: "",
+    numeroFax: "",
+    numeroWhatsapp: "",
     sedeId: "",
     note: "",
   });
 
   function startEdit(p: PostazioneRow) {
+    setSaveError(null);
     setEditingId(p.id);
     setForm({
       nome: p.nome,
       interno: p.interno || "",
       email: p.email || "",
       numeroFisso: p.numeroFisso || "",
+      numeroFax: p.numeroFax || "",
+      numeroWhatsapp: p.numeroWhatsapp || "",
       sedeId: p.sedeId || "",
       note: p.note || "",
     });
   }
 
   async function saveEdit(id: string) {
+    setSaveError(null);
     const fd = new FormData();
     fd.set("id", id);
-    fd.set("nome", form.nome);
+    fd.set("nome", form.nome.trim());
     fd.set("interno", form.interno);
     fd.set("email", form.email);
     fd.set("numeroFisso", form.numeroFisso);
+    fd.set("numeroFax", form.numeroFax);
+    fd.set("numeroWhatsapp", form.numeroWhatsapp);
     fd.set("sedeId", form.sedeId);
     fd.set("note", form.note);
-    await aggiornaPostazioneAction(fd);
-    setEditingId(null);
-    router.refresh();
+    try {
+      await aggiornaPostazioneAction(fd);
+      setEditingId(null);
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Errore durante il salvataggio");
+    }
   }
 
   async function toggle(id: string) {
@@ -100,16 +115,41 @@ export function PostazioniTable({
   }
 
   const inputCls = "h-8 w-full rounded border border-[var(--line)] px-2 text-xs";
+  /** Email, fisso, fax e WhatsApp: stessa larghezza in tabella e in modifica inline. */
+  const contattoCol =
+    "w-[8.75rem] min-w-[8.75rem] max-w-[8.75rem] box-border px-1 align-top";
+  const noteCol = "w-[7.5rem] min-w-[7.5rem] max-w-[7.5rem] box-border px-1 align-top";
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      {saveError ? (
+        <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {saveError}
+        </p>
+      ) : null}
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col />
+          <col className="w-20" />
+          <col className="w-[8.75rem]" />
+          <col className="w-[8.75rem]" />
+          <col className="w-[8.75rem]" />
+          <col className="w-[8.75rem]" />
+          <col className="w-[7.5rem]" />
+          <col />
+          <col />
+          <col className="w-28" />
+          <col className="w-[4.5rem]" />
+        </colgroup>
         <thead className="text-left text-[var(--muted)]">
           <tr>
             <th className="py-2">Postazione</th>
             <th>Interno</th>
-            <th>Email</th>
-            <th>Numero fisso</th>
+            <th className={contattoCol}>Email</th>
+            <th className={contattoCol}>Numero fisso</th>
+            <th className={contattoCol}>Fax</th>
+            <th className={contattoCol}>WhatsApp</th>
+            <th className={noteCol}>Note</th>
             <th>Sede</th>
             <th>Occupante</th>
             <th>Stato</th>
@@ -134,7 +174,7 @@ export function PostazioniTable({
                     className={`${inputCls} font-mono`}
                   />
                 </td>
-                <td>
+                <td className={contattoCol}>
                   <input
                     type="email"
                     value={form.email}
@@ -142,13 +182,37 @@ export function PostazioniTable({
                     className={inputCls}
                   />
                 </td>
-                <td>
+                <td className={contattoCol}>
                   <input
                     value={form.numeroFisso}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, numeroFisso: e.target.value }))
                     }
                     className={inputCls}
+                  />
+                </td>
+                <td className={contattoCol}>
+                  <input
+                    value={form.numeroFax}
+                    onChange={(e) => setForm((f) => ({ ...f, numeroFax: e.target.value }))}
+                    className={inputCls}
+                  />
+                </td>
+                <td className={contattoCol}>
+                  <input
+                    value={form.numeroWhatsapp}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, numeroWhatsapp: e.target.value }))
+                    }
+                    className={inputCls}
+                  />
+                </td>
+                <td className={noteCol}>
+                  <input
+                    value={form.note}
+                    onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                    className={inputCls}
+                    placeholder="Note…"
                   />
                 </td>
                 <td>
@@ -175,7 +239,11 @@ export function PostazioniTable({
                       <Check className="h-3 w-3" /> Salva
                     </button>
                     <button
-                      onClick={() => setEditingId(null)}
+                      type="button"
+                      onClick={() => {
+                        setSaveError(null);
+                        setEditingId(null);
+                      }}
                       className="rounded p-1 text-[var(--muted)] hover:bg-slate-200"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -195,8 +263,42 @@ export function PostazioniTable({
                   </span>
                 </td>
                 <td className="font-mono text-xs">{p.interno || "—"}</td>
-                <td className="text-xs text-[var(--muted)]">{p.email || "—"}</td>
-                <td className="text-xs">{p.numeroFisso || "—"}</td>
+                <td
+                  className={`truncate text-xs text-[var(--muted)] ${contattoCol}`}
+                  title={p.email || undefined}
+                >
+                  {p.email || "—"}
+                </td>
+                <td
+                  className={`truncate text-xs ${contattoCol}`}
+                  title={p.numeroFisso || undefined}
+                >
+                  {p.numeroFisso || "—"}
+                </td>
+                <td
+                  className={`truncate text-xs ${contattoCol}`}
+                  title={p.numeroFax || undefined}
+                >
+                  {p.numeroFax || "—"}
+                </td>
+                <td
+                  className={`truncate text-xs ${contattoCol}`}
+                  title={p.numeroWhatsapp || undefined}
+                >
+                  {p.numeroWhatsapp || "—"}
+                </td>
+                <td className={noteCol}>
+                  {p.note?.trim() ? (
+                    <span
+                      className="block min-w-0 cursor-help truncate text-xs text-[var(--muted)] decoration-[var(--line)] decoration-dotted underline-offset-2 hover:underline"
+                      title={p.note.trim()}
+                    >
+                      {p.note.trim()}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-[var(--muted)]">—</span>
+                  )}
+                </td>
                 <td className="text-xs">{p.sedeNome || "—"}</td>
                 <td>
                   {p.occupanti.length > 0 ? (

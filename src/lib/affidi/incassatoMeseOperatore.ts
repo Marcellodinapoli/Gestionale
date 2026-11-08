@@ -11,8 +11,9 @@ export type IncassatoMeseOperatore = {
 };
 
 /**
- * Incassato per operatore = somma degli incassi collegati alle sue provvigioni
- * (OperatoreId), non UserId di chi ha registrato l’incasso.
+ * Incassato per operatore = somma incassi collegati alle provvigioni (OperatoreId:
+ * titolare principale della pratica, o operatore/supervisor che ha registrato l’incasso
+ * se la pratica non ha titolare).
  */
 export async function incassatoMesePerOperatore(
   user: SessionUser,

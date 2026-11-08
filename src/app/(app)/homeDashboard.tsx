@@ -13,6 +13,7 @@ import {
   formatDataIso,
   isOggi,
   parseDataIso,
+  sintesiLavoratePerUtenteCorrente,
   startOfToday,
 } from "@/lib/lavorateOggi";
 import {
@@ -34,12 +35,18 @@ import { GruppoLavoroHomeCard } from "@/components/home/GruppoLavoroHomeCard";
 import { FormazioneMonitorHomeCard } from "@/components/home/FormazioneMonitorHomeCard";
 import { HomeGruppoPicker } from "@/components/home/HomeGruppoPicker";
 import { LavorateGiornoKpi } from "@/components/home/LavorateGiornoKpi";
-import { CodiciMandantePerimetroTable } from "@/components/home/CodiciMandantePerimetroTable";
 import { InLavorazionePerimetroCard } from "@/components/home/InLavorazionePerimetroCard";
 import { DaAffidarePerimetroCard } from "@/components/home/DaAffidarePerimetroCard";
 import { IncassiTipologiaFiltri } from "@/components/home/IncassiTipologiaFiltri";
 import { HomeGiudizialeStragiudCards } from "@/components/home/HomeGiudizialeStragiudCards";
 import { loadHomeGiudizialeStragiudKpi } from "@/lib/homeKpi/loadHomeGiudizialeStragiud";
+import {
+  hrefPraticheAffidateHome,
+  hrefPraticheInLavorazioneHome,
+  hrefPraticheInScadenza7ggHome,
+  hrefPraticheScaduteHome,
+} from "@/lib/homeKpi/operatorHomeKpiHrefs";
+import { loadGruppoEditorDataForSupervisor } from "@/lib/gruppoEditor/loadGruppoEditorData";
 import { rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
 import type { RiepilogoMandanteDto } from "@/lib/data/contracts/dashboard";
 
@@ -163,13 +170,12 @@ export default async function HomePage({
   if (isAwaitingSectionActivation(platform.enabledModules)) {
     redirect("/attivazione-sezioni");
   }
-  if (!tenantHasModule(platform, "recovery")) {
-    if (tenantHasModule(platform, "legale")) redirect("/legal");
-    if (tenantHasModule(platform, "formazione")) redirect("/formazione");
-    if (tenantHasModule(platform, "recruiting")) redirect("/recruiting");
-    if (tenantHasModule(platform, "dialer")) redirect("/predictive-dialer");
-    if (tenantHasModule(platform, "creditcalc")) redirect("/creditcalc");
-    redirect("/account");
+  const { homeEntryRedirectWithoutRecovery } = await import(
+    "@/lib/platform/homeEntryRedirect"
+  );
+  const addonHome = homeEntryRedirectWithoutRecovery(platform);
+  if (addonHome) {
+    redirect(addonHome);
   }
   const sp = await searchParams;
   const {
@@ -184,7 +190,9 @@ export default async function HomePage({
   const dataIso = formatDataIso(dataLavorate);
 
   const isBackOfficeGruppo = user.role === "BACK_OFFICE" && !isManutenzione(user);
-  const supervisoriHome = isBackOfficeGruppo
+  const isSupervisorGruppo = user.role === "SUPERVISOR" && !isManutenzione(user);
+  const canPickGruppoHome = isBackOfficeGruppo || isSupervisorGruppo;
+  const supervisoriHome = canPickGruppoHome
     ? await usersDbFromUser(user).findMany({
         where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
         orderBy: { name: "asc" },
@@ -193,17 +201,28 @@ export default async function HomePage({
     : [];
 
   let gruppo = await getGruppoLavoro(user);
+  if (user.role === "OPERATOR" && !isManutenzione(user)) {
+    const profilo = await usersDbFromUser(user).findFirst({
+      where: { id: user.id },
+      select: { supervisorId: true },
+    });
+    if (profilo?.supervisorId) {
+      gruppo = await getGruppoLavoroForSupervisor(user.tenantId, profilo.supervisorId);
+    }
+  }
   let periCtx = await resolveGruppoPerimetroContext(user);
   let where = await praticaScopeWhere(user);
 
   const targetSupervisorId =
-    isBackOfficeGruppo && supervisoriHome.length
+    canPickGruppoHome && supervisoriHome.length
       ? supervisoriHome.some((s) => s.id === gruppoRaw)
         ? gruppoRaw!
-        : supervisoriHome[0]!.id
+        : isSupervisorGruppo
+          ? user.id
+          : supervisoriHome[0]!.id
       : null;
 
-  if (isBackOfficeGruppo && targetSupervisorId) {
+  if (canPickGruppoHome && targetSupervisorId) {
     gruppo = await getGruppoLavoroForSupervisor(user.tenantId, targetSupervisorId);
     periCtx = await buildGruppoPerimetroContextFromGruppo(user.tenantId, gruppo);
     where = await praticaScopeForGruppoContext(user.tenantId, periCtx);
@@ -217,12 +236,24 @@ export default async function HomePage({
       user.role === "SUPERVISOR" ||
       user.role === "BACK_OFFICE");
 
+  const mostraSezioneGruppoOperatore =
+    user.role === "OPERATOR" && !isManutenzione(user);
+
   const gruppoPerimetroOpts =
     gruppoPerimetroOptsFromContext(periCtx) ??
     (mostraGruppo ? { gruppoMandanti: gruppo.gruppoMandanti } : undefined);
   const gruppoPerimetriConfigurati = periCtx.nelGruppo
     ? !periCtx.nessunPerimetroGruppo
     : gruppo.gruppoMandanti.length > 0;
+  /** Operatore: KPI e codici scarico sul proprio portafoglio; perimetri gruppo solo se configurati. */
+  const gruppoPerimetroOptsHomeKpi =
+    user.role === "OPERATOR"
+      ? periCtx.nelGruppo && !periCtx.nessunPerimetroGruppo
+        ? { gruppoMandanti: periCtx.gruppoMandanti }
+        : undefined
+      : gruppoPerimetroOpts;
+  const avvisoPerimetriGruppoSuKpi =
+    user.role !== "OPERATOR" && mostraGruppo && !gruppoPerimetriConfigurati;
   const vistaGruppoLavorate =
     user.role === "SUPERVISOR" || user.role === "BACK_OFFICE";
   const lavorateOpts = { data: dataLavorate, scopeWhere: where };
@@ -240,7 +271,7 @@ export default async function HomePage({
     periCtx,
     mostraGruppo,
     vistaGruppoLavorate,
-    gruppoPerimetroOpts,
+    gruppoPerimetroOpts: gruppoPerimetroOptsHomeKpi,
     dataLavorate,
     sedeScopeId: kpiCtx.sedeScopeId,
     incMandante,
@@ -253,17 +284,31 @@ export default async function HomePage({
     ? await loadHomeGiudizialeStragiudKpi(user)
     : null;
 
+  const gruppoEditor =
+    user.role === "SUPERVISOR" && targetSupervisorId
+      ? await loadGruppoEditorDataForSupervisor(user, targetSupervisorId)
+      : null;
+
   const {
     totali,
     scadute,
+    inScadenza7gg,
     incassiOggiSum,
     inLavoroPerPerimetro,
     lavoratePerOperatore,
     praticheLavorateGruppo,
     praticheCambioCodice,
-    codiciMandantePerimetro,
     daAffidareGruppo,
   } = kpi.shared;
+
+  const sintesiLavorateHome =
+    user.role === "OPERATOR"
+      ? sintesiLavoratePerUtenteCorrente(lavoratePerOperatore, user)
+      : lavoratePerOperatore;
+  const sintesiCambiCodiceHome =
+    user.role === "OPERATOR"
+      ? praticheCambioCodice.filter((p) => p.userId === user.id)
+      : praticheCambioCodice;
 
   const incassiOggi = { _sum: { importo: incassiOggiSum } };
 
@@ -597,17 +642,25 @@ export default async function HomePage({
           ? `La tua coda · Gruppo di ${gruppo.supervisorName}`
           : "La tua coda di lavorazione"
         : user.role === "SUPERVISOR"
-          ? "Portafoglio del team e affidi"
+          ? targetSupervisorId && targetSupervisorId !== user.id
+            ? `Portafoglio del team · ${gruppo.gruppoNome || gruppo.supervisorName || "gruppo selezionato"}`
+            : "Portafoglio del team e affidi"
           : user.role === "BACK_OFFICE"
             ? gruppo.gruppoNome
               ? `Monitoraggio gruppo · ${gruppo.gruppoNome}`
               : "Monitoraggio gruppi di lavoro"
             : "Controllo complessivo delle pratiche";
 
+  const totaleDaAffidareGruppo = daAffidareGruppo.reduce((s, r) => s + r.count, 0);
+  const totaleInLavorazioneGruppo = inLavoroPerPerimetro.reduce((s, r) => s + r.count, 0);
+  /** Supervisor e back office: stesse 5 card KPI sul portafoglio del gruppo. */
+  const homeKpiStileGruppoTeam =
+    user.role === "SUPERVISOR" || user.role === "BACK_OFFICE";
+
   const dataLabel = dataIt(dataLavorate);
   const totaleLavorateGruppo = vistaGruppoLavorate
     ? praticheLavorateGruppo.length
-    : lavoratePerOperatore.reduce((s, o) => s + o.count, 0);
+    : sintesiLavorateHome.reduce((s, o) => s + o.count, 0);
   const hintGiorno = vistaGruppoLavorate
     ? totaleLavorateGruppo
       ? `${gruppo.gruppoNome || "Gruppo"} · ${dataLabel} · ${totaleLavorateGruppo === 1 ? "1 pratica lavorata in totale dal gruppo" : `${totaleLavorateGruppo} pratiche lavorate in totale dal gruppo`}`
@@ -627,7 +680,7 @@ export default async function HomePage({
     <div className="space-y-5 pb-8">
       <PageHeader title="Home" subtitle={subtitle} />
 
-      {isBackOfficeGruppo && supervisoriHome.length && targetSupervisorId ? (
+      {canPickGruppoHome && supervisoriHome.length > 1 && targetSupervisorId ? (
         <HomeGruppoPicker
           supervisori={supervisoriHome}
           gruppoId={targetSupervisorId}
@@ -637,71 +690,154 @@ export default async function HomePage({
 
       <div
         className={`grid grid-cols-2 gap-2 lg:gap-3 ${
-          mostraGruppo ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+          user.role === "OPERATOR"
+            ? "sm:grid-cols-2 lg:grid-cols-4"
+            : homeKpiStileGruppoTeam
+              ? "sm:grid-cols-2 lg:grid-cols-5"
+              : mostraGruppo
+                ? "sm:grid-cols-2 lg:grid-cols-4"
+                : "sm:grid-cols-2 lg:grid-cols-3"
         }`}
       >
-        <DashboardKpi
-          title={user.role === "OPERATOR" ? "Pratiche affidate" : "Pratiche visibili"}
-          value={totali}
-        />
-        <InLavorazionePerimetroCard
-          righe={inLavoroPerPerimetro}
-          gruppoSenzaPerimetri={mostraGruppo && !gruppoPerimetriConfigurati}
-        />
-        {mostraGruppo ? (
-          <DaAffidarePerimetroCard
-            righe={daAffidareGruppo}
-            canAssign={can(user, "pratiche:assign")}
-            gruppoConfigurato={gruppoPerimetriConfigurati}
-          />
-        ) : null}
-        <DashboardKpi
-          title={can(user, "incassi:create") ? "Incassi oggi" : "In scadenza 7 gg"}
-          value={
-            can(user, "incassi:create")
-              ? euro(incassiOggi._sum.importo || 0)
-              : scadute
-          }
-        />
+        {user.role === "OPERATOR" ? (
+          <>
+            <DashboardKpi
+              title="Pratiche affidate"
+              value={totali}
+              accentBar="accent"
+              href={hrefPraticheAffidateHome()}
+            />
+            <DashboardKpi
+              title="Pratiche scadute"
+              value={scadute}
+              accentBar="accent"
+              href={hrefPraticheScaduteHome()}
+            />
+            <DashboardKpi
+              title="Pratiche in lavorazione"
+              value={totaleInLavorazioneGruppo}
+              accentBar="amber"
+              href={hrefPraticheInLavorazioneHome()}
+            />
+            <DashboardKpi
+              title="Pratiche che scadono"
+              value={inScadenza7gg}
+              accentBar="accent"
+              href={hrefPraticheInScadenza7ggHome()}
+            />
+          </>
+        ) : homeKpiStileGruppoTeam ? (
+          <>
+            <DashboardKpi
+              title="Pratiche affidate"
+              value={totali}
+              accentBar="accent"
+              href={hrefPraticheAffidateHome()}
+            />
+            <DashboardKpi
+              title="Pratiche scadute"
+              value={scadute}
+              accentBar="accent"
+              href={hrefPraticheScaduteHome()}
+            />
+            <DashboardKpi
+              title="Pratiche in lavorazione"
+              value={totaleInLavorazioneGruppo}
+              accentBar="amber"
+              href={hrefPraticheInLavorazioneHome()}
+            />
+            <DashboardKpi
+              title="Pratiche che scadono"
+              value={inScadenza7gg}
+              accentBar="accent"
+              href={hrefPraticheInScadenza7ggHome()}
+            />
+            <DashboardKpi
+              title="Pratiche da affidare"
+              value={totaleDaAffidareGruppo}
+              accentBar="slate"
+              href="/affidi"
+            />
+          </>
+        ) : (
+          <>
+            <DashboardKpi
+              title="Pratiche visibili"
+              value={totali}
+              href={hrefPraticheAffidateHome()}
+            />
+            <InLavorazionePerimetroCard
+              righe={inLavoroPerPerimetro}
+              gruppoSenzaPerimetri={avvisoPerimetriGruppoSuKpi}
+            />
+            {mostraGruppo ? (
+              <DaAffidarePerimetroCard
+                righe={daAffidareGruppo}
+                canAssign={can(user, "pratiche:assign")}
+                gruppoConfigurato={gruppoPerimetriConfigurati}
+              />
+            ) : null}
+            <DashboardKpi
+              title={can(user, "incassi:create") ? "Incassi oggi" : "In scadenza 7 gg"}
+              value={
+                can(user, "incassi:create")
+                  ? euro(incassiOggiSum)
+                  : inScadenza7gg
+              }
+              href={can(user, "incassi:create") ? undefined : hrefPraticheInScadenza7ggHome()}
+            />
+          </>
+        )}
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:gap-3">
+      {mostraGruppo || mostraSezioneGruppoOperatore ? (
+        <div className="grid items-stretch gap-4 lg:grid-cols-2 lg:gap-6">
+          <div className="flex min-h-0 min-w-0 flex-col">
+            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+              {user.role === "OPERATOR" ? "La tua lavorazione" : "Sintesi lavorazione"}
+            </h2>
+            <div className="min-h-0 flex-1">
+              <LavorateGiornoKpi
+                title={titoloLavorate}
+                hint={hintGiorno}
+                dataIso={dataIso}
+                operatori={sintesiLavorateHome}
+                praticheCambioCodice={sintesiCambiCodiceHome}
+                href={buildPraticheQuery({ lavorateData: dataIso })}
+                vistaGruppo={vistaGruppoLavorate}
+                totaleLavorateGruppo={vistaGruppoLavorate ? totaleLavorateGruppo : undefined}
+              />
+            </div>
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-col">
+            <GruppoLavoroHomeCard
+              gruppo={gruppo}
+              currentUserId={user.id}
+              canManage={user.role === "SUPERVISOR" || user.role === "BACK_OFFICE"}
+              sectionTitle={user.role === "OPERATOR" ? "Il tuo gruppo di lavoro" : undefined}
+              readOnly={user.role === "OPERATOR"}
+              gruppoEditor={gruppoEditor}
+              supervisorNameForHint={gruppo.supervisorName ?? user.name}
+            />
+          </div>
+        </div>
+      ) : (
         <div>
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Sintesi lavorazione
+            {user.role === "OPERATOR" ? "La tua lavorazione" : "Sintesi lavorazione"}
           </h2>
-        <LavorateGiornoKpi
-          title={titoloLavorate}
-          hint={hintGiorno}
-          dataIso={dataIso}
-          operatori={lavoratePerOperatore}
-            praticheCambioCodice={praticheCambioCodice}
-          href={buildPraticheQuery({ lavorateData: dataIso })}
+          <LavorateGiornoKpi
+            title={titoloLavorate}
+            hint={hintGiorno}
+            dataIso={dataIso}
+            operatori={sintesiLavorateHome}
+            praticheCambioCodice={sintesiCambiCodiceHome}
+            href={buildPraticheQuery({ lavorateData: dataIso })}
             vistaGruppo={vistaGruppoLavorate}
             totaleLavorateGruppo={vistaGruppoLavorate ? totaleLavorateGruppo : undefined}
-        />
-      </div>
-
-        {!isManutenzione(user) ? (
-          <div className="min-w-0">
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-              Codici scarico per mandante e perimetro
-        </h2>
-            <CodiciMandantePerimetroTable
-              righe={codiciMandantePerimetro}
-              gruppoSenzaPerimetri={mostraGruppo && !gruppoPerimetriConfigurati}
-            />
+          />
         </div>
-        ) : null}
-      </div>
-
-      {mostraGruppo ? (
-        <GruppoLavoroHomeCard
-          gruppo={gruppo}
-          currentUserId={user.id}
-          canManage={user.role === "SUPERVISOR" || user.role === "BACK_OFFICE"}
-        />
-      ) : null}
+      )}
 
       {user.role === "SUPERVISOR" && tenantHasModule(platform, "formazione") ? (
         <FormazioneMonitorHomeCard />

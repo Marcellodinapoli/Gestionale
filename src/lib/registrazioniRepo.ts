@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorRegistrazioniRepository } from "@/lib/data/connector/ConnectorRegistrazioniRepository";
+import { createNeonRegistrazioniRepository } from "@/lib/neon/NeonRegistrazioniRepository";
 import { prismaRegistrazioniRepository } from "@/lib/data/prisma/PrismaRegistrazioniRepository";
 import type { RegistrazioneFilter, RegistrazioniRepository } from "@/lib/data/contracts/registrazioni";
 import { applySelect, mapSqlRow } from "@/lib/data/mapSqlRow";
@@ -13,6 +14,7 @@ export type RegistrazioniDbContext = Pick<PraticaDbContext, "tenantId" | "tenant
 
 function repo(ctx: RegistrazioniDbContext): RegistrazioniRepository {
   if (isConnectorProvider()) return createConnectorRegistrazioniRepository(ctx.tenantSlug);
+  if (isNeonProvider()) return createNeonRegistrazioniRepository(ctx.tenantSlug);
   return prismaRegistrazioniRepository;
 }
 
@@ -21,7 +23,7 @@ export function registrazioniDbFromUser(user: SessionUser) {
 }
 
 export function registrazioniDb(ctx: RegistrazioniDbContext): typeof prisma.registrazioneChiamata {
-  if (!isConnectorProvider()) return prisma.registrazioneChiamata;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.registrazioneChiamata;
 
   const r = repo(ctx);
   return {
@@ -197,7 +199,7 @@ async function resolveFilter(
   where: unknown
 ): Promise<RegistrazioneFilter | undefined> {
   const filter = prismaWhereToFilter(where, ctx.tenantId);
-  if (!isConnectorProvider()) return filter;
+  if (!isConnectorProvider() && !isNeonProvider()) return filter;
 
   const praticaWhere = extractPraticaWhere(where);
   if (praticaWhere && !isSimpleTenantPraticaWhere(praticaWhere)) {

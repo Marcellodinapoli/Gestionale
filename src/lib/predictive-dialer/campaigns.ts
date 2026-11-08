@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { dialerDb, dialerDbFromUser } from "@/lib/dialerRepo";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import type { SessionUser } from "@/lib/permissions";
@@ -52,7 +52,7 @@ function praticaMatchCodiciScaricoDialer(
 
 export async function buildDialerQueue(campagnaId: string): Promise<DialerQueueEntry[]> {
   const now = new Date();
-  const items = await prisma.dialerCampagnaPratica.findMany({
+  const items = await dialerDb().dialerCampagnaPratica.findMany({
     where: {
       campagnaId,
       stato: { in: ["disponibile", "richiamare", "non_risposta"] },
@@ -79,7 +79,7 @@ export async function buildDialerQueue(campagnaId: string): Promise<DialerQueueE
 }
 
 export async function syncCampagnaConDialer(user: SessionUser, campagnaId: string) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna?.externalId) return;
@@ -93,7 +93,7 @@ export async function attachPraticheToCampagna(
   campagnaId: string,
   opts: { praticaIds?: string[]; codiciScarico?: string[] }
 ) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna) throw new Error("Campagna non trovata");
@@ -122,7 +122,7 @@ export async function attachPraticheToCampagna(
 
   if (!praticaIds.length) return 0;
 
-  const existing = await prisma.dialerCampagnaPratica.findMany({
+  const existing = await dialerDbFromUser(user).dialerCampagnaPratica.findMany({
     where: { campagnaId, praticaId: { in: praticaIds } },
     select: { praticaId: true },
   });
@@ -130,7 +130,7 @@ export async function attachPraticheToCampagna(
   const toCreate = praticaIds.filter((id) => !existingSet.has(id));
   if (!toCreate.length) return 0;
 
-  await prisma.dialerCampagnaPratica.createMany({
+  await dialerDbFromUser(user).dialerCampagnaPratica.createMany({
     data: toCreate.map((praticaId) => ({ campagnaId, praticaId })),
   });
   return toCreate.length;
@@ -148,7 +148,7 @@ export async function reintegrateCodiciScaricoInCampagna(
     includiNuove?: boolean;
   }
 ) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna) throw new Error("Campagna non trovata");
@@ -161,7 +161,7 @@ export async function reintegrateCodiciScaricoInCampagna(
 
   const stati = (input.statiCoda?.length ? input.statiCoda : [...STATI_CODA_REINTEGRO]).filter(Boolean);
 
-  const items = await prisma.dialerCampagnaPratica.findMany({
+  const items = await dialerDb().dialerCampagnaPratica.findMany({
     where: {
       campagnaId,
       stato: { in: stati },
@@ -178,7 +178,7 @@ export async function reintegrateCodiciScaricoInCampagna(
 
   let reset = 0;
   if (idsToReset.length) {
-    const result = await prisma.dialerCampagnaPratica.updateMany({
+    const result = await dialerDbFromUser(user).dialerCampagnaPratica.updateMany({
       where: { id: { in: idsToReset } },
       data: {
         stato: "disponibile",
@@ -219,22 +219,25 @@ export async function attachOperatoriToCampagna(
     select: { id: true },
   });
   const ids = valid.map((o) => o.id);
-  const existing = await prisma.dialerCampagnaOperatore.findMany({
+  const existing = await dialerDbFromUser(user).dialerCampagnaOperatore.findMany({
     where: { campagnaId, operatoreId: { in: ids } },
     select: { operatoreId: true },
   });
   const existingSet = new Set(existing.map((e) => e.operatoreId));
   const toCreate = ids.filter((id) => !existingSet.has(id));
   if (!toCreate.length) return 0;
-  await prisma.dialerCampagnaOperatore.createMany({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.createMany({
     data: toCreate.map((operatoreId) => ({ campagnaId, operatoreId })),
   });
   return toCreate.length;
 }
 
-export async function listCampagneForUser(user: SessionUser) {
-  const rows = await prisma.dialerCampagna.findMany({
-    where: dialerCampagnaScopeWhere(user),
+export async function listCampagneForUser(
+  user: SessionUser,
+  opts?: { gruppoSupervisorId?: string | null }
+) {
+  const rows = await dialerDbFromUser(user).dialerCampagna.findMany({
+    where: dialerCampagnaScopeWhere(user, opts),
     orderBy: { updatedAt: "desc" },
     include: {
       _count: { select: { operatori: true, pratiche: true, eventi: true } },
@@ -258,9 +261,26 @@ export async function createCampagnaRecord(
     pacingRatio?: number | null;
     operatoreIds?: string[];
     praticaIds?: string[];
+    ownerSupervisorId?: string | null;
   }
 ) {
-  const campagna = await prisma.dialerCampagna.create({
+  let ownerSupervisorId: string | null = null;
+  if (user.role === "SUPERVISOR") {
+    const raw = String(input.ownerSupervisorId || "").trim() || user.id;
+    const sup = await usersDbFromUser(user).findFirst({
+      where: {
+        id: raw,
+        tenantId: user.tenantId,
+        role: "SUPERVISOR",
+        active: true,
+      },
+      select: { id: true },
+    });
+    if (!sup) throw new Error("Supervisor gruppo non valido");
+    ownerSupervisorId = sup.id;
+  }
+
+  const campagna = await dialerDbFromUser(user).dialerCampagna.create({
     data: {
       tenantId: user.tenantId,
       nome: input.nome.trim(),
@@ -269,7 +289,7 @@ export async function createCampagnaRecord(
       postCallSec: input.postCallSec ?? 60,
       pacingRatio: input.pacingRatio != null ? input.pacingRatio : null,
       createdById: user.id,
-      supervisorId: user.role === "SUPERVISOR" ? user.id : null,
+      supervisorId: ownerSupervisorId,
     },
   });
   await attachOperatoriToCampagna(user, campagna.id, input.operatoreIds ?? []);
@@ -281,14 +301,14 @@ export async function createCampagnaRecord(
 }
 
 export async function activateCampagnaRecord(user: SessionUser, campagnaId: string) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna) throw new Error("Campagna non trovata");
   const dto = mapDialerCampagna(campagna);
   const service = await getPredictiveDialerService(user.tenantId);
   const { externalId } = await service.startCampaign(dto, []);
-  await prisma.dialerCampagna.update({
+  await dialerDbFromUser(user).dialerCampagna.update({
     where: { id: campagnaId },
     data: { stato: "ATTIVA", externalId, activatedAt: new Date() },
   });
@@ -296,7 +316,7 @@ export async function activateCampagnaRecord(user: SessionUser, campagnaId: stri
 }
 
 export async function deactivateCampagnaRecord(user: SessionUser, campagnaId: string) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna) throw new Error("Campagna non trovata");
@@ -304,11 +324,11 @@ export async function deactivateCampagnaRecord(user: SessionUser, campagnaId: st
     const service = await getPredictiveDialerService(user.tenantId);
     await service.stopCampaign(campagna.externalId);
   }
-  await prisma.dialerCampagna.update({
+  await dialerDbFromUser(user).dialerCampagna.update({
     where: { id: campagnaId },
     data: { stato: "TERMINATA" },
   });
-  await prisma.dialerCampagnaOperatore.updateMany({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.updateMany({
     where: { campagnaId, sessioneStato: { not: "fuori" } },
     data: { sessioneStato: "offline", praticaCorrenteId: null, postCallFineAt: null },
   });

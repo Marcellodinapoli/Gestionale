@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiModule, requireApiUser } from "@/lib/guard";
 import { assertCan } from "@/lib/permissions";
 import { listCollaboratorsForSupervisor } from "@/lib/formazione/collaboratorAccess";
+import { checkFirebaseOrError } from "@/lib/formazione/firebaseGuard";
 
 export async function GET() {
   const userOrRes = await requireApiUser();
@@ -17,6 +18,9 @@ export async function GET() {
   }
   const moduleDenied = await requireApiModule(userOrRes, "formazione");
   if (moduleDenied) return moduleDenied;
+
+  const fbError = checkFirebaseOrError();
+  if (fbError) return fbError;
 
   try {
     const collaboratori = await listCollaboratorsForSupervisor(userOrRes);

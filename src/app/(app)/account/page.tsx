@@ -7,13 +7,17 @@ import { AccountEditor } from "@/components/account/AccountEditor";
 import { giorniAllaScadenzaPassword } from "@/lib/passwordPolicy";
 import { getTenantPlatformConfig, tenantHasModule } from "@/lib/platform/tenantProfile";
 import {
-  can,
   canImpostarePostazioneFissa,
-  isFormazioneOnly,
+  canCambiarePostazioneDaAccount,
   requiresPostazione,
   type Role,
 } from "@/lib/permissions";
 import { blockingOccupants, formatUtenteNome } from "@/lib/sessionPresence";
+import { postazioneSchedaFromRow, type PostazioneSchedaView } from "@/lib/postazioniSchedaFields";
+
+function idEquals(a: string | null | undefined, b: string) {
+  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+}
 
 export default async function AccountPage() {
   const session = await requireUser();
@@ -41,6 +45,8 @@ export default async function AccountPage() {
     role: user.role as Role,
     formazioneOnly: session.formazioneOnly,
   });
+  const canModificaPostazioneDaAccount =
+    gestiscePostazione && canCambiarePostazioneDaAccount(user.role as Role);
 
   // Sempre carichiamo le postazioni attive: servono anche all'admin per allineare
   // la card "Postazione" all'interno (es. int. 260 ↔ postazione 260).
@@ -60,6 +66,11 @@ export default async function AccountPage() {
     id: p.id,
     nome: p.nome,
     interno: p.interno,
+    email: p.email,
+    numeroFisso: p.numeroFisso,
+    numeroFax: p.numeroFax,
+    numeroWhatsapp: p.numeroWhatsapp,
+    note: p.note,
     sede: p.sedeRef?.nome || null,
     occupante: (() => {
       const altri = blockingOccupants(p.occupanti).filter((o) => o.id !== session.id);
@@ -68,37 +79,76 @@ export default async function AccountPage() {
   }));
 
   const internoEffettivo = user.interno?.trim() || "";
-  const postazioneDaLista = user.postazioneId
-    ? postazioniLista.find((p) => p.id === user.postazioneId)
+  const postazioneIdEff = user.postazioneId ?? session.postazioneId ?? null;
+
+  let postazioneMatch = postazioneIdEff
+    ? postazioniLista.find((p) => idEquals(postazioneIdEff, p.id))
     : undefined;
-  const postazioneDaInterno =
-    !postazioneDaLista && internoEffettivo
-      ? postazioniLista.find(
-          (p) =>
-            (p.interno && p.interno.trim() === internoEffettivo) ||
-            p.nome.trim() === internoEffettivo
-        )
-      : undefined;
-  const postazioneMatch = postazioneDaLista ?? postazioneDaInterno;
-  const postazioneNome = user.postazione?.nome ?? postazioneMatch?.nome ?? null;
+  if (!postazioneMatch && internoEffettivo) {
+    postazioneMatch = postazioniLista.find(
+      (p) =>
+        (p.interno && p.interno.trim() === internoEffettivo) ||
+        p.nome.trim() === internoEffettivo
+    );
+  }
+  if (!postazioneMatch && session.postazioneNome?.trim()) {
+    const nome = session.postazioneNome.trim();
+    postazioneMatch = postazioniLista.find((p) => p.nome.trim() === nome);
+  }
+  if (!postazioneMatch && postazioneIdEff) {
+    const row = await postazioniDbFromUser(session).findFirst({
+      where: { id: postazioneIdEff, tenantId: session.tenantId },
+      include: {
+        sedeRef: { select: { nome: true } },
+      },
+    });
+    if (row) {
+      postazioneMatch = {
+        id: row.id,
+        nome: row.nome,
+        interno: row.interno,
+        email: row.email,
+        numeroFisso: row.numeroFisso,
+        numeroFax: row.numeroFax,
+        numeroWhatsapp: row.numeroWhatsapp,
+        note: row.note,
+        sede: row.sedeRef?.nome || null,
+        occupante: null,
+      };
+    }
+  }
+
+  const postazioneNome =
+    user.postazione?.nome ?? session.postazioneNome ?? postazioneMatch?.nome ?? null;
   const postazioneInterno =
-    user.postazione?.interno ?? postazioneMatch?.interno ?? null;
+    user.postazione?.interno ?? postazioneMatch?.interno ?? (internoEffettivo || null);
+
+  let postazioneDettaglio: PostazioneSchedaView | null =
+    postazioneMatch != null ? postazioneSchedaFromRow(postazioneMatch) : null;
+
+  if (!postazioneDettaglio && gestiscePostazione) {
+    const nome = postazioneNome?.trim() || internoEffettivo || null;
+    if (nome || session.postazioneEmail || session.sedeNome || session.postazioneNome) {
+      postazioneDettaglio = postazioneSchedaFromRow({
+        nome: nome || "—",
+        sede: session.sedeNome ?? postazioneMatch?.sede ?? null,
+        interno: postazioneInterno,
+        email: session.postazioneEmail ?? postazioneMatch?.email ?? null,
+        numeroFisso: postazioneMatch?.numeroFisso ?? null,
+        numeroFax: postazioneMatch?.numeroFax ?? null,
+        numeroWhatsapp: postazioneMatch?.numeroWhatsapp ?? null,
+        note: postazioneMatch?.note ?? null,
+      });
+    }
+  }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Account"
         subtitle="Il tuo profilo, le impostazioni telefoniche e la password"
       />
       <AccountEditor
-        showFormazione={
-          can(session, "formazione:view") && tenantHasModule(platform, "formazione")
-        }
-        showStrumenti={
-          can(session, "formazione:view") &&
-          !isFormazioneOnly(session) &&
-          tenantHasModule(platform, "strumenti")
-        }
         user={{
           name: user.name,
           email: user.email,
@@ -107,11 +157,13 @@ export default async function AccountPage() {
           prefissoChiamata: user.prefissoChiamata || "",
           postazioneNome,
           postazioneInterno,
+          postazioneDettaglio,
           postazioneId: user.postazioneId ?? postazioneMatch?.id ?? null,
           postazioneFissa: Boolean(user.postazioneFissa),
           showPostazioneFissa: canImpostarePostazioneFissa(user.role as Role),
           gestiscePostazione,
-          postazioni: gestiscePostazione ? postazioniLista : undefined,
+          canModificaPostazioneDaAccount,
+          postazioni: canModificaPostazioneDaAccount ? postazioniLista : undefined,
           giorniAllaScadenza: giorniAllaScadenzaPassword(user.passwordChangedAt),
           creditCalcEnabled: Boolean(
             user.consulenteEsterno &&

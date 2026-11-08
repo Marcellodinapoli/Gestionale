@@ -9,7 +9,7 @@ const sans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "Credixa",
+  title: "Credixa Suite",
   description: "Pratiche, affidi, lavorazione e incassi",
 };
 

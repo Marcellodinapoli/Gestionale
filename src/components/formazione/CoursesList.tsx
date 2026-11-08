@@ -165,16 +165,71 @@ function CourseCard({
 }
 
 function CoursesBody({ category }: { category: string }) {
-  const { db } = useFormazione();
+  const { db, apiMode } = useFormazione();
   const [courses, setCourses] = useState<CourseDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!db) return;
+    if (!apiMode && !db) return;
     let cancelled = false;
 
+    async function loadFromApi() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/formazione/courses?category=${encodeURIComponent(category)}`
+        );
+        const payload = (await res.json()) as {
+          items?: Array<{
+            id: string;
+            title: string;
+            description: string;
+            category: string;
+            tags: string[];
+            contents: string[];
+            attachments: unknown[];
+            createdAtMs: number;
+          }>;
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(payload.error ?? "Errore caricamento");
+        }
+        if (cancelled) return;
+        setCourses(
+          (payload.items ?? []).map((row) => ({
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            category: row.category,
+            tags: row.tags,
+            contents: row.contents,
+            attachments: Array.isArray(row.attachments)
+              ? (row.attachments as CourseDoc["attachments"])
+              : [],
+            videoUrl: undefined,
+            quiz: undefined,
+            createdAt: row.createdAtMs
+              ? { toMillis: () => row.createdAtMs }
+              : null,
+          }))
+        );
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Errore caricamento");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
     async function load() {
+      if (apiMode) {
+        await loadFromApi();
+        return;
+      }
       if (!db) return;
       setLoading(true);
       setError(null);
@@ -226,7 +281,7 @@ function CoursesBody({ category }: { category: string }) {
     return () => {
       cancelled = true;
     };
-  }, [db, category]);
+  }, [apiMode, db, category]);
 
   if (loading) {
     return (

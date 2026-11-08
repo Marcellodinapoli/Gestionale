@@ -23,6 +23,8 @@ export function navPagesForPermission(permission: Permission): NavPageId[] {
       return ["log"];
     case "legal:view":
       return ["legal"];
+    case "legal-ai:view":
+      return ["legalAi"];
     case "recruiting:view":
     case "recruiting:manage":
       return ["recruiting"];
@@ -40,6 +42,8 @@ export function navPagesForPermission(permission: Permission): NavPageId[] {
       return ["incassi"];
     case "report:view":
       return ["report"];
+    case "statistiche:view":
+      return ["statistiche"];
     default:
       return [];
   }

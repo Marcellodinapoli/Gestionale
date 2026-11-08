@@ -7,10 +7,10 @@ import { Lock, Monitor, Phone, QrCode } from "lucide-react";
 import { updateAccountTelefoniaAction } from "@/actions/account";
 import { CambioPasswordForm } from "@/components/account/CambioPasswordForm";
 import { AccountPostazioneForm } from "@/components/account/AccountPostazioneForm";
-import { FormazioneAccountMenu } from "@/components/formazione/FormazioneAccountMenu";
-import { StrumentiAccountMenu } from "@/components/strumenti/StrumentiAccountMenu";
-import { CollegaCreditCalcButton } from "@/components/creditcalc/CollegaCreditCalcButton";
+import { CredixaAppCollegamentoCard } from "@/components/creditcalc/CredixaAppCollegamentoCard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
+import type { PostazioneSchedaView } from "@/lib/postazioniSchedaFields";
+import { PostazioneSchedaRiepilogo } from "@/components/account/PostazioneSchedaRiepilogo";
 
 const inputCls =
   "mt-1.5 h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm shadow-sm transition focus:border-[#1a4f7a] focus:outline-none focus:ring-2 focus:ring-[#1a4f7a]/15";
@@ -69,8 +69,6 @@ function InfoItem({ label, value }: { label: string; value: ReactNode }) {
 
 export function AccountEditor({
   user,
-  showFormazione,
-  showStrumenti = true,
 }: {
   user: {
     name: string;
@@ -80,14 +78,21 @@ export function AccountEditor({
     prefissoChiamata: string;
     postazioneNome: string | null;
     postazioneInterno: string | null;
+    postazioneDettaglio?: PostazioneSchedaView | null;
     postazioneId?: string | null;
     postazioneFissa?: boolean;
     showPostazioneFissa?: boolean;
     gestiscePostazione?: boolean;
+    canModificaPostazioneDaAccount?: boolean;
     postazioni?: Array<{
       id: string;
       nome: string;
       interno: string | null;
+      email: string | null;
+      numeroFisso: string | null;
+      numeroFax: string | null;
+      numeroWhatsapp: string | null;
+      note: string | null;
       sede: string | null;
       occupante: string | null;
     }>;
@@ -95,8 +100,6 @@ export function AccountEditor({
     /** Operatore consulente esterno con CreditCalc abilitato dall’admin. */
     creditCalcEnabled?: boolean;
   };
-  showFormazione?: boolean;
-  showStrumenti?: boolean;
 }) {
   const router = useRouter();
   const [telefoniaMsg, setTelefoniaMsg] = useState<string | null>(null);
@@ -105,7 +108,17 @@ export function AccountEditor({
 
   const passwordUrgente = user.giorniAllaScadenza <= 7;
   const passwordPct = Math.min(100, Math.round((user.giorniAllaScadenza / 30) * 100));
-  const canMonitorFormazione = user.role === "SUPERVISOR" || user.role === "ADMIN";
+  const haFormPostazioneAccount = Boolean(
+    user.canModificaPostazioneDaAccount && user.postazioni?.length
+  );
+  const mostraCardPostazione = Boolean(
+    user.gestiscePostazione && (user.postazioneDettaglio || user.postazioneNome)
+  );
+  const internoPersonale =
+    user.interno?.trim() &&
+    user.interno.trim() !== (user.postazioneDettaglio?.interno?.trim() || "")
+      ? user.interno.trim()
+      : null;
 
   function salvaTelefonia(formData: FormData) {
     setTelefoniaMsg(null);
@@ -133,54 +146,44 @@ export function AccountEditor({
               <h2 className="truncate text-lg font-semibold text-white">{user.name}</h2>
               <p className="truncate text-sm text-white/80">{ROLE_LABELS[user.role] || user.role}</p>
             </div>
-            <div className="relative z-20 flex flex-wrap items-center gap-2 overflow-visible">
-              {showFormazione ? (
-                <FormazioneAccountMenu canMonitor={canMonitorFormazione} />
-              ) : null}
-              {showStrumenti ? <StrumentiAccountMenu /> : null}
-            </div>
           </div>
         </div>
         <div className="grid gap-3 p-4 sm:grid-cols-2">
-          <InfoItem label="Email" value={user.email} />
-          <InfoItem
-            label="Postazione"
-            value={
-              user.postazioneNome ? (
-                <>
-                  {user.postazioneNome}
-                  {user.postazioneInterno ? (
-                    <span className="ml-1 font-normal text-[var(--muted)]">
-                      · int. {user.postazioneInterno}
-                    </span>
-                  ) : null}
-                </>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <InfoItem label="Interno attuale" value={user.interno || "—"} />
+          <InfoItem label="Email account" value={user.email} />
           <InfoItem label="Prefisso chiamata" value={user.prefissoChiamata || "—"} />
         </div>
+        {user.postazioneDettaglio && !user.gestiscePostazione ? (
+          <div className="border-t border-[var(--line)] p-4">
+            <PostazioneSchedaRiepilogo
+              dettaglio={user.postazioneDettaglio}
+              titolo="Postazione di sessione"
+              internoPersonale={internoPersonale}
+            />
+          </div>
+        ) : null}
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-stretch">
-        {user.gestiscePostazione && user.postazioni ? (
+        {mostraCardPostazione ? (
           <Sezione
             icon={Monitor}
             titolo="Postazione"
             sottotitolo={
-              user.postazioneFissa
-                ? "Postazione fissa — non richiesta al login"
-                : "Postazione di lavoro per la sessione corrente"
+              haFormPostazioneAccount
+                ? user.postazioneFissa
+                  ? "Postazione fissa — non richiesta al login"
+                  : "Postazione di lavoro per la sessione corrente"
+                : "Dati della postazione di sessione"
             }
           >
             <AccountPostazioneForm
+              allowChangePostazione={haFormPostazioneAccount}
+              dettaglioCorrente={user.postazioneDettaglio}
               postazioneId={user.postazioneId ?? null}
               postazioneFissa={Boolean(user.postazioneFissa)}
               showPostazioneFissa={Boolean(user.showPostazioneFissa)}
-              postazioni={user.postazioni}
+              postazioni={user.postazioni ?? []}
+              internoPersonale={internoPersonale}
             />
           </Sezione>
         ) : null}
@@ -285,16 +288,10 @@ export function AccountEditor({
         {user.creditCalcEnabled ? (
           <Sezione
             icon={QrCode}
-            titolo="CreditCalc"
+            titolo="CredixaApp"
             sottotitolo="Collega l’app mobile al tuo utente gestionale"
           >
-            <div className="flex flex-1 flex-col gap-3">
-              <p className="text-sm leading-relaxed text-[var(--muted)]">
-                Genera un QR temporaneo e scansionarlo da CreditCalc → Impostazioni →
-                Collegamenti. Solo tu puoi collegare l’app al tuo profilo.
-              </p>
-              <CollegaCreditCalcButton label="Genera QR collegamento" />
-            </div>
+            <CredixaAppCollegamentoCard />
           </Sezione>
         ) : null}
       </div>

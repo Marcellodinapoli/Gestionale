@@ -138,7 +138,7 @@ export function DialerOperatorPanel() {
       ) : null}
 
       {sessione ? (
-        <Card title="Sessione dialer attiva">
+        <Card title="Sessione predictive attiva">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="font-semibold text-[var(--navy)]">{sessione.campagnaNome}</span>
             {statoBadge(sessione.sessioneStato)}
@@ -233,7 +233,7 @@ export function DialerOperatorPanel() {
               onClick={() => run(() => exitDialerAction(sessione.campagnaId), "exit")}
               className="rounded border-2 border-[var(--navy)] px-4 py-2 text-sm font-bold text-[var(--navy)]"
             >
-              Esci dal dialer
+              Esci dal predictive
             </button>
           </div>
 
@@ -276,14 +276,14 @@ export function DialerOperatorPanel() {
                   }
                   className="rounded border-2 border-[var(--navy)] bg-[var(--navy)] px-4 py-2 text-sm font-bold text-white"
                 >
-                  Accetta e avvia dialer
+                  Accetta e avvia predictive
                 </button>
               </li>
             ))}
           </ul>
         </Card>
       ) : !sessione ? (
-        <Card title="Predictive Dialer">
+        <Card title="Predictive">
           <p className="text-sm text-[var(--muted)]">
             Nessuna campagna attiva al momento. Attendi l&apos;invito del supervisor.
           </p>

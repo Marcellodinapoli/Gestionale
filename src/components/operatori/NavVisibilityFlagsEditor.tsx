@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
-  NAV_PAGES,
+  editableNavPagesSorted,
   type NavPageId,
   type NavVisibilityMap,
 } from "@/lib/navVisibility/catalog";
@@ -30,10 +30,7 @@ export function NavVisibilityFlagsEditor({
   disabled?: boolean;
   allowEditRoleDefaults?: boolean;
 }) {
-  const pages = useMemo(
-    () => NAV_PAGES.filter((p) => !p.locked && p.id !== "ticket"),
-    []
-  );
+  const pages = useMemo(() => editableNavPagesSorted(), []);
 
   const initial = useMemo(() => {
     const out: NavVisibilityMap = {};
@@ -124,10 +121,8 @@ export function NavVisibilityFlagsEditor({
             Preferenze visibilità
           </Link>
         )}
-        .
       </p>
-      <input type="hidden" name={name} value={JSON.stringify(flags)} />
-      <div className="grid max-h-48 gap-1 overflow-y-auto sm:grid-cols-2">
+      <div className="max-h-48 columns-1 gap-x-2 overflow-y-auto sm:columns-2">
         {pages.map((p) => {
           const base = roleDefaults[p.id] !== false;
           const checked = flags[p.id] !== false;
@@ -135,7 +130,7 @@ export function NavVisibilityFlagsEditor({
           return (
             <label
               key={p.id}
-              className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${
+              className={`mb-1 flex w-full break-inside-avoid items-center gap-2 rounded px-2 py-1 text-xs ${
                 isException ? "bg-amber-50" : ""
               } ${disabled ? "opacity-50" : "cursor-pointer"}`}
             >
@@ -175,6 +170,7 @@ export function NavVisibilityFlagsEditor({
       ) : null}
       {msg ? <p className="text-[11px] text-emerald-700">{msg}</p> : null}
       {err ? <p className="text-[11px] text-red-600">{err}</p> : null}
+      <input type="hidden" name={name} value={JSON.stringify(flags)} readOnly />
     </div>
   );
 }

@@ -15,7 +15,7 @@ export default async function AttivaAccountPage({
     <div className="page-gutter flex min-h-screen items-center justify-center bg-[var(--navy)] py-6">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-          Credixa
+          Credixa Suite
         </p>
         <h1 className="mt-2 text-2xl font-semibold">Attiva account</h1>
         <p className="mt-1 text-xs text-[var(--muted)]">

@@ -40,7 +40,7 @@ export const DIALER_SESSIONE_LABELS: Record<DialerSessioneStato, string> = {
   in_chiamata: "In chiamata",
   post_call: "Post-call",
   pausa: "In pausa",
-  fuori: "Fuori dal dialer",
+  fuori: "Fuori dal predictive",
 };
 
 export const DIALER_CAMPAGNA_LABELS: Record<DialerCampagnaStato, string> = {

@@ -42,7 +42,7 @@ export default async function TicketPage() {
     <div>
       <PageHeader
         title="Ticket assistenza"
-        subtitle="Apri e segui le richieste di supporto Credixa"
+        subtitle="Apri e segui le richieste di supporto Credixa Suite"
       />
       {loadError ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

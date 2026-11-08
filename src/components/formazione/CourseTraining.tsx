@@ -75,7 +75,7 @@ export function CourseTraining({
   catalogCategory?: string;
   initialTab?: string;
 }) {
-  const { db, user } = useFormazione();
+  const { db, user, apiMode, retry } = useFormazione();
   const [tab, setTab] = useState<"video" | "quiz" | "allegati">(
     initialTab === "quiz" || initialTab === "allegati" ? initialTab : "video"
   );
@@ -89,10 +89,32 @@ export function CourseTraining({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!db) return;
+    if (!db && !apiMode) return;
     let cancelled = false;
 
+    async function loadFromApi() {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/formazione/courses/${encodeURIComponent(courseId)}`);
+        const data = (await res.json()) as {
+          title?: string;
+          videoUrl?: string | null;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error ?? "Corso non trovato");
+        if (cancelled) return;
+        setTitle(String(data.title ?? ""));
+        setVideoUrl(data.videoUrl ?? null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
     async function load() {
+      if (apiMode) {
+        await loadFromApi();
+        return;
+      }
       if (!db) return;
       const firestore = db;
 
@@ -174,7 +196,7 @@ export function CourseTraining({
     return () => {
       cancelled = true;
     };
-  }, [db, user, courseId, initialCourseLabel, catalogCategory, initialTab]);
+  }, [apiMode, db, user, courseId, initialCourseLabel, catalogCategory, initialTab]);
 
   if (loading) {
     return (
@@ -239,7 +261,20 @@ export function CourseTraining({
           )
         ) : null}
 
-        {tab === "quiz" ? (
+        {tab === "quiz" && apiMode ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p>Per svolgere il quiz serve il collegamento completo a CreditForm.</p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-3 rounded-lg bg-[var(--navy)] px-4 py-2 text-xs font-semibold text-white"
+            >
+              Riprova collegamento
+            </button>
+          </div>
+        ) : null}
+
+        {tab === "quiz" && !apiMode ? (
           <QuizTab
             courseId={courseId}
             courseTitle={title}
@@ -248,7 +283,20 @@ export function CourseTraining({
           />
         ) : null}
 
-        {tab === "allegati" ? (
+        {tab === "allegati" && apiMode ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p>Per scaricare gli allegati serve il collegamento completo a CreditForm.</p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-3 rounded-lg bg-[var(--navy)] px-4 py-2 text-xs font-semibold text-white"
+            >
+              Riprova collegamento
+            </button>
+          </div>
+        ) : null}
+
+        {tab === "allegati" && !apiMode ? (
           <AttachmentsTab
             courseId={courseId}
             courseTitle={title}

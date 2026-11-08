@@ -12,20 +12,31 @@ import {
   MODO_INCASSO_NON_PROVV,
   MODO_INCASSO_VERIFICATO,
 } from "@/lib/incassoFattura";
-import { fetchPraticaExtra } from "@/lib/praticaExtraClient";
-import { euro, ripartiIncasso, roundMoney, dataIt } from "@/lib/domainFormat";
+import {
+  fetchPraticaExtra,
+  PRATICA_EXTRA_INVALIDATE_EVENT,
+  type PraticaExtraPayload,
+} from "@/lib/praticaExtraClient";
+import {
+  FattureInsolutePreview,
+  type FatturaInsoluta,
+} from "@/components/pratica/FattureInsolutePreview";
+import {
+  IncassiPreview,
+  type IncassoPreviewRow,
+} from "@/components/pratica/IncassiPreview";
+import {
+  euro,
+  importoIt,
+  ripartiIncasso,
+  roundMoney,
+  dataIt,
+} from "@/lib/domainFormat";
 import {
   buildPianoEffettiSchedule,
   splitImportiPianoEffetti,
   type DistribuzionePianoEffetti,
 } from "@/lib/incassoPianoEffetti";
-
-type FatturaOpt = {
-  id: string;
-  numero: string;
-  importo: number;
-  pagato: number;
-};
 
 export type IncassoRipartoPratica = {
   capitale: number;
@@ -63,17 +74,25 @@ function emptyVoci(): VociRiparto {
   return { capitale: 0, interessi: 0, spese: 0, speseRec: 0 };
 }
 
+function voceCampoTesto(n: number): string {
+  return n > 0 ? euro(n) : "";
+}
+
 function vociToTesto(v: VociRiparto): VociTesto {
   return {
-    capitale: v.capitale ? String(v.capitale) : "",
-    interessi: v.interessi ? String(v.interessi) : "",
-    spese: v.spese ? String(v.spese) : "",
-    speseRec: v.speseRec ? String(v.speseRec) : "",
+    capitale: voceCampoTesto(v.capitale),
+    interessi: voceCampoTesto(v.interessi),
+    spese: voceCampoTesto(v.spese),
+    speseRec: voceCampoTesto(v.speseRec),
   };
 }
 
 function parseMoney(raw: string) {
-  return roundMoney(Number(String(raw).replace(",", ".")) || 0);
+  const cleaned = String(raw)
+    .replace(/\u00a0/g, "")
+    .replace(/[^\d,.-]/g, "")
+    .replace(",", ".");
+  return roundMoney(Number(cleaned) || 0);
 }
 
 function sumVoci(v: VociRiparto) {
@@ -86,13 +105,34 @@ function todayInput() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function mapIncassiRegistrati(
+  list: PraticaExtraPayload["incassi"]
+): IncassoPreviewRow[] {
+  return list.map((i) => ({
+    id: i.id,
+    data: new Date(i.data),
+    dataScadenza: i.dataScadenza ? new Date(i.dataScadenza) : null,
+    metodo: i.metodo,
+    modo: i.modo,
+    importo: i.importo,
+    capitale: i.capitale,
+    interessi: i.interessi,
+    spese: i.spese,
+    causale: i.causale,
+    fattura: i.fattura,
+    user: i.user,
+  }));
+}
+
 export function IncassoPopup({
   praticaId,
   riparto,
+  canEditIncassi = false,
   onDone,
 }: {
   praticaId: string;
   riparto: IncassoRipartoPratica;
+  canEditIncassi?: boolean;
   onDone?: () => void;
 }) {
   const router = useRouter();
@@ -100,7 +140,13 @@ export function IncassoPopup({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState(MODO_INCASSO_VERIFICATO);
-  const [fatture, setFatture] = useState<FatturaOpt[]>([]);
+  const [fatture, setFatture] = useState<FatturaInsoluta[]>([]);
+  const [fattureInsolute, setFattureInsolute] = useState<
+    Array<{ id: string; numero: string; importo: number; pagato: number }>
+  >([]);
+  const [incassiRegistrati, setIncassiRegistrati] = useState<IncassoPreviewRow[]>(
+    []
+  );
   const [fattureLoading, setFattureLoading] = useState(true);
   const [importo, setImporto] = useState("");
   const [voci, setVoci] = useState<VociRiparto>(emptyVoci);
@@ -123,35 +169,64 @@ export function IncassoPopup({
   const [dataInizio, setDataInizio] = useState(todayInput());
   const [causalePiano, setCausalePiano] = useState("");
 
+  function applyExtraPayload(data: PraticaExtraPayload | null) {
+    const fattureAll: FatturaInsoluta[] = (data?.fatture || []).map((f) => ({
+      id: f.id,
+      numero: f.numero,
+      causale: f.causale,
+      dataFattura: new Date(f.dataFattura),
+      dataScadenza: new Date(f.dataScadenza),
+      importo: f.importo,
+      pagato: f.pagato,
+    }));
+    setFattureInsolute(
+      fattureAll.map((f) => ({
+        id: f.id,
+        numero: f.numero,
+        importo: f.importo,
+        pagato: f.pagato,
+      }))
+    );
+    setFatture(
+      fattureAll.filter((f) => f.importo - f.pagato > 0.009)
+    );
+    setIncassiRegistrati(mapIncassiRegistrati(data?.incassi || []));
+    const gia = (data?.incassi || []).reduce(
+      (acc, i) => ({
+        capitale: acc.capitale + (i.capitale || 0),
+        interessi: acc.interessi + (i.interessi || 0),
+        spese: acc.spese + (i.spese || 0),
+        speseRec: acc.speseRec + (i.speseRec || 0),
+      }),
+      { capitale: 0, interessi: 0, spese: 0, speseRec: 0 }
+    );
+    setGiaPagato(gia);
+    setGiaReady(true);
+    setFattureLoading(false);
+  }
+
   useEffect(() => {
     let cancelled = false;
     setFattureLoading(true);
     fetchPraticaExtra(praticaId, { force: true }).then((data) => {
       if (cancelled) return;
-      const list = (data?.fatture || [])
-        .map((f) => ({
-          id: f.id,
-          numero: f.numero,
-          importo: f.importo,
-          pagato: f.pagato,
-        }))
-        .filter((f) => f.importo - f.pagato > 0.009);
-      setFatture(list);
-      const gia = (data?.incassi || []).reduce(
-        (acc, i) => ({
-          capitale: acc.capitale + (i.capitale || 0),
-          interessi: acc.interessi + (i.interessi || 0),
-          spese: acc.spese + (i.spese || 0),
-          speseRec: acc.speseRec + (i.speseRec || 0),
-        }),
-        { capitale: 0, interessi: 0, spese: 0, speseRec: 0 }
-      );
-      setGiaPagato(gia);
-      setGiaReady(true);
-      setFattureLoading(false);
+      applyExtraPayload(data);
     });
     return () => {
       cancelled = true;
+    };
+  }, [praticaId]);
+
+  useEffect(() => {
+    function onInvalidate(e: Event) {
+      const ce = e as CustomEvent<{ praticaId: string | null }>;
+      const id = ce.detail?.praticaId;
+      if (id != null && id !== praticaId) return;
+      void fetchPraticaExtra(praticaId, { force: true }).then(applyExtraPayload);
+    }
+    window.addEventListener(PRATICA_EXTRA_INVALIDATE_EVENT, onInvalidate);
+    return () => {
+      window.removeEventListener(PRATICA_EXTRA_INVALIDATE_EVENT, onInvalidate);
     };
   }, [praticaId]);
 
@@ -232,6 +307,21 @@ export function IncassoPopup({
     setVoci((prev) => ({ ...prev, [key]: Math.max(0, parseMoney(raw)) }));
   }
 
+  function onVoceFocus(key: keyof VociRiparto) {
+    const n = voci[key];
+    setVociTesto((prev) => ({
+      ...prev,
+      [key]: n > 0 ? importoIt(n) : "",
+    }));
+  }
+
+  function onVoceBlur(key: keyof VociRiparto) {
+    setVociTesto((prev) => ({
+      ...prev,
+      [key]: voceCampoTesto(voci[key]),
+    }));
+  }
+
   async function onSubmitSingolo(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -299,6 +389,31 @@ export function IncassoPopup({
 
   return (
     <div className="space-y-3 px-3 py-3 text-sm">
+      <div className="max-h-[min(28vh,220px)] overflow-auto rounded border border-[var(--line)]">
+        {fattureLoading ? (
+          <p className="px-2 py-3 text-xs text-[var(--muted)]">Caricamento fatture…</p>
+        ) : (
+          <FattureInsolutePreview
+            compact
+            praticaId={praticaId}
+            fatture={fatture}
+            canEdit={false}
+          />
+        )}
+      </div>
+
+      {canEditIncassi ? (
+        <div className="max-h-[min(40vh,320px)] overflow-auto rounded border border-[var(--line)]">
+          <IncassiPreview
+            praticaId={praticaId}
+            canEdit
+            compact
+            incassi={incassiRegistrati}
+            fattureInsolute={fattureInsolute}
+          />
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-1 rounded-lg border border-[var(--line)] bg-[#eef2f6] p-1">
         <button
           type="button"
@@ -350,8 +465,8 @@ export function IncassoPopup({
                 className="mt-0.5 block h-9 w-full rounded border border-[var(--line)] bg-white px-2"
               />
               <span className="mt-0.5 block text-[10px] leading-snug text-[var(--muted)]">
-                Copertura automatica: rata → spese → spese recupero → eccesso a
-                capitale. Puoi modificare le voci sotto.
+                Copertura automatica: capitale → mora → spese → spese di
+                recupero. Puoi modificare le voci sotto.
               </span>
             </label>
             <label className="block text-xs">
@@ -458,13 +573,15 @@ export function IncassoPopup({
                     </div>
                   </div>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     name={v.key}
                     value={vociTesto[v.key]}
                     onChange={(e) => onVoceChange(v.key, e.target.value)}
-                    className="h-8 w-28 shrink-0 rounded border border-[var(--line)] bg-white px-2 text-right text-sm"
+                    onFocus={() => onVoceFocus(v.key)}
+                    onBlur={() => onVoceBlur(v.key)}
+                    className="h-8 w-[7.25rem] shrink-0 rounded border border-[var(--line)] bg-white px-2 text-right text-sm tabular-nums"
                   />
                 </li>
               ))}
@@ -506,7 +623,7 @@ export function IncassoPopup({
         <form onSubmit={onSubmitPiano} className="space-y-3">
           <p className="text-[11px] leading-snug text-[var(--muted)]">
             Registra un intero piano di rientro con cambiali o assegni come serie
-            di incassi (come CreditCalc): tutte nel mese corrente oppure una al
+            di incassi (come CredixaApp): tutte nel mese corrente oppure una al
             mese. Il riparto residuo viene applicato automaticamente a ogni
             effetto.
           </p>

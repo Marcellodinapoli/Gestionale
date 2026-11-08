@@ -123,6 +123,13 @@ export class PrismaIncassiRepository implements IncassiRepository {
       return { ok: true };
     });
   }
+
+  async aggiornaModo(_tenantSlug: string, tenantId: string, id: string, modo: string) {
+    await prisma.incasso.updateMany({
+      where: { id, pratica: { tenantId } },
+      data: { modo },
+    });
+  }
 }
 
 function filterToPrismaWhere(filter?: IncassoFilter): Record<string, unknown> {

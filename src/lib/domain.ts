@@ -9,6 +9,8 @@ import {
   praticaMatchFiltro,
 } from "@/lib/praticaCollegata";
 import { whereVisibiliAdOperatoreSupervisor } from "@/lib/scadenzaStragiudiziale";
+import { affidiPraticaScadutaPerSupervisor } from "@/lib/affidi/affidiPraticaStatoUi";
+import { resolveTenantSlug } from "@/lib/praticheRepo";
 
 export {
   importoIt,
@@ -19,6 +21,7 @@ export {
   parseDateOnly,
   dataIt,
   dataOraIt,
+  oraIt,
   ripartiIncasso,
 } from "@/lib/domainFormat";
 
@@ -265,6 +268,44 @@ export async function praticheStessoDebitoreIds(
       )
     )
     .map((p) => p.id);
+}
+
+/** Messaggio errore quando la pratica esiste ma non è nel portafoglio visibile. */
+export async function messaggioPraticaNonVisibile(
+  user: SessionUser,
+  praticaId: string
+): Promise<string> {
+  const p = await praticaDb({
+    tenantId: user.tenantId,
+    tenantSlug: resolveTenantSlug(user),
+    skipRoleScope: true,
+  }).findFirst({
+    where: { id: praticaId, tenantId: user.tenantId },
+    select: {
+      stato: true,
+      scadenza: true,
+      assegnatarioId: true,
+      conferimentoTipo: true,
+      dataPassaggioGiudiziale: true,
+      giudiziale: { select: { statoAvvio: true } },
+    },
+  });
+  if (!p) return "Pratica non visibile";
+
+  if (
+    affidiPraticaScadutaPerSupervisor({
+      stato: p.stato,
+      assegnatarioId: p.assegnatarioId,
+      scadenza: p.scadenza,
+      conferimentoTipo: p.conferimentoTipo,
+      dataPassaggioGiudiziale: p.dataPassaggioGiudiziale,
+      statoAvvioGiudiziale: p.giudiziale?.statoAvvio ?? null,
+    })
+  ) {
+    return "Pratica non visibile. Motivazione: Scaduta.";
+  }
+
+  return "Pratica non visibile";
 }
 
 export async function canAccessPratica(user: SessionUser, praticaId: string) {

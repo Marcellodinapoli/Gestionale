@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ruoliCreabiliDa, ROLE_LABELS, type Role } from "@/lib/permissions";
+import {
+  ruoliCreabiliDa,
+  ROLE_LABELS,
+  type Role,
+} from "@/lib/permissions";
+import {
+  standaloneOperatoreRoles,
+  type ProductStandaloneContext,
+} from "@/lib/platform/productStandalone";
 import { CONDIZIONI_ECONOMICHE } from "@/lib/condizioneEconomica";
 import { createOperatoreAction } from "@/actions/operatoriAdmin";
 import { normalizeCf } from "@/lib/codiceFiscale";
@@ -20,6 +28,7 @@ export function NuovoOperatoreForm({
   roleDefaults,
   acronimiUsati,
   creditCalcModuleOn = false,
+  productStandalone = { legalAi: false, recruiting: false, formazione: false, dialer: false },
   onSuccess,
   onCancel,
 }: {
@@ -29,12 +38,18 @@ export function NuovoOperatoreForm({
   roleDefaults: NavRoleDefaults;
   acronimiUsati: string[];
   creditCalcModuleOn?: boolean;
+  productStandalone?: ProductStandaloneContext;
   onSuccess?: () => void;
   onCancel?: () => void;
 }) {
-  const ruoli = ruoliCreabiliDa(creatorRole);
+  const standaloneRoles = standaloneOperatoreRoles(productStandalone);
+  const isProductStandalone = standaloneRoles.length > 0;
+  const isFormazioneProduct = productStandalone.formazione;
+  const isDialerProduct = productStandalone.dialer;
+  const isTrainingOrDialerProduct = isFormazioneProduct || isDialerProduct;
+  const ruoli = ruoliCreabiliDa(creatorRole, { productStandalone });
   const [accesso, setAccesso] = useState<"completo" | "formazione">("completo");
-  const [role, setRole] = useState<Role>("OPERATOR");
+  const [role, setRole] = useState<Role>(standaloneRoles[0] ?? "OPERATOR");
   const [nome, setNome] = useState("");
   const [cognome, setCognome] = useState("");
   const [condizioneEconomica, setCondizioneEconomica] = useState<"SOLO_PROVV" | "FISSO_PROVV">(
@@ -49,6 +64,11 @@ export function NuovoOperatoreForm({
   const mostraCondizioneEconomica = !soloFormazione && role === "OPERATOR";
   const mostraCreditCalc = !soloFormazione && role === "OPERATOR";
   const defaultsForRole: NavVisibilityMap = roleDefaults[role] || {};
+  const ruoloSenzaSupervisor =
+    role === "AVVOCATO" ||
+    role === "RECRUITER" ||
+    isProductStandalone ||
+    (isTrainingOrDialerProduct && role === "SUPERVISOR");
 
   const inputCls = "mt-1 h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm";
 
@@ -101,19 +121,41 @@ export function NuovoOperatoreForm({
         acronimiUsati={acronimiUsati}
         inputCls={inputCls}
       />
-      <label className="w-44">
-        <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Accesso</span>
-        <select
-          name="accesso"
-          className={inputCls}
-          value={accesso}
-          onChange={(e) => setAccesso(e.target.value as "completo" | "formazione")}
-        >
-          <option value="completo">Completo</option>
-          <option value="formazione">Solo formazione</option>
-        </select>
-      </label>
-      {!soloFormazione ? (
+      {!isProductStandalone && !isTrainingOrDialerProduct ? (
+        <label className="w-44">
+          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Accesso</span>
+          <select
+            name="accesso"
+            className={inputCls}
+            value={accesso}
+            onChange={(e) => setAccesso(e.target.value as "completo" | "formazione")}
+          >
+            <option value="completo">Completo</option>
+            <option value="formazione">Solo formazione</option>
+          </select>
+        </label>
+      ) : (
+        <input type="hidden" name="accesso" value="completo" />
+      )}
+      {standaloneRoles.length === 1 ? (
+        <input type="hidden" name="role" value={standaloneRoles[0]} />
+      ) : !soloFormazione && isProductStandalone ? (
+        <label className="w-40">
+          <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Ruolo</span>
+          <select
+            name="role"
+            className={inputCls}
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+          >
+            {ruoli.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABELS[r]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : !soloFormazione ? (
         <label className="w-40">
           <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Ruolo</span>
           <select
@@ -132,7 +174,7 @@ export function NuovoOperatoreForm({
       ) : (
         <input type="hidden" name="role" value="OPERATOR" />
       )}
-      {!soloFormazione ? (
+      {!soloFormazione && !ruoloSenzaSupervisor ? (
         <label className="w-44">
           <span className="text-[10px] font-semibold uppercase text-[var(--muted)]">Supervisor</span>
           <select name="supervisorId" className={inputCls}>
@@ -218,7 +260,7 @@ export function NuovoOperatoreForm({
       {mostraCreditCalc ? (
         <div className="space-y-2 border-t border-[var(--line)] pt-3">
           <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-            CreditCalc / consulente esterno
+            CredixaApp / consulente esterno
           </p>
           <label className="flex items-start gap-2 text-sm">
             <input
@@ -236,7 +278,7 @@ export function NuovoOperatoreForm({
             <span>
               <span className="font-medium text-[var(--navy)]">Consulente esterno</span>
               <span className="block text-xs text-[var(--muted)]">
-                Profilo distinto; in CreditCalc vedrà solo le pratiche in affido.
+                Profilo distinto; in CredixaApp vedrà solo le pratiche in affido.
               </span>
             </span>
           </label>
@@ -258,11 +300,11 @@ export function NuovoOperatoreForm({
               className="mt-1"
             />
             <span>
-              <span className="font-medium text-[var(--navy)]">Abilita accesso CreditCalc</span>
+              <span className="font-medium text-[var(--navy)]">Abilita accesso CredixaApp</span>
               <span className="block text-xs text-[var(--muted)]">
                 {creditCalcModuleOn
                   ? "Apertura pratiche mobile, note e codice scarico."
-                  : "Pacchetto CreditCalc non attivo in Back Office: voce visibile ma non attivabile."}
+                  : "Pacchetto CredixaApp non attivo in Back Office: voce visibile ma non attivabile."}
               </span>
             </span>
           </label>

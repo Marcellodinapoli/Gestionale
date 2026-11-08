@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
+import { logoutAction } from "@/actions/core";
 import { getCurrentUser } from "@/lib/auth";
 import { isUserPasswordExpired } from "@/lib/passwordPolicy";
 import { mustChoosePostazioneAlLogin } from "@/lib/permissions";
 import { needsSediSetup } from "@/lib/sediSetup";
 import { homePathForUser } from "@/lib/formazioneOnlyAccess";
 import { CambioPasswordForm } from "@/components/account/CambioPasswordForm";
-import { logoutAction } from "@/actions/core";
 
 export default async function CambiaPasswordPage() {
   const user = await getCurrentUser();

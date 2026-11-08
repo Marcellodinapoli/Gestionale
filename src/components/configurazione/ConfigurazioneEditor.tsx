@@ -134,21 +134,21 @@ const SEZIONI = [
   },
   {
     id: "dialer",
-    titolo: "Dialer",
+    titolo: "Predictive",
     icon: Radio,
     descrizione:
       "Riferimenti operativi campagne. Credenziali API solo su server/vault, non nel gestionale.",
     doveCredenziali:
-      "Utente/password/API key dialer: variabili ambiente o secret manager sul server di integrazione.",
+      "Utente/password/API key predictive: variabili ambiente o secret manager sul server di integrazione.",
     campi: [
-      { chiave: "dialer_tipo", label: "Tipo dialer", placeholder: "Predictive, Progressive, Preview, Power…" },
+      { chiave: "dialer_tipo", label: "Tipo predictive", placeholder: "Predictive, Progressive, Preview, Power…" },
       { chiave: "dialer_provider", label: "Provider / Software", placeholder: "VICIdial, GoAutoDial, custom…" },
       { chiave: "dialer_host", label: "Host / IP", placeholder: "192.168.1.60 o dialer.azienda.local" },
       { chiave: "dialer_porta", label: "Porta", placeholder: "8080, 443…" },
       { chiave: "dialer_campagna_default", label: "Campagna di default", placeholder: "RECUPERO_CREDITI" },
       { chiave: "dialer_max_linee", label: "Max linee simultanee", placeholder: "10" },
       { chiave: "dialer_ratio", label: "Ratio chiamate/operatore", placeholder: "1.5" },
-      { chiave: "dialer_note", label: "Note", placeholder: "Dettagli non sensibili sul dialer" },
+      { chiave: "dialer_note", label: "Note", placeholder: "Dettagli non sensibili sul predictive" },
     ],
   },
 ] as const;

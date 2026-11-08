@@ -108,6 +108,14 @@ export async function eliminaIncassoWithSideEffects(
   return repo(ctx).elimina(ctx.tenantSlug, ctx.tenantId, id, input);
 }
 
+export async function aggiornaModoIncasso(
+  ctx: IncassoDbContext,
+  incassoId: string,
+  modo: string
+) {
+  return repo(ctx).aggiornaModo(ctx.tenantSlug, ctx.tenantId, incassoId, modo);
+}
+
 function hasPraticaInclude(include: unknown) {
   if (!include || typeof include !== "object") return false;
   return "pratica" in (include as Record<string, unknown>);

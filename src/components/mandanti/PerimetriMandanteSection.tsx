@@ -1012,7 +1012,7 @@ function PdrPerimetroEditor({
         Dati per il PDR (piano di rientro)
       </p>
       <p className="mb-3 text-[10px] text-[var(--muted)]">
-        Fasce importo netto → rate massime (come CreditCalc). Se non compilate, in
+        Fasce importo netto → rate massime (come CredixaApp). Se non compilate, in
         pratica non sarà possibile creare un piano di rientro.
       </p>
       <div className="space-y-2">
@@ -1159,7 +1159,7 @@ function StralcioPerimetroEditor({
         Dati per il saldo a stralcio
       </p>
       <p className="mb-3 text-[10px] text-[var(--muted)]">
-        Percentuale di stralcio sul debito (come CreditCalc). Se lasciate vuote,
+        Percentuale di stralcio sul debito (come CredixaApp). Se lasciate vuote,
         l&apos;operatore negozia liberamente in pratica.
       </p>
       <div className="grid gap-2 sm:grid-cols-3">
@@ -1238,7 +1238,7 @@ function PagamentiPerimetroEditor({
         Intestazioni modalità di pagamento
       </p>
       <p className="mb-3 text-[10px] text-[var(--muted)]">
-        Coordinate da indicare all&apos;operatore / debitore (come in CreditCalc).
+        Coordinate da indicare all&apos;operatore / debitore (come in CredixaApp).
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="text-[10px]">

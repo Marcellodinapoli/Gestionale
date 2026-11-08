@@ -82,10 +82,28 @@ function filterToPrismaWhere(filter?: ProvvigioneFilter): Record<string, unknown
       ...(filter.createdAtLte ? { lte: new Date(filter.createdAtLte) } : {}),
     };
   }
+  if (filter.meseCompetenzaOrGte && filter.meseCompetenzaOrLte) {
+    const gte = new Date(filter.meseCompetenzaOrGte);
+    const lte = new Date(filter.meseCompetenzaOrLte);
+    where.OR = [
+      { incasso: { data: { gte, lte } } },
+      { createdAt: { gte, lte } },
+    ];
+  } else if (filter.incassoDataGte || filter.incassoDataLte) {
+    where.incasso = {
+      data: {
+        ...(filter.incassoDataGte ? { gte: new Date(filter.incassoDataGte) } : {}),
+        ...(filter.incassoDataLte ? { lte: new Date(filter.incassoDataLte) } : {}),
+      },
+    };
+  }
   const pratica: Record<string, unknown> = {};
   if (filter.tenantId) pratica.tenantId = filter.tenantId;
   if (filter.praticaMandanteId) pratica.mandanteId = filter.praticaMandanteId;
   if (filter.praticaNumeroMandante) pratica.numeroMandante = filter.praticaNumeroMandante;
+  if (filter.praticaNumeriMandanteIn?.length) {
+    pratica.numeroMandante = { in: filter.praticaNumeriMandanteIn };
+  }
   if (filter.praticaNumeroMandanteNull) {
     pratica.OR = [{ numeroMandante: null }, { numeroMandante: "" }];
   }

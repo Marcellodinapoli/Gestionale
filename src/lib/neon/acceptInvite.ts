@@ -149,6 +149,12 @@ export async function acceptInvite(
     }
 
     const userId = randomUUID();
+    const displayName =
+      role === "AVVOCATO"
+        ? "Avvocato"
+        : role === "RECRUITER"
+          ? "Reclutatore"
+          : "Amministratore";
     await q(
       `INSERT INTO "Users" (
          "Id", "TenantId", "Email", "Name", "PasswordHash", "PasswordChangedAt", "Role",
@@ -158,7 +164,7 @@ export async function acceptInvite(
          $1::uuid, $2::uuid, lower($3), $4, $5, now(), $6,
          true, false, false, 'NESSUNA', false, false, now()
        )`,
-      [userId, tenantId, email, "Amministratore", passwordHash, role]
+      [userId, tenantId, email, displayName, passwordHash, role]
     );
 
     return { userId, tenantId, email, role };

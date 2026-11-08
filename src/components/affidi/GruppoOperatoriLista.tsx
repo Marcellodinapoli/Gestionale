@@ -1,7 +1,12 @@
-import { internoFittizio } from "@/lib/contattiInterni";
 import { InviaMessaggioRapido } from "@/components/home/InviaMessaggioRapido";
 
-export type MembroGruppo = { id: string; name: string; role: string; email: string };
+export type MembroGruppo = {
+  id: string;
+  name: string;
+  role: string;
+  email: string;
+  internoVisibile: string | null;
+};
 
 function ContattiMembro({
   membro,
@@ -10,10 +15,10 @@ function ContattiMembro({
   membro: MembroGruppo;
   showMessaggio?: boolean;
 }) {
-  const interno = internoFittizio(membro.id);
+  const internoLabel = membro.internoVisibile?.trim() || "-";
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--muted)]">
-      <span className="tabular-nums">Int. {interno}</span>
+      <span className="tabular-nums">Int. {internoLabel}</span>
       <span aria-hidden className="text-[var(--line)]">
         ·
       </span>

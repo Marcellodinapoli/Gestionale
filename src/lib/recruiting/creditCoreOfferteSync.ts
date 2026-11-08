@@ -3,6 +3,7 @@ import "server-only";
 import { getFirebaseFirestore } from "@/lib/firebase/admin";
 import type { OffertaLavoroRecord } from "@/lib/recruiting/offerte";
 import { creditCoreOffertaDocId } from "@/lib/recruiting/creditCoreIds";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 
 const COLLECTION = "job_offers";
 const SOURCE = "gestionale";
@@ -99,6 +100,11 @@ export async function syncOffertaToCreditCore(
   offerta: OffertaLavoroRecord,
   opts?: { companyName?: string; forcePendingApproval?: boolean }
 ): Promise<void> {
+  if (!isFirebaseAvailable()) {
+    console.warn("[recruiting] Firebase non disponibile - sync CreditCore saltata");
+    return;
+  }
+
   const db = getFirebaseFirestore();
   const docId = creditCoreOffertaDocId(offerta.tenantId, offerta.id);
   const onlineDesired = offerta.stato === "PUBBLICATA";
@@ -191,6 +197,11 @@ export async function removeOffertaFromCreditCore(
   tenantId: string,
   offertaId: string
 ): Promise<void> {
+  if (!isFirebaseAvailable()) {
+    console.warn("[recruiting] Firebase non disponibile - rimozione CreditCore saltata");
+    return;
+  }
+
   const db = getFirebaseFirestore();
   const docId = creditCoreOffertaDocId(tenantId, offertaId);
   await db.collection(COLLECTION).doc(docId).delete();
@@ -256,6 +267,22 @@ export async function getCreditCoreOfferteSnapshots(
 ): Promise<Record<string, CreditCoreOffertaSnapshot>> {
   const ids = [...new Set(offertaIds.map((id) => String(id || "").trim()).filter(Boolean))];
   if (!ids.length) return {};
+  
+  if (!isFirebaseAvailable()) {
+    // Firebase non configurato - ritorna mappa vuota (status unknown)
+    const out: Record<string, CreditCoreOffertaSnapshot> = {};
+    for (const id of ids) {
+      out[id] = {
+        status: "unknown",
+        online: false,
+        statusSource: "unknown",
+        statusActor: null,
+        statusChangedAt: null,
+      };
+    }
+    return out;
+  }
+
   try {
     const db = getFirebaseFirestore();
     const refs = ids.map((id) =>
@@ -352,3 +379,4 @@ export async function removeOffertaFromCreditCoreSafe(
     );
   }
 }
+

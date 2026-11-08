@@ -151,6 +151,34 @@ export async function praticaCercaScopeWhere(
   return { tenantId: user.tenantId };
 }
 
+/**
+ * Ambito pratiche per popup inbound (modello A: rete di sicurezza su mandati/perimetri gruppo).
+ * Con perimetri di gruppo configurati: tutte le pratiche del perimetro (anche non assegnate all’operatore).
+ * Altrimenti: stesso portafoglio di `praticaWhere` (operatore/supervisor).
+ */
+export function inboundScreenPopScopeFromContext(
+  user: SessionUser,
+  ctx: GruppoPerimetroContext
+): Prisma.PraticaWhereInput {
+  if (isManutenzione(user)) return nessunDatoWhere();
+  if (user.role !== "OPERATOR" && user.role !== "SUPERVISOR") {
+    return nessunDatoWhere();
+  }
+
+  const tenantScope: Prisma.PraticaWhereInput = { tenantId: user.tenantId };
+  if (ctx.nelGruppo && !ctx.nessunPerimetroGruppo && ctx.periScope) {
+    return { AND: [tenantScope, ctx.periScope] };
+  }
+  return praticaWhere(user);
+}
+
+export async function inboundScreenPopScopeWhere(
+  user: SessionUser
+): Promise<Prisma.PraticaWhereInput> {
+  const ctx = await resolveGruppoPerimetroContext(user);
+  return inboundScreenPopScopeFromContext(user, ctx);
+}
+
 export function gruppoPerimetroOptsFromContext(
   ctx: GruppoPerimetroContext
 ): GruppoPerimetroOpts | undefined {

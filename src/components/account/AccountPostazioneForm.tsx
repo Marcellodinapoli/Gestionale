@@ -1,14 +1,21 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Monitor } from "lucide-react";
 import { updateAccountPostazioneAction } from "@/actions/postazione";
+import { postazioneSchedaFromRow, type PostazioneSchedaView } from "@/lib/postazioniSchedaFields";
+import { PostazioneSchedaRiepilogo } from "@/components/account/PostazioneSchedaRiepilogo";
 
 type PostazioneItem = {
   id: string;
   nome: string;
   interno: string | null;
+  email: string | null;
+  numeroFisso: string | null;
+  numeroFax: string | null;
+  numeroWhatsapp: string | null;
+  note: string | null;
   sede: string | null;
   occupante: string | null;
 };
@@ -21,16 +28,36 @@ export function AccountPostazioneForm({
   postazioneFissa,
   showPostazioneFissa,
   postazioni,
+  internoPersonale,
+  allowChangePostazione = true,
+  dettaglioCorrente,
 }: {
   postazioneId: string | null;
   postazioneFissa: boolean;
   showPostazioneFissa: boolean;
   postazioni: PostazioneItem[];
+  internoPersonale?: string | null;
+  /** Falso per operatore/supervisore: nessuna tendina, solo riepilogo dati. */
+  allowChangePostazione?: boolean;
+  dettaglioCorrente?: PostazioneSchedaView | null;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [selectedId, setSelectedId] = useState(postazioneId || "");
+
+  useEffect(() => {
+    setSelectedId(postazioneId || "");
+  }, [postazioneId]);
+
+  const dettaglioSelezionato = useMemo(() => {
+    const p = postazioni.find((x) => x.id === selectedId);
+    return p ? postazioneSchedaFromRow(p) : null;
+  }, [postazioni, selectedId]);
+
+  const dettaglio =
+    allowChangePostazione ? dettaglioSelezionato : dettaglioCorrente ?? dettaglioSelezionato;
 
   function salva(formData: FormData) {
     setMsg(null);
@@ -46,37 +73,40 @@ export function AccountPostazioneForm({
     });
   }
 
-  return (
-    <form action={salva} className="flex flex-1 flex-col space-y-4 text-sm">
-      <label className="block">
-        <span className="text-xs font-semibold uppercase text-[var(--muted)]">Postazione</span>
-        <select
-          name="postazioneId"
-          defaultValue={postazioneId || ""}
-          className={inputCls}
-          required
-        >
-          <option value="" disabled>
-            Seleziona postazione
-          </option>
-          {postazioni.map((p) => {
-            const occupata = Boolean(p.occupante);
-            const corrente = p.id === postazioneId;
-            const disabled = occupata && !corrente;
-            return (
-              <option key={p.id} value={p.id} disabled={disabled}>
-                {p.nome}
-                {p.sede ? ` · ${p.sede}` : ""}
-                {p.interno ? ` · int. ${p.interno}` : ""}
-                {corrente ? " · Tu" : ""}
-                {occupata && !corrente ? ` (occupata da ${p.occupante})` : ""}
-              </option>
-            );
-          })}
-        </select>
-      </label>
+  const body = (
+    <>
+      {allowChangePostazione ? (
+        <label className="block">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">Postazione</span>
+          <select
+            name="postazioneId"
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            className={inputCls}
+            required
+          >
+            <option value="" disabled>
+              Seleziona postazione
+            </option>
+            {postazioni.map((p) => {
+              const occupata = Boolean(p.occupante);
+              const corrente = p.id === postazioneId;
+              const disabled = occupata && !corrente;
+              return (
+                <option key={p.id} value={p.id} disabled={disabled}>
+                  {p.nome}
+                  {p.sede ? ` · ${p.sede}` : ""}
+                  {p.interno ? ` · int. ${p.interno}` : ""}
+                  {corrente ? " · Tu" : ""}
+                  {occupata && !corrente ? ` (occupata da ${p.occupante})` : ""}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      ) : null}
 
-      {showPostazioneFissa ? (
+      {allowChangePostazione && showPostazioneFissa ? (
         <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[var(--line)] bg-[#f8fafc] px-3 py-2.5">
           <input
             type="checkbox"
@@ -94,22 +124,44 @@ export function AccountPostazioneForm({
         </label>
       ) : null}
 
-      <p className="flex-1 rounded-lg bg-[#f8fafc] px-3 py-2 text-xs leading-relaxed text-[var(--muted)]">
-        <Monitor className="mr-1 inline h-3.5 w-3.5 align-text-bottom" />
-        La postazione determina interno e email associati alla tua sessione di lavoro.
-      </p>
+      <PostazioneSchedaRiepilogo
+        dettaglio={dettaglio}
+        titolo="Dati postazione"
+        compact
+        internoPersonale={internoPersonale}
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="h-10 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1a365d] disabled:opacity-50"
-        >
-          {pending ? "Salvo…" : "Salva postazione"}
-        </button>
-        {msg ? <span className="text-xs font-semibold text-emerald-600">{msg}</span> : null}
-        {err ? <span className="text-xs font-semibold text-[var(--danger)]">{err}</span> : null}
-      </div>
+      {allowChangePostazione ? (
+        <p className="rounded-lg bg-[#f8fafc] px-3 py-2 text-xs leading-relaxed text-[var(--muted)]">
+          <Monitor className="mr-1 inline h-3.5 w-3.5 align-text-bottom" />
+          I valori sono quelli configurati in Gestione → Postazioni (interno, email, numero fisso,
+          note, …). Dopo il salvataggio aggiornano la sessione.
+        </p>
+      ) : null}
+
+      {allowChangePostazione ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={pending}
+            className="h-10 rounded-lg bg-[var(--navy)] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1a365d] disabled:opacity-50"
+          >
+            {pending ? "Salvo…" : "Salva postazione"}
+          </button>
+          {msg ? <span className="text-xs font-semibold text-emerald-600">{msg}</span> : null}
+          {err ? <span className="text-xs font-semibold text-[var(--danger)]">{err}</span> : null}
+        </div>
+      ) : null}
+    </>
+  );
+
+  if (!allowChangePostazione) {
+    return <div className="flex flex-1 flex-col space-y-4 text-sm">{body}</div>;
+  }
+
+  return (
+    <form action={salva} className="flex flex-1 flex-col space-y-4 text-sm">
+      {body}
     </form>
   );
 }

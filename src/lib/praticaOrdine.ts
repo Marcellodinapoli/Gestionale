@@ -1,5 +1,14 @@
 import type { Prisma } from "@prisma/client";
-import { praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
+import type { PraticaDbContext } from "@/lib/praticheRepo";
+import type { SortDir, SortField } from "@/lib/praticaSortFields";
+
+export type { SortDir, SortField } from "@/lib/praticaSortFields";
+export {
+  SORT_COLUMNS,
+  isUltimaLavorazioneSort,
+  parseDir,
+  parseSort,
+} from "@/lib/praticaSortFields";
 
 /** Ruoli le cui attività contano come lavorazione (note, SMS, e-mail, telefonate, …). */
 export const RUOLI_LAVORAZIONE = ["OPERATOR", "SUPERVISOR"] as const;
@@ -11,76 +20,6 @@ export const RUOLI_LAVORAZIONE = ["OPERATOR", "SUPERVISOR"] as const;
 export const attivitaLavorazioneWhere: Prisma.AttivitaWhereInput = {
   user: { role: { in: [...RUOLI_LAVORAZIONE] } },
 };
-
-export type SortField =
-  | "numero"
-  | "debitore"
-  | "cap"
-  | "citta"
-  | "prov"
-  | "telefono"
-  | "dataAffido"
-  | "scadenza"
-  | "scadenzaStragiud"
-  | "mandante"
-  | "lotto"
-  | "assegnatario"
-  | "codScarico"
-  | "affidoProvv"
-  | "stato"
-  | "esito"
-  | "ultimaLavorazione"
-  | "residuo"
-  | "importoRata"
-  | "rateScadute"
-  | "totIncassato"
-  | "importoTot"
-  | "cfPiva"
-  | "garante";
-
-export type SortDir = "asc" | "desc";
-
-export const SORT_COLUMNS: { key: SortField; label: string }[] = [
-  { key: "numero", label: "Numero" },
-  { key: "debitore", label: "Debitore" },
-  { key: "cap", label: "CAP" },
-  { key: "citta", label: "Città" },
-  { key: "prov", label: "Prov." },
-  { key: "telefono", label: "Telefono" },
-  { key: "dataAffido", label: "Data affido" },
-  { key: "scadenza", label: "Scad. mandato" },
-  { key: "scadenzaStragiud", label: "Scad. stragiud." },
-  { key: "mandante", label: "Mandante" },
-  { key: "lotto", label: "Perimetro" },
-  { key: "assegnatario", label: "Assegnatario" },
-  { key: "codScarico", label: "Cod. scarico" },
-  { key: "affidoProvv", label: "Aff. provv." },
-  { key: "stato", label: "Stato" },
-  { key: "esito", label: "Esito contatto" },
-  { key: "ultimaLavorazione", label: "Ultima lavorazione" },
-  { key: "residuo", label: "Residuo" },
-  { key: "importoRata", label: "Imp. rata" },
-  { key: "rateScadute", label: "Rate scad." },
-  { key: "totIncassato", label: "Tot. inc." },
-  { key: "importoTot", label: "Imp. tot." },
-  { key: "cfPiva", label: "C.F. / P.IVA" },
-  { key: "garante", label: "Garante" },
-];
-
-export function parseSort(raw?: string | null): SortField {
-  if (raw === "ultimoPagamento") return "ultimaLavorazione";
-  if (raw && SORT_COLUMNS.some((c) => c.key === raw)) return raw as SortField;
-  return "ultimaLavorazione";
-}
-
-export function parseDir(raw?: string | null, sort: SortField = "ultimaLavorazione"): SortDir {
-  if (raw === "asc" || raw === "desc") return raw;
-  return sort === "ultimaLavorazione" ? "asc" : "desc";
-}
-
-export function isUltimaLavorazioneSort(sort: SortField) {
-  return sort === "ultimaLavorazione";
-}
 
 export function buildOrderBy(
   sort: SortField,
@@ -128,15 +67,155 @@ export function buildOrderBy(
     case "totIncassato":
       return { incassi: { _count: dir } };
     case "importoTot":
-      return { capitale: dir };
+      return { nettoDaPagare: dir };
     case "cfPiva":
       return { debitore: { codiceFiscale: dir } };
     case "garante":
       return { garanti: { _count: dir } };
     case "ultimaLavorazione":
+    case "ultimaLavorazioneOra":
       return { ultimaLavorazioneAt: dir };
     default:
       return { numero: dir };
+  }
+}
+
+function sortDirFromPrisma(v: unknown): SortDir {
+  return v === "asc" ? "asc" : "desc";
+}
+
+function normalizePrismaOrderBy(orderBy: unknown): Record<string, unknown> | null {
+  if (Array.isArray(orderBy)) return normalizePrismaOrderBy(orderBy[0]);
+  if (!orderBy || typeof orderBy !== "object") return null;
+  return orderBy as Record<string, unknown>;
+}
+
+/** Inverso di `buildOrderBy` per elenco via Connector / Neon. */
+export function prismaOrderByToSort(
+  orderBy: unknown
+): { field: SortField; dir: SortDir } | undefined {
+  const ob = normalizePrismaOrderBy(orderBy);
+  if (!ob) return undefined;
+
+  if ("updatedAt" in ob) {
+    return { field: "ultimaLavorazione", dir: sortDirFromPrisma(ob.updatedAt) };
+  }
+  if ("numero" in ob) return { field: "numero", dir: sortDirFromPrisma(ob.numero) };
+  if ("ultimaLavorazioneAt" in ob) {
+    return {
+      field: "ultimaLavorazione",
+      dir: sortDirFromPrisma(ob.ultimaLavorazioneAt),
+    };
+  }
+  if ("dataAffido" in ob) return { field: "dataAffido", dir: sortDirFromPrisma(ob.dataAffido) };
+  if ("scadenza" in ob) return { field: "scadenza", dir: sortDirFromPrisma(ob.scadenza) };
+  if ("dataPassaggioGiudiziale" in ob) {
+    return { field: "scadenzaStragiud", dir: sortDirFromPrisma(ob.dataPassaggioGiudiziale) };
+  }
+  if ("numeroMandante" in ob) return { field: "lotto", dir: sortDirFromPrisma(ob.numeroMandante) };
+  if ("codiceScarico" in ob) return { field: "codScarico", dir: sortDirFromPrisma(ob.codiceScarico) };
+  if ("operatoreTitolareId" in ob) {
+    return { field: "affidoProvv", dir: sortDirFromPrisma(ob.operatoreTitolareId) };
+  }
+  if ("stato" in ob) return { field: "stato", dir: sortDirFromPrisma(ob.stato) };
+  if ("esitoContatto" in ob) return { field: "esito", dir: sortDirFromPrisma(ob.esitoContatto) };
+  if ("residuo" in ob) return { field: "residuo", dir: sortDirFromPrisma(ob.residuo) };
+  if ("nettoDaPagare" in ob) {
+    return { field: "importoTot", dir: sortDirFromPrisma(ob.nettoDaPagare) };
+  }
+  if ("capitale" in ob) return { field: "importoTot", dir: sortDirFromPrisma(ob.capitale) };
+
+  if ("debitore" in ob && ob.debitore && typeof ob.debitore === "object") {
+    const d = ob.debitore as Record<string, unknown>;
+    if ("cognome" in d) return { field: "debitore", dir: sortDirFromPrisma(d.cognome) };
+    if ("cap" in d) return { field: "cap", dir: sortDirFromPrisma(d.cap) };
+    if ("citta" in d) return { field: "citta", dir: sortDirFromPrisma(d.citta) };
+    if ("provincia" in d) return { field: "prov", dir: sortDirFromPrisma(d.provincia) };
+    if ("telefono" in d) return { field: "telefono", dir: sortDirFromPrisma(d.telefono) };
+    if ("codiceFiscale" in d) return { field: "cfPiva", dir: sortDirFromPrisma(d.codiceFiscale) };
+  }
+  if ("mandante" in ob && ob.mandante && typeof ob.mandante === "object") {
+    const m = ob.mandante as Record<string, unknown>;
+    if ("codice" in m) return { field: "mandante", dir: sortDirFromPrisma(m.codice) };
+  }
+  if ("assegnatario" in ob && ob.assegnatario && typeof ob.assegnatario === "object") {
+    const a = ob.assegnatario as Record<string, unknown>;
+    if ("name" in a) return { field: "assegnatario", dir: sortDirFromPrisma(a.name) };
+  }
+  if ("rate" in ob && ob.rate && typeof ob.rate === "object") {
+    const r = ob.rate as Record<string, unknown>;
+    if ("_count" in r) return { field: "importoRata", dir: sortDirFromPrisma(r._count) };
+  }
+  if ("incassi" in ob && ob.incassi && typeof ob.incassi === "object") {
+    const i = ob.incassi as Record<string, unknown>;
+    if ("_count" in i) return { field: "totIncassato", dir: sortDirFromPrisma(i._count) };
+  }
+  if ("garanti" in ob && ob.garanti && typeof ob.garanti === "object") {
+    const g = ob.garanti as Record<string, unknown>;
+    if ("_count" in g) return { field: "garante", dir: sortDirFromPrisma(g._count) };
+  }
+
+  return undefined;
+}
+
+/** ORDER BY SQL (Postgres / Neon) allineato a `buildOrderBy` e al Connector. */
+export function neonPraticheOrderBySql(sort?: { field: SortField; dir: SortDir }): string {
+  const dir = sort?.dir === "asc" ? "ASC" : "DESC";
+  const nulls = "NULLS LAST";
+  const tieNumero = `, p."Numero" ASC`;
+
+  switch (sort?.field) {
+    case "numero":
+      return `p."Numero" ${dir} ${nulls}`;
+    case "debitore":
+      return `d."Cognome" ${dir} ${nulls}, d."Nome" ${dir} ${nulls}${tieNumero}`;
+    case "cap":
+      return `d."Cap" ${dir} ${nulls}${tieNumero}`;
+    case "citta":
+      return `d."Citta" ${dir} ${nulls}${tieNumero}`;
+    case "prov":
+      return `d."Provincia" ${dir} ${nulls}${tieNumero}`;
+    case "telefono":
+      return `d."Telefono" ${dir} ${nulls}${tieNumero}`;
+    case "dataAffido":
+      return `p."DataAffido" ${dir} ${nulls}${tieNumero}`;
+    case "scadenza":
+      return `p."Scadenza" ${dir} ${nulls}${tieNumero}`;
+    case "scadenzaStragiud":
+      return `p."DataPassaggioGiudiziale" ${dir} ${nulls}${tieNumero}`;
+    case "mandante":
+      return `m."Codice" ${dir} ${nulls}${tieNumero}`;
+    case "lotto":
+      return `p."NumeroMandante" ${dir} ${nulls}${tieNumero}`;
+    case "assegnatario":
+      return `a."Name" ${dir} ${nulls}${tieNumero}`;
+    case "codScarico":
+      return `p."CodiceScarico" ${dir} ${nulls}${tieNumero}`;
+    case "affidoProvv":
+      return `p."OperatoreTitolareId" ${dir} ${nulls}${tieNumero}`;
+    case "stato":
+      return `p."Stato" ${dir} ${nulls}${tieNumero}`;
+    case "esito":
+      return `p."EsitoContatto" ${dir} ${nulls}${tieNumero}`;
+    case "residuo":
+      return `p."Residuo" ${dir} ${nulls}${tieNumero}`;
+    case "importoRata":
+      return `p."ImportoRata" ${dir} ${nulls}${tieNumero}`;
+    case "rateScadute":
+      return `p."RateArretrate" ${dir} ${nulls}${tieNumero}`;
+    case "totIncassato":
+      return `p."TotIncassato" ${dir} ${nulls}${tieNumero}`;
+    case "importoTot":
+      return `(COALESCE(p."NettoDaPagare", p."Residuo") - COALESCE(p."TotIncassato", 0)) ${dir} ${nulls}${tieNumero}`;
+    case "cfPiva":
+      return `d."CodiceFiscale" ${dir} ${nulls}${tieNumero}`;
+    case "garante":
+      return `(SELECT COUNT(*)::int FROM "Garanti" g WHERE g."PraticaId" = p."Id") ${dir} ${nulls}${tieNumero}`;
+    case "ultimaLavorazione":
+    case "ultimaLavorazioneOra":
+      return `p."UltimaLavorazioneAt" ${dir} ${nulls}${tieNumero}`;
+    default:
+      return `p."UltimaLavorazioneAt" ASC ${nulls}${tieNumero}`;
   }
 }
 
@@ -152,6 +231,7 @@ export async function orderPraticaIdsByUltimaLavorazione(
   skip = 0,
   take?: number
 ): Promise<string[]> {
+  const { praticaDb } = await import("@/lib/praticheRepo");
   const praticaModel = praticaDb(ctx);
   const rows = await praticaModel.findMany({
     where,

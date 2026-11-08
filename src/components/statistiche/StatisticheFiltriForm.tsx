@@ -3,9 +3,8 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import type { LottoPerimetroFiltro } from "@/lib/statisticheGruppoUi";
+import type { PerimetroLottiGruppoFiltro } from "@/lib/statisticheGruppoUi";
 import {
-  FILTRI_APPLY_BUTTON_CLASS,
   FILTRI_BAR_CONTAINER_CLASS,
   FILTRI_LOTTO_BOX_CLASS,
   FILTRI_PAGE_INPUT_CLASS,
@@ -15,109 +14,118 @@ import {
 
 export function StatisticheFiltriForm({
   mandanti,
-  lottiOpzioni,
-  affidoDa,
-  affidoA,
+  lottiPerPerimetro,
   mandanteId,
   lottiSelezionati,
-  gruppoId,
-  supervisori,
-  consentiTuttiGruppi = true,
-  searchActive = false,
+  grigliaAperta = false,
 }: {
   mandanti: Array<{ id: string; codice: string; ragioneSociale: string }>;
-  lottiOpzioni: LottoPerimetroFiltro[];
-  affidoDa: string;
-  affidoA: string;
+  lottiPerPerimetro: PerimetroLottiGruppoFiltro[];
   mandanteId?: string;
   lottiSelezionati: string[];
-  gruppoId?: string;
-  supervisori?: Array<{ id: string; name: string; gruppoNome: string | null }>;
-  consentiTuttiGruppi?: boolean;
-  /** Griglia già caricata (cerca=1). */
-  searchActive?: boolean;
+  /** Griglia visibile (lotto scelto). */
+  grigliaAperta?: boolean;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
-  const [lotti, setLotti] = useState<string[]>(lottiSelezionati);
+  const [mandanteCorrente, setMandanteCorrente] = useState(mandanteId ?? "");
 
-  const lottiQuery = lottiSelezionati.join(",");
   useEffect(() => {
-    setLotti(lottiQuery ? lottiQuery.split(",") : []);
-  }, [lottiQuery]);
+    setMandanteCorrente(mandanteId ?? "");
+  }, [mandanteId]);
 
-  function toggleLotto(value: string) {
-    setLotti((prev) =>
-      prev.includes(value) ? prev.filter((x) => x !== value) : [...prev, value]
-    );
-  }
-
-  const lottiValues = lottiOpzioni.map((o) => o.value);
   const sedeQs = sp.get("sede");
   const resetHref = sedeQs
     ? `/statistiche?sede=${encodeURIComponent(sedeQs)}`
     : "/statistiche";
 
-  function resetFiltri() {
-    setLotti([]);
-    router.push(resetHref);
+  function oggiIso() {
+    const n = new Date();
+    const y = n.getFullYear();
+    const m = String(n.getMonth() + 1).padStart(2, "0");
+    const d = String(n.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
 
+  function pushQuery(params: URLSearchParams) {
+    const qs = params.toString();
+    router.push(qs ? `/statistiche?${qs}` : resetHref);
+  }
+
+  function baseQueryParams() {
+    const qs = new URLSearchParams();
+    const keepSede = sp.get("sede");
+    if (keepSede) qs.set("sede", keepSede);
+    const gruppo = sp.get("gruppo");
+    if (gruppo) qs.set("gruppo", gruppo);
+    const vista = sp.get("vista");
+    if (vista) qs.set("vista", vista);
+    return qs;
+  }
+
+  function onMandanteChange(mandanteVal: string) {
+    setMandanteCorrente(mandanteVal);
+    if (!mandanteVal) {
+      router.push(resetHref);
+      return;
+    }
+    const qs = baseQueryParams();
+    qs.set("mandanteId", mandanteVal);
+    pushQuery(qs);
+  }
+
+  function onLottoClick(lottoValue: string) {
+    const mandato = mandanteId || mandanteCorrente;
+    if (!mandato) return;
+
+    const qs = baseQueryParams();
+    qs.set("mandanteId", mandato);
+
+    const giaAttivo =
+      lottiSelezionati.length === 1 && lottiSelezionati[0] === lottoValue;
+    if (giaAttivo) {
+      pushQuery(qs);
+      return;
+    }
+
+    const oggi = oggiIso();
+    qs.set("cerca", "1");
+    qs.set("lotto", lottoValue);
+    qs.set("affidoDa", oggi);
+    qs.set("affidoA", oggi);
+    pushQuery(qs);
+  }
+
+  const dataOraOggi = new Date().toLocaleString("it-IT", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
   return (
-    <form
-      className={`mb-3 space-y-2 ${FILTRI_BAR_CONTAINER_CLASS} bg-white`}
-      onSubmit={(e) => {
-        e.preventDefault();
-        const fd = new FormData(e.currentTarget);
-        const qs = new URLSearchParams();
-        qs.set("cerca", "1");
-        // Date sempre in URL: così il periodo scelto (anche default) attiva la griglia.
-        const da = String(fd.get("affidoDa") || "").trim() || affidoDa;
-        const a = String(fd.get("affidoA") || "").trim() || affidoA;
-        qs.set("affidoDa", da);
-        qs.set("affidoA", a);
-        for (const key of ["mandanteId", "gruppo"] as const) {
-          const val = String(fd.get(key) || "").trim();
-          if (val) qs.set(key, val);
-        }
-        const keepSede = sp.get("sede");
-        if (keepSede) qs.set("sede", keepSede);
-        const keep = sp.get("vista");
-        if (keep) qs.set("vista", keep);
-        if (lotti.length) qs.set("lotto", lotti.join(","));
-        router.push(`/statistiche?${qs.toString()}`);
-      }}
-    >
+    <div className={`mb-3 space-y-2 ${FILTRI_BAR_CONTAINER_CLASS} bg-white`}>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs">
-          <span className="mb-1 block font-semibold text-[var(--muted)]">Affido da</span>
+        <div className="text-xs">
+          <span className="mb-1 block font-semibold text-[var(--muted)]">
+            Data e ora
+          </span>
           <input
-            type="date"
-            name="affidoDa"
-            key={`affidoDa-${affidoDa}-${searchActive ? "1" : "0"}`}
-            defaultValue={affidoDa}
-            className={FILTRI_PAGE_INPUT_CLASS}
+            type="text"
+            readOnly
+            tabIndex={-1}
+            value={dataOraOggi}
+            className={`${FILTRI_PAGE_INPUT_CLASS} cursor-default bg-[#f5f7fa] text-[var(--navy)]`}
+            aria-readonly="true"
           />
-        </label>
-        <label className="text-xs">
-          <span className="mb-1 block font-semibold text-[var(--muted)]">Affido a</span>
-          <input
-            type="date"
-            name="affidoA"
-            key={`affidoA-${affidoA}-${searchActive ? "1" : "0"}`}
-            defaultValue={affidoA}
-            className={FILTRI_PAGE_INPUT_CLASS}
-          />
-        </label>
+        </div>
         <label className="text-xs">
           <span className="mb-1 block font-semibold text-[var(--muted)]">Mandato</span>
           <select
             name="mandanteId"
-            key={`mandante-${mandanteId || ""}-${searchActive ? "1" : "0"}`}
-            defaultValue={mandanteId || ""}
+            value={mandanteCorrente}
+            onChange={(e) => onMandanteChange(e.target.value)}
             className={`min-w-[140px] ${FILTRI_PAGE_SELECT_CLASS}`}
           >
-            <option value="">Tutti</option>
+            <option value="">Seleziona</option>
             {mandanti.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.codice}
@@ -125,31 +133,10 @@ export function StatisticheFiltriForm({
             ))}
           </select>
         </label>
-        {supervisori && supervisori.length > 0 && (
-          <label className="text-xs">
-            <span className="mb-1 block font-semibold text-[var(--muted)]">Gruppo</span>
-            <select
-              name="gruppo"
-              key={`gruppo-${gruppoId || ""}-${searchActive ? "1" : "0"}`}
-              defaultValue={gruppoId || ""}
-              className={`min-w-[160px] ${FILTRI_PAGE_SELECT_CLASS}`}
-            >
-              <option value="">{consentiTuttiGruppi ? "Tutti i gruppi" : "Seleziona gruppo"}</option>
-              {supervisori.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.gruppoNome || s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <button type="submit" className={FILTRI_APPLY_BUTTON_CLASS}>
-          Filtra
-        </button>
-        {searchActive ? (
+        {mandanteId || grigliaAperta ? (
           <button
             type="button"
-            onClick={resetFiltri}
+            onClick={() => router.push(resetHref)}
             className={FILTRI_RESET_BUTTON_CLASS}
           >
             Reset
@@ -157,57 +144,59 @@ export function StatisticheFiltriForm({
         ) : null}
       </div>
 
-      <div className="text-xs">
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-semibold text-[var(--muted)]">
-            Perimetri {lotti.length ? `(${lotti.length} selezionati)` : "(tutti)"}
-          </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="text-[var(--accent)] hover:underline"
-              onClick={() => setLotti([...lottiValues])}
-            >
-              Seleziona tutti
-            </button>
-            <button
-              type="button"
-              className="text-[var(--muted)] hover:underline"
-              onClick={() => setLotti([])}
-            >
-              Nessuno (= tutti)
-            </button>
+      {mandanteId ? (
+        <div className="text-xs">
+          <div className="mb-1 font-semibold text-[var(--muted)]">
+            Perimetri e lotti in lavorazione
+            {lottiSelezionati.length === 1
+              ? ` · lotto ${lottiSelezionati[0]}`
+              : ""}
           </div>
-        </div>
-        <div className={`flex max-h-28 flex-wrap gap-1.5 overflow-y-auto ${FILTRI_LOTTO_BOX_CLASS}`}>
-          {lottiOpzioni.length ? (
-            lottiOpzioni.map((opt) => {
-              const on = lotti.includes(opt.value);
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  title={opt.title}
-                  onClick={() => toggleLotto(opt.value)}
-                  className={`rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${
-                    on
-                      ? "border-[var(--navy)] bg-[var(--navy)] text-white"
-                      : "border-[var(--line)] bg-white text-[var(--navy)] hover:bg-[#eef4f8]"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })
+          {lottiPerPerimetro.length ? (
+            <div
+              className={`max-h-40 space-y-2 overflow-y-auto ${FILTRI_LOTTO_BOX_CLASS}`}
+            >
+              {lottiPerPerimetro.map((gruppo) => (
+                <div key={gruppo.acronimo}>
+                  <div className="mb-1 font-semibold tracking-wide text-[var(--navy)]">
+                    {gruppo.acronimo}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pl-0.5">
+                    {gruppo.lotti.map((lotto) => {
+                      const on =
+                        lottiSelezionati.length === 1 &&
+                        lottiSelezionati[0] === lotto.value;
+                      return (
+                        <button
+                          key={lotto.value}
+                          type="button"
+                          title={`Apri statistiche lotto ${lotto.value}`}
+                          onClick={() => onLottoClick(lotto.value)}
+                          className={`rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${
+                            on
+                              ? "border-[var(--navy)] bg-[var(--navy)] text-white"
+                              : "border-[var(--line)] bg-white text-[var(--navy)] hover:bg-[#eef4f8]"
+                          }`}
+                        >
+                          {lotto.value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
-            <span className="text-[var(--muted)]">Nessun perimetro nel periodo.</span>
+            <span className="text-[var(--muted)]">
+              Nessun lotto in lavorazione oggi per questo mandato.
+            </span>
           )}
+          <p className="mt-1 text-[10px] text-[var(--muted)]">
+            Clicca un <strong>lotto</strong> per aprire la griglia delle statistiche (giornata
+            corrente). Clic di nuovo sul lotto attivo per chiudere la griglia.
+          </p>
         </div>
-        <p className="mt-1 text-[10px] text-[var(--muted)]">
-          Solo perimetri in lavorazione (esclusi chiusi). Ogni perimetro ha una tabella
-          separata. Premi Filtra per caricare le griglie.
-        </p>
-      </div>
-    </form>
+      ) : null}
+    </div>
   );
 }

@@ -18,6 +18,14 @@ export default async function AppLayout({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const { ensureDeaffidoStragiudizialeScaduto } = await import(
+    "@/lib/affido/deaffidoScadenzaStragiudiziale"
+  );
+  const { resolveTenantSlug } = await import("@/lib/praticheRepo");
+  await ensureDeaffidoStragiudizialeScaduto({
+    tenantId: user.tenantId,
+    tenantSlug: resolveTenantSlug(user),
+  });
   if (await isCurrentUserPasswordExpired()) {
     redirect("/cambia-password");
   }
@@ -37,7 +45,12 @@ export default async function AppLayout({
   if (needsSedi) {
     redirect("/setup-sedi");
   }
-  if (mustChoosePostazioneAlLogin(user) && !(await hasPostazioneSkip())) {
+  const { tenantSkipsPostazione } = await import("@/lib/platform/formazioneProduct");
+  if (
+    mustChoosePostazioneAlLogin(user) &&
+    !tenantSkipsPostazione(platform.enabledModules) &&
+    !(await hasPostazioneSkip())
+  ) {
     redirect("/seleziona-postazione");
   }
   const awaiting = isAwaitingSectionActivation(platform.enabledModules);

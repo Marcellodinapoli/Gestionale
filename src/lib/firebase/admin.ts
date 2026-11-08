@@ -4,6 +4,14 @@ import { firebaseConfig } from "./config";
 
 let initialized = false;
 
+function normalizeServiceAccount(parsed: Record<string, unknown>): Record<string, unknown> {
+  const key = parsed.private_key;
+  if (typeof key === "string" && key.includes("\\n")) {
+    parsed.private_key = key.replace(/\\n/g, "\n");
+  }
+  return parsed;
+}
+
 function parseInlineServiceAccount(raw: string): Record<string, unknown> {
   const trimmed = raw.trim().replace(/^\uFEFF/, "");
   const candidates = [trimmed];
@@ -27,12 +35,7 @@ function parseInlineServiceAccount(raw: string): Record<string, unknown> {
 
   for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse(candidate) as Record<string, unknown>;
-      const key = parsed.private_key;
-      if (typeof key === "string" && key.includes("\\n")) {
-        parsed.private_key = key.replace(/\\n/g, "\n");
-      }
-      return parsed;
+      return normalizeServiceAccount(JSON.parse(candidate) as Record<string, unknown>);
     } catch {
       /* prova il candidato successivo */
     }
@@ -54,7 +57,9 @@ function loadServiceAccount(): Record<string, unknown> {
   if (filePath) {
     const absolute = resolve(/*turbopackIgnore: true*/ process.cwd(), filePath);
     try {
-      return JSON.parse(readFileSync(absolute, "utf8")) as Record<string, unknown>;
+      return normalizeServiceAccount(
+        JSON.parse(readFileSync(absolute, "utf8")) as Record<string, unknown>
+      );
     } catch {
       throw new Error(
         `Impossibile leggere il service account Firebase: ${absolute}`
@@ -77,9 +82,14 @@ function ensureFirebaseAdmin() {
     return;
   }
 
+  const serviceAccount = loadServiceAccount();
+  const projectId =
+    typeof serviceAccount.project_id === "string" && serviceAccount.project_id
+      ? serviceAccount.project_id
+      : firebaseConfig.projectId;
   initializeApp({
-    credential: cert(loadServiceAccount()),
-    projectId: firebaseConfig.projectId,
+    credential: cert(serviceAccount),
+    projectId,
   });
   initialized = true;
 }

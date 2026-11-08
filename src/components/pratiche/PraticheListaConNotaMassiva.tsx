@@ -5,44 +5,21 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addAttivitaMassivaAction } from "@/actions/core";
-import { StatoBadge } from "@/components/ui";
 import {
   CheckboxSelezione,
   useSelezionePratiche,
 } from "@/components/affidi/affidoSelezione";
 import { useReportPraticheSelezione } from "@/components/pratiche/PraticheConteggi";
+import type { PraticaListaRow } from "@/lib/praticheListaRow";
+import {
+  PRATICHE_LISTA_COLS,
+  PraticheListaColgroup,
+  praticheListaCell,
+  praticheListaStickyClass,
+  praticheListaTableMinWidth,
+} from "@/components/pratiche/praticheListaCells";
 
-export type PraticaListaRow = {
-  id: string;
-  numero: string;
-  stato: string;
-  residuoLabel: string;
-  esitoLabel: string;
-  ultimaLavorazioneLabel: string;
-  debitoreNome: string;
-  debitoreTelefono: string | null;
-  debitoreCap: string | null;
-  debitoreCitta: string | null;
-  debitoreProv: string | null;
-  debitoreCf: string | null;
-  mandanteCodice: string;
-  assegnatarioNome: string | null;
-  lotto: string | null;
-  dataAffidoLabel: string;
-  scadenzaLabel: string;
-  /** Scadenza stragiudiziale effettiva (passaggio o mandato). */
-  scadenzaStragiudizialeLabel: string;
-  /** True se entro 10 gg lav. o già scaduta (non chiusa). */
-  preavvisoStragiudiziale?: boolean;
-  codScarico: string | null;
-  affidoProvvisorio: boolean;
-  importoRataLabel: string;
-  rateScaduteLabel: string;
-  totIncassatoLabel: string;
-  importoTotaleLabel: string;
-  garanteLabel: string;
-  href: string;
-};
+export type { PraticaListaRow };
 
 type SortCol = {
   key: string;
@@ -52,106 +29,8 @@ type SortCol = {
   arrow: string;
 };
 
-/** Colonne lista: intestazione ordinabile. */
-const LIST_COLS = [
-  { key: "debitore", label: "Debitore", sortKey: "debitore" },
-  { key: "numero", label: "Numero", sortKey: "numero" },
-  { key: "cap", label: "CAP", sortKey: "cap" },
-  { key: "citta", label: "Città", sortKey: "citta" },
-  { key: "prov", label: "Prov.", sortKey: "prov" },
-  { key: "telefono", label: "Telefono", sortKey: "telefono" },
-  { key: "dataAffido", label: "Data affido", sortKey: "dataAffido" },
-  { key: "scadenza", label: "Scad. mandato", sortKey: "scadenza" },
-  { key: "scadenzaStragiud", label: "Scad. stragiud.", sortKey: "scadenzaStragiud" },
-  { key: "mandante", label: "Mandante", sortKey: "mandante" },
-  { key: "lotto", label: "Perimetro", sortKey: "lotto" },
-  { key: "assegnatario", label: "Assegnatario", sortKey: "assegnatario" },
-  { key: "codScarico", label: "Cod. scarico", sortKey: "codScarico" },
-  { key: "affidoProvv", label: "Aff. provv.", sortKey: "affidoProvv" },
-  { key: "stato", label: "Stato", sortKey: "stato" },
-  { key: "esito", label: "Esito contatto", sortKey: "esito" },
-  { key: "ultimaLavorazione", label: "Ultima lavorazione", sortKey: "ultimaLavorazione" },
-  { key: "residuo", label: "Residuo", sortKey: "residuo" },
-  { key: "importoRata", label: "Imp. rata", sortKey: "importoRata" },
-  { key: "rateScadute", label: "Rate scad.", sortKey: "rateScadute" },
-  { key: "totIncassato", label: "Tot. inc.", sortKey: "totIncassato" },
-  { key: "importoTot", label: "Imp. tot.", sortKey: "importoTot" },
-  { key: "cfPiva", label: "C.F. / P.IVA", sortKey: "cfPiva" },
-  { key: "garante", label: "Garante", sortKey: "garante" },
-] as const;
-
+const LIST_COLS = PRATICHE_LISTA_COLS;
 type ColKey = (typeof LIST_COLS)[number]["key"];
-
-function cellData(p: PraticaListaRow, key: ColKey): ReactNode {
-  switch (key) {
-    case "numero":
-      return (
-        <Link className="text-[var(--accent)] underline" href={p.href}>
-          {p.numero}
-        </Link>
-      );
-    case "debitore":
-      return p.debitoreNome;
-    case "cap":
-      return p.debitoreCap || "—";
-    case "citta":
-      return p.debitoreCitta || "—";
-    case "prov":
-      return p.debitoreProv || "—";
-    case "telefono":
-      return p.debitoreTelefono || "—";
-    case "dataAffido":
-      return p.dataAffidoLabel;
-    case "scadenza":
-      return p.scadenzaLabel;
-    case "scadenzaStragiud":
-      return (
-        <span
-          className={
-            p.preavvisoStragiudiziale
-              ? "font-semibold text-amber-800"
-              : undefined
-          }
-        >
-          {p.scadenzaStragiudizialeLabel}
-        </span>
-      );
-    case "mandante":
-      return p.mandanteCodice;
-    case "lotto":
-      return p.lotto || "—";
-    case "assegnatario":
-      return p.assegnatarioNome || "—";
-    case "codScarico":
-      return p.codScarico || "—";
-    case "affidoProvv":
-      return p.affidoProvvisorio ? "Sì" : "—";
-    case "stato":
-      return <StatoBadge stato={p.stato} />;
-    case "esito":
-      return p.esitoLabel;
-    case "ultimaLavorazione":
-      return (
-        <span className="whitespace-nowrap tabular-nums">{p.ultimaLavorazioneLabel}</span>
-      );
-    case "residuo":
-      return p.residuoLabel;
-    case "importoRata":
-      return p.importoRataLabel;
-    case "rateScadute":
-      return p.rateScaduteLabel;
-    case "totIncassato":
-      return p.totIncassatoLabel;
-    case "importoTot":
-      return p.importoTotaleLabel;
-    case "cfPiva":
-      return p.debitoreCf || "—";
-    case "garante":
-      return p.garanteLabel;
-    default:
-      return "—";
-  }
-}
 
 export function PraticheListaConNotaMassiva({
   pratiche,
@@ -334,12 +213,15 @@ export function PraticheListaConNotaMassiva({
         >
           <table
             className="min-w-max border-collapse text-sm"
-            style={{ minWidth: `${Math.max(1400, LIST_COLS.length * 120 + 120)}px` }}
+            style={{
+              minWidth: `${praticheListaTableMinWidth(canNotaMassiva ? 120 : 0)}px`,
+            }}
           >
+            <PraticheListaColgroup hasLeadingCol={canNotaMassiva} />
             <thead className="bg-[#e8eef4] text-left text-[var(--navy)]">
               <tr>
                 {canNotaMassiva ? (
-                  <th className="sticky left-0 z-[1] w-10 bg-[#e8eef4] px-3 py-2.5 align-middle">
+                  <th className="sticky left-0 z-[4] w-10 min-w-10 max-w-10 bg-[#e8eef4] px-3 py-2.5 align-middle">
                     <CheckboxSelezione
                       inputRef={allRef}
                       checked={allChecked}
@@ -350,16 +232,14 @@ export function PraticheListaConNotaMassiva({
                 ) : null}
                 {LIST_COLS.map((col) => {
                   const sort = sortByKey.get(col.sortKey);
-                  const stickyDebitore =
-                    col.key === "debitore"
-                      ? `sticky z-[1] bg-[#e8eef4] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] ${
-                          canNotaMassiva ? "left-10" : "left-0"
-                        }`
-                      : "";
+                  const sticky = praticheListaStickyClass(col.key, {
+                    hasLeadingCol: canNotaMassiva,
+                    surface: "header",
+                  });
                   return (
                     <th
                       key={col.key}
-                      className={`whitespace-nowrap px-2 py-2.5 align-middle ${stickyDebitore}`}
+                      className={`whitespace-nowrap px-2 py-2.5 align-middle ${sticky}`}
                     >
                       {sort ? (
                         <Link
@@ -394,7 +274,7 @@ export function PraticheListaConNotaMassiva({
                   >
                     {canNotaMassiva ? (
                       <td
-                        className={`sticky left-0 z-[1] px-3 py-2 ${
+                        className={`sticky left-0 z-[4] w-10 min-w-10 max-w-10 px-3 py-2 ${
                           isSelected ? "bg-[#eef4f8]" : "bg-white"
                         }`}
                       >
@@ -406,18 +286,17 @@ export function PraticheListaConNotaMassiva({
                       </td>
                     ) : null}
                     {LIST_COLS.map((col) => {
-                      const stickyDebitore =
-                        col.key === "debitore"
-                          ? `sticky z-[1] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] ${
-                              canNotaMassiva ? "left-10" : "left-0"
-                            } ${isSelected ? "bg-[#eef4f8]" : "bg-white"}`
-                          : "";
+                      const sticky = praticheListaStickyClass(col.key, {
+                        hasLeadingCol: canNotaMassiva,
+                        surface: "body",
+                        rowSelected: isSelected,
+                      });
                       return (
                         <td
                           key={col.key}
-                          className={`px-2 py-2 text-xs whitespace-nowrap ${stickyDebitore}`}
+                          className={`px-2 py-2 text-xs whitespace-nowrap ${sticky}`}
                         >
-                          {cellData(p, col.key)}
+                          {praticheListaCell(p, col.key)}
                         </td>
                       );
                     })}

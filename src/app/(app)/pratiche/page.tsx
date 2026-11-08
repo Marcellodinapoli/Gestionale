@@ -4,14 +4,13 @@ import { mandantiDbFromUser } from "@/lib/mandantiRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { praticaDbFromUser, idsAffidoTemporaneoForTenant, idsImportoTotaleForTenant, idsTotIncassatoForTenant, praticaDb, type PraticaDbContext } from "@/lib/praticheRepo";
 import { requireNavPage } from "@/lib/guard";
-import { euro, dataIt } from "@/lib/domain";
+import { euro } from "@/lib/domain";
 import {
   filtraIdsPraticaScope,
   praticaCercaScopeWhere,
   praticaScopeWhere,
   resolveGruppoPerimetroContext,
 } from "@/lib/gruppoPerimetroScope";
-import { esitoContattoLabel } from "@/lib/contatto";
 import {
   buildPraticaCodaHref,
   codaFiltroWhere,
@@ -43,28 +42,29 @@ import {
 import { PraticheFiltriBar } from "@/components/pratiche/PraticheFiltriBar";
 import { PraticheListaConNotaMassiva } from "@/components/pratiche/PraticheListaConNotaMassiva";
 import { PraticheFiltriAttiviRiepilogo } from "@/components/pratiche/PraticheFiltriAttiviRiepilogo";
+import { PraticheRiepilogoCodiciScaricoBar } from "@/components/pratiche/PraticheRiepilogoCodiciScaricoBar";
 import {
   PraticheConteggiProvider,
   PraticheConteggiSubtitle,
 } from "@/components/pratiche/PraticheConteggi";
 import { can } from "@/lib/permissions";
-import { isAffidoTemporaneo } from "@/lib/affido";
-import { codiceScaricoPratica } from "@/lib/scarico";
-import { countRateScadute } from "@/lib/rate";
 import { parseFiltroSrc } from "@/lib/filtroVeloceEsclusivo";
 import {
   canUseOperatoreFiltro,
   memberIdsOperatoreFiltro,
 } from "@/lib/filtriOperatore";
 import {
-  statoOperativoPratica,
-} from "@/lib/statoOperativoPratica";
+  aggregaCodiciScaricoPratiche,
+  shouldShowPraticheRiepilogoCodiciScarico,
+} from "@/lib/praticheRiepilogoCodiciScarico";
 import {
   PREAVVISO_STRAGIUDIZIALE_PARAM,
-  isPreavvisoStragiudiziale,
-  scadenzaStragiudizialeEffettiva,
   wherePreavvisoStragiudiziale,
 } from "@/lib/scadenzaStragiudiziale";
+import {
+  mapPraticaEntityToListaRow,
+  praticaListaInclude,
+} from "@/lib/praticheListaRow";
 import {
   ATTIVITA_GIUDIZIALE_PARAM,
   whereAttivitaGiudiziale,
@@ -306,35 +306,29 @@ export default async function PratichePage({
     ],
   };
 
-  const include = {
-    debitore: {
-      select: {
-        nome: true,
-        cognome: true,
-        telefono: true,
-        cap: true,
-        citta: true,
-        provincia: true,
-        codiceFiscale: true,
-      },
-    },
-    mandante: { select: { codice: true } },
-    assegnatario: { select: { name: true } },
-    rate: {
-      orderBy: { numeroRata: "asc" as const },
-      select: { importo: true, pagata: true, scadenza: true },
-    },
-    incassi: { select: { importo: true } },
-    garanti: {
-      orderBy: { ordine: "asc" as const },
-      take: 1,
-      select: { nome: true, cognome: true },
-    },
-  };
+  const include = praticaListaInclude;
 
   const canNotaMassiva = can(user, "pratiche:nota-massiva");
 
   const total = showElenco ? await praticaQuery.count({ where }) : 0;
+
+  const mostraRiepilogoCodiciScarico = shouldShowPraticheRiepilogoCodiciScarico({
+    showElenco,
+    ricercaAnagrafica,
+    role: user.role,
+    operatore: altri?.operatore,
+  });
+
+  const riepilogoCodiciScarico = mostraRiepilogoCodiciScarico && total > 0
+    ? aggregaCodiciScaricoPratiche(
+        await praticaQuery.findMany({
+          where,
+          select: { stato: true, codiceScarico: true },
+          take: total,
+        })
+      )
+    : [];
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const safeSkip = (safePage - 1) * pageSize;
@@ -404,56 +398,13 @@ export default async function PratichePage({
     };
   });
 
-  const praticheRows = pratiche.map((p) => {
-    const totInc = p.incassi.reduce((s, i) => s + (i.importo || 0), 0);
-    const impTot = (p.capitale || 0) + (p.interessi || 0) + (p.spese || 0);
-    const g = p.garanti[0];
-    const primaRataAperta = p.rate.find((r) => !r.pagata);
-    const nRateScadute = countRateScadute(p.rate);
-    const scadStrag = scadenzaStragiudizialeEffettiva({
-      scadenza: p.scadenza,
-      dataPassaggioGiudiziale: p.dataPassaggioGiudiziale,
-      conferimentoTipo: p.conferimentoTipo,
-    });
-    return {
-      id: p.id,
-      numero: p.numero,
-      stato: statoOperativoPratica({
-        stato: p.stato,
-        assegnatarioId: p.assegnatarioId,
-        scadenza: p.scadenza,
-        codiceScaricoBk: p.codiceScaricoBk,
-      }),
-      residuoLabel: euro(p.residuo),
-      esitoLabel: esitoContattoLabel(p.esitoContatto),
-      ultimaLavorazioneLabel: dataIt(p.ultimaLavorazioneAt ?? null),
-      debitoreNome: `${p.debitore.cognome} ${p.debitore.nome}`.trim(),
-      debitoreTelefono: p.debitore.telefono,
-      debitoreCap: p.debitore.cap,
-      debitoreCitta: p.debitore.citta,
-      debitoreProv: p.debitore.provincia,
-      debitoreCf: p.debitore.codiceFiscale,
-      mandanteCodice: p.mandante.codice,
-      assegnatarioNome: p.assegnatario?.name ?? null,
-      lotto: p.numeroMandante,
-      dataAffidoLabel: dataIt(p.dataAffido),
-      scadenzaLabel: dataIt(p.scadenza),
-      scadenzaStragiudizialeLabel: dataIt(scadStrag),
-      preavvisoStragiudiziale: isPreavvisoStragiudiziale(scadStrag),
-      codScarico: codiceScaricoPratica(p.stato, p.codiceScarico),
-      affidoProvvisorio: isAffidoTemporaneo(p),
-      importoRataLabel: primaRataAperta ? euro(primaRataAperta.importo) : "—",
-      rateScaduteLabel: nRateScadute > 0 ? String(nRateScadute) : "—",
-      totIncassatoLabel: euro(totInc),
-      importoTotaleLabel: euro(impTot),
-      garanteLabel: g ? `${g.cognome} ${g.nome}`.trim() : "—",
-      href: buildPraticaCodaHref(p.id, codaNavPagina, pageIds),
-    };
-  });
+  const praticheRows = pratiche.map((p) =>
+    mapPraticaEntityToListaRow(p, buildPraticaCodaHref(p.id, codaNavPagina, pageIds))
+  );
 
   return (
     <PraticheConteggiProvider totale={total}>
-    <div className="flex h-full min-h-0 flex-col pb-4">
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Pratiche"
         subtitle={
@@ -529,6 +480,9 @@ export default async function PratichePage({
             mandanti={mandantiList}
           />
         </div>
+      ) : null}
+      {mostraRiepilogoCodiciScarico ? (
+        <PraticheRiepilogoCodiciScaricoBar righe={riepilogoCodiciScarico} totale={total} />
       ) : null}
       {!showElenco ? (
         <div className="mt-4 rounded-xl border border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">

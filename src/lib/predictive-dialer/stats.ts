@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { dialerDb, dialerDbForTenant } from "@/lib/dialerRepo";
 import { getPredictiveDialerService } from "@/lib/predictive-dialer/service/factory";
 import type { DialerCampagnaStatsDto, DialerMonitorOperatoreDto } from "@/lib/predictive-dialer/types";
 import type { DialerSessioneStato } from "@/lib/predictive-dialer/constants";
@@ -15,7 +15,7 @@ function isPraticaToccata(stato: string, tentativi: number): boolean {
 }
 
 async function loadPraticheParlatePerOperatore(campagnaId: string): Promise<Map<string, number>> {
-  const rows = await prisma.dialerChiamataEvento.findMany({
+  const rows = await dialerDb().dialerChiamataEvento.findMany({
     where: { campagnaId, tipo: "collegata", applied: true, operatoreId: { not: null }, praticaId: { not: null } },
     select: { operatoreId: true, praticaId: true },
   });
@@ -36,7 +36,7 @@ export async function loadCampagnaStats(
   campagnaId: string
 ): Promise<DialerCampagnaStatsDto> {
   const [pratiche, eventi, operatori, campagna] = await Promise.all([
-    prisma.dialerCampagnaPratica.findMany({
+    dialerDbForTenant(tenantId).dialerCampagnaPratica.findMany({
       where: { campagnaId },
       include: {
         pratica: {
@@ -47,15 +47,15 @@ export async function loadCampagnaStats(
         },
       },
     }),
-    prisma.dialerChiamataEvento.findMany({
+    dialerDbForTenant(tenantId).dialerChiamataEvento.findMany({
       where: { campagnaId },
       select: { tipo: true, esito: true, praticaId: true },
     }),
-    prisma.dialerCampagnaOperatore.findMany({
+    dialerDbForTenant(tenantId).dialerCampagnaOperatore.findMany({
       where: { campagnaId },
       select: { sessioneStato: true },
     }),
-    prisma.dialerCampagna.findFirst({ where: { id: campagnaId, tenantId } }),
+    dialerDbForTenant(tenantId).dialerCampagna.findFirst({ where: { id: campagnaId, tenantId } }),
   ]);
 
   const praticheTotali = pratiche.length;
@@ -194,7 +194,7 @@ export async function loadMonitorOperatori(
 ): Promise<DialerMonitorOperatoreDto[]> {
   const ratio = normalizePacingRatio(pacingRatio ?? undefined);
   const [rows, parlateMap] = await Promise.all([
-    prisma.dialerCampagnaOperatore.findMany({
+    dialerDb().dialerCampagnaOperatore.findMany({
       where: { campagnaId, accettatoAt: { not: null } },
       include: { operatore: { select: { name: true } } },
       orderBy: { operatore: { name: "asc" } },

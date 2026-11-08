@@ -16,7 +16,7 @@ function filterSql(
   startIdx = 1
 ): { sql: string; params: unknown[]; next: number; join: string } {
   if (filter?.none) {
-    return { sql: " AND 1 = 0", params: [tenantId], next: startIdx + 1, join: "" };
+    return { sql: " WHERE 1 = 0", params: [], next: startIdx, join: "" };
   }
   const parts: string[] = [`pv."TenantId" = $${startIdx}::uuid`];
   const params: unknown[] = [tenantId];
@@ -56,7 +56,16 @@ function filterSql(
     params.push(filter.createdAtLte);
   }
 
-  if (filter?.incassoDataGte || filter?.incassoDataLte) {
+  if (filter?.meseCompetenzaOrGte && filter?.meseCompetenzaOrLte) {
+    join += ` INNER JOIN "Incassi" inc ON inc."Id" = pv."IncassoId" `;
+    const gte = filter.meseCompetenzaOrGte;
+    const lte = filter.meseCompetenzaOrLte;
+    parts.push(
+      `((inc."Data" >= $${i}::timestamptz AND inc."Data" <= $${i + 1}::timestamptz) OR (pv."CreatedAt" >= $${i}::timestamptz AND pv."CreatedAt" <= $${i + 1}::timestamptz))`
+    );
+    params.push(gte, lte);
+    i += 2;
+  } else if (filter?.incassoDataGte || filter?.incassoDataLte) {
     join += ` INNER JOIN "Incassi" inc ON inc."Id" = pv."IncassoId" `;
     if (filter.incassoDataGte) {
       parts.push(`inc."Data" >= $${i++}::timestamptz`);
@@ -71,8 +80,13 @@ function filterSql(
   if (filter?.operatoreSedeId || filter?.operatoreOrSupervisorId) {
     join += ` INNER JOIN "Users" u ON u."Id" = pv."OperatoreId" `;
     if (filter.operatoreSedeId) {
-      parts.push(`u."SedeId" = $${i++}::uuid`);
-      params.push(filter.operatoreSedeId);
+      const sede = filter.operatoreSedeId;
+      if (sede === "__no-sede__" || sede === "__nessuna__") {
+        parts.push("FALSE");
+      } else {
+        parts.push(`u."SedeId" = $${i++}::uuid`);
+        params.push(sede);
+      }
     }
     if (filter.operatoreOrSupervisorId) {
       parts.push(`(u."Id" = $${i}::uuid OR u."SupervisorId" = $${i}::uuid)`);
@@ -84,6 +98,7 @@ function filterSql(
   const needsPratica =
     filter?.praticaMandanteId ||
     filter?.praticaNumeroMandante ||
+    filter?.praticaNumeriMandanteIn?.length ||
     filter?.praticaNumeroMandanteNull ||
     filter?.perimetroOr?.length;
   if (needsPratica) {
@@ -95,6 +110,10 @@ function filterSql(
     if (filter?.praticaNumeroMandante) {
       parts.push(`p."NumeroMandante" = $${i++}`);
       params.push(filter.praticaNumeroMandante);
+    }
+    if (filter?.praticaNumeriMandanteIn?.length) {
+      parts.push(`p."NumeroMandante" = ANY($${i++}::text[])`);
+      params.push(filter.praticaNumeriMandanteIn);
     }
     if (filter?.praticaNumeroMandanteNull) {
       parts.push(`(p."NumeroMandante" IS NULL OR p."NumeroMandante" = '')`);

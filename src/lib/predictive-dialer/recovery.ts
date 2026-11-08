@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";import {
+import { dialerDb } from "@/lib/dialerRepo";import {
   DIALER_DEFAULT_LOCK_TIMEOUT_SEC,
   DIALER_EVENTI_CONCLUSIVI,
   DIALER_SESSION_HEARTBEAT_TIMEOUT_SEC,
@@ -13,7 +13,7 @@ import type { SessionUser } from "@/lib/permissions";
 
 async function hasConclusiveEventForCall(campagnaId: string, callId: string): Promise<boolean> {
   if (!callId) return false;
-  const count = await prisma.dialerChiamataEvento.count({
+  const count = await dialerDb().dialerChiamataEvento.count({
     where: {
       campagnaId,
       callId,
@@ -27,7 +27,7 @@ async function hasConclusiveEventForCall(campagnaId: string, callId: string): Pr
 /** Rilascia lock pratica scaduti (webhook persi / nessun evento conclusivo). Idempotente. */
 export async function releaseExpiredPraticaLocks(tenantId: string, campagnaId?: string) {
   const now = Date.now();
-  const rows = await prisma.dialerCampagnaPratica.findMany({
+  const rows = await dialerDb().dialerCampagnaPratica.findMany({
     where: {
       stato: "in_lavorazione",
       lockedAt: { not: null },
@@ -58,7 +58,7 @@ export async function releaseExpiredPraticaLocks(tenantId: string, campagnaId?: 
     });
 
     if (row.lockedByOperatoreId && row.lockedByCallId) {
-      await prisma.dialerCampagnaOperatore.updateMany({
+      await dialerDb().dialerCampagnaOperatore.updateMany({
         where: {
           campagnaId: row.campagnaId,
           operatoreId: row.lockedByOperatoreId,
@@ -78,7 +78,7 @@ export async function releaseExpiredPraticaLocks(tenantId: string, campagnaId?: 
 /** Recupera sessioni operatore stale (browser chiuso, rete persa). */
 export async function recoverStaleOperatorSessions(tenantId: string, campagnaId?: string) {
   const staleBefore = new Date(Date.now() - DIALER_SESSION_HEARTBEAT_TIMEOUT_SEC * 1000);
-  const rows = await prisma.dialerCampagnaOperatore.findMany({
+  const rows = await dialerDb().dialerCampagnaOperatore.findMany({
     where: {
       sessioneStato: { in: ["connecting", "in_chiamata"] },
       accettatoAt: { not: null },
@@ -100,7 +100,7 @@ export async function recoverStaleOperatorSessions(tenantId: string, campagnaId?
           onlyIfCallId: row.callIdCorrente,
         });
       }
-      await prisma.dialerCampagnaOperatore.update({
+      await dialerDb().dialerCampagnaOperatore.update({
         where: { id: row.id },
         data: {
           sessioneStato: "disponibile",
@@ -130,7 +130,7 @@ export async function recoverStaleOperatorSessions(tenantId: string, campagnaId?
           });
         }
       }
-      await prisma.dialerCampagnaOperatore.update({
+      await dialerDb().dialerCampagnaOperatore.update({
         where: { id: row.id },
         data: {
           sessioneStato: "offline",
@@ -154,7 +154,7 @@ export async function runDialerRecovery(tenantId: string, campagnaId?: string) {
 
 export async function touchOperatorHeartbeat(operatoreId: string, campagnaId?: string) {
   const now = new Date();
-  await prisma.dialerCampagnaOperatore.updateMany({
+  await dialerDb().dialerCampagnaOperatore.updateMany({
     where: {
       operatoreId,
       accettatoAt: { not: null },

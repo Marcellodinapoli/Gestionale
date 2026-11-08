@@ -1,5 +1,4 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
-import { prisma } from "@/lib/prisma";
 import { registrazioniDbFromUser } from "@/lib/registrazioniRepo";
 import { requireNavPage } from "@/lib/guard";
 import { dataOraIt } from "@/lib/domain";

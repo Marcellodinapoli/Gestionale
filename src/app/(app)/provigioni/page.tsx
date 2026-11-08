@@ -10,14 +10,25 @@ import { provvigioneStatoLabel, provvigioniWhere } from "@/lib/provvigioni";
 import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
 import { gruppoPerimetroScopeWhere } from "@/lib/codiciMandantePerimetro";
-import { elencoPerimetriTuttiMandanti, parsePerimetroAffidi } from "@/lib/affidiPerimetro";
 import {
+  elencoPerimetriGruppoConfig,
+  elencoPerimetriTuttiMandanti,
+  parsePerimetroAffidi,
+} from "@/lib/affidiPerimetro";
+import {
+  chiaviMatchPerimetro,
   etichettaPerimetro,
   numeroMandantePerimetro,
+  parsePerimetri,
   parsePerimetriList,
+  perimetroPerNome,
   resolvePerimetroPratica,
 } from "@/lib/mandantePerimetri";
-import { buildSezioniProvvigioni } from "@/lib/provvigioniDisplay";
+import {
+  buildSezioniProvvigioni,
+  importoProvvigioneInTotali,
+} from "@/lib/provvigioniDisplay";
+import { importiProvvigionePerModo } from "@/lib/provvigioneImportiModo";
 import { metricheScaglioniPerPerimetro } from "@/lib/provvigioniScaglioniMetriche";
 import {
   buildRigheImportoFisso,
@@ -33,9 +44,10 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { ProvvigioniTableAdmin } from "@/components/provvigioni/ProvvigioniTableAdmin";
 import { ProvvigioniListaPerimetro } from "@/components/provvigioni/ProvvigioniListaPerimetro";
-import { ProvvigioniRiepilogoOperatori } from "@/components/provvigioni/ProvvigioniRiepilogoOperatori";
 import { ProvvigioniFiltriAmministrazione } from "@/components/provvigioni/ProvvigioniFiltriAmministrazione";
 import { ProvvigioniAggiornaButton } from "@/components/provvigioni/ProvvigioniAggiornaButton";
+import { ProvvigioniMesePicker } from "@/components/provvigioni/ProvvigioniMesePicker";
+import { ProvvigioniMeseCalendario } from "@/components/provvigioni/ProvvigioniMeseCalendario";
 import {
   FILTRI_APPLY_BUTTON_CLASS,
   FILTRI_PAGE_INPUT_CLASS,
@@ -80,11 +92,24 @@ function mapRigaProvvigione(r: {
     debitore: { nome: string; cognome: string };
     mandante?: { codice?: string | null; perimetri?: string | null } | null;
   };
-  incasso: { data: Date; fattura?: string | null; modo?: string | null };
+  incasso: {
+    data: Date;
+    fattura?: string | null;
+    modo?: string | null;
+    metodo?: string | null;
+  };
 }) {
   const fattura = (r.incasso?.fattura || "").trim();
   const modo = normalizeModoIncasso(r.incasso?.modo);
   const nonProvv = isModoNonProvvigionabile(modo);
+  const importi = importiProvvigionePerModo({
+    modo,
+    baseImporto: r.baseImporto,
+    metodo: r.incasso?.metodo || "bonifico",
+    codiceScarico: r.pratica.codiceScarico,
+    numeroMandante: r.pratica.numeroMandante,
+    mandante: r.pratica.mandante ?? {},
+  });
   const lotto = r.pratica.numeroMandante?.trim() || "";
   const hit = resolvePerimetroPratica(
     r.pratica.mandante?.perimetri ?? null,
@@ -102,8 +127,8 @@ function mapRigaProvvigione(r: {
     operatoreNome: r.operatore.name,
     data: dataIt(r.incasso.data),
     baseImporto: r.baseImporto,
-    percentuale: r.percentuale,
-    importo: r.importo,
+    percentuale: importi.percentuale,
+    importo: importi.importo,
     stato: r.stato,
     statoLabel: nonProvv ? "Non provv." : provvigioneStatoLabel(r.stato),
     perimetro: perimetroKey,
@@ -117,13 +142,28 @@ function mapRigaProvvigione(r: {
 
 function praticaFiltroAmministrazione(
   mandanteId?: string,
-  perimetro?: string
+  perimetro?: string,
+  mandantePerimetriRaw?: string | null
 ): Prisma.PraticaWhereInput | undefined {
   const parts: Prisma.PraticaWhereInput[] = [];
   if (mandanteId) parts.push({ mandanteId });
   if (perimetro) {
     if (perimetro === "—") {
       parts.push({ OR: [{ numeroMandante: null }, { numeroMandante: "" }] });
+    } else if (mandantePerimetriRaw) {
+      const elenco = parsePerimetri(mandantePerimetriRaw);
+      const hit = perimetroPerNome(elenco, perimetro);
+      // Un solo perimetro configurato: i lotti pratica possono essere numerici (es. 1426001).
+      if (hit && elenco.length === 1) {
+        /* solo mandanteId */
+      } else {
+        const chiavi = chiaviMatchPerimetro(mandantePerimetriRaw, perimetro);
+        if (chiavi.length === 1) {
+          parts.push({ numeroMandante: chiavi[0]! });
+        } else {
+          parts.push({ numeroMandante: { in: chiavi } });
+        }
+      }
     } else {
       parts.push({ numeroMandante: perimetro });
     }
@@ -163,12 +203,14 @@ export default async function ProvigioniPage({
 
   const { sedeId: sedeScopeId } = sedeScopeForRendimento(user, sedeRaw);
   const mostraRicavi = canViewRicaviFatturatiSede(user, sedeScopeId);
-  // Amministrazione: importi solo sulla propria sede; se filtro "tutte"/altra sede → niente ricavi.
+  // Amministrazione: elenco sempre sulla propria sede; "Tutte" = stessa sede (banner se non è la sede scelta nel filtro).
   const sedePerImporti =
     user.role === "AMMINISTRAZIONE"
-      ? mostraRicavi
-        ? sedeScopeId || user.sedeId
-        : "__nessuna__"
+      ? !user.sedeId
+        ? "__nessuna__"
+        : sedeScopeId && sedeScopeId !== user.sedeId
+          ? "__nessuna__"
+          : user.sedeId
       : sedeScopeId;
 
   const sedeUserIds = await userIdsInSede(user.tenantId, sedeScopeId);
@@ -181,6 +223,30 @@ export default async function ProvigioniPage({
         })
       : [];
 
+  const mesiOperatore =
+    user.role === "OPERATOR"
+      ? await (async () => {
+          const scopeMesi = provvigioniWhere(user, {
+            sedeId: sedePerImporti === "__nessuna__" ? "__no-sede__" : sedePerImporti,
+          });
+          const dateRows = await provvigioniModel.findMany({
+            where: { ...scopeMesi, operatoreId: user.id },
+            select: { createdAt: true, incasso: { select: { data: true } } },
+          });
+          const set = new Set<string>();
+          const addMese = (d: Date) => {
+            set.add(
+              `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+            );
+          };
+          for (const row of dateRows) {
+            if (row.incasso?.data) addMese(row.incasso.data);
+            if (row.createdAt) addMese(row.createdAt);
+          }
+          return [...set].sort((a, b) => b.localeCompare(a));
+        })()
+      : [];
+
   const ref = meseRaw ? new Date(`${meseRaw}-01T12:00:00`) : new Date();
   const da = inizioMese(ref);
   const a = fineMese(ref);
@@ -189,9 +255,13 @@ export default async function ProvigioniPage({
 
   const isAmministrazione = user.role === "AMMINISTRAZIONE";
   const isAdmin = user.role === "ADMIN";
-  const canFilter = isAdmin || isAmministrazione;
+  const isSupervisor = user.role === "SUPERVISOR";
+  const isOperator = user.role === "OPERATOR";
+  const canFilterWide = isAdmin || isAmministrazione;
+  const vistaTabellaAdmin = canFilterWide || isSupervisor || isOperator;
+  const needsMandantiFiltri = vistaTabellaAdmin;
 
-  const operatori = canFilter
+  const operatori = canFilterWide
     ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
@@ -204,7 +274,7 @@ export default async function ProvigioniPage({
       })
     : [];
 
-  const mandantiDb = canFilter
+  const mandantiDb = needsMandantiFiltri
     ? await mandantiDbFromUser(user).findMany({
         where: { tenantId: user.tenantId },
         orderBy: { ragioneSociale: "asc" },
@@ -212,18 +282,25 @@ export default async function ProvigioniPage({
           id: true,
           codice: true,
           ragioneSociale: true,
-          ...(canFilter ? { perimetri: true as const } : {}),
+          perimetri: true,
         },
       })
     : [];
 
-  const mandanti = mandantiDb.map(({ id, codice, ragioneSociale }) => ({
+  const mandantiOptions = mandantiDb.map((m) => ({
+    id: m.id,
+    codice: m.codice,
+    ragioneSociale: m.ragioneSociale,
+    perimetri: parsePerimetriList(m.perimetri),
+  }));
+
+  const mandanti = mandantiOptions.map(({ id, codice, ragioneSociale }) => ({
     id,
     codice,
     ragioneSociale,
   }));
 
-  const supervisori = isAdmin || isAmministrazione
+  const supervisori = canFilterWide
     ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
@@ -235,19 +312,40 @@ export default async function ProvigioniPage({
       })
     : [];
 
-  const perimetriRefs =
-    isAmministrazione || isAdmin
-      ? elencoPerimetriTuttiMandanti(
-          mandantiDb.map((m) => ({
-            id: m.id,
-            codice: m.codice,
-            ragioneSociale: m.ragioneSociale,
-            perimetri: parsePerimetriList(
-              "perimetri" in m ? (m.perimetri as string) : "[]"
-            ),
-          }))
-        )
-      : [];
+  let gruppoMandanti = parseGruppoMandanti(null);
+  let membriGruppo: Array<{ id: string; name: string; role: string }> = [];
+
+  if (canFilterWide && gruppoId) {
+    const sup = await usersDbFromUser(user).findFirst({
+      where: { id: gruppoId, tenantId: user.tenantId },
+      select: { gruppoMandanti: true },
+    });
+    gruppoMandanti = parseGruppoMandanti(sup?.gruppoMandanti);
+  } else if (isSupervisor || isOperator) {
+    const gruppo = await getGruppoLavoro(user);
+    gruppoMandanti = gruppo.gruppoMandanti;
+    membriGruppo = gruppo.members;
+  }
+
+  let periScope: Prisma.PraticaWhereInput | null = null;
+  if (gruppoMandanti.length) {
+    periScope = await gruppoPerimetroScopeWhere(user.tenantId, gruppoMandanti);
+  }
+
+  /** Gruppo con mandanti/perimetri validi → filtri e scope ristretti; altrimenti mandati tenant (come Affidi). */
+  const gruppoPerimetriOk = Boolean(gruppoMandanti.length && periScope);
+
+  const perimetriRefs = canFilterWide
+    ? elencoPerimetriTuttiMandanti(mandantiOptions)
+    : gruppoPerimetriOk
+      ? elencoPerimetriGruppoConfig(gruppoMandanti, mandantiOptions)
+      : elencoPerimetriTuttiMandanti(mandantiOptions);
+
+  const mandantiIdsGruppo = new Set(gruppoMandanti.map((a) => a.mandanteId));
+  const mandantiPerFiltro =
+    canFilterWide || !gruppoPerimetriOk
+      ? mandanti
+      : mandanti.filter((m) => mandantiIdsGruppo.has(m.id));
 
   const perimetroDecoded = parsePerimetroAffidi(perimetroRaw);
   const perimetroValido =
@@ -257,85 +355,83 @@ export default async function ProvigioniPage({
       ? perimetroDecoded
       : undefined;
 
-  let gruppoMandanti = parseGruppoMandanti(null);
-  let avvisoPerimetri = false;
-  let membriGruppo: Array<{ id: string; name: string; role: string }> = [];
+  const perimetriRawMandanteFiltro = mandanteId
+    ? mandantiDb.find((m) => m.id === mandanteId)?.perimetri ?? null
+    : null;
 
-  if (canFilter && gruppoId) {
-    const sup = await usersDbFromUser(user).findFirst({
-      where: { id: gruppoId, tenantId: user.tenantId },
-      select: { gruppoMandanti: true },
-    });
-    gruppoMandanti = parseGruppoMandanti(sup?.gruppoMandanti);
-  } else if (!canFilter) {
-    const gruppo = await getGruppoLavoro(user);
-    gruppoMandanti = gruppo.gruppoMandanti;
-    membriGruppo = gruppo.members;
-    if (!gruppoMandanti.length) avvisoPerimetri = true;
-  }
+  const operatoriTeamIds = membriGruppo
+    .filter((m) => m.role === "OPERATOR")
+    .map((m) => m.id);
 
-  let periScope: Prisma.PraticaWhereInput | null = null;
-  if (gruppoMandanti.length) {
-    periScope = await gruppoPerimetroScopeWhere(user.tenantId, gruppoMandanti);
-    if (!periScope && !canFilter) avvisoPerimetri = true;
-  } else if (!canFilter) {
-    avvisoPerimetri = true;
-  }
+  /** Supervisor: provvigioni degli operatori del gruppo (stessa membership della Home). */
+  const scope: Prisma.ProvvigioneWhereInput =
+    isSupervisor && operatoriTeamIds.length
+      ? {
+          AND: [
+            { pratica: { tenantId: user.tenantId } },
+            { operatoreId: { in: operatoriTeamIds } },
+          ],
+        }
+      : provvigioniWhere(user, {
+          sedeId: sedePerImporti === "__nessuna__" ? "__no-sede__" : sedePerImporti,
+        });
+  const praticaFiltroMandantePerimetro = praticaFiltroAmministrazione(
+    mandanteId,
+    perimetroValido,
+    perimetriRawMandanteFiltro
+  );
 
-  const scope = provvigioniWhere(user, {
-    sedeId: sedePerImporti === "__nessuna__" ? "__no-sede__" : sedePerImporti,
-  });
-  const praticaAmministrazione = isAmministrazione
-    ? praticaFiltroAmministrazione(mandanteId, perimetroValido)
-    : undefined;
-  const praticaAdminMandante =
-    isAdmin && !gruppoId && mandanteId
-      ? praticaFiltroAmministrazione(mandanteId, perimetroValido) ?? { mandanteId }
-      : isAdmin && mandanteId
-        ? { mandanteId }
-        : {};
-
-  const praticaExtra: Prisma.PraticaWhereInput = isAmministrazione
-    ? {
-        ...(praticaAmministrazione || {}),
-        ...(periScope && gruppoId ? periScope : {}),
-      }
-    : {
-        ...(isAdmin ? praticaAdminMandante : mandanteId ? { mandanteId } : {}),
-        ...(periScope && (!canFilter || gruppoId) ? periScope : {}),
-      };
+  const praticaExtra: Prisma.PraticaWhereInput = {
+    ...(praticaFiltroMandantePerimetro || {}),
+    ...(canFilterWide && periScope && gruppoId ? periScope : {}),
+    ...(!canFilterWide && gruppoPerimetriOk && periScope ? periScope : {}),
+  };
 
   const operatoriGruppo = membriGruppo.filter((m) =>
-    user.role === "SUPERVISOR" ? m.role === "OPERATOR" || m.id === user.id : m.role === "OPERATOR"
+    isSupervisor ? m.role === "OPERATOR" || m.id === user.id : m.role === "OPERATOR"
   );
-  const operatorIdsTeam = membriGruppo.filter((m) => m.role === "OPERATOR").map((m) => m.id);
+  const operatorIdsTeam = new Set(operatoriGruppo.map((m) => m.id));
 
-  const operatoreEffettivo =
-    operatoreId && sedeUserIds && !sedeUserIds.includes(operatoreId)
-      ? "__nessuno__"
-      : operatoreId;
+  const operatoriPerFiltro = canFilterWide
+    ? operatori.map((o) => ({ id: o.id, name: o.name }))
+    : isSupervisor
+      ? operatoriGruppo.map((o) => ({ id: o.id, name: o.name }))
+      : [];
+
+  const operatoreIdConsentito =
+    isOperator
+      ? user.id
+      : operatoreId && sedeUserIds && !sedeUserIds.includes(operatoreId)
+        ? undefined
+        : operatoreId && isSupervisor && !operatorIdsTeam.has(operatoreId)
+          ? undefined
+          : operatoreId && canFilterWide && !operatori.some((o) => o.id === operatoreId)
+            ? undefined
+            : operatoreId;
+
+  const operatoreClause: Prisma.ProvvigioneWhereInput = isOperator
+    ? { operatoreId: user.id }
+    : operatoreIdConsentito
+      ? { operatoreId: operatoreIdConsentito }
+      : canFilterWide && gruppoId
+        ? { operatore: { OR: [{ id: gruppoId }, { supervisorId: gruppoId }] } }
+        : {};
 
   const wherePeriodo: Prisma.ProvvigioneWhereInput = {
-    ...scope,
-    createdAt: { gte: da, lte: a },
-    ...(operatoreEffettivo
-      ? { operatoreId: operatoreEffettivo }
-      : canFilter && gruppoId
-        ? { operatore: { OR: [{ id: gruppoId }, { supervisorId: gruppoId }] } }
-        : {}),
-    ...(Object.keys(praticaExtra).length ? { pratica: praticaExtra } : {}),
+    AND: [
+      scope,
+      {
+        OR: [
+          { incasso: { data: { gte: da, lte: a } } },
+          { createdAt: { gte: da, lte: a } },
+        ],
+      },
+      ...(Object.keys(operatoreClause).length ? [operatoreClause] : []),
+      ...(Object.keys(praticaExtra).length ? [{ pratica: praticaExtra }] : []),
+    ],
   };
 
-  const whereTeamSenzaOperatore: Prisma.ProvvigioneWhereInput = {
-    ...scope,
-    createdAt: { gte: da, lte: a },
-    ...(gruppoId
-      ? { operatore: { OR: [{ id: gruppoId }, { supervisorId: gruppoId }] } }
-      : {}),
-    ...(Object.keys(praticaExtra).length ? { pratica: praticaExtra } : {}),
-  };
-
-  const [righe, totali, maturate, liquidate, configsGruppo, totMie, totOperatori, groupByOperatore, groupByOperatoreStato] =
+  const [righe, totali, maturate, liquidate, configsGruppo] =
     showElenco
       ? await Promise.all([
           provvigioniModel.findMany({
@@ -369,60 +465,21 @@ export default async function ProvigioniPage({
             where: { ...wherePeriodo, stato: "LIQUIDATA" },
             _sum: { importo: true },
           }),
-          gruppoMandanti.length && (gruppoId || !canFilter)
+          gruppoMandanti.length && (gruppoId || isSupervisor || isOperator)
             ? configProvvigioniPerimetriGruppo(user.tenantId, gruppoMandanti)
             : Promise.resolve([]),
-          user.role === "SUPERVISOR"
-            ? provvigioniModel.aggregate({
-                where: { ...wherePeriodo, operatoreId: user.id },
-                _sum: { importo: true },
-                _count: true,
-              })
-            : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
-          user.role === "SUPERVISOR" && operatorIdsTeam.length
-            ? provvigioniModel.aggregate({
-                where: { ...wherePeriodo, operatoreId: { in: operatorIdsTeam } },
-                _sum: { importo: true },
-                _count: true,
-              })
-            : Promise.resolve({ _sum: { importo: 0 }, _count: 0 }),
-          user.role === "SUPERVISOR" && operatoriGruppo.length
-            ? provvigioniModel.groupBy({
-                by: ["operatoreId"],
-                where: whereTeamSenzaOperatore,
-                _sum: { importo: true },
-                _count: true,
-              })
-            : Promise.resolve([]),
-          user.role === "SUPERVISOR" && operatoriGruppo.length
-            ? provvigioniModel.groupBy({
-                by: ["operatoreId", "stato"],
-                where: whereTeamSenzaOperatore,
-                _sum: { importo: true },
-              })
-            : Promise.resolve([]),
         ])
-      : [
-          [],
-          { _sum: { importo: 0 }, _count: 0 },
-          { _sum: { importo: 0 } },
-          { _sum: { importo: 0 } },
-          [],
-          { _sum: { importo: 0 }, _count: 0 },
-          { _sum: { importo: 0 }, _count: 0 },
-          [],
-          [],
-        ];
+      : [[], { _sum: { importo: 0 }, _count: 0 }, { _sum: { importo: 0 } }, { _sum: { importo: 0 } }, []];
 
   const operatoriPerFissoIds = new Set<string>();
   if (showElenco) {
-    if (user.role === "OPERATOR") {
+    if (isOperator) {
       operatoriPerFissoIds.add(user.id);
-    } else if (operatoreEffettivo && operatoreEffettivo !== "__nessuno__") {
-      operatoriPerFissoIds.add(operatoreEffettivo);
-    } else if (user.role === "SUPERVISOR") {
+    } else if (operatoreIdConsentito) {
+      operatoriPerFissoIds.add(operatoreIdConsentito);
+    } else if (isSupervisor) {
       for (const op of operatoriGruppo) operatoriPerFissoIds.add(op.id);
-    } else if (canFilter) {
+    } else if (canFilterWide) {
       for (const op of operatori) operatoriPerFissoIds.add(op.id);
     }
   }
@@ -460,12 +517,12 @@ export default async function ProvigioniPage({
 
   let configs = configsGruppo;
 
-  if (showElenco && isAmministrazione && !gruppoId) {
-    configs = await configProvvigioniMandanti(user.tenantId, {
-      mandanteIds: mandanteId ? [mandanteId] : undefined,
-      soloPerimetro: perimetroValido,
-    });
-  } else if (showElenco && canFilter && mandanteId && !gruppoId) {
+  if (
+    showElenco &&
+    (canFilterWide || isSupervisor || isOperator) &&
+    mandanteId &&
+    !gruppoId
+  ) {
     configs = await configProvvigioniMandanti(user.tenantId, {
       mandanteIds: [mandanteId],
       soloPerimetro: perimetroValido,
@@ -473,13 +530,11 @@ export default async function ProvigioniPage({
   }
 
   const righeMapped = righe.map(mapRigaProvvigione);
+  const praticaFilterMetriche =
+    Object.keys(praticaExtra).length > 0 ? praticaExtra : undefined;
   const metricheScaglioni =
     showElenco && configs.length
-      ? await metricheScaglioniPerPerimetro(
-          user,
-          configs,
-          praticaFiltroAmministrazione(mandanteId, perimetroValido)
-        )
+      ? await metricheScaglioniPerPerimetro(user, configs, praticaFilterMetriche)
       : new Map();
   const righeFisso = showElenco ? buildRigheImportoFisso(operatoriFisso, meseLabel) : [];
   const righeComplete = [...righeMapped, ...righeFisso];
@@ -487,49 +542,22 @@ export default async function ProvigioniPage({
     ? buildSezioniProvvigioni(righeComplete, configs, metricheScaglioni)
     : [];
 
-  const totaleMese = (totali._sum.importo || 0) + totaleFisso;
-  const totaleMaturate = (maturate._sum.importo || 0) + totaleFisso;
-  const totaleMieConFisso = (totMie._sum.importo || 0) + (fissoPerOperatore.get(user.id) ?? 0);
-  const totOperatoriConFisso =
-    (totOperatori._sum.importo || 0) +
-    operatorIdsTeam.reduce((s, id) => s + (fissoPerOperatore.get(id) ?? 0), 0);
-
-  const riepilogoOperatori =
-    user.role === "SUPERVISOR"
-      ? operatoriGruppo
-          .map((op) => {
-            const tot = groupByOperatore.find((g) => g.operatoreId === op.id);
-            const mat = groupByOperatoreStato.find(
-              (g) => g.operatoreId === op.id && g.stato === "MATURATA"
-            );
-            const liq = groupByOperatoreStato.find(
-              (g) => g.operatoreId === op.id && g.stato === "LIQUIDATA"
-            );
-            return {
-              id: op.id,
-              name: op.name,
-              importo: (tot?._sum.importo ?? 0) + (fissoPerOperatore.get(op.id) ?? 0),
-              count: prismaCount(tot?._count) + (fissoPerOperatore.has(op.id) ? 1 : 0),
-              maturate: (mat?._sum.importo ?? 0) + (fissoPerOperatore.get(op.id) ?? 0),
-              liquidate: liq?._sum.importo ?? 0,
-              isSelf: op.id === user.id,
-            };
-          })
-          .sort(
-            (a, b) =>
-              b.importo - a.importo || a.name.localeCompare(b.name, "it")
-          )
-      : [];
-
+  const totaleMese =
+    righeMapped.reduce((s, r) => s + importoProvvigioneInTotali(r), 0) + totaleFisso;
+  const totaleMaturate =
+    righeMapped.reduce(
+      (s, r) => s + importoProvvigioneInTotali(r, { stato: "MATURATA" }),
+      0
+    ) + totaleFisso;
+  const totaleLiquidate = righeMapped.reduce(
+    (s, r) => s + importoProvvigioneInTotali(r, { stato: "LIQUIDATA" }),
+    0
+  );
   const subtitle = !showElenco
     ? "Imposta i filtri e clicca Filtra per vedere l’elenco"
-    : user.role === "OPERATOR"
-      ? "Le tue provvigioni · perimetri del gruppo"
-      : user.role === "SUPERVISOR"
-        ? `Team · ${operatoriGruppo.map((m) => m.name).join(", ") || user.name} · perimetri del gruppo`
-        : isAmministrazione
-          ? "Filtra per mandato, perimetro e operatore"
-          : "Tutte le provvigioni · filtra per mandante, perimetro e gruppo";
+    : isOperator
+      ? "Le tue provvigioni"
+      : "Filtra per mandato, perimetro e operatore";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -560,14 +588,6 @@ export default async function ProvigioniPage({
         <RicaviAltreSediNascostiBanner sedeNomePropria={user.sedeNome} />
       ) : null}
 
-      {avvisoPerimetri && user.role !== "OPERATOR" ? (
-        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Nessun perimetro configurato per il gruppo. Configura mandante e perimetri in{" "}
-          <strong>Affidi → Modifica gruppo</strong> per filtrare le provvigioni sui perimetri
-          gestiti.
-        </p>
-      ) : null}
-
       <form
         method="get"
         action="/provigioni"
@@ -577,43 +597,30 @@ export default async function ProvigioniPage({
         {sedeScopeId ? <input type="hidden" name="sede" value={sedeScopeId} /> : null}
         <label className="text-sm">
           <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Mese</span>
-          <input
-            type="month"
-            name="mese"
-            key={`mese-${meseValue}-${showElenco ? "1" : "0"}`}
-            defaultValue={meseValue}
-            className={`px-3 ${FILTRI_PAGE_INPUT_CLASS} h-10`}
-          />
+          {isOperator ? (
+            <ProvvigioniMesePicker
+              value={meseValue}
+              inputKey={`mese-${meseValue}-${showElenco ? "1" : "0"}`}
+              mesiDisponibili={mesiOperatore}
+            />
+          ) : (
+            <ProvvigioniMeseCalendario
+              value={meseValue}
+              inputKey={`mese-${meseValue}-${showElenco ? "1" : "0"}`}
+            />
+          )}
         </label>
-        {user.role === "SUPERVISOR" && operatoriGruppo.length > 0 ? (
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Operatore</span>
-            <select
-              name="operatore"
-              key={`operatore-${operatoreId || ""}`}
-              defaultValue={operatoreId || ""}
-              className={FILTRI_PAGE_SELECT_LG_CLASS}
-            >
-              <option value="">Tutti il team</option>
-              {operatoriGruppo.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                  {o.id === user.id ? " (tu)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {canFilter ? (
+        {vistaTabellaAdmin ? (
           <ProvvigioniFiltriAmministrazione
-            mandanti={mandanti}
+            mandanti={mandantiPerFiltro}
             perimetri={perimetriRefs}
-            operatori={operatori}
-            gruppi={supervisori}
+            operatori={operatoriPerFiltro}
+            gruppi={canFilterWide ? supervisori : undefined}
             mandanteId={mandanteId}
             perimetro={perimetroValido}
-            operatoreId={operatoreId}
+            operatoreId={operatoreIdConsentito}
             gruppoId={gruppoId}
+            mostraOperatore={!isOperator}
           />
         ) : null}
         <button type="submit" className={`h-10 ${FILTRI_APPLY_BUTTON_CLASS}`}>
@@ -638,39 +645,14 @@ export default async function ProvigioniPage({
         </p>
       ) : (
         <>
-          <div
-            className={`mb-3 grid shrink-0 gap-3 ${
-              user.role === "SUPERVISOR" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
-            }`}
-          >
-            <Card title={user.role === "SUPERVISOR" ? "Totale team" : "Totale mese"}>
+          <div className="mb-3 grid shrink-0 gap-3 sm:grid-cols-3">
+            <Card title="Totale mese">
               <p className="text-2xl font-semibold">{euro(totaleMese)}</p>
               <p className="mt-1 text-xs text-[var(--muted)]">
                 {prismaCount(totali._count) + righeFisso.length} movimenti
                 {totaleFisso > 0 ? ` · di cui ${euro(totaleFisso)} fisso` : ""}
               </p>
             </Card>
-            {user.role === "SUPERVISOR" ? (
-              <>
-                <Card title="Tue provvigioni">
-                  <p className="text-2xl font-semibold text-[var(--navy)]">
-                    {euro(totaleMieConFisso)}
-                  </p>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    {prismaCount(totMie._count) + (fissoPerOperatore.has(user.id) ? 1 : 0)}{" "}
-                    movimenti
-                  </p>
-                </Card>
-                <Card title="Operatori del gruppo">
-                  <p className="text-2xl font-semibold text-[var(--navy)]">
-                    {euro(totOperatoriConFisso)}
-                  </p>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    {prismaCount(totOperatori._count)} movimenti
-                  </p>
-                </Card>
-              </>
-            ) : null}
             <Card title="Maturate">
               <p className="text-2xl font-semibold text-[var(--accent)]">
                 {euro(totaleMaturate)}
@@ -678,27 +660,19 @@ export default async function ProvigioniPage({
               <p className="mt-1 text-xs text-[var(--muted)]">Da liquidare</p>
             </Card>
             <Card title="Liquidate">
-              <p className="text-2xl font-semibold">{euro(liquidate._sum.importo || 0)}</p>
+              <p className="text-2xl font-semibold">{euro(totaleLiquidate)}</p>
               <p className="mt-1 text-xs text-[var(--muted)]">Già erogate</p>
             </Card>
           </div>
 
-          {user.role === "SUPERVISOR" ? (
-            <ProvvigioniRiepilogoOperatori
-              items={riepilogoOperatori}
-              mese={meseValue}
-              operatoreSelezionato={operatoreId}
-            />
-          ) : null}
-
           <div className="min-h-0 flex-1 overflow-auto">
-            {canFilter ? (
-              <ProvvigioniTableAdmin sezioni={sezioni} />
-            ) : (
-              <ProvvigioniListaPerimetro
+            {vistaTabellaAdmin ? (
+              <ProvvigioniTableAdmin
                 sezioni={sezioni}
-                showOperatore={user.role !== "OPERATOR"}
+                mostraSelezioneLiquidazione={canFilterWide}
               />
+            ) : (
+              <ProvvigioniListaPerimetro sezioni={sezioni} showOperatore />
             )}
           </div>
         </>

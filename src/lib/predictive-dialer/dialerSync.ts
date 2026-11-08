@@ -1,5 +1,6 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";import type { SessionUser } from "@/lib/permissions";
+import { dialerDb, dialerDbFromUser } from "@/lib/dialerRepo";
+import type { SessionUser } from "@/lib/permissions";
 import { syncCampagnaConDialer } from "@/lib/predictive-dialer/campaigns";
 import { getPredictiveDialerService } from "@/lib/predictive-dialer/service/factory";
 import type { DialerOperatorRef } from "@/lib/predictive-dialer/service/PredictiveDialerService";
@@ -10,7 +11,7 @@ export function providerSupportsSetPacing(providerId: string): boolean {
 }
 
 export async function countOperatoriDisponibili(campagnaId: string): Promise<number> {
-  return prisma.dialerCampagnaOperatore.count({
+  return dialerDb().dialerCampagnaOperatore.count({
     where: { campagnaId, sessioneStato: "disponibile", accettatoAt: { not: null }, uscitaAt: null },
   });
 }
@@ -22,7 +23,7 @@ export async function notifyDialerOperatorAvailability(
   operatore: DialerOperatorRef,
   available: boolean
 ) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna?.externalId || campagna.stato !== "ATTIVA") return;
@@ -50,7 +51,7 @@ export async function notifyDialerOperatorPaused(
   campagnaId: string,
   operatore: DialerOperatorRef
 ) {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
   });
   if (!campagna?.externalId) return;

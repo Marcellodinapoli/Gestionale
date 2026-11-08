@@ -47,8 +47,12 @@ export type AffidiSezione = "affida";
 export type AffidiAllertaNav =
   | "nuove"
   | "non_assegnate"
+  | "scadute"
+  | "affidate"
   | "in_lavorazione"
-  | "in_scadenza";
+  | "in_scadenza"
+  | "in_fase_giudiziale"
+  | "giudiziali_da_affidare";
 
 export type AffidiNavParams = {
   operatore?: string;
@@ -151,6 +155,9 @@ export type PraticaAffido = {
   codiceScaricoBk?: string | null;
   mandanteId: string;
   numeroMandante: string | null;
+  dataPassaggioGiudiziale?: Date | null;
+  conferimentoTipo?: string | null;
+  statoAvvioGiudiziale?: string | null;
   debitore: { nome: string; cognome: string };
   mandante: { codice: string };
   assegnatarioId: string | null;
@@ -281,11 +288,15 @@ export function AffidiCaricoOperatori({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[480px] text-sm">
+      <table
+        className={`text-sm ${mostraScarichi ? "w-full min-w-[480px]" : "w-auto max-w-full"}`}
+      >
         <thead className="text-left text-[var(--muted)]">
           <tr>
             <th className="py-2">Operatore</th>
-            <th className="text-right">In lavorazione</th>
+            <th className="whitespace-nowrap py-2 pl-10 text-left tabular-nums">
+              In lavorazione
+            </th>
             {mostraScarichi
               ? CODICI_SCARICO.map((codice) => (
                   <th
@@ -322,7 +333,7 @@ export function AffidiCaricoOperatori({
                     <span className="ml-1 text-[10px] text-[var(--muted)]">supervisor</span>
                   ) : null}
                 </td>
-                <td className="text-right">
+                <td className="whitespace-nowrap py-2 pl-10 text-left tabular-nums">
                   <CountLink
                     n={o.perStato[COL_CARICO] || 0}
                     href={href(o.id, COL_CARICO)}
@@ -349,7 +360,7 @@ export function AffidiCaricoOperatori({
                 Totale gruppo
               </Link>
             </td>
-            <td className="text-right">
+            <td className="whitespace-nowrap py-2 pl-10 text-left tabular-nums">
               <CountLink
                 n={totInLavorazione}
                 href={href(undefined, COL_CARICO)}

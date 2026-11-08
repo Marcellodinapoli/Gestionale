@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { AgendaGiornoImpegniPanel } from "@/components/agenda/AgendaGiornoImpegniPanel";
+import {
+  AGENDA_MINUTI_LAVORO,
+  AGENDA_ORE_LAVORO,
+  clampAgendaHour,
+  roundAgendaMinute,
+} from "@/lib/agenda/orariLavoroAgenda";
+import { avvisoAgendaNelPassato } from "@/lib/agenda/agendaNonNelPassato";
 
 const WEEKDAYS = ["lu", "ma", "me", "gi", "ve", "sa", "do"];
 const MONTHS = [
@@ -55,20 +62,21 @@ export function AgendaCalendarioPicker({
   const [viewYear, setViewYear] = useState(base.getFullYear());
   const [viewMonth, setViewMonth] = useState(base.getMonth());
   const [day, setDay] = useState(base.getDate());
-  const [hour, setHour] = useState(base.getHours());
-  const [minute, setMinute] = useState(base.getMinutes());
+  const [hour, setHour] = useState(clampAgendaHour(base.getHours()));
+  const [minute, setMinute] = useState(roundAgendaMinute(base.getMinutes()));
 
   useEffect(() => {
     const d = initial || new Date();
     setViewYear(d.getFullYear());
     setViewMonth(d.getMonth());
     setDay(d.getDate());
-    setHour(d.getHours());
-    setMinute(d.getMinutes());
+    setHour(clampAgendaHour(d.getHours()));
+    setMinute(roundAgendaMinute(d.getMinutes()));
   }, [initial]);
 
   const selected = new Date(viewYear, viewMonth, day, hour, minute);
   const selectedValue = toAgendaLocalValue(selected);
+  const avvisoPassato = avvisoAgendaNelPassato(selected);
   const days = monthGrid(viewYear, viewMonth);
   const today = new Date();
 
@@ -87,8 +95,8 @@ export function AgendaCalendarioPicker({
     setViewYear(n.getFullYear());
     setViewMonth(n.getMonth());
     setDay(n.getDate());
-    setHour(n.getHours());
-    setMinute(n.getMinutes());
+    setHour(clampAgendaHour(n.getHours()));
+    setMinute(roundAgendaMinute(n.getMinutes()));
   }
 
   return (
@@ -103,6 +111,11 @@ export function AgendaCalendarioPicker({
           minute: "2-digit",
         })}
       </p>
+      {avvisoPassato ? (
+        <p className="mb-2 text-xs font-medium text-[var(--danger)]" role="alert">
+          {avvisoPassato}
+        </p>
+      ) : null}
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(10rem,0.9fr)]">
         <div className="flex gap-2 rounded-md border border-[var(--line)] bg-white p-2">
           <div className="min-w-0 flex-1">
@@ -156,26 +169,26 @@ export function AgendaCalendarioPicker({
           </div>
           <div className="flex h-[220px] gap-1 border-l border-[#eee] pl-1">
             <div className="h-full w-10 overflow-y-auto">
-              {Array.from({ length: 24 }, (_, i) => (
+              {AGENDA_ORE_LAVORO.map((h) => (
                 <button
-                  key={i}
+                  key={h}
                   type="button"
-                  onClick={() => setHour(i)}
-                  className={`block w-full py-1 text-xs ${hour === i ? "bg-[#e8e8e8] font-semibold" : ""}`}
+                  onClick={() => setHour(h)}
+                  className={`block w-full py-1 text-xs ${hour === h ? "bg-[#e8e8e8] font-semibold" : ""}`}
                 >
-                  {pad(i)}
+                  {pad(h)}
                 </button>
               ))}
             </div>
             <div className="h-full w-10 overflow-y-auto">
-              {Array.from({ length: 60 }, (_, i) => (
+              {AGENDA_MINUTI_LAVORO.map((m) => (
                 <button
-                  key={i}
+                  key={m}
                   type="button"
-                  onClick={() => setMinute(i)}
-                  className={`block w-full py-1 text-xs ${minute === i ? "bg-[#e8e8e8] font-semibold" : ""}`}
+                  onClick={() => setMinute(m)}
+                  className={`block w-full py-1 text-xs ${minute === m ? "bg-[#e8e8e8] font-semibold" : ""}`}
                 >
-                  {pad(i)}
+                  {pad(m)}
                 </button>
               ))}
             </div>

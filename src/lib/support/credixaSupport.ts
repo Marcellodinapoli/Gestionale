@@ -1,4 +1,5 @@
 import { getFirebaseFirestore, firebaseFieldValue } from "@/lib/firebase/admin";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 
 export const CREDIXA_SUPPORT_COLLECTION = "credixa_support";
 
@@ -59,6 +60,10 @@ function mapTicket(
 }
 
 export async function listTicketsForTenant(tenantId: string): Promise<SupportTicket[]> {
+  if (!isFirebaseAvailable()) {
+    return [];
+  }
+
   const db = getFirebaseFirestore();
   const snap = await db
     .collection(CREDIXA_SUPPORT_COLLECTION)
@@ -76,6 +81,10 @@ export async function listTicketsForTenant(tenantId: string): Promise<SupportTic
 }
 
 export async function listMessagesForTicket(ticketId: string): Promise<SupportMessage[]> {
+  if (!isFirebaseAvailable()) {
+    return [];
+  }
+
   const db = getFirebaseFirestore();
   const snap = await db
     .collection(CREDIXA_SUPPORT_COLLECTION)
@@ -106,6 +115,10 @@ export async function createSupportTicket(input: {
   subject: string;
   message: string;
 }): Promise<string> {
+  if (!isFirebaseAvailable()) {
+    throw new Error("Supporto tecnico non disponibile: Firebase non configurato");
+  }
+
   const db = getFirebaseFirestore();
   const FieldValue = firebaseFieldValue();
   const ref = db.collection(CREDIXA_SUPPORT_COLLECTION).doc();
@@ -135,6 +148,10 @@ export async function replyToSupportTicket(input: {
   tenantId: string;
   text: string;
 }): Promise<void> {
+  if (!isFirebaseAvailable()) {
+    throw new Error("Supporto tecnico non disponibile: Firebase non configurato");
+  }
+
   const db = getFirebaseFirestore();
   const FieldValue = firebaseFieldValue();
   const ref = db.collection(CREDIXA_SUPPORT_COLLECTION).doc(input.ticketId);
@@ -158,6 +175,10 @@ export async function getTicketForTenant(
   ticketId: string,
   tenantId: string
 ): Promise<SupportTicket | null> {
+  if (!isFirebaseAvailable()) {
+    return null;
+  }
+
   const db = getFirebaseFirestore();
   const doc = await db.collection(CREDIXA_SUPPORT_COLLECTION).doc(ticketId).get();
   if (!doc.exists) return null;
@@ -185,6 +206,10 @@ export async function updateSupportTicket(input: {
   firstMessageText?: string | null;
   firstMessageId?: string | null;
 }): Promise<void> {
+  if (!isFirebaseAvailable()) {
+    throw new Error("Supporto tecnico non disponibile: Firebase non configurato");
+  }
+
   const FieldValue = firebaseFieldValue();
   const { ref, data } = await assertTicketOwned(input.ticketId, input.tenantId);
   if (data.status === "closed") throw new Error("Ticket chiuso: non modificabile");
@@ -210,6 +235,10 @@ export async function deleteSupportTicket(input: {
   ticketId: string;
   tenantId: string;
 }): Promise<void> {
+  if (!isFirebaseAvailable()) {
+    throw new Error("Supporto tecnico non disponibile: Firebase non configurato");
+  }
+
   const { ref } = await assertTicketOwned(input.ticketId, input.tenantId);
   const msgs = await ref.collection("messages").limit(500).get();
   const batch = getFirebaseFirestore().batch();

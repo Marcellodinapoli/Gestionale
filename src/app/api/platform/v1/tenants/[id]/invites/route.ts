@@ -4,6 +4,7 @@ import {
   buildActivationUrl,
   sendAdminInviteEmail,
 } from "@/lib/platform/inviteEmail";
+import { inviteEmailRolePhrase } from "@/lib/platform/productStandalone";
 
 export const runtime = "nodejs";
 
@@ -53,6 +54,7 @@ export async function POST(req: Request, ctx: Ctx) {
         companyName,
         activationUrl,
         expiresAt: invite.expiresAt,
+        inviteRolePhrase: inviteEmailRolePhrase(invite.role),
       });
       if (mail.ok) {
         emailSent = true;

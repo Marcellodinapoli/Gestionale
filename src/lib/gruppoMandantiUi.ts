@@ -35,6 +35,21 @@ export function serializeGruppoMandanti(items: GruppoMandanteAssegnazione[]): st
   return JSON.stringify(items);
 }
 
+/** Validazione salvataggio gruppo: almeno una mandante e un perimetro per ogni voce. */
+export function messaggioErroreGruppoMandanti(
+  items: GruppoMandanteAssegnazione[]
+): string | null {
+  if (!items.length) {
+    return "Aggiungi almeno una mandante e un perimetro al gruppo";
+  }
+  for (const a of items) {
+    if (!a.perimetriIds.length) {
+      return "Ogni mandante deve avere almeno un perimetro selezionato";
+    }
+  }
+  return null;
+}
+
 export function etichettaGruppoMandanti(
   assegnazioni: GruppoMandanteAssegnazione[],
   mandanti: Array<{

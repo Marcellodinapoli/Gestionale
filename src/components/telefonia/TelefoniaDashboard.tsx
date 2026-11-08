@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { TelephonyCapabilities } from "@/lib/telephony/types";
 import type { TenantTelephonyConfig } from "@/lib/telephony/clientConfig";
+import { InboundCallSimulatePanel } from "@/components/telefonia/InboundCallSimulatePanel";
 
 function CapRow({
   label,
@@ -59,7 +60,12 @@ const CAP_MAP: {
   description: string;
 }[] = [
   { key: "canDial", label: "Chiamata in uscita", icon: Phone, description: "Click-to-call verso softphone CounterPath" },
-  { key: "canReceive", label: "Chiamata in entrata", icon: PhoneIncoming, description: "Gestita dal softphone registrato al PBX" },
+  {
+    key: "canReceive",
+    label: "Chiamata in entrata",
+    icon: PhoneIncoming,
+    description: "Popup in app con cliente, mandato e dati contabili (numero collegato alla pratica)",
+  },
   { key: "canRecord", label: "Registrazione", icon: Mic, description: "Registrazione lato PBX / conferma in pratica" },
   { key: "canHold", label: "Attesa", icon: Pause, description: "Funzione del softphone / centralino" },
   { key: "canTransfer", label: "Trasferimento", icon: ArrowRightLeft, description: "Funzione del softphone / centralino" },
@@ -80,11 +86,14 @@ export function TelefoniaDashboard({
   providerCapabilities,
   providerDisponibili,
   tenantConfig,
+  screenPopSimulazione = false,
 }: {
   providerAttivo: string | null;
   providerCapabilities: TelephonyCapabilities | null;
   providerDisponibili: string[];
   tenantConfig: TenantTelephonyConfig;
+  /** Simulazione screen pop inbound (solo operatore/supervisor). */
+  screenPopSimulazione?: boolean;
 }) {
   const sectionCls =
     "rounded-lg border border-[var(--line)] bg-[#f8fafc] overflow-hidden";
@@ -92,7 +101,7 @@ export function TelefoniaDashboard({
     "bg-[#c5d4e3] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[#1a365d]";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 py-2">
+    <div className="w-full space-y-4 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <Phone className="h-5 w-5 text-[var(--navy)]" />
         <h1 className="text-lg font-bold text-[var(--navy)]">
@@ -256,6 +265,8 @@ export function TelefoniaDashboard({
           ))}
         </div>
       </div>
+
+      {screenPopSimulazione ? <InboundCallSimulatePanel /> : null}
     </div>
   );
 }

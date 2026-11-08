@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { ProvvigioniTabellaHead } from "@/components/provvigioni/ProvvigioniTabellaHead";
+import { useProvvigioniTableSort } from "@/components/provvigioni/useProvvigioniTableSort";
 import { euro } from "@/lib/domainFormat";
 import { isModoNonProvvigionabile } from "@/lib/incassoFattura";
 import { isImportoFissoProvvigioneId } from "@/lib/provvigioniImportoFisso";
@@ -379,7 +383,8 @@ export function ProvvigioniListaPerimetro({
   sezioni: SezioneProvvigioni<ProvvigioneRigaLista>[];
   showOperatore?: boolean;
 }) {
-  const colspan = (showOperatore ? 12 : 11);
+  const { sortField, sortDir, onSort, sorted } = useProvvigioniTableSort("data", "desc");
+  const colspan = showOperatore ? 12 : 11;
 
   if (!sezioni.length) {
     return (
@@ -413,25 +418,15 @@ export function ProvvigioniListaPerimetro({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-[var(--muted)]">
-                <tr>
-                  <th className="px-3 py-2">Perimetro</th>
-                  <th className="px-3 py-2">Data</th>
-                  {showOperatore ? <th className="px-3 py-2">Operatore</th> : null}
-                  <th className="px-3 py-2">Codice scarico</th>
-                  <th className="px-3 py-2">Esito</th>
-                  <th className="px-3 py-2">Fattura</th>
-                  <th className="px-3 py-2">Pratica</th>
-                  <th className="px-3 py-2">Debitore</th>
-                  <th className="px-3 py-2 text-right">Incasso</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">
-                    % adottata
-                  </th>
-                  <th className="px-3 py-2 text-right">Provvigione</th>
-                  <th className="px-3 py-2">Stato</th>
-                </tr>
+                <ProvvigioniTabellaHead
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  showOperatore={showOperatore}
+                />
               </thead>
               <tbody>
-                {sez.righe.map((r) => (
+                {sorted(sez.righe).map((r) => (
                   <RigaTabella key={r.id} r={r} showOperatore={showOperatore} />
                 ))}
                 {!sez.righe.length ? (

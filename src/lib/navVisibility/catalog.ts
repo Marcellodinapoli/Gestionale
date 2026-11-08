@@ -1,4 +1,4 @@
-import type { Role } from "@/lib/permissions";
+import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import type { ModuleId } from "@/lib/platform/modules";
 
 /** Id stabile delle voci di menu (main + admin). */
@@ -20,6 +20,7 @@ export type NavPageId =
   | "formazione"
   | "strumenti"
   | "legal"
+  | "legalAi"
   | "recruiting"
   | "portafogli"
   | "import"
@@ -58,12 +59,19 @@ export const NAV_PAGES: NavPageDef[] = [
   { id: "report", label: "Registrazioni", pathPrefix: "/report", group: "main", moduleId: "recovery" },
   { id: "rubrica", label: "Rubrica", pathPrefix: "/rubrica", group: "main", moduleId: "core" },
   { id: "lavorazione", label: "Lavorazione", pathPrefix: "/lavorazione", group: "main", moduleId: "lavorazione" },
-  { id: "dialer", label: "Dialer", pathPrefix: "/predictive-dialer", group: "main", moduleId: "dialer" },
+  { id: "dialer", label: "Predictive", pathPrefix: "/predictive", group: "main", moduleId: "dialer" },
   { id: "account", label: "Account", pathPrefix: "/account", group: "main", moduleId: "core", locked: true },
-  { id: "creditcalc", label: "CreditCalc", pathPrefix: "/creditcalc", group: "main", moduleId: "creditcalc" },
+  { id: "creditcalc", label: "CredixaApp", pathPrefix: "/creditcalc", group: "main", moduleId: "creditcalc" },
   { id: "formazione", label: "Formazione", pathPrefix: "/formazione", group: "main", moduleId: "formazione" },
   { id: "strumenti", label: "Strumenti AI", pathPrefix: "/strumenti", group: "main", moduleId: "formazione" },
   { id: "legal", label: "Legal", pathPrefix: "/legal", group: "main", moduleId: "legale" },
+  {
+    id: "legalAi",
+    label: "Credixa Legal AI",
+    pathPrefix: "/legal-ai",
+    group: "main",
+    moduleId: "legal-ai",
+  },
   { id: "recruiting", label: "Recruiting", pathPrefix: "/recruiting", group: "main", moduleId: "recruiting" },
   { id: "portafogli", label: "Portafogli", pathPrefix: "/portafogli", group: "main", moduleId: "utp-npl" },
   { id: "import", label: "Import", pathPrefix: "/import", group: "admin", moduleId: "recovery" },
@@ -90,8 +98,25 @@ export const NAV_VISIBILITY_ROLES: Role[] = [
   "SUPERVISOR",
   "BACK_OFFICE",
   "OPERATOR",
+  "RECEPTION",
   "LEGAL",
+  "AVVOCATO",
+  "RECRUITER",
 ];
+
+/** Pagine modificabili in matrice visibilità, ordine alfabetico per etichetta. */
+export function editableNavPagesSorted(): NavPageDef[] {
+  return NAV_PAGES
+    .filter((p) => !p.locked && p.id !== "ticket")
+    .sort((a, b) => a.label.localeCompare(b.label, "it", { sensitivity: "base" }));
+}
+
+/** Tipi account nel selettore visibilità, ordine alfabetico per etichetta ruolo. */
+export function navVisibilityRolesSorted(): Role[] {
+  return [...NAV_VISIBILITY_ROLES].sort((a, b) =>
+    ROLE_LABELS[a].localeCompare(ROLE_LABELS[b], "it", { sensitivity: "base" })
+  );
+}
 
 export const NAV_ROLE_DEFAULTS_KEY = "nav.visibility.roleDefaults";
 export const NAV_USER_OVERRIDES_KEY = "nav.visibility.userOverrides";

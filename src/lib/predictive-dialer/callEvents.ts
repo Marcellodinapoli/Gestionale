@@ -1,5 +1,7 @@
-import { randomUUID } from "crypto";import "server-only";
-import { prisma } from "@/lib/prisma";
+import "server-only";
+import { randomUUID } from "crypto";
+import { dialerDb, dialerDbFromUser } from "@/lib/dialerRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
 import type { SessionUser } from "@/lib/permissions";
 import type { DialerCallEventInput } from "@/lib/predictive-dialer/types";
@@ -55,7 +57,7 @@ async function affidaPraticaSeCollegata(
 }
 
 async function loadCallProgress(campagnaId: string, callId: string) {
-  const rows = await prisma.dialerChiamataEvento.findMany({
+  const rows = await dialerDb().dialerChiamataEvento.findMany({
     where: { campagnaId, callId, applied: true },
     select: { tipo: true },
   });
@@ -63,7 +65,7 @@ async function loadCallProgress(campagnaId: string, callId: string) {
 }
 
 async function getOperatoreSession(campagnaId: string, operatoreId: string) {
-  return prisma.dialerCampagnaOperatore.findFirst({
+  return dialerDb().dialerCampagnaOperatore.findFirst({
     where: { campagnaId, operatoreId, accettatoAt: { not: null }, uscitaAt: null },
   });
 }
@@ -73,7 +75,7 @@ async function notifyOperatorAvailableAfterEvent(
   campagnaId: string,
   operatoreId: string
 ) {
-  const op = await prisma.user.findUnique({
+  const op = await usersDbFromUser(user).findUnique({
     where: { id: operatoreId },
     select: { interno: true },
   });
@@ -90,7 +92,7 @@ export async function registerDialerCallEvent(
   user: SessionUser,
   input: DialerCallEventInput
 ): Promise<RegisterDialerEventResult> {
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: input.campagnaId, tenantId: user.tenantId },
   });
   if (!campagna) throw new Error("Campagna non trovata");
@@ -109,7 +111,7 @@ export async function registerDialerCallEvent(
     tipo: input.tipo,
   });
 
-  const existing = await prisma.dialerChiamataEvento.findUnique({
+  const existing = await dialerDbFromUser(user).dialerChiamataEvento.findUnique({
     where: { campagnaId_dedupKey: { campagnaId: input.campagnaId, dedupKey } },
   });
   if (existing) {
@@ -128,7 +130,7 @@ export async function registerDialerCallEvent(
   let shouldAffida = false;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await dialerDbFromUser(user).$transaction(async (tx) => {
       let lockAcquired = true;
       if (!skipReason && input.tipo === "iniziata" && praticaId && operatoreId) {
         lockAcquired = await lockPraticaInCoda(
@@ -277,7 +279,7 @@ export async function registerDialerCallEvent(
     });
   } catch (err) {
     const code = (err as { code?: string })?.code;
-    if (code === "P2002") {
+    if (code === "P2002" || code === "23505") {
       return { ok: true, duplicate: true, callId };
     }
     throw err;
@@ -307,13 +309,13 @@ export async function registerDialerCallEvent(
 }
 
 export async function completePostCallIfExpired(user: SessionUser, campagnaId: string, operatoreId: string) {
-  const session = await prisma.dialerCampagnaOperatore.findFirst({
+  const session = await dialerDbFromUser(user).dialerCampagnaOperatore.findFirst({
     where: { campagnaId, operatoreId, sessioneStato: "post_call" },
   });
   if (!session?.postCallFineAt) return false;
   if (session.postCallFineAt.getTime() > Date.now()) return false;
 
-  await prisma.dialerCampagnaOperatore.update({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.update({
     where: { id: session.id },
     data: {
       sessioneStato: "disponibile",

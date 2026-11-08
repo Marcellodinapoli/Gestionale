@@ -5,6 +5,7 @@
 import { getFirebaseFirestore } from "@/lib/firebase/admin";
 import type { OperationalConnector, SyncBatchResult, SyncCursor } from "@/lib/dataAccess";
 import { collectionForOpsModel } from "@/lib/firebase/opsCollections";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 
 const CURSOR_COL = "_syncCursors";
 
@@ -12,6 +13,10 @@ export async function readSyncCursor(
   tenantId: string,
   collection: string
 ): Promise<string | null> {
+  if (!isFirebaseAvailable()) {
+    return null;
+  }
+
   const db = getFirebaseFirestore();
   const snap = await db.doc(`credixa/${tenantId}/${CURSOR_COL}/${collection}`).get();
   if (!snap.exists) return null;
@@ -24,6 +29,11 @@ export async function writeSyncCursor(
   collection: string,
   since: string
 ) {
+  if (!isFirebaseAvailable()) {
+    console.warn("[sync] Firebase non disponibile - writeSyncCursor saltata");
+    return;
+  }
+
   const db = getFirebaseFirestore();
   await db.doc(`credixa/${tenantId}/${CURSOR_COL}/${collection}`).set(
     { since, updatedAt: new Date().toISOString() },
@@ -45,6 +55,12 @@ export async function applyIncrementalUpserts(args: {
   if (!col) {
     return { upserted: 0, deleted: 0, cursor: null, done: true };
   }
+
+  if (!isFirebaseAvailable()) {
+    console.warn("[sync] Firebase non disponibile - sync saltata");
+    return { upserted: 0, deleted: 0, cursor: null, done: true };
+  }
+
   const db = getFirebaseFirestore();
   const now = new Date().toISOString();
   let upserted = 0;
@@ -130,6 +146,11 @@ export async function listUpdatedSince(args: {
 }): Promise<Array<Record<string, unknown>>> {
   const col = collectionForOpsModel(args.model);
   if (!col) return [];
+
+  if (!isFirebaseAvailable()) {
+    return [];
+  }
+
   const db = getFirebaseFirestore();
   const limit = Math.min(args.limit ?? 200, 500);
   try {

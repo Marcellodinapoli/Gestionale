@@ -5,6 +5,7 @@
 import {
   FUTURE_MODULE_IDS,
   hasModule,
+  modulesFromPackages,
   NEW_PRODUCT_MODULE_IDS,
   parseEnabledModules,
   RECOVERY_DEFAULT_MODULES,
@@ -35,13 +36,18 @@ function assert(cond: boolean, msg: string) {
 
 assert(
   RECOVERY_DEFAULT_MODULES.join(",") ===
-    "core,recovery,incassi,dialer,affidi,lavorazione,legale,formazione,recruiting,strumenti,utp-npl,creditcalc",
+    "core,recovery,incassi,dialer,affidi,lavorazione,legale,formazione,recruiting,strumenti,utp-npl",
   "default modules"
 );
 for (const m of RECOVERY_DEFAULT_MODULES) {
   assert(hasModule(undefined, m), `default has ${m}`);
 }
+const OPT_IN_SELLABLE: readonly string[] = ["legal-ai", "creditcalc"];
 for (const m of SELLABLE_MODULE_IDS) {
+  if (OPT_IN_SELLABLE.includes(m)) {
+    assert(!hasModule(undefined, m), `opt-in ${m} off by default`);
+    continue;
+  }
   assert(hasModule(undefined, m), `sellable ${m} on by default`);
 }
 for (const m of FUTURE_MODULE_IDS) {
@@ -61,6 +67,12 @@ assert(v2.includes("core"), "v2 keeps core");
 assert(v2.includes("formazione"), "v2 keeps formazione");
 assert(!v2.includes("legale"), "v2 can turn off legale");
 assert(!v2.includes("recovery"), "v2 can turn off recovery");
+
+const legalAiOnly = modulesFromPackages(["legal-ai"]);
+assert(legalAiOnly.includes("legal-ai"), "addon legal-ai enables module");
+assert(!legalAiOnly.includes("recovery"), "addon legal-ai without base");
+const fullMods = modulesFromPackages(["credixa-full"]);
+assert(fullMods.includes("legal-ai"), "credixa-full includes legal-ai");
 
 assert(
   expectedStati.every((s) => STATO_LABELS[s]),

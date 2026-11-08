@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
+import { configurazioneDbForTenant } from "@/lib/configurazioneRepo";
+import { dialerDbForTenant } from "@/lib/dialerRepo";
 
 import { registerDialerCallEvent } from "@/lib/predictive-dialer/callEvents";
 
@@ -54,18 +55,13 @@ export async function POST(req: Request) {
 
 
 
-  const cfg = await prisma.configurazioneSistema.findFirst({
-
+  const cfg = await configurazioneDbForTenant(body.tenantId).findUnique({
     where: {
-
-      tenantId: body.tenantId,
-
-      categoria: DIALER_CONFIG_CATEGORIA,
-
-      chiave: DIALER_CONFIG_WEBHOOK_SECRET,
-
+      tenantId_chiave: {
+        tenantId: body.tenantId,
+        chiave: DIALER_CONFIG_WEBHOOK_SECRET,
+      },
     },
-
   });
 
   const expected = cfg?.valore?.trim();
@@ -78,10 +74,8 @@ export async function POST(req: Request) {
 
 
 
-  const campagna = await prisma.dialerCampagna.findFirst({
-
+  const campagna = await dialerDbForTenant(body.tenantId).dialerCampagna.findFirst({
     where: { id: body.campagnaId, tenantId: body.tenantId },
-
   });
 
   if (!campagna) {

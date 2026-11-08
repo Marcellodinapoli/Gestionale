@@ -4,8 +4,11 @@ export type Role =
   | "SUPERVISOR"
   | "BACK_OFFICE"
   | "OPERATOR"
+  | "RECEPTION"
   | "MANUTENZIONE"
-  | "LEGAL";
+  | "LEGAL"
+  | "AVVOCATO"
+  | "RECRUITER";
 
 export type SessionUser = {
   id: string;
@@ -28,6 +31,9 @@ export type SessionUser = {
 };
 
 export { isFormazioneOnly } from "@/lib/formazioneOnlyAccess";
+
+import type { ProductStandaloneContext } from "@/lib/platform/productStandalone";
+import { standaloneOperatoreRoles } from "@/lib/platform/productStandalone";
 
 const FORMAZIONE_ONLY_PERMISSIONS: Permission[] = ["formazione:view"];
 
@@ -58,13 +64,15 @@ export type Permission =
   | "formazione:view"
   | "strumenti:view"
   | "legal:view"
+  | "legal-ai:view"
   | "recruiting:view"
   | "recruiting:manage"
   | "portafogli:view"
   | "portafogli:manage"
   | "dialer:operate"
   | "dialer:manage"
-  | "dialer:admin";
+  | "dialer:admin"
+  | "assistenza:view";
 
 const MAP: Record<Permission, Role[]> = {
   "users:manage": ["ADMIN"],
@@ -84,7 +92,7 @@ const MAP: Record<Permission, Role[]> = {
   "incassi:list": ["ADMIN", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "import:run": ["ADMIN", "BACK_OFFICE"],
   "report:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE"],
-  "statistiche:view": ["ADMIN", "OPERATOR", "SUPERVISOR", "AMMINISTRAZIONE"],
+  "statistiche:view": ["ADMIN", "OPERATOR", "SUPERVISOR", "BACK_OFFICE", "AMMINISTRAZIONE"],
   "provigioni:view": ["ADMIN", "SUPERVISOR", "OPERATOR", "AMMINISTRAZIONE"],
   "audit:view": ["ADMIN", "AMMINISTRAZIONE"],
   "agenda:view": ["ADMIN", "SUPERVISOR", "OPERATOR", "BACK_OFFICE", "AMMINISTRAZIONE", "LEGAL"],
@@ -96,16 +104,29 @@ const MAP: Record<Permission, Role[]> = {
   "formazione:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR"],
   /** Strumenti AI (ricerca normativa, ecc.): anche Legal. */
   "strumenti:view": ["ADMIN", "SUPERVISOR", "BACK_OFFICE", "OPERATOR", "LEGAL"],
-  /** Area gestione legale. */
+  /** Area gestione legale (recupero crediti / pratiche). */
   "legal:view": ["ADMIN", "LEGAL"],
+  /** Credixa Legal AI — distinto dal modulo legale interno. */
+  "legal-ai:view": ["ADMIN", "AMMINISTRAZIONE", "AVVOCATO"],
   /** Recruiting: offerte di lavoro (metadati). Nessun CV / candidato. */
-  "recruiting:view": ["ADMIN", "AMMINISTRAZIONE"],
-  "recruiting:manage": ["ADMIN", "AMMINISTRAZIONE"],
+  "recruiting:view": ["ADMIN", "AMMINISTRAZIONE", "RECRUITER"],
+  "recruiting:manage": ["ADMIN", "AMMINISTRAZIONE", "RECRUITER"],
   "portafogli:view": ["ADMIN", "AMMINISTRAZIONE", "BACK_OFFICE", "SUPERVISOR"],
   "portafogli:manage": ["ADMIN", "AMMINISTRAZIONE", "BACK_OFFICE"],
   "dialer:operate": ["ADMIN", "SUPERVISOR", "OPERATOR"],
   "dialer:manage": ["ADMIN", "SUPERVISOR"],
   "dialer:admin": ["ADMIN"],
+  /** Chatbot utilizzo Credixa (manualistica). */
+  "assistenza:view": [
+    "ADMIN",
+    "AMMINISTRAZIONE",
+    "SUPERVISOR",
+    "BACK_OFFICE",
+    "OPERATOR",
+    "RECEPTION",
+    "MANUTENZIONE",
+    "LEGAL",
+  ],
 };
 
 /** Ruoli con visione di tutte le pratiche del tenant (non portfolio personale). */
@@ -114,7 +135,8 @@ export function hasTenantWidePraticheScope(role: Role | string | null | undefine
     role === "ADMIN" ||
     role === "BACK_OFFICE" ||
     role === "AMMINISTRAZIONE" ||
-    role === "LEGAL"
+    role === "LEGAL" ||
+    role === "RECEPTION"
   );
 }
 
@@ -122,12 +144,14 @@ export function isManutenzione(user: { role: string } | null | undefined) {
   return user?.role === "MANUTENZIONE";
 }
 
-/** Tutti devono avere una postazione (tranne account solo-formazione). */
+/** Tutti devono avere una postazione (tranne account solo-formazione e Avvocato Legal AI). */
 export function requiresPostazione(
   user: { role: Role; formazioneOnly?: boolean } | null | undefined
 ) {
   if (!user) return false;
   if (user.formazioneOnly) return false;
+  if (user.role === "AVVOCATO") return false;
+  if (user.role === "RECRUITER") return false;
   return true;
 }
 
@@ -139,6 +163,11 @@ export function richiedeInternoPerChiamata(role: Role) {
 /** Popup incasso in barra strumenti pratica (esclusi operatore e supervisor). */
 export function canShowIncassoPopup(role: Role | string | null | undefined) {
   return role !== "SUPERVISOR" && role !== "OPERATOR";
+}
+
+/** Screen pop chiamata in entrata: solo operatore e supervisor. */
+export function canReceiveInboundScreenPop(role: Role | string | null | undefined) {
+  return role === "OPERATOR" || role === "SUPERVISOR";
 }
 
 /** Modifica/elimina incassi registrati: esclusi operatore, supervisor e back office. */
@@ -169,6 +198,11 @@ export function canImpostarePostazioneFissa(role: Role) {
   );
 }
 
+/** Tendina postazione in Account: operatori e supervisori cambiano solo al login. */
+export function canCambiarePostazioneDaAccount(role: Role) {
+  return role !== "OPERATOR" && role !== "SUPERVISOR";
+}
+
 /** Admin, amministrazione e back office: possono entrare se tutte le postazioni sono occupate. */
 export function canEnterWithoutPostazione(role: Role) {
   return (
@@ -193,13 +227,62 @@ export function mustChoosePostazioneAlLogin(
   return !user.postazioneId;
 }
 
+export type RuoliCreabiliOpts = {
+  /** @deprecated Usare productStandalone */
+  legalAiStandalone?: boolean;
+  /** @deprecated Usare productStandalone */
+  recruitingStandalone?: boolean;
+  productStandalone?: ProductStandaloneContext;
+};
+
 /** Ruoli assegnabili in creazione account, in base al creatore. */
-export function ruoliCreabiliDa(creatorRole: Role): Role[] {
+export function ruoliCreabiliDa(creatorRole: Role, opts?: RuoliCreabiliOpts): Role[] {
+  const ctx: ProductStandaloneContext = opts?.productStandalone ?? {
+    legalAi: Boolean(opts?.legalAiStandalone),
+    recruiting: Boolean(opts?.recruitingStandalone),
+  };
+  const standalone = standaloneOperatoreRoles(ctx);
+  if (standalone.length > 0) {
+    if (
+      creatorRole === "ADMIN" ||
+      creatorRole === "AMMINISTRAZIONE" ||
+      creatorRole === "BACK_OFFICE"
+    ) {
+      return standalone;
+    }
+    return [];
+  }
+  if (ctx.formazione) {
+    if (creatorRole === "ADMIN") return ["SUPERVISOR", "OPERATOR"];
+    if (creatorRole === "SUPERVISOR") return ["OPERATOR"];
+    return [];
+  }
+  if (ctx.dialer) {
+    if (creatorRole === "ADMIN") return ["SUPERVISOR", "OPERATOR"];
+    if (creatorRole === "SUPERVISOR") return ["OPERATOR"];
+    return [];
+  }
   if (creatorRole === "ADMIN") {
-    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE", "LEGAL"];
+    return [
+      "OPERATOR",
+      "BACK_OFFICE",
+      "SUPERVISOR",
+      "AMMINISTRAZIONE",
+      "LEGAL",
+      "RECEPTION",
+      "AVVOCATO",
+    ];
   }
   if (creatorRole === "AMMINISTRAZIONE") {
-    return ["OPERATOR", "BACK_OFFICE", "SUPERVISOR", "AMMINISTRAZIONE", "LEGAL"];
+    return [
+      "OPERATOR",
+      "BACK_OFFICE",
+      "SUPERVISOR",
+      "AMMINISTRAZIONE",
+      "LEGAL",
+      "RECEPTION",
+      "AVVOCATO",
+    ];
   }
   if (creatorRole === "BACK_OFFICE") {
     return ["OPERATOR"];
@@ -236,10 +319,14 @@ export function canManageLavorazione(user: { role: Role } | null | undefined) {
   return can(user, "lavorazione:manage");
 }
 
-/** Admin e back office scelgono il gruppo; il supervisor lavora solo sul proprio. */
+/** Admin, back office e supervisor scelgono il gruppo (supervisor: default proprio). */
 export function canPickGruppoLavorazione(user: { role: Role } | null | undefined) {
   if (!user || isManutenzione(user)) return false;
-  return user.role === "ADMIN" || user.role === "BACK_OFFICE";
+  return (
+    user.role === "ADMIN" ||
+    user.role === "BACK_OFFICE" ||
+    user.role === "SUPERVISOR"
+  );
 }
 
 export function can(
@@ -273,6 +360,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   AMMINISTRAZIONE: "Amministrazione",
   MANUTENZIONE: "Manutenzione",
   LEGAL: "Legal",
+  AVVOCATO: "Avvocato",
+  RECRUITER: "Reclutatore",
+  RECEPTION: "Reception",
 };
 
 /** Re-export catalogo recovery (valori invariati). */

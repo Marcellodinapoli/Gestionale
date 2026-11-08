@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import {
-  NAV_PAGES,
+  editableNavPagesSorted,
   NAV_VISIBILITY_ROLES,
   type NavPageId,
   type NavRoleDefaults,
@@ -26,10 +26,7 @@ export function NavVisibilityRoleMatrix({
   const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const pages = useMemo(
-    () => NAV_PAGES.filter((p) => !p.locked && p.id !== "ticket"),
-    []
-  );
+  const pages = useMemo(() => editableNavPagesSorted(), []);
 
   const map = defaults[role] || {};
 
@@ -108,12 +105,11 @@ export function NavVisibilityRoleMatrix({
         Flag = pagina visibile di default per tutti gli account{" "}
         <strong>{ROLE_LABELS[role]}</strong>.
       </p>
-
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="columns-1 gap-x-3 sm:columns-2 lg:columns-3">
         {pages.map((p) => (
           <label
             key={p.id}
-            className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2 text-sm hover:bg-slate-50"
+            className="mb-2 flex w-full cursor-pointer break-inside-avoid items-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2 text-sm hover:bg-slate-50"
           >
             <input
               type="checkbox"

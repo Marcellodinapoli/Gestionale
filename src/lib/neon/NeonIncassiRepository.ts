@@ -620,6 +620,13 @@ export class NeonIncassiRepository implements IncassiRepository {
     });
     return { ok: true };
   }
+
+  async aggiornaModo(_tenantSlug: string, tenantId: string, id: string, modo: string) {
+    await neonQuery(
+      `UPDATE "Incassi" SET "Modo" = $1 WHERE "Id" = $2::uuid AND "TenantId" = $3::uuid`,
+      [modo, id, tenantId]
+    );
+  }
 }
 
 export function createNeonIncassiRepository(tenantSlug: string) {

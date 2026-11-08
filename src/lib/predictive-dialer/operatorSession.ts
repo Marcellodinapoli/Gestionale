@@ -1,5 +1,6 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { dialerDbFromUser } from "@/lib/dialerRepo";
+import { usersDbFromUser } from "@/lib/usersRepo";
 import { mapDialerCampagna } from "@/lib/predictive-dialer/mappers";
 import type { SessionUser } from "@/lib/permissions";
 import type {
@@ -14,7 +15,7 @@ import {
 } from "@/lib/predictive-dialer/dialerSync";
 
 export async function loadInvitiOperatore(user: SessionUser): Promise<DialerInvitoCampagnaDto[]> {
-  const rows = await prisma.dialerCampagnaOperatore.findMany({
+  const rows = await dialerDbFromUser(user).dialerCampagnaOperatore.findMany({
     where: {
       operatoreId: user.id,
       campagna: { tenantId: user.tenantId, stato: { in: ["ATTIVA", "PAUSA"] } },
@@ -41,7 +42,7 @@ export async function loadSessioneOperatore(
     ...(campagnaId ? { campagnaId } : {}),
     campagna: { tenantId: user.tenantId, stato: { in: ["ATTIVA", "PAUSA"] as string[] } },
   };
-  const row = await prisma.dialerCampagnaOperatore.findFirst({
+  const row = await dialerDbFromUser(user).dialerCampagnaOperatore.findFirst({
     where,
     include: { campagna: true },
     orderBy: { accettatoAt: "desc" },
@@ -50,7 +51,7 @@ export async function loadSessioneOperatore(
 
   if (row.sessioneStato === "post_call") {
     await completePostCallIfExpired(user, row.campagnaId, user.id);
-    const refreshed = await prisma.dialerCampagnaOperatore.findUnique({ where: { id: row.id } });
+    const refreshed = await dialerDbFromUser(user).dialerCampagnaOperatore.findUnique({ where: { id: row.id } });
     if (refreshed) Object.assign(row, refreshed);
   }
 
@@ -70,7 +71,7 @@ export async function loadSessioneOperatore(
 }
 
 export async function acceptCampagnaSession(user: SessionUser, campagnaId: string) {
-  const row = await prisma.dialerCampagnaOperatore.findFirst({
+  const row = await dialerDbFromUser(user).dialerCampagnaOperatore.findFirst({
     where: { campagnaId, operatoreId: user.id },
     include: { campagna: true, operatore: { select: { interno: true } } },
   });
@@ -79,7 +80,7 @@ export async function acceptCampagnaSession(user: SessionUser, campagnaId: strin
     throw new Error("Campagna non attiva");
   }
 
-  await prisma.dialerCampagnaOperatore.update({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.update({
     where: { id: row.id },
     data: {
       accettatoAt: new Date(),
@@ -98,7 +99,7 @@ export async function acceptCampagnaSession(user: SessionUser, campagnaId: strin
 }
 
 export async function pauseDialerSession(user: SessionUser, campagnaId: string) {
-  await prisma.dialerCampagnaOperatore.updateMany({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.updateMany({
     where: { campagnaId, operatoreId: user.id, accettatoAt: { not: null } },
     data: { sessioneStato: "pausa", pausaInizioAt: new Date() },
   });
@@ -106,12 +107,12 @@ export async function pauseDialerSession(user: SessionUser, campagnaId: string) 
 }
 
 export async function resumeDialerSession(user: SessionUser, campagnaId: string) {
-  const op = await prisma.dialerCampagnaOperatore.findFirst({
+  const op = await dialerDbFromUser(user).dialerCampagnaOperatore.findFirst({
     where: { campagnaId, operatoreId: user.id },
     include: { operatore: { select: { interno: true } } },
   });
   if (!op) throw new Error("Sessione non trovata");
-  await prisma.dialerCampagnaOperatore.update({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.update({
     where: { id: op.id },
     data: { sessioneStato: "disponibile", pausaInizioAt: null },
   });
@@ -124,12 +125,12 @@ export async function resumeDialerSession(user: SessionUser, campagnaId: string)
 }
 
 export async function exitDialerSession(user: SessionUser, campagnaId: string) {
-  const op = await prisma.dialerCampagnaOperatore.findFirst({
+  const op = await dialerDbFromUser(user).dialerCampagnaOperatore.findFirst({
     where: { campagnaId, operatoreId: user.id },
     include: { campagna: true, operatore: { select: { interno: true } } },
   });
   if (!op) return;
-  await prisma.dialerCampagnaOperatore.update({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.update({
     where: { id: op.id },
     data: {
       sessioneStato: "fuori",
@@ -148,11 +149,11 @@ export async function exitDialerSession(user: SessionUser, campagnaId: string) {
 }
 
 export async function finishPostCallManual(user: SessionUser, campagnaId: string) {
-  await prisma.dialerCampagnaOperatore.updateMany({
+  await dialerDbFromUser(user).dialerCampagnaOperatore.updateMany({
     where: { campagnaId, operatoreId: user.id, sessioneStato: "post_call" },
     data: { sessioneStato: "disponibile", postCallFineAt: null, praticaCorrenteId: null },
   });
-  const op = await prisma.user.findUnique({
+  const op = await usersDbFromUser(user).findUnique({
     where: { id: user.id },
     select: { interno: true },
   });

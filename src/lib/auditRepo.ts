@@ -1,7 +1,8 @@
 import "server-only";
 import { findTenantById, findUserAuditContext } from "@/lib/data/operationalAccess";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorAuditRepository } from "@/lib/data/connector/ConnectorAuditRepository";
+import { createNeonAuditRepository } from "@/lib/neon/NeonAuditRepository";
 import { prismaAuditRepository } from "@/lib/data/prisma/PrismaAuditRepository";
 import type { AuditCreateInput, AuditRepository } from "@/lib/data/contracts/audit";
 import { resolveTenantSlug, type PraticaDbContext } from "@/lib/praticheRepo";
@@ -10,6 +11,7 @@ export type AuditDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: AuditDbContext): AuditRepository {
   if (isConnectorProvider()) return createConnectorAuditRepository(ctx.tenantSlug);
+  if (isNeonProvider()) return createNeonAuditRepository(ctx.tenantSlug);
   return prismaAuditRepository;
 }
 

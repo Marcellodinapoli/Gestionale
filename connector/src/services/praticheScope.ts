@@ -65,7 +65,13 @@ export function applyScope(
     role === "OPERATOR" ||
     role === "SUPERVISOR";
 
-  if (role === "ADMIN" || role === "BACK_OFFICE" || role === "AMMINISTRAZIONE" || role === "LEGAL") {
+  if (
+    role === "ADMIN" ||
+    role === "BACK_OFFICE" ||
+    role === "AMMINISTRAZIONE" ||
+    role === "LEGAL" ||
+    role === "RECEPTION"
+  ) {
     if (hideFuori) appendHideFuoriStragiudiziale(clauses, req, alias);
     return clauses;
   }

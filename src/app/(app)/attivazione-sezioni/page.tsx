@@ -8,7 +8,7 @@ export default function AttivazioneSezioniPage() {
       </h1>
       <p className="mt-3 max-w-md text-sm leading-relaxed text-[var(--muted)]">
         Nessuna sezione del gestionale è ancora attiva per questa azienda.
-        Contatta Credixa o il tuo referente commerciale per richiedere
+        Contatta Credixa Suite o il tuo referente commerciale per richiedere
         l&apos;attivazione delle sezioni necessarie.
       </p>
       <form action={logoutAction} className="mt-8">

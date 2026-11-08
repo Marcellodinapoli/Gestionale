@@ -23,6 +23,7 @@ import { createSession, getCurrentUser } from "@/lib/auth";
 import { assertCan, can, canClearCodiceScarico, canEditCodiceScaricoBk, mustChoosePostazioneAlLogin, type Role } from "@/lib/permissions";
 import {
   canAccessPratica,
+  messaggioPraticaNonVisibile,
   parseDateOnly,
   praticaWhere,
   praticheStessoDebitoreIds,
@@ -30,18 +31,14 @@ import {
   writeAudit,
 
 } from "@/lib/domain";
+import { assertAgendaNonNelPassato } from "@/lib/agenda/agendaNonNelPassato";
 import { syncMessaggioAgenda, markMessaggiLetti } from "@/lib/memoAgenda";
 import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
 import { resolveTenantSlug } from "@/lib/praticheRepo";
 import { formatMessaggioCollegaNota } from "@/lib/noteFormat";
-import {
-  calcolaProvvigione,
-  isModoNonProvvigionabile,
-  normalizeFatturaIncasso,
-  normalizeModoIncasso,
-  resolveProvvigionePercentuale,
-  resolveProvvigionePercentualeLato,
-} from "@/lib/provvigioni";
+import { normalizeFatturaIncasso, normalizeModoIncasso } from "@/lib/provvigioni";
+import { resolveOperatoreProvvigioneIncasso } from "@/lib/provvigioneIncassoOperatore";
+import { importiProvvigionePerModo } from "@/lib/provvigioneImportiModo";
 import {
   codiciScaricoBkOffPerPratica,
   codiciScaricoOperatoriEffettivi,
@@ -245,7 +242,9 @@ async function nextNumero(ctx: PraticaDbContext) {
 }
 
 async function assertPraticaWork(user: Awaited<ReturnType<typeof requireWritableUser>>, praticaId: string) {
-  if (!(await canAccessPratica(user, praticaId))) fail("Pratica non visibile");
+  if (!(await canAccessPratica(user, praticaId))) {
+    fail(await messaggioPraticaNonVisibile(user, praticaId));
+  }
   if (!can(user, "pratiche:work")) fail("Operazione non consentita");
   await assertPraticaLockHeld(user, praticaId);
 }
@@ -254,7 +253,9 @@ async function assertPraticaEditable(
   user: Awaited<ReturnType<typeof requireWritableUser>>,
   praticaId: string
 ) {
-  if (!(await canAccessPratica(user, praticaId))) fail("Pratica non visibile");
+  if (!(await canAccessPratica(user, praticaId))) {
+    fail(await messaggioPraticaNonVisibile(user, praticaId));
+  }
   await assertPraticaLockHeld(user, praticaId);
 }
 
@@ -777,49 +778,54 @@ export async function salvaNotaServizioPraticaAction(formData: FormData) {
     await applyCodiceScaricoBkPratica(praticaId, codiceScaricoBk ?? null);
   }
 
-  const collegateIds = (
-    await praticheStessoDebitoreIds(praticaId, "aperta", {
-      tenantId: user.tenantId,
-      tenantSlug: user.tenantSlug ?? user.tenantId,
-    })
-  ).filter((id) => id !== praticaId);
-
-  const collegate = collegateIds.length
-    ? await (await praticaModel()).findMany({
-        where: {
-          id: { in: collegateIds },
-          tenantId: user.tenantId,
-          mandanteId: main.mandanteId,
-        },
-        select: { id: true, stato: true },
-      })
-    : [];
-
+  // Propaga su pratiche collegate solo se esplicitamente richiesto
+  const aggiornaCollegate = String(formData.get("aggiornaCollegate") || "") === "1";
   let collegateAggiornate = 0;
-  for (const collegata of collegate) {
-    if (isPraticaChiusa(collegata.stato)) continue;
-    try {
-      await assertPraticaNotLockedByOther(user, collegata.id);
-    } catch {
-      continue;
-    }
 
-    await (await attivitaModel()).create({
-      data: {
-        praticaId: collegata.id,
-        userId: user.id,
-        tipo: "NOTA",
-        nota: NOTA_COLLEGATA_PRINCIPALE,
-      },
-    });
-    await applyScaricoPromessaPratica(collegata.id, scaricoInput, {
-      ultimaLavorazione: lavorazione,
-    });
-    if (aggiornaBk) {
-      await applyCodiceScaricoBkPratica(collegata.id, codiceScaricoBk ?? null);
+  if (aggiornaCollegate) {
+    const collegateIds = (
+      await praticheStessoDebitoreIds(praticaId, "aperta", {
+        tenantId: user.tenantId,
+        tenantSlug: user.tenantSlug ?? user.tenantId,
+      })
+    ).filter((id) => id !== praticaId);
+
+    const collegate = collegateIds.length
+      ? await (await praticaModel()).findMany({
+          where: {
+            id: { in: collegateIds },
+            tenantId: user.tenantId,
+            mandanteId: main.mandanteId,
+          },
+          select: { id: true, stato: true },
+        })
+      : [];
+
+    for (const collegata of collegate) {
+      if (isPraticaChiusa(collegata.stato)) continue;
+      try {
+        await assertPraticaNotLockedByOther(user, collegata.id);
+      } catch {
+        continue;
+      }
+
+      await (await attivitaModel()).create({
+        data: {
+          praticaId: collegata.id,
+          userId: user.id,
+          tipo: "NOTA",
+          nota: NOTA_COLLEGATA_PRINCIPALE,
+        },
+      });
+      await applyScaricoPromessaPratica(collegata.id, scaricoInput, {
+        ultimaLavorazione: lavorazione,
+      });
+      if (aggiornaBk) {
+        await applyCodiceScaricoBkPratica(collegata.id, codiceScaricoBk ?? null);
+      }
+      collegateAggiornate += 1;
+      revalidatePath(`/pratiche/${collegata.id}`);
     }
-    collegateAggiornate += 1;
-    revalidatePath(`/pratiche/${collegata.id}`);
   }
 
   await writeAudit({
@@ -1124,6 +1130,7 @@ export async function salvaMemoAgendaAction(formData: FormData) {
   if (!scheduledAtRaw) fail("Seleziona data e ora del richiamo");
   const memoAt = new Date(scheduledAtRaw);
   if (Number.isNaN(memoAt.getTime())) fail("Data/ora non valida");
+  assertAgendaNonNelPassato(memoAt);
   const nota = String(formData.get("nota") || "").trim();
 
   await (await praticaModel()).update({
@@ -1505,51 +1512,26 @@ async function registraIncassoSuPratica(input: {
 
   const fattura = normalizeFatturaIncasso(input.fattura);
   const modo = normalizeModoIncasso(input.modo);
-  const nonProvv = isModoNonProvvigionabile(modo);
-
-  let provvigioneInput: {
-    praticaId: string;
-    operatoreId: string;
-    baseImporto: number;
-    percentuale: number;
-    importo: number;
-  } | null = null;
-  if (pratica.assegnatarioId) {
-    if (nonProvv) {
-      // Riga in lista con importo 0: visibile come "np", esclusa dal calcolo.
-      provvigioneInput = {
-        praticaId,
-        operatoreId: pratica.assegnatarioId,
-        baseImporto: split.usato,
-        percentuale: 0,
-        importo: 0,
-      };
-    } else {
-      const metodo = input.metodo || "bonifico";
-      const perimetro = resolvePerimetroPratica(
-        pratica.mandante.perimetri,
-        pratica.numeroMandante
-      );
-      const pct = perimetro
-        ? resolveProvvigionePercentualeLato(perimetro.pagata, metodo, pratica.codiceScarico)
-        : resolveProvvigionePercentuale(pratica.mandante, metodo);
-      const prov = calcolaProvvigione(split.usato, pct);
-      provvigioneInput = {
-        praticaId,
-        operatoreId: pratica.assegnatarioId,
-        baseImporto: prov.baseImporto,
-        percentuale: prov.percentuale,
-        importo: prov.importo,
-      };
-    }
-  }
+  const provvigioneInput = buildProvvigioneIncasso({
+    praticaId,
+    assegnatarioId: pratica.assegnatarioId,
+    operatoreTitolareId: pratica.operatoreTitolareId,
+    incassatoreUserId: input.userId,
+    incassatoreRuolo: user.role,
+    codiceScarico: pratica.codiceScarico,
+    numeroMandante: pratica.numeroMandante,
+    mandante: pratica.mandante,
+    metodo: input.metodo || "bonifico",
+    modo,
+    baseImporto: split.usato,
+  });
 
   await registraIncassoWithSideEffects(
     { tenantId: pratica.tenantId, tenantSlug: user.tenantSlug ?? user.tenantId },
     {
       incasso: {
         praticaId,
-        userId,
+        userId: input.userId,
         importo: split.usato,
         capitale: split.capitale,
         interessi: split.interessi,
@@ -1594,6 +1576,9 @@ function statoDopoResiduo(residuo: number, statoAttuale: string) {
 function buildProvvigioneIncasso(input: {
   praticaId: string;
   assegnatarioId: string | null;
+  operatoreTitolareId?: string | null;
+  incassatoreUserId: string;
+  incassatoreRuolo?: string | null;
   codiceScarico: string | null;
   numeroMandante: string | null;
   mandante: {
@@ -1605,31 +1590,26 @@ function buildProvvigioneIncasso(input: {
   modo: string;
   baseImporto: number;
 }) {
-  if (!input.assegnatarioId) return null;
-  if (isModoNonProvvigionabile(input.modo)) {
-    return {
-      praticaId: input.praticaId,
-      operatoreId: input.assegnatarioId,
-      baseImporto: input.baseImporto,
-      percentuale: 0,
-      importo: 0,
-    };
-  }
-  const perimetro = resolvePerimetroPratica(
-    input.mandante.perimetri,
-    input.numeroMandante
+  const operatoreId = resolveOperatoreProvvigioneIncasso(
+    {
+      assegnatarioId: input.assegnatarioId,
+      operatoreTitolareId: input.operatoreTitolareId ?? null,
+    },
+    input.incassatoreUserId,
+    input.incassatoreRuolo
   );
-  const pct = perimetro
-    ? resolveProvvigionePercentualeLato(
-        perimetro.pagata,
-        input.metodo,
-        input.codiceScarico
-      )
-    : resolveProvvigionePercentuale(input.mandante, input.metodo);
-  const prov = calcolaProvvigione(input.baseImporto, pct);
+  if (!operatoreId) return null;
+  const prov = importiProvvigionePerModo({
+    modo: input.modo,
+    baseImporto: input.baseImporto,
+    metodo: input.metodo,
+    codiceScarico: input.codiceScarico,
+    numeroMandante: input.numeroMandante,
+    mandante: input.mandante,
+  });
   return {
     praticaId: input.praticaId,
-    operatoreId: input.assegnatarioId,
+    operatoreId,
     baseImporto: prov.baseImporto,
     percentuale: prov.percentuale,
     importo: prov.importo,
@@ -1794,9 +1774,17 @@ export async function updateIncassoAction(formData: FormData) {
     (existing.data instanceof Date ? existing.data : new Date(existing.data));
   const dataScadenza = parseDateOnly(String(formData.get("dataScadenza") || ""));
 
+  const incassatore = await usersDbFromUser(user).findUnique({
+    where: { id: existing.userId },
+    select: { role: true },
+  });
+
   const provvigioneInput = buildProvvigioneIncasso({
     praticaId,
     assegnatarioId: pratica.assegnatarioId,
+    operatoreTitolareId: pratica.operatoreTitolareId,
+    incassatoreUserId: existing.userId,
+    incassatoreRuolo: incassatore?.role,
     codiceScarico: pratica.codiceScarico,
     numeroMandante: pratica.numeroMandante,
     mandante: pratica.mandante,

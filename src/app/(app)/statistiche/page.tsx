@@ -7,8 +7,7 @@ import { importBatchRepoFromUser } from "@/lib/importBatchRepo";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { requireNavPage } from "@/lib/guard";
 import { dataIt } from "@/lib/domain";
-import { getGruppoLavoro } from "@/lib/gruppoLavoro";
-import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
+import { getGruppoLavoro, getGruppoLavoroForSupervisor } from "@/lib/gruppoLavoro";
 import { gruppoPerimetroScopeWhere } from "@/lib/codiciMandantePerimetro";
 import { isManutenzione, canViewRicaviIncassiAzienda } from "@/lib/permissions";
 import {
@@ -16,10 +15,11 @@ import {
   completaSezioniPerimetriConfigurate,
   allineaTotaleStatistiche,
   parseLottiFiltro,
+  buildLottiPerPerimetroFiltro,
 } from "@/lib/statisticheGruppo";
 import { elencoPerimetriGruppoConfig } from "@/lib/affidiPerimetro";
-import { parsePerimetriList, acronimoPerimetroLotto } from "@/lib/mandantePerimetri";
-import type { LottoPerimetroFiltro } from "@/lib/statisticheGruppoUi";
+import { parsePerimetriList } from "@/lib/mandantePerimetri";
+import type { PerimetroLottiGruppoFiltro } from "@/lib/statisticheGruppoUi";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import { PageHeader } from "@/components/ui";
 import { StatisticheGriglia } from "@/components/statistiche/StatisticheGriglia";
@@ -36,19 +36,12 @@ import {
   userIdsInSede,
 } from "@/lib/sedeScope";
 
-function defaultAffidoDa() {
+function defaultOggiIso() {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}-01`;
-}
-
-function defaultAffidoA() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const last = new Date(y, m + 1, 0).getDate();
-  return `${y}-${String(m + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function parseDateInput(value?: string | null) {
@@ -72,12 +65,11 @@ export default async function StatistichePage({
 }) {
   const user = await requireNavPage("statistiche");
   const sp = await searchParams;
-  // Griglia dopo Filtra (cerca=1) oppure se l’URL ha già filtri espliciti (submit).
-  const showElenco =
-    sp.cerca === "1" ||
-    Boolean(sp.affidoDa || sp.affidoA || sp.lotto || sp.mandanteId || sp.gruppo);
-  const affidoDaStr = sp.affidoDa || defaultAffidoDa();
-  const affidoAStr = sp.affidoA || defaultAffidoA();
+  const lottiSelezionati = parseLottiFiltro(sp.lotto);
+  /** Griglia solo dopo scelta di almeno un lotto. */
+  const showElenco = lottiSelezionati.length > 0;
+  const affidoDaStr = sp.affidoDa || defaultOggiIso();
+  const affidoAStr = sp.affidoA || defaultOggiIso();
   const affidoDa = parseDateInput(affidoDaStr);
   const affidoA = parseDateInput(affidoAStr);
   if (affidoA) affidoA.setHours(23, 59, 59, 999);
@@ -94,16 +86,16 @@ export default async function StatistichePage({
         })
       : [];
 
-  const lottiSelezionati = parseLottiFiltro(sp.lotto);
-
   const canFilterGruppo = ["ADMIN", "AMMINISTRAZIONE"].includes(user.role);
-  const supervisori = canFilterGruppo
+  const isBackOfficeGruppo = user.role === "BACK_OFFICE" && !isManutenzione(user);
+
+  const supervisoriAttivi = canFilterGruppo || isBackOfficeGruppo
     ? await usersDbFromUser(user).findMany({
         where: {
           tenantId: user.tenantId,
           role: "SUPERVISOR",
           active: true,
-          ...(sedeScopeId ? { sedeId: sedeScopeId } : {}),
+          ...(canFilterGruppo && sedeScopeId ? { sedeId: sedeScopeId } : {}),
         },
         orderBy: { name: "asc" },
         select: { id: true, name: true, gruppoNome: true },
@@ -117,38 +109,19 @@ export default async function StatistichePage({
   /** Default gruppo solo se Amministrazione non ha scelto "tutti". */
   const gruppoIdEffettivo = sp.gruppo || undefined;
 
+  const supervisorGruppoId =
+    canFilterGruppo && gruppoIdEffettivo
+      ? gruppoIdEffettivo
+      : isBackOfficeGruppo && supervisoriAttivi.length
+        ? supervisoriAttivi.some((s) => s.id === gruppoIdEffettivo)
+          ? gruppoIdEffettivo!
+          : supervisoriAttivi[0]!.id
+        : undefined;
+
   let gruppo: Awaited<ReturnType<typeof getGruppoLavoro>>;
 
-  if (canFilterGruppo && gruppoIdEffettivo) {
-    const supId = gruppoIdEffettivo;
-    const operators = await usersDbFromUser(user).findMany({
-      where: { tenantId: user.tenantId, supervisorId: supId, active: true, role: "OPERATOR" },
-      select: { id: true, name: true, role: true, email: true },
-      orderBy: { name: "asc" },
-    });
-    const sup = await usersDbFromUser(user).findFirst({
-      where: { id: supId, tenantId: user.tenantId },
-      select: {
-        id: true,
-        name: true,
-        role: true,
-        email: true,
-        gruppoNome: true,
-        gruppoMandanti: true,
-      },
-    });
-    const members = [
-      ...(sup ? [{ id: sup.id, name: sup.name, role: sup.role, email: sup.email }] : []),
-      ...operators,
-    ];
-    gruppo = {
-      supervisorId: supId,
-      supervisorName: sup?.name ?? null,
-      gruppoNome: sup?.gruppoNome ?? null,
-      gruppoMandanti: parseGruppoMandanti(sup?.gruppoMandanti),
-      members,
-      memberIds: members.map((m) => m.id),
-    };
+  if (supervisorGruppoId && (canFilterGruppo || isBackOfficeGruppo)) {
+    gruppo = await getGruppoLavoroForSupervisor(user.tenantId, supervisorGruppoId);
   } else if (tutteLePratiche) {
     const allOps = await usersDbFromUser(user).findMany({
       where: { tenantId: user.tenantId, role: { in: ["OPERATOR", "SUPERVISOR"] }, active: true },
@@ -226,99 +199,54 @@ export default async function StatistichePage({
       ? { id: "__nessun-perimetro-gruppo__" }
       : { AND: [scopeMembri, periScope!] };
 
-  // Lotti disponibili: solo perimetri del gruppo (in lavorazione)
-  const lottiRows = isManutenzione(user) || nessunPerimetroGruppo
-    ? []
-    : await praticaDbFromUser(user).findMany({
-        where: {
-          ...scopeBase,
-          stato: { notIn: [...STATI_PRATICA_CHIUSA] },
-          ...(sp.mandanteId ? { mandanteId: sp.mandanteId } : {}),
-          ...(affidoDa || affidoA
-            ? {
-                dataAffido: {
-                  ...(affidoDa ? { gte: affidoDa } : {}),
-                  ...(affidoA ? { lte: affidoA } : {}),
-                },
-              }
-            : {}),
-          numeroMandante: { not: null },
-        },
-        select: { numeroMandante: true, mandanteId: true },
-        distinct: ["mandanteId", "numeroMandante"],
-        orderBy: [{ mandanteId: "asc" }, { numeroMandante: "asc" }],
-      });
-
-  const importBatches = isManutenzione(user)
-    ? []
-    : await importBatchRepoFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
-        take: 200,
-      });
-
-  const lottoPerimetroByKey = new Map(
-    importBatches
-      .filter((b) => b.lotto.trim() && b.perimetro.trim())
-      .map((b) => [`${b.mandanteId}|${b.lotto.trim()}`, b.perimetro.trim()] as const)
-  );
-
   const mandantePerimetriRaw = new Map(
     mandantiAll.map((m) => [m.id, m.perimetri] as const)
   );
 
-  const lottiOpzioniMap = new Map<string, LottoPerimetroFiltro>();
-
-  const addLottoOpzione = (
-    mandanteId: string,
-    lotto: string,
-    acronimoHint?: string | null,
-    force = false
-  ) => {
-    const value = lotto.trim();
-    if (!value) return;
-    const chiaveImport = lottoPerimetroByKey.get(`${mandanteId}|${value}`) ?? null;
-    const label = acronimoPerimetroLotto(
-      mandantePerimetriRaw.get(mandanteId) ?? null,
-      value,
-      chiaveImport,
-      acronimoHint
-    );
-    const prev = lottiOpzioniMap.get(value);
-    if (prev && !force && prev.label !== value) return;
-    lottiOpzioniMap.set(value, {
-      value,
-      label,
-      title: label !== value ? `Lotto mandante ${value}` : undefined,
+  let lottiPerPerimetro: PerimetroLottiGruppoFiltro[] = [];
+  if (
+    !isManutenzione(user) &&
+    !nessunPerimetroGruppo &&
+    sp.mandanteId
+  ) {
+    const lottiRows = await praticaDbFromUser(user).findMany({
+      where: {
+        ...scopeBase,
+        mandanteId: sp.mandanteId,
+        stato: { notIn: [...STATI_PRATICA_CHIUSA] },
+        ...(affidoDa || affidoA
+          ? {
+              dataAffido: {
+                ...(affidoDa ? { gte: affidoDa } : {}),
+                ...(affidoA ? { lte: affidoA } : {}),
+              },
+            }
+          : {}),
+        numeroMandante: { not: null },
+      },
+      select: { numeroMandante: true, mandanteId: true },
+      distinct: ["numeroMandante"],
+      orderBy: { numeroMandante: "asc" },
     });
-  };
 
-  if (!isManutenzione(user) && !nessunPerimetroGruppo) {
-    for (const row of lottiRows) {
-      const lotto = row.numeroMandante?.trim();
-      if (!lotto) continue;
-      addLottoOpzione(row.mandanteId, lotto);
-    }
-    for (const p of perimetriConfig) {
-      if (p.perimetro === "—") continue;
-      addLottoOpzione(
-        p.mandanteId,
-        p.perimetro,
-        p.acronimo,
-        Boolean(p.acronimo?.trim())
-      );
-    }
-    for (const lotto of lottiSelezionati) {
-      if (lottiOpzioniMap.has(lotto)) continue;
-      for (const m of mandantiAll) {
-        addLottoOpzione(m.id, lotto);
-        const hit = lottiOpzioniMap.get(lotto);
-        if (hit && hit.label !== lotto) break;
-      }
-    }
+    const importBatches = await importBatchRepoFromUser(user).list(
+      user.tenantSlug ?? user.tenantId,
+      user.tenantId,
+      { take: 200 }
+    );
+    const lottoPerimetroByKey = new Map(
+      importBatches
+        .filter((b) => b.lotto.trim() && b.perimetro.trim())
+        .map((b) => [`${b.mandanteId}|${b.lotto.trim()}`, b.perimetro.trim()] as const)
+    );
+
+    lottiPerPerimetro = buildLottiPerPerimetroFiltro(
+      sp.mandanteId,
+      lottiRows,
+      mandantePerimetriRaw.get(sp.mandanteId) ?? null,
+      lottoPerimetroByKey
+    );
   }
-
-  const lottiOpzioni = [...lottiOpzioniMap.values()].sort((a, b) =>
-    a.label.localeCompare(b.label, "it")
-  );
 
   const mandantiPerimetriOpts = mandantiAll.map((m) => ({ perimetri: m.perimetri }));
 
@@ -361,11 +289,15 @@ export default async function StatistichePage({
 
   const operatoriGruppo = gruppo.members.filter((m) => m.role === "OPERATOR");
   const subtitle = !showElenco
-    ? "Imposta i filtri e clicca Filtra per vedere le griglie"
+    ? sp.mandanteId
+      ? "Scegli un lotto per aprire la griglia"
+      : "Seleziona un mandato per vedere perimetri e lotti in lavorazione"
     : canFilterGruppo
       ? sp.gruppo
         ? `Gruppo di ${gruppo.supervisorName || "—"} · ${operatoriGruppo.map((m) => m.name).join(", ") || "nessun operatore"}`
         : "Tutti i gruppi"
+      : isBackOfficeGruppo
+        ? `Gruppo di ${gruppo.supervisorName || "—"} · ${operatoriGruppo.map((m) => m.name).join(", ") || "nessun operatore"}`
       : gruppo.supervisorName
         ? `Gruppo di ${gruppo.supervisorName} · ${operatoriGruppo.map((m) => m.name).join(", ") || gruppo.members.map((m) => m.name).join(", ")}`
     : `Gruppo · ${user.name}`;
@@ -380,14 +312,15 @@ export default async function StatistichePage({
           sedeId={sedeScopeId}
           basePath="/statistiche"
           keepParams={
-            showElenco
+            sp.mandanteId
               ? {
                   affidoDa: affidoDaStr,
                   affidoA: affidoAStr,
                   mandanteId: sp.mandanteId,
-                  lotto: lottiSelezionati.join(",") || undefined,
+                  ...(lottiSelezionati.length
+                    ? { lotto: lottiSelezionati.join(","), cerca: "1" }
+                    : {}),
                   gruppo: gruppoIdEffettivo,
-                  cerca: "1",
                 }
               : {}
           }
@@ -402,22 +335,18 @@ export default async function StatistichePage({
       <Suspense fallback={null}>
         <StatisticheFiltriForm
           mandanti={mandanti}
-          lottiOpzioni={lottiOpzioni}
-          affidoDa={affidoDaStr}
-          affidoA={affidoAStr}
+          lottiPerPerimetro={lottiPerPerimetro}
           mandanteId={sp.mandanteId}
           lottiSelezionati={lottiSelezionati}
-          gruppoId={gruppoIdEffettivo}
-          supervisori={supervisori}
-          consentiTuttiGruppi={user.role === "ADMIN" || user.role === "AMMINISTRAZIONE"}
-          searchActive={showElenco}
+          grigliaAperta={showElenco}
         />
       </Suspense>
 
       {!showElenco ? (
         <p className="rounded-lg border border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
-          Nessuna griglia caricata. Imposta periodo, mandato o perimetri e premi{" "}
-          <span className="font-semibold text-[var(--navy)]">Filtra</span>.
+          {sp.mandanteId
+            ? "Nessuna griglia aperta. Clicca un lotto sotto il perimetro di tuo interesse."
+            : "Seleziona un mandato dall’elenco sopra: compariranno i perimetri e i lotti in lavorazione."}
         </p>
       ) : nessunPerimetroGruppo ? (
         <p className="rounded-lg border border-[var(--line)] bg-white p-6 text-sm text-[var(--muted)]">

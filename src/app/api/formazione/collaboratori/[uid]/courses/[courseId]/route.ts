@@ -4,6 +4,7 @@ import { assertCan } from "@/lib/permissions";
 import { assertCanViewCollaboratorCourse } from "@/lib/formazione/collaboratorAccess";
 import { loadCollaboratorCourseDetail } from "@/lib/formazione/collaboratorProgress";
 import { getFirebaseFirestore } from "@/lib/firebase/admin";
+import { checkFirebaseOrError } from "@/lib/formazione/firebaseGuard";
 
 export async function GET(
   _req: Request,
@@ -19,6 +20,9 @@ export async function GET(
   }
   const moduleDenied = await requireApiModule(userOrRes, "formazione");
   if (moduleDenied) return moduleDenied;
+
+  const fbError = checkFirebaseOrError();
+  if (fbError) return fbError;
 
   const { uid, courseId } = await params;
 

@@ -6,12 +6,22 @@ import { QrCode } from "lucide-react";
 
 type LinkCreateResponse = {
   linkRequestId: string;
+  bffBaseUrl?: string;
   qrPayload: string;
   expiresAt: string;
   status: string;
   operatorName: string;
   tenantName: string;
 };
+
+function isLocalBffHost(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
 
 type LinkStatusResponse = {
   linkRequestId: string;
@@ -29,15 +39,34 @@ function secondsLeft(expiresAt: string) {
   return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
 }
 
+async function readJsonResponse<T extends { error?: string }>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text.trim()) {
+    if (!res.ok) {
+      throw new Error(`Errore server (${res.status})`);
+    }
+    return {} as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("Risposta non valida dal server");
+  }
+}
+
 export function CollegaCreditCalcButton({
   gestionaleUserId,
-  label = "Collega CreditCalc",
+  label = "Collega CredixaApp",
   className,
+  onBffBaseUrl,
+  onLinkConsumed,
 }: {
   /** Se assente, QR per l’utente autenticato. */
   gestionaleUserId?: string;
   label?: string;
   className?: string;
+  onBffBaseUrl?: (url: string) => void;
+  onLinkConsumed?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -70,10 +99,11 @@ export function CollegaCreditCalcButton({
           gestionaleUserId ? { gestionaleUserId } : {}
         ),
       });
-      const data = (await res.json()) as LinkCreateResponse & { error?: string };
+      const data = await readJsonResponse<LinkCreateResponse & { error?: string }>(res);
       if (!res.ok) throw new Error(data.error || "Errore generazione QR");
       setLink(data);
       setStatus(data.status);
+      if (data.bffBaseUrl) onBffBaseUrl?.(data.bffBaseUrl);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Errore");
     } finally {
@@ -117,14 +147,17 @@ export function CollegaCreditCalcButton({
           `/api/creditcalc/link-requests/${encodeURIComponent(link.linkRequestId)}`
         );
         if (!res.ok) return;
-        const data = (await res.json()) as LinkStatusResponse;
+        const data = await readJsonResponse<LinkStatusResponse>(res);
+        if (data.status === "consumed" && status !== "consumed") {
+          onLinkConsumed?.();
+        }
         setStatus(data.status);
       } catch {
         /* ignore */
       }
     }, 2000);
     return () => window.clearInterval(poll);
-  }, [open, link, status]);
+  }, [open, link, status, onLinkConsumed]);
 
   useEffect(() => {
     if (status === "pending" && link && remaining <= 0) {
@@ -149,12 +182,14 @@ export function CollegaCreditCalcButton({
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Collega CreditCalc"
+        title="Collega CredixaApp"
       >
         <div className="space-y-4 p-1">
-          <p className="text-sm text-[var(--muted)]">
-            L’operatore apre CreditCalc → Impostazioni → Collegamenti e scansiona
-            questo QR. Il codice è temporaneo e monouso.
+          <p className="text-sm leading-relaxed text-[var(--muted)]">
+            Apri <span className="font-medium text-[var(--navy)]">CredixaApp</span> sul
+            telefono, vai in{" "}
+            <span className="font-medium text-[var(--navy)]">Aziende</span> e
+            scansiona questo QR code.
           </p>
 
           {error ? (
@@ -165,12 +200,22 @@ export function CollegaCreditCalcButton({
             <p className="text-sm text-[var(--muted)]">Generazione QR…</p>
           ) : null}
 
+          {link?.bffBaseUrl && isLocalBffHost(link.bffBaseUrl) ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+              Il QR punta a <span className="font-mono">{link.bffBaseUrl}</span>.
+              Dal telefono non raggiunge questo PC: imposta{" "}
+              <span className="font-mono">CREDIXA_BFF_PUBLIC_URL</span> con l’IP
+              LAN (es. <span className="font-mono">http://192.168.x.x:3100</span>
+              ) e usa <strong>Nuovo QR</strong>.
+            </div>
+          ) : null}
+
           {link && status === "pending" ? (
             <div className="flex flex-col items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={qrImageUrl(link.qrPayload)}
-                alt="QR collegamento CreditCalc"
+                alt="QR collegamento CredixaApp"
                 width={240}
                 height={240}
                 className="rounded border border-[var(--line)] bg-white p-2"

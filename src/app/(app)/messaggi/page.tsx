@@ -42,7 +42,7 @@ export default async function MessaggiPage({
         numero: string;
         debitore?: { nome: string; cognome: string };
       };
-      user?: { name: string };
+      user?: { id: string; name: string };
     };
     return {
       id: row.id,
@@ -53,6 +53,7 @@ export default async function MessaggiPage({
         : "",
       line: row.line,
       autore: row.user?.name ?? "",
+      autoreUserId: row.user?.id ?? "",
       createdAt: row.createdAt,
       letto: row.letto,
       lettoAt: row.lettoAt ?? null,
@@ -70,7 +71,7 @@ export default async function MessaggiPage({
         subtitle={
           daLeggere
             ? `${daLeggere} da leggere · ricevuti e inviati`
-            : "Messaggi ricevuti e inviati · da leggere e già letti"
+            : "Da leggere, inviati e ricevuti"
         }
       />
       <AgendaMessaggiPanel

@@ -13,6 +13,7 @@ export const PLATFORM_MODULE_IDS = [
   "affidi",
   "lavorazione",
   "legale",
+  "legal-ai",
   "formazione",
   "recruiting",
   "strumenti",
@@ -37,6 +38,7 @@ export const COMMERCIAL_PACKAGE_IDS = [
   "formazione",
   "dialer",
   "legale",
+  "legal-ai",
   "creditcalc",
 ] as const;
 
@@ -62,7 +64,7 @@ export const COMMERCIAL_PACKAGE_CATALOG: readonly CommercialPackageEntry[] = [
   {
     id: "recruiting",
     label: "Recruiter",
-    description: "Recruiting: offerte, candidature, colloqui",
+    description: "Recruiting standalone (core + Recruiting) o incluso in Credixa full / Suite con recovery",
   },
   {
     id: "formazione",
@@ -71,8 +73,8 @@ export const COMMERCIAL_PACKAGE_CATALOG: readonly CommercialPackageEntry[] = [
   },
   {
     id: "dialer",
-    label: "Dialer",
-    description: "Predictive dialer e campagne",
+    label: "Predictive",
+    description: "Predictive e campagne",
   },
   {
     id: "legale",
@@ -80,9 +82,14 @@ export const COMMERCIAL_PACKAGE_CATALOG: readonly CommercialPackageEntry[] = [
     description: "Hub giudiziale, valutazione, strategia, agenda legale",
   },
   {
+    id: "legal-ai",
+    label: "Credixa Legal AI",
+    description: "Redazione e revisione atti legali (modulo autonomo o Suite)",
+  },
+  {
     id: "creditcalc",
-    label: "CreditCalc",
-    description: "Accesso CreditCalc dal gestionale",
+    label: "CredixaApp",
+    description: "Accesso CredixaApp dal gestionale",
   },
 ] as const;
 
@@ -150,6 +157,7 @@ export const PRODUCT_MODULE_IDS: readonly ModuleId[] = [
   "lavorazione",
   "dialer",
   "legale",
+  "legal-ai",
   "formazione",
   "recruiting",
   "strumenti",
@@ -169,6 +177,7 @@ export const PACKAGE_ADDON_MODULES: Record<
   formazione: ["formazione", "strumenti"],
   dialer: ["dialer"],
   legale: ["legale"],
+  "legal-ai": ["legal-ai"],
   creditcalc: ["creditcalc"],
 };
 
@@ -219,13 +228,18 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
   },
   {
     id: "dialer",
-    label: "Dialer",
-    description: "Predictive dialer e campagne",
+    label: "Predictive",
+    description: "Predictive e campagne",
   },
   {
     id: "legale",
     label: "Legal",
     description: "Hub giudiziale, valutazione, strategia, agenda legale",
+  },
+  {
+    id: "legal-ai",
+    label: "Credixa Legal AI",
+    description: "Redazione e revisione atti legali (modulo autonomo o Suite)",
   },
   {
     id: "formazione",
@@ -249,8 +263,8 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
   },
   {
     id: "creditcalc",
-    label: "CreditCalc",
-    description: "Voce CreditCalc e accesso app collegata",
+    label: "CredixaApp",
+    description: "Voce CredixaApp e accesso app collegata",
   },
   { id: "utility", label: "Utility", description: "Non disponibile", future: true },
 ];
@@ -326,6 +340,7 @@ export function serializeEnabledModules(ids: readonly string[]): string {
  * - `null`/`undefined` → default recovery (tenant senza config piattaforma).
  * - `strumenti` → attivo solo con Formazione.
  * - `creditcalc` → solo se esplicitamente in lista (mai implicito dal default recovery).
+ * - `legal-ai` → solo se esplicitamente in lista (mai implicito dal default recovery).
  */
 export function hasModule(
   enabledModules: readonly string[] | null | undefined,
@@ -336,6 +351,9 @@ export function hasModule(
   }
   if (moduleId === "strumenti") {
     return enabledModules.includes("formazione");
+  }
+  if (moduleId === "legal-ai") {
+    return enabledModules.includes("legal-ai");
   }
   return enabledModules.includes(moduleId);
 }

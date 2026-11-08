@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireApiModule, requireApiUser } from "@/lib/guard";
 import { assertCan } from "@/lib/permissions";
+import { checkFirebaseOrError } from "@/lib/formazione/firebaseGuard";
 import {
-  firebaseFieldValue,
-  getFirebaseAuth,
-  getFirebaseFirestore,
-} from "@/lib/firebase/admin";
+  createFormazioneCustomToken,
+  provisionFirebaseUserForGestionale,
+} from "@/lib/formazione/provisionFirebaseUser";
 
 export async function GET() {
   const userOrRes = await requireApiUser();
@@ -19,60 +19,23 @@ export async function GET() {
   const moduleDenied = await requireApiModule(userOrRes, "formazione");
   if (moduleDenied) return moduleDenied;
 
+  const fbError = checkFirebaseOrError();
+  if (fbError) return fbError;
+
   try {
-    const auth = getFirebaseAuth();
-    const db = getFirebaseFirestore();
-
-    let firebaseUser;
-    try {
-      firebaseUser = await auth.getUserByEmail(userOrRes.email);
-    } catch {
-      firebaseUser = await auth.createUser({
-        email: userOrRes.email,
-        displayName: userOrRes.name,
-        emailVerified: true,
-      });
-    }
-
-    const FieldValue = firebaseFieldValue();
-    const userRef = db.collection("users").doc(firebaseUser.uid);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) {
-      await userRef.set(
-        {
-          email: userOrRes.email,
-          displayName: userOrRes.name,
-          gestionaleUserId: userOrRes.id,
-          gestionaleTenantId: userOrRes.tenantId,
-          createdAt: FieldValue.serverTimestamp(),
-          source: "gestionale",
-        },
-        { merge: true }
-      );
-    } else {
-      await userRef.set(
-        {
-          displayName: userOrRes.name,
-          gestionaleUserId: userOrRes.id,
-          gestionaleTenantId: userOrRes.tenantId,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-
-    const token = await auth.createCustomToken(firebaseUser.uid, {
-      gestionaleUserId: userOrRes.id,
-      gestionaleRole: userOrRes.role,
-    });
+    const uid = await provisionFirebaseUserForGestionale(userOrRes);
+    const token = await createFormazioneCustomToken(userOrRes, uid);
 
     return NextResponse.json({
       token,
-      uid: firebaseUser.uid,
+      uid,
     });
   } catch (e) {
+    const raw = e instanceof Error ? e.message : "Errore collegamento CreditForm";
     const message =
-      e instanceof Error ? e.message : "Errore collegamento CreditForm";
+      /invalid_grant|Invalid JWT Signature/i.test(raw)
+        ? "Credenziali Firebase Admin non valide (chiave service account scaduta o errata). Aggiorna FIREBASE_SERVICE_ACCOUNT_JSON o FIREBASE_SERVICE_ACCOUNT_PATH e riavvia il server."
+        : raw;
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

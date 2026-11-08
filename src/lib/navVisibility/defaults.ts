@@ -26,7 +26,13 @@ export function baselinePageVisible(
   pageId: NavPageId
 ): boolean {
   const u = user as SessionUser;
-  if (pageId === "account" || pageId === "creditcalc") return true;
+  if (pageId === "account") return true;
+  if (user.role === "AVVOCATO") {
+    return pageId === "legalAi";
+  }
+  if (user.role === "RECRUITER") {
+    return pageId === "recruiting";
+  }
   if (pageId === "ticket") return user.role === "ADMIN";
   if (user.role === "MANUTENZIONE") return true;
 
@@ -60,6 +66,8 @@ export function baselinePageVisible(
       return !user.formazioneOnly && can(u, "strumenti:view");
     case "legal":
       return !user.formazioneOnly && can(u, "legal:view");
+    case "legalAi":
+      return !user.formazioneOnly && can(u, "legal-ai:view");
     case "recruiting":
       return !user.formazioneOnly && can(u, "recruiting:view");
     case "portafogli":
@@ -97,7 +105,10 @@ export function systemAllRoleDefaults(): NavRoleDefaults {
     "SUPERVISOR",
     "BACK_OFFICE",
     "OPERATOR",
+    "RECEPTION",
     "LEGAL",
+    "AVVOCATO",
+    "RECRUITER",
   ];
   const out: NavRoleDefaults = {};
   for (const role of roles) {
@@ -139,7 +150,7 @@ export function resolveEffectiveNavVisibility(input: {
       out[page.id] = input.role === "ADMIN";
       continue;
     }
-    if (page.locked || page.id === "account" || page.id === "creditcalc") {
+    if (page.locked || page.id === "account") {
       out[page.id] = true;
       continue;
     }

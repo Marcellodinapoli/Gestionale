@@ -163,7 +163,7 @@ export function TicketPageClient({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-[var(--muted)]">
-          Apri un ticket verso l&apos;assistenza Credixa. Le risposte compareanno qui e nel Back
+          Apri un ticket verso l&apos;assistenza Credixa Suite. Le risposte compareanno qui e nel Back
           Office.
         </p>
         <button

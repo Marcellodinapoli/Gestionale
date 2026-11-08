@@ -96,6 +96,7 @@ export async function connectorFetchTenant<T>(
     headers,
     body,
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!res.ok) {

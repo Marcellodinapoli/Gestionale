@@ -34,6 +34,16 @@ export type SezioneProvvigioni<T extends ProvvigioneConPerimetro> = {
   provvigioniMese: number;
 };
 
+/** Importo provvigione nei totali (solo esito verificato). */
+export function importoProvvigioneInTotali(
+  r: { modo?: string | null; importo: number; stato?: string },
+  opts?: { stato?: string }
+): number {
+  if (opts?.stato && r.stato !== opts.stato) return 0;
+  if (isModoNonProvvigionabile(r.modo)) return 0;
+  return r.importo || 0;
+}
+
 export function buildSezioniProvvigioni<T extends ProvvigioneConPerimetro>(
   righe: T[],
   configs: PerimetroProvvigioniConfig[],
@@ -71,7 +81,10 @@ export function buildSezioniProvvigioni<T extends ProvvigioneConPerimetro>(
       affidatoTotale: performance?.pezziAffido ?? 0,
       affidatoPeriodo: performance?.pezziAffido ?? 0,
       performance,
-      provvigioniMese: righeSez.reduce((s, r) => s + r.importo, 0),
+      provvigioniMese: righeSez.reduce(
+        (s, r) => s + (isModoNonProvvigionabile(r.modo) ? 0 : r.importo),
+        0
+      ),
     };
   });
 }

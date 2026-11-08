@@ -7,10 +7,9 @@ import { useRouter } from "next/navigation";
 import {
   Printer,
   CalendarDays,
-  Archive,
+  Binoculars,
   Banknote,
   FileText,
-  FolderOpen,
   MessageSquare,
   Receipt,
   Search,
@@ -177,6 +176,7 @@ export function PraticaFunzioniBar({
   giudizialePrevistoSulLotto = true,
   giudizialeAvviato = false,
   incassoRiparto,
+  canEditIncassi = false,
 }: {
   praticaId: string;
   attivo?: "fatture" | "estratto" | "incassi";
@@ -219,8 +219,10 @@ export function PraticaFunzioniBar({
   giudizialePrevistoSulLotto?: boolean;
   /** True se l'avvio giudiziale è già stato confermato su questa pratica. */
   giudizialeAvviato?: boolean;
-  /** Residui pratica per riparto modificabile in Inserisci incasso. */
+  /** Residui pratica per riparto modificabile in Inserisci/modifica incasso. */
   incassoRiparto?: IncassoRipartoPratica;
+  /** Modifica/eliminazione incassi già registrati (`incassi:update` + lock). */
+  canEditIncassi?: boolean;
 }) {
   const router = useRouter();
   const [popup, setPopup] = useState<PopupKey | null>(null);
@@ -522,7 +524,7 @@ export function PraticaFunzioniBar({
               disabled={!haCollegateInLavorazione}
               onAnimationEnd={() => setFlashF9(false)}
             >
-              <FunzioneLabel f="F9" icon={<FolderOpen className={ICON} />} />
+              <FunzioneLabel f="F9" icon={<Search className={ICON} />} />
             </button>
           </span>
         </Hint>
@@ -533,7 +535,7 @@ export function PraticaFunzioniBar({
             onClick={() => apriElencoCollegate("chiusa")}
             disabled={!haIntestateChiuse}
           >
-            <FunzioneLabel f="F10" icon={<Archive className={ICON} />} />
+            <FunzioneLabel f="F10" icon={<Binoculars className={ICON} />} />
           </button>
         </Hint>
         <Hint label="Stampa pratica">
@@ -617,13 +619,13 @@ export function PraticaFunzioniBar({
         {showIncassoPopup ? (
           <>
             <span className={TOOL_SEP} aria-hidden />
-            <Hint label="Registra incasso">
+            <Hint label="Registra o modifica incasso">
               <button
                 type="button"
                 className={BTN_TOOL}
                 onClick={() => setPopup("incasso")}
               >
-                Inserisci incasso
+                Inserisci/modifica incasso
               </button>
             </Hint>
           </>
@@ -691,6 +693,7 @@ export function PraticaFunzioniBar({
               setPopup(null);
               setNotaBozza(null);
             }}
+            haCollegatePropagabili={altre.length > 0}
           />
         ) : null}
       </Modal>
@@ -768,11 +771,13 @@ export function PraticaFunzioniBar({
 
       <Modal
         open={popup === "incasso"}
-        title="Inserisci incasso / piano effetti"
+        title="Inserisci/modifica incasso / piano effetti"
         onClose={() => setPopup(null)}
+        wide={canEditIncassi}
       >
         <IncassoPopup
           praticaId={praticaId}
+          canEditIncassi={canEditIncassi}
           riparto={
             incassoRiparto ?? {
               capitale: 0,

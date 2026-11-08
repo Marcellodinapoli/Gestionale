@@ -123,4 +123,10 @@ export interface IncassiRepository {
     id: string,
     input: EliminaIncassoInput
   ): Promise<{ ok: boolean }>;
+  aggiornaModo(
+    tenantSlug: string,
+    tenantId: string,
+    id: string,
+    modo: string
+  ): Promise<void>;
 }

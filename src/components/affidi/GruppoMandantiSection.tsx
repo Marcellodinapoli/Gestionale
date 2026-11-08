@@ -3,7 +3,10 @@
 import { useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { updateGruppoMandantiAction } from "@/actions/gruppoOperatori";
-import type { GruppoMandanteAssegnazione } from "@/lib/gruppoMandantiUi";
+import {
+  messaggioErroreGruppoMandanti,
+  type GruppoMandanteAssegnazione,
+} from "@/lib/gruppoMandantiUi";
 import type { PerimetroListItem } from "@/lib/mandantePerimetri";
 
 type MandanteOption = {
@@ -16,28 +19,44 @@ type MandanteOption = {
 export function GruppoMandantiSection({
   initial,
   mandanti,
+  supervisorId,
 }: {
   initial: GruppoMandanteAssegnazione[];
   mandanti: MandanteOption[];
+  supervisorId: string;
 }) {
   const [assegnazioni, setAssegnazioni] = useState<GruppoMandanteAssegnazione[]>(initial);
   const [nuovaMandanteId, setNuovaMandanteId] = useState("");
+  const [nuovoPerimetroId, setNuovoPerimetroId] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const disponibili = mandanti.filter(
-    (m) => !assegnazioni.some((a) => a.mandanteId === m.id)
+  const mandanteSelezionata = mandanti.find((m) => m.id === nuovaMandanteId);
+  const perimetriGiàAssegnati = new Set(
+    assegnazioni
+      .filter((a) => a.mandanteId === nuovaMandanteId)
+      .flatMap((a) => a.perimetriIds)
   );
+  const perimetriDisponibili =
+    mandanteSelezionata?.perimetri.filter((p) => !perimetriGiàAssegnati.has(p.id)) ?? [];
 
-  function addMandante() {
-    if (!nuovaMandanteId) return;
-    if (assegnazioni.some((a) => a.mandanteId === nuovaMandanteId)) return;
-    setAssegnazioni((prev) => [
-      ...prev,
-      { mandanteId: nuovaMandanteId, perimetriIds: [] },
-    ]);
-    setNuovaMandanteId("");
+  function addMandantePerimetro() {
+    if (!nuovaMandanteId || !nuovoPerimetroId) return;
+    setAssegnazioni((prev) => {
+      const idx = prev.findIndex((a) => a.mandanteId === nuovaMandanteId);
+      if (idx >= 0) {
+        if (prev[idx].perimetriIds.includes(nuovoPerimetroId)) return prev;
+        const next = [...prev];
+        next[idx] = {
+          ...next[idx],
+          perimetriIds: [...next[idx].perimetriIds, nuovoPerimetroId],
+        };
+        return next;
+      }
+      return [...prev, { mandanteId: nuovaMandanteId, perimetriIds: [nuovoPerimetroId] }];
+    });
+    setNuovoPerimetroId("");
   }
 
   function removeMandante(mandanteId: string) {
@@ -62,9 +81,15 @@ export function GruppoMandantiSection({
   function salva() {
     setMsg(null);
     setErr(null);
+    const validationErr = messaggioErroreGruppoMandanti(assegnazioni);
+    if (validationErr) {
+      setErr(validationErr);
+      return;
+    }
     startTransition(async () => {
       try {
         const fd = new FormData();
+        fd.set("gruppoSupervisorId", supervisorId);
         fd.set("gruppoMandanti", JSON.stringify(assegnazioni));
         await updateGruppoMandantiAction(fd);
         setMsg("Mandanti e perimetri salvati");
@@ -81,7 +106,8 @@ export function GruppoMandantiSection({
           Mandanti e perimetri del gruppo
         </p>
         <p className="mt-0.5 text-[10px] text-[var(--muted)]">
-          Indica quali mandanti e commesse (perimetri) gestisce questo gruppo operatori.
+          Per ogni mandante scegli almeno un perimetro (commessa). Obbligatorio per salvare il
+          gruppo.
         </p>
       </div>
 
@@ -105,9 +131,7 @@ export function GruppoMandantiSection({
                     <p className="text-[10px] text-[var(--muted)]">
                       {a.perimetriIds.length
                         ? `${a.perimetriIds.length} perimetr${a.perimetriIds.length === 1 ? "o" : "i"} selezionat${a.perimetriIds.length === 1 ? "o" : "i"}`
-                        : mandante.perimetri.length
-                          ? "Tutti i perimetri (nessuna selezione specifica)"
-                          : "Nessun perimetro configurato sulla mandante"}
+                        : "Seleziona almeno un perimetro"}
                     </p>
                   </div>
                   <button
@@ -155,27 +179,54 @@ export function GruppoMandantiSection({
       )}
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="min-w-[200px] flex-1 text-sm">
+        <label className="min-w-[180px] flex-1 text-sm">
           <span className="mb-1 block text-[10px] font-semibold uppercase text-[var(--muted)]">
-            Aggiungi mandante
+            Mandante
           </span>
           <select
             value={nuovaMandanteId}
-            onChange={(e) => setNuovaMandanteId(e.target.value)}
+            onChange={(e) => {
+              setNuovaMandanteId(e.target.value);
+              setNuovoPerimetroId("");
+            }}
             className="h-8 w-full rounded border border-[var(--line)] px-2 text-xs"
           >
             <option value="">Seleziona mandante…</option>
-            {disponibili.map((m) => (
+            {mandanti.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.codice} · {m.ragioneSociale}
               </option>
             ))}
           </select>
         </label>
+        <label className="min-w-[180px] flex-1 text-sm">
+          <span className="mb-1 block text-[10px] font-semibold uppercase text-[var(--muted)]">
+            Perimetro
+          </span>
+          <select
+            value={nuovoPerimetroId}
+            onChange={(e) => setNuovoPerimetroId(e.target.value)}
+            disabled={!nuovaMandanteId || perimetriDisponibili.length === 0}
+            className="h-8 w-full rounded border border-[var(--line)] px-2 text-xs disabled:opacity-50"
+          >
+            <option value="">
+              {!nuovaMandanteId
+                ? "Prima la mandante…"
+                : perimetriDisponibili.length
+                  ? "Seleziona perimetro…"
+                  : "Nessun perimetro disponibile"}
+            </option>
+            {perimetriDisponibili.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
-          onClick={addMandante}
-          disabled={!nuovaMandanteId}
+          onClick={addMandantePerimetro}
+          disabled={!nuovaMandanteId || !nuovoPerimetroId}
           className="flex h-8 items-center gap-1 rounded bg-[var(--navy)] px-3 text-xs text-white disabled:opacity-50"
         >
           <Plus className="h-3 w-3" /> Aggiungi

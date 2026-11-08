@@ -28,7 +28,16 @@ export default async function LoginPage({
       if (await isUserPasswordExpired(user.id)) redirect("/cambia-password");
       if (user.formazioneOnly) redirect(homePathForUser(user));
       if (await needsSediSetup(user)) redirect("/setup-sedi");
-      if (mustChoosePostazioneAlLogin(user) && !(await hasPostazioneSkip())) redirect("/seleziona-postazione");
+      const { getTenantPlatformConfig } = await import("@/lib/platform/tenantProfile");
+      const { tenantSkipsPostazione } = await import("@/lib/platform/formazioneProduct");
+      const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
+      if (
+        mustChoosePostazioneAlLogin(user) &&
+        !tenantSkipsPostazione(platform.enabledModules) &&
+        !(await hasPostazioneSkip())
+      ) {
+        redirect("/seleziona-postazione");
+      }
       redirect("/");
     }
   }
@@ -39,7 +48,7 @@ export default async function LoginPage({
     <div className="page-gutter flex min-h-screen items-center justify-center bg-[var(--navy)] py-6">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-          Credixa
+          Credixa Suite
         </p>
         <h1 className="mt-2 text-2xl font-semibold">Accedi</h1>
         {fromInviteUi ? (

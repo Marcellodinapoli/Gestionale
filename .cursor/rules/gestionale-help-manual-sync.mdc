@@ -1,0 +1,34 @@
+---
+description: Aggiornare il manuale operativo e l'indice BM25 a ogni modifica funzionale Credixa
+alwaysApply: true
+---
+
+# Manuale operativo Credixa — obbligo di aggiornamento
+
+Per **ogni modifica funzionale** al gestionale Credixa (app in questo repo, Connector, Flutter collegata, oppure callable/indice in `../credit-calc-store/functions` se coinvolti):
+
+## Prima di considerare il lavoro concluso
+
+1. **Analizza l’impatto sul manuale** (`docs/gestionale-help/`): flussi, ruoli, permessi, campi, pulsanti, messaggi, menu.
+2. **Aggiorna il manuale in modo contestuale**
+   - modifica i capitoli esistenti se la procedura cambia;
+   - aggiungi un capitolo solo se serve;
+   - descrivi **solo** comportamenti verificati nel codice (nomi reali di UI e messaggi);
+   - **non** screenshot, dati fittizi, funzioni ipotetiche o passaggi non verificati;
+   - correggi incongruenze nei capitoli toccati.
+3. **Ricostruisci l’indice BM25** del chatbot assistenza:
+   - da `credit-calc-store/functions`: `npm run build` (include `gestionale_help_index_build.js`);
+   - verifica che i `.md` previsti siano indicizzati e che `src/gestionale_help_index.json` e `lib/gestionale_help_index.json` coincidano.
+4. **Test**: aggiungi o aggiorna test nel sistema esistente (`functions` → ranking/search/sanitize/integration; Credixa → `npm test` dove pertinente). Le domande tipo devono restituire il capitolo corretto quando il retrieval è in scope.
+5. **Esegui i test disponibili** e riporta esiti reali. Non dichiarare verifiche non eseguite.
+
+## Eccezioni e lacune
+
+- Modifiche **senza impatto operativo** (refactor interno, stile, infra): non riscrivere il manuale; **comunque** valuta l’impatto e dichiaralo nel resoconto.
+- Se non puoi documentare o verificare una parte: indica **cosa** manca e **perché** (non omettere).
+
+## Resoconto finale obbligatorio
+
+Includi sempre: file di codice modificati; capitoli manuale aggiornati (o “nessuno” con motivo); indice ricostruito sì/no; test eseguiti e test non eseguibili.
+
+Un intervento funzionale **non è chiuso** finché la documentazione operativa pertinente non è allineata o esplicitamente esclusa con motivazione.

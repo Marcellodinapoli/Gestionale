@@ -42,7 +42,7 @@ function SbloccoForm({ userName, onUnlocked }: { userName: string; onUnlocked: (
     <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white p-6 shadow-2xl">
       <div className="mb-4 flex items-center gap-2 text-[var(--navy)]">
         <Lock className="h-5 w-5" />
-        <h2 className="text-lg font-semibold">Credixa bloccato</h2>
+        <h2 className="text-lg font-semibold">Credixa Suite bloccato</h2>
       </div>
       <p className="mb-4 text-sm text-[var(--muted)]">
         Sessione di <span className="font-semibold text-[var(--navy)]">{userName}</span>.

@@ -1,7 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { mandantiDb } from "@/lib/mandantiRepo";
 import { prisma } from "@/lib/prisma";
-import { parsePerimetri, numeroMandantePerimetro } from "@/lib/mandantePerimetri";
+import {
+  chiaviMatchPerimetro,
+  numeroMandantePerimetro,
+  parsePerimetri,
+} from "@/lib/mandantePerimetri";
 
 export {
   parseGruppoMandanti,
@@ -21,6 +25,7 @@ export function gruppoMandantiPraticaWhere(
   mandanti: Array<{
     id: string;
     perimetri: Array<{ id: string; nomeInterno: string; nomeMandante: string }>;
+    perimetriRaw?: string | null;
   }>
 ): Prisma.PraticaWhereInput | null {
   if (!assegnazioni.length) return null;
@@ -33,9 +38,26 @@ export function gruppoMandantiPraticaWhere(
       ors.push({ mandanteId: a.mandanteId });
       continue;
     }
-    const nomi = a.perimetriIds
-      .map((id) => m.perimetri.find((p) => p.id === id)?.nomeMandante?.trim())
-      .filter((n): n is string => Boolean(n));
+    const parsed = parsePerimetri(m.perimetriRaw ?? "[]");
+    if (parsed.length === 1) {
+      ors.push({ mandanteId: a.mandanteId });
+      continue;
+    }
+    const nomiSet = new Set<string>();
+    for (const pid of a.perimetriIds) {
+      const p = parsed.find((x) => x.id === pid);
+      if (p) {
+        const key = numeroMandantePerimetro(p);
+        for (const k of chiaviMatchPerimetro(m.perimetriRaw, key)) nomiSet.add(k);
+      } else {
+        const lite = m.perimetri.find((x) => x.id === pid);
+        const nome = lite?.nomeMandante?.trim();
+        if (nome) {
+          for (const k of chiaviMatchPerimetro(m.perimetriRaw, nome)) nomiSet.add(k);
+        }
+      }
+    }
+    const nomi = [...nomiSet];
     if (!nomi.length) continue;
     ors.push({
       mandanteId: a.mandanteId,

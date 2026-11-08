@@ -19,7 +19,8 @@ import {
   pauseDialerSession,
   resumeDialerSession,
 } from "@/lib/predictive-dialer/operatorSession";
-import { prisma } from "@/lib/prisma";
+import { dialerDbFromUser } from "@/lib/dialerRepo";
+import { configurazioneDbFromUser } from "@/lib/configurazioneRepo";
 import { canManageDialerCampagna } from "@/lib/predictive-dialer/scope";
 import { getPredictiveDialerService } from "@/lib/predictive-dialer/service/factory";
 import {
@@ -37,7 +38,9 @@ function fail(msg: string): never {
 }
 
 async function assertManageCampagna(user: Awaited<ReturnType<typeof requireWritablePermission>>, campagnaId: string) {
-  const c = await prisma.dialerCampagna.findFirst({ where: { id: campagnaId, tenantId: user.tenantId } });
+  const c = await dialerDbFromUser(user).dialerCampagna.findFirst({
+    where: { id: campagnaId, tenantId: user.tenantId },
+  });
   if (!c) fail("Campagna non trovata");
   if (!canManageDialerCampagna(user, c)) fail("Non autorizzato");
   return c;
@@ -69,6 +72,7 @@ export async function createDialerCampagnaAction(formData: FormData) {
     postCallSec: Number.isFinite(postCallSec) ? postCallSec : 60,
     pacingRatio,
     operatoreIds,
+    ownerSupervisorId: String(formData.get("ownerSupervisorId") || ""),
   });
 
   await writeAudit({
@@ -78,7 +82,7 @@ export async function createDialerCampagnaAction(formData: FormData) {
     entityId: campagna.id,
     dettaglio: nome,
   });
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
   return campagna.id;
 }
 
@@ -86,21 +90,21 @@ export async function activateDialerCampagnaAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:manage");
   await assertManageCampagna(user, campagnaId);
   await activateCampagnaRecord(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function deactivateDialerCampagnaAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:manage");
   await assertManageCampagna(user, campagnaId);
   await deactivateCampagnaRecord(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function updateDialerPacingAction(campagnaId: string, pacingRatio: number) {
   const user = await requireWritablePermission("dialer:manage");
   const c = await assertManageCampagna(user, campagnaId);
   const ratio = normalizePacingRatio(pacingRatio);
-  await prisma.dialerCampagna.update({
+  await dialerDbFromUser(user).dialerCampagna.update({
     where: { id: campagnaId },
     data: { pacingRatio: ratio },
   });
@@ -110,37 +114,37 @@ export async function updateDialerPacingAction(campagnaId: string, pacingRatio: 
       await service.setPacing(c.externalId, ratio);
     }
   }
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function acceptDialerCampagnaAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:operate");
   await acceptCampagnaSession(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function pauseDialerAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:operate");
   await pauseDialerSession(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function resumeDialerAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:operate");
   await resumeDialerSession(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function exitDialerAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:operate");
   await exitDialerSession(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function finishPostCallAction(campagnaId: string) {
   const user = await requireWritablePermission("dialer:operate");
   await finishPostCallManual(user, campagnaId);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
 }
 
 export async function registerDialerEventAction(input: {
@@ -177,19 +181,20 @@ export async function saveDialerIntegrationConfigAction(formData: FormData) {
     { chiave: DIALER_CONFIG_API_BASE, valore: String(formData.get("apiBaseUrl") || "") },
     { chiave: DIALER_CONFIG_WEBHOOK_SECRET, valore: String(formData.get("webhookSecret") || "") },
   ];
+  const configModel = configurazioneDbFromUser(user);
   for (const e of entries) {
-    await prisma.configurazioneSistema.upsert({
+    await configModel.upsert({
       where: { tenantId_chiave: { tenantId: user.tenantId, chiave: e.chiave } },
       create: { tenantId: user.tenantId, chiave: e.chiave, valore: e.valore, categoria: DIALER_CONFIG_CATEGORIA },
       update: { valore: e.valore, categoria: DIALER_CONFIG_CATEGORIA },
     });
   }
-  revalidatePath("/predictive-dialer/admin");
+  revalidatePath("/predictive/admin");
 }
 
 export async function loadDialerCampagnaDetailAction(campagnaId: string) {
   const user = await requirePermission("dialer:manage");
-  const campagna = await prisma.dialerCampagna.findFirst({
+  const campagna = await dialerDbFromUser(user).dialerCampagna.findFirst({
     where: { id: campagnaId, tenantId: user.tenantId },
     include: {
       operatori: { include: { operatore: { select: { id: true, name: true } } } },
@@ -204,7 +209,7 @@ export async function addPraticheToCampagnaAction(campagnaId: string, praticaIds
   const user = await requireWritablePermission("dialer:manage");
   await assertManageCampagna(user, campagnaId);
   const n = await attachPraticheToCampagna(user, campagnaId, { praticaIds });
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
   return n;
 }
 
@@ -212,7 +217,7 @@ export async function addOperatoriToCampagnaAction(campagnaId: string, operatore
   const user = await requireWritablePermission("dialer:manage");
   await assertManageCampagna(user, campagnaId);
   const n = await attachOperatoriToCampagna(user, campagnaId, operatoreIds);
-  revalidatePath("/predictive-dialer");
+  revalidatePath("/predictive");
   return n;
 }
 
@@ -223,7 +228,7 @@ export async function reintegrateCodiciScaricoAction(
   const user = await requireWritablePermission("dialer:manage");
   await assertManageCampagna(user, campagnaId);
   const result = await reintegrateCodiciScaricoInCampagna(user, campagnaId, input);
-  revalidatePath("/predictive-dialer");
-  revalidatePath(`/predictive-dialer/campagne/${campagnaId}`);
+  revalidatePath("/predictive");
+  revalidatePath(`/predictive/campagne/${campagnaId}`);
   return result;
 }

@@ -58,7 +58,6 @@ export function AffidiMonitorFiltri({
       perimetro: nextPeri || undefined,
       allerta: opts?.clearAllerta ? undefined : extraParams?.allerta,
       affidaCerca: opts?.cerca ? "1" : undefined,
-      sezione: opts?.cerca ? "affida" : undefined,
     });
   }
 

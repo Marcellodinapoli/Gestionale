@@ -1,20 +1,28 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { PraticaExtraPrefetch } from "@/components/pratica/PraticaExtraPrefetch";
+import {
+  ContabilePreviewLazy,
+  RegistroNoteLazy,
+} from "@/components/pratica/PraticaExtraDynamic";
 import { dateInputValue, datetimeLocalValue, euro, dataIt } from "@/lib/domainFormat";
 import { PraticaFunzioniBar } from "@/components/pratica/PraticaFunzioniBar";
 import { AnagraficaRecapiti } from "@/components/pratica/AnagraficaRecapiti";
 import { GarantiPanel } from "@/components/pratica/GarantiPanel";
 import {
+  PostoLavoroDebitoreBlock,
+  PostoLavoroGarantiBlock,
+} from "@/components/pratica/PostoLavoroPanels";
+import {
   AnagraficaField,
+  AnagraficaNomeRiga,
+  anagraficaDatiRecapitiGridClassName,
+  anagraficaSplitCellClass,
   indirizzoCompleto,
 } from "@/components/pratica/anagraficaUi";
 import { StatoPraticaBar } from "@/components/pratica/StatoPraticaBar";
 import { RiepilogoEsitoPratica } from "@/components/pratica/RiepilogoEsitoPratica";
 import { PaginazioneBar } from "@/components/PaginazioneBar";
-import {
-  ContabilePreviewLazy,
-  RegistroNoteLazy,
-} from "@/components/pratica/PraticaExtraLazy";
 import {
   buildPraticaCollegataChiudiElencoHref,
   buildPraticaCollegataHref,
@@ -304,6 +312,7 @@ export function PraticaSchedaOperatore({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[#f5f7fa] shadow-sm max-lg:overflow-visible xl:min-h-0">
+      <PraticaExtraPrefetch praticaId={pratica.id} />
       {praticaBloccata ? (
         <div className="shrink-0 border-b border-amber-400 bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-950">
           Pratica bloccata — in lavorazione da {lockedByName}. Puoi solo consultare in lettura.
@@ -391,30 +400,59 @@ export function PraticaSchedaOperatore({
       {/* Metà superiore: anagrafica + garanti + estratto */}
       <div className="shrink-0 border-b border-[var(--line)] max-lg:max-h-[50vh] max-lg:overflow-y-auto">
         <div className="grid gap-0 lg:grid-cols-12">
-          {/* Anagrafica debitore */}
-          <div className="min-w-0 border-b border-[var(--line)] lg:col-span-4 lg:border-b-0 lg:border-r">
-            <div className="bg-[#c5d4e3] px-2 py-1 text-[11px] font-bold uppercase text-[#1a365d]">
-              Anagrafica debitore
+          <div
+            className="col-span-full grid border-b border-[var(--line)] lg:col-span-12 lg:grid-cols-12 lg:items-stretch"
+          >
+            <div className="min-w-0 border-b border-[var(--line)] lg:col-span-4 lg:border-b-0 lg:border-r">
+              <div className="bg-[#c5d4e3] px-2 py-1 text-[11px] font-bold uppercase text-[#1a365d]">
+                Anagrafica debitore
+              </div>
+              <div className={`${anagraficaDatiRecapitiGridClassName} p-1`}>
+                <AnagraficaNomeRiga>
+                  {pratica.debitore.cognome} {pratica.debitore.nome}
+                </AnagraficaNomeRiga>
+                <div className={anagraficaSplitCellClass(2, 1)}>
+                  <AnagraficaField
+                    wide
+                    compact
+                    stretch
+                    label="Indirizzo"
+                    value={indirizzoCompleto(pratica.debitore)}
+                  />
+                </div>
+                <div className={anagraficaSplitCellClass(3, 1)}>
+                  <AnagraficaField
+                    wide
+                    compact
+                    stretch
+                    label="Cod. fiscale"
+                    value={pratica.debitore.codiceFiscale || "—"}
+                  />
+                </div>
+                <AnagraficaRecapiti
+                  praticaId={pratica.id}
+                  telefono={pratica.debitore.telefono ?? null}
+                  telefonoStato={pratica.debitore.telefonoStato ?? null}
+                  email={pratica.debitore.email ?? null}
+                  recapiti={pratica.debitore.recapiti || []}
+                  canEdit={canEditNotes}
+                  layout="recapiti-righe"
+                  operatoreName={currentUserName}
+                  prefissoChiamata={prefissoChiamata}
+                  smsPresets={smsPresets}
+                  smsPagamenti={smsPagamenti}
+                  numeroPratica={pratica.numero}
+                  importoNetto={nettoDaPagare}
+                  importoConcordatoIniziale={pratica.promessaImporto}
+                />
+              </div>
             </div>
-            <div className="grid grid-cols-1 gap-0 p-1">
-              <p className="mb-1 border border-[var(--line)] bg-white px-1.5 py-1 text-xs font-semibold uppercase">
-                {pratica.debitore.cognome} {pratica.debitore.nome}
-              </p>
-              <AnagraficaField
-                wide
-                compact
-                label="Indirizzo"
-                value={indirizzoCompleto(pratica.debitore)}
-              />
-              <AnagraficaRecapiti
+
+            <div className="min-w-0 border-b border-[var(--line)] lg:col-span-4 lg:border-b-0 lg:border-r">
+              <GarantiPanel
                 praticaId={pratica.id}
-                telefono={pratica.debitore.telefono ?? null}
-                telefonoStato={pratica.debitore.telefonoStato ?? null}
-                email={pratica.debitore.email ?? null}
-                recapiti={pratica.debitore.recapiti || []}
+                garanti={pratica.garanti}
                 canEdit={canEditNotes}
-                layout="debitore"
-                codiceFiscale={pratica.debitore.codiceFiscale}
                 operatoreName={currentUserName}
                 prefissoChiamata={prefissoChiamata}
                 smsPresets={smsPresets}
@@ -422,35 +460,34 @@ export function PraticaSchedaOperatore({
                 numeroPratica={pratica.numero}
                 importoNetto={nettoDaPagare}
                 importoConcordatoIniziale={pratica.promessaImporto}
+                rootClassName="min-w-0 border-b-0"
               />
             </div>
+
+            <ContabilePreviewLazy
+              alignToAnagraficaRow
+              praticaId={pratica.id}
+              canEditFatture={canRegistraIncasso}
+              debitore={pratica.debitore}
+              numero={pratica.numero}
+              creditore={pratica.mandante.ragioneSociale}
+              societa={pratica.mandante.codice}
+              scadenza={pratica.scadenza}
+              affidato={totale}
+              definito={pratica.residuo}
+            />
           </div>
 
-          <GarantiPanel
-            praticaId={pratica.id}
-            garanti={pratica.garanti}
-            canEdit={canEditNotes}
-            operatoreName={currentUserName}
-            prefissoChiamata={prefissoChiamata}
-            smsPresets={smsPresets}
-            smsPagamenti={smsPagamenti}
-            numeroPratica={pratica.numero}
-            importoNetto={nettoDaPagare}
-            importoConcordatoIniziale={pratica.promessaImporto}
-          />
-
-          <ContabilePreviewLazy
-            praticaId={pratica.id}
-            canEditFatture={canRegistraIncasso}
-            canEditIncassi={canEditIncassi}
-            debitore={pratica.debitore}
-            numero={pratica.numero}
-            creditore={pratica.mandante.ragioneSociale}
-            societa={pratica.mandante.codice}
-            scadenza={pratica.scadenza}
-            affidato={totale}
-            definito={pratica.residuo}
-          />
+          <div
+            className="col-span-full grid border-b border-[var(--line)] lg:col-span-8 lg:grid-cols-2 lg:border-b-0 lg:border-r"
+          >
+            <div className="min-w-0 border-b border-[var(--line)] lg:border-b-0 lg:border-r">
+              <PostoLavoroDebitoreBlock debitore={pratica.debitore} />
+            </div>
+            <div className="min-w-0">
+              <PostoLavoroGarantiBlock garanti={pratica.garanti} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -500,7 +537,11 @@ export function PraticaSchedaOperatore({
           />
           <AnagraficaField
             label="Netto da pagare"
-            value={euro(nettoDaPagare)}
+            value={
+              <span className="font-bold text-[var(--danger)]">
+                {euro(nettoDaPagare)}
+              </span>
+            }
             compact
             accent
             tone="danger"
@@ -529,6 +570,7 @@ export function PraticaSchedaOperatore({
         <PraticaFunzioniBar
           praticaId={pratica.id}
           canEditNotes={canEditNotes}
+          canEditIncassi={canEditIncassi}
           praticaLocked={praticaBloccata}
           codiceScarico={pratica.codiceScarico}
           codiceScaricoBk={pratica.codiceScaricoBk}

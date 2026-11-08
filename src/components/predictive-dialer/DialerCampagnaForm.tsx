@@ -21,8 +21,10 @@ import {
 
 export function DialerCampagnaForm({
   operatori,
+  ownerSupervisorId,
 }: {
   operatori: Array<{ id: string; name: string }>;
+  ownerSupervisorId?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function DialerCampagnaForm({
     fd.set("operatoreIds", selected.join(","));
     try {
       const id = await createDialerCampagnaAction(fd);
-      router.push(`/predictive-dialer/campagne/${id}`);
+      router.push(`/predictive/campagne/${id}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore");
@@ -50,6 +52,9 @@ export function DialerCampagnaForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
+      {ownerSupervisorId ? (
+        <input type="hidden" name="ownerSupervisorId" value={ownerSupervisorId} />
+      ) : null}
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
       <label className="block text-sm">
         <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Nome campagna</span>

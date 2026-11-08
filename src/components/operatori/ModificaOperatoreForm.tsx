@@ -73,6 +73,13 @@ export function ModificaOperatoreForm({
   function onSubmit(formData: FormData) {
     setError(null);
     formData.set("userId", utente.id);
+    if (utente.role === "OPERATOR") {
+      formData.set("consulenteEsterno", consulenteEsterno ? "1" : "0");
+      formData.set(
+        "creditCalcEnabled",
+        consulenteEsterno && creditCalcEnabled ? "1" : "0"
+      );
+    }
     startTransition(async () => {
       try {
         await updateOperatoreAction(formData);
@@ -219,7 +226,7 @@ export function ModificaOperatoreForm({
       {utente.role === "OPERATOR" ? (
         <div className="space-y-2 border-t border-[var(--line)] pt-3">
           <p className="text-[10px] font-semibold uppercase text-[var(--muted)]">
-            CreditCalc / consulente esterno
+            CredixaApp / consulente esterno
           </p>
           <label className="flex items-start gap-2 text-sm">
             <input
@@ -259,11 +266,11 @@ export function ModificaOperatoreForm({
               className="mt-1"
             />
             <span>
-              <span className="font-medium text-[var(--navy)]">Abilita accesso CreditCalc</span>
+              <span className="font-medium text-[var(--navy)]">Abilita accesso CredixaApp</span>
               <span className="block text-xs text-[var(--muted)]">
                 {creditCalcModuleOn
                   ? "Apertura pratiche mobile, note e codice scarico."
-                  : "Pacchetto CreditCalc non attivo in Back Office: voce visibile ma non attivabile."}
+                  : "Pacchetto CredixaApp non attivo in Back Office: voce visibile ma non attivabile."}
               </span>
             </span>
           </label>

@@ -195,6 +195,8 @@ export function InserisciNotaServizio({
   bozzaKey,
   inModal,
   onDone,
+  /** Almeno un'altra pratica F9 (stesso debitore e mandante, aperta) da aggiornare con F5. */
+  haCollegatePropagabili = false,
 }: {
   praticaId: string;
   codiceScarico?: string | null;
@@ -211,6 +213,7 @@ export function InserisciNotaServizio({
   bozzaKey?: number;
   inModal?: boolean;
   onDone?: () => void;
+  haCollegatePropagabili?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +243,12 @@ export function InserisciNotaServizio({
     promessaImporto != null && promessaImporto > 0 ? String(promessaImporto) : ""
   );
   const [metodoPagamento, setMetodoPagamento] = useState(promessaMetodo || "");
+  const [aggiornaCollegate, setAggiornaCollegate] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!haCollegatePropagabili) setAggiornaCollegate(false);
+  }, [haCollegatePropagabili]);
   const notaRef = useRef<HTMLTextAreaElement>(null);
   const bozzaApplicata = useRef<number | undefined>(undefined);
 
@@ -293,6 +301,9 @@ export function InserisciNotaServizio({
       }
       if (isCodiceScaricoConDettagliPagamento(codice) && metodoPagamento) {
         fd.set("promessaMetodo", metodoPagamento);
+      }
+      if (aggiornaCollegate) {
+        fd.set("aggiornaCollegate", "1");
       }
       await salvaNotaServizioPraticaAction(fd);
 
@@ -415,7 +426,22 @@ export function InserisciNotaServizio({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-4 space-y-3">
+          {haCollegatePropagabili ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={aggiornaCollegate}
+                onChange={(e) => setAggiornaCollegate(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--line)]"
+              />
+              <span className="text-[var(--text)]">
+                Aggiorna anche le pratiche collegate dello stesso debitore
+              </span>
+            </label>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
           <button
             type="submit"
             disabled={saving}
@@ -433,6 +459,7 @@ export function InserisciNotaServizio({
               Annulla
             </button>
           ) : null}
+          </div>
         </div>
       </form>
 

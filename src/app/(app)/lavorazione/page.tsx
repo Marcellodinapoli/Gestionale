@@ -59,9 +59,15 @@ export default async function LavorazionePage({
     : [];
 
   let gruppo = await getGruppoLavoro(user);
-  const targetSupervisorId = canPickGruppo
-    ? gruppoId || supervisori[0]?.id
-    : gruppo.supervisorId;
+  const isSupervisorGruppo = user.role === "SUPERVISOR";
+  const targetSupervisorId =
+    canPickGruppo && supervisori.length
+      ? supervisori.some((s) => s.id === gruppoId)
+        ? gruppoId!
+        : isSupervisorGruppo
+          ? user.id
+          : supervisori[0]!.id
+      : gruppo.supervisorId;
 
   if (canPickGruppo && targetSupervisorId) {
     const sup = await usersDbFromUser(user).findFirst({
@@ -253,7 +259,8 @@ export default async function LavorazionePage({
   const voci = await conteggiLavorazioneSuggerita(vociConfig, conteggiOpts);
 
   const canEditPiano =
-    canEdit && (user.role === "SUPERVISOR" ? user.id === supervisorId : true);
+    canEdit &&
+    (user.role !== "SUPERVISOR" || canPickGruppo || user.id === supervisorId);
   const pianoSalvato = datePiani.includes(dataPiano);
   const canEditFields = canEditPiano && (!pianoSalvato || inModifica);
   /**
@@ -350,7 +357,10 @@ export default async function LavorazionePage({
         dataPiano={dataPiano}
         datePiani={datePiani}
         gruppoId={canPickGruppo ? supervisorId : undefined}
-        canEdit={canEdit && (user.role === "SUPERVISOR" ? user.id === supervisorId : true)}
+        canEdit={
+          canEdit &&
+          (user.role !== "SUPERVISOR" || canPickGruppo || user.id === supervisorId)
+        }
       />
 
       {mostraCardPiano ? (

@@ -133,6 +133,15 @@ export class ConnectorIncassiRepository implements IncassiRepository {
       { method: "DELETE", body: input }
     );
   }
+
+  async aggiornaModo(
+    _tenantSlug: string,
+    _tenantId: string,
+    _id: string,
+    _modo: string
+  ): Promise<void> {
+    throw new Error("Aggiorna esito incasso da provvigioni: usa la scheda pratica (connector)");
+  }
 }
 
 export function createConnectorIncassiRepository(tenantSlug: string) {

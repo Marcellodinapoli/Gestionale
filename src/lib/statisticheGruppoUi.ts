@@ -65,10 +65,16 @@ export function colspanTabellaStatistiche(codiciScarico: string[]) {
 }
 
 export type LottoPerimetroFiltro = {
-  /** Lotto / numeroMandante (valore filtro). */
+  /** numeroMandante (valore filtro URL). */
   value: string;
   /** Acronimo interno perimetro. */
   label: string;
   /** Tooltip opzionale (es. lotto mandante). */
   title?: string;
+};
+
+/** Lotti in lavorazione raggruppati per acronimo perimetro (UI Statistiche). */
+export type PerimetroLottiGruppoFiltro = {
+  acronimo: string;
+  lotti: Array<{ value: string }>;
 };

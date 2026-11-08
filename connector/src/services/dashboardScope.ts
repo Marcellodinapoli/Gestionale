@@ -54,8 +54,9 @@ export function bindPraticaScope(req: sql.Request, input: ScopeInput, alias = "p
     )`);
   } else if (input.mode === "members" && input.memberIds?.length) {
     input.memberIds.forEach((id, i) => req.input(`mem${i}`, sql.UniqueIdentifier, id));
+    const inList = input.memberIds.map((_, i) => `@mem${i}`).join(", ");
     clauses.push(
-      `${alias}.AssegnatarioId IN (${input.memberIds.map((_, i) => `@mem${i}`).join(", ")})`
+      `(${alias}.AssegnatarioId IN (${inList}) OR ${alias}.OperatoreTitolareId IN (${inList}))`
     );
   }
 

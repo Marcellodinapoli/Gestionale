@@ -16,6 +16,10 @@ import {
   courseLabel,
 } from "@/lib/formazione/courseLabels";
 import type { CourseProgress } from "@/lib/formazione/types";
+import {
+  courseProgressFromJson,
+  type CourseProgressJson,
+} from "@/lib/formazione/serializeProgress";
 
 function tsToDate(value: unknown): Date | null {
   if (!value || typeof value !== "object") return null;
@@ -111,18 +115,49 @@ function orderedProgress(
 }
 
 export function ProgressList() {
-  const { db, user } = useFormazione();
+  const { db, user, apiMode } = useFormazione();
   const [pre, setPre] = useState<CourseProgress[]>([]);
   const [post, setPost] = useState<CourseProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!db || !user) return;
+    if (!apiMode && (!db || !user)) return;
 
     let cancelled = false;
 
+    async function loadFromApi() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/formazione/me/progress");
+        const payload = (await res.json()) as {
+          progress?: {
+            preCourses: CourseProgressJson[];
+            postCourses: CourseProgressJson[];
+          };
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(payload.error ?? "Errore caricamento");
+        }
+        if (cancelled) return;
+        setPre((payload.progress?.preCourses ?? []).map(courseProgressFromJson));
+        setPost((payload.progress?.postCourses ?? []).map(courseProgressFromJson));
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Errore caricamento");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
     async function load() {
+      if (apiMode) {
+        await loadFromApi();
+        return;
+      }
       if (!db || !user) return;
       const firestore = db;
       const uid = user.uid;
@@ -176,7 +211,7 @@ export function ProgressList() {
     return () => {
       cancelled = true;
     };
-  }, [db, user]);
+  }, [apiMode, db, user]);
 
   return (
     <CourseProgressPanel

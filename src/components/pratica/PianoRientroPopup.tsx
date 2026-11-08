@@ -265,7 +265,7 @@ export function PianoRientroPopup({
       if (nettoTotale <= 0) return null;
       return {
         ok: true as const,
-        text: `Netto totale da dilazionare: ${euro(nettoTotale)} (su ${nPianiEffettivi} pratiche). L'età e le fasce PDR non bloccano il multi-piano come in CreditCalc.`,
+        text: `Netto totale da dilazionare: ${euro(nettoTotale)} (su ${nPianiEffettivi} pratiche). L'età e le fasce PDR non bloccano il multi-piano come in CredixaApp.`,
       };
     }
     if (nettoSingolo <= 0) return null;
@@ -518,7 +518,7 @@ export function PianoRientroPopup({
           )
           .join("; ");
         nota = [
-          "Piano di rientro multi-pratica (come CreditCalc)",
+          "Piano di rientro multi-pratica (come CredixaApp)",
           `Cadenza: ${cadenzaLabel(cadenza)}`,
           `Piani: ${nPianiEffettivi}`,
           monthlyParallel
@@ -651,7 +651,7 @@ export function PianoRientroPopup({
       <div className={sectionCls}>
         <p className={sectionTitle}>1 · Frequenza e pratiche</p>
         <p className={hintCls}>
-          Come in CreditCalc: con più pratiche inserisci un importo per ciascuna
+          Come in CredixaApp: con più pratiche inserisci un importo per ciascuna
           (A/B/C), non solo quello della pratica aperta.
         </p>
         <label className="block text-xs">
@@ -1140,7 +1140,7 @@ export function PianoRientroPopup({
         ) : (
           <p className={hintCls}>
             Con più pratiche le rate sono tutte uguali all&apos;importo mensile
-            (o alla quota mensile), come in CreditCalc: niente conguaglio
+            (o alla quota mensile), come in CredixaApp: niente conguaglio
             manuale.
           </p>
         )}

@@ -66,14 +66,18 @@ export function dataOraIt(value?: Date | string | null) {
   }).format(new Date(value));
 }
 
+/** Solo ora (e minuti) ultima lavorazione — elenco pratiche. */
+export function oraIt(value?: Date | string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("it-IT", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 /**
- * Riparto automatico del totale pagato:
- * 1) una sola rata (`importoRata`, non × rate insolute) → capitale
- * 2) spese
- * 3) spese di recupero
- * 4) eccesso → capitale
- * 5) eventuale residuo → mora (interessi)
- * Senza importo rata: spese → spese recupero → capitale → mora.
+ * Riparto automatico del totale pagato sui residui già pagati:
+ * capitale → mora (interessi) → spese → spese di recupero.
  */
 export function ripartiIncasso(
   importo: number,
@@ -91,38 +95,22 @@ export function ripartiIncasso(
     speseRec?: number;
   }
 ) {
+  const capRes = Math.max(0, pratica.capitale - giaPagato.capitale);
+  const intRes = Math.max(0, pratica.interessi - giaPagato.interessi);
   const speseRes = Math.max(0, pratica.spese - giaPagato.spese);
   const speseRecRes = Math.max(
     0,
     (pratica.speseRecupero ?? 0) - (giaPagato.speseRec ?? 0)
   );
-  const intRes = Math.max(0, pratica.interessi - giaPagato.interessi);
-  const capRes = Math.max(0, pratica.capitale - giaPagato.capitale);
-  const rataTarget = Math.max(0, Number(pratica.importoRata) || 0);
 
   let rest = Math.max(0, importo);
-  let capitale = 0;
-  let spese = 0;
-  let speseRec = 0;
-  let interessi = 0;
-
-  if (rataTarget > 0) {
-    const quotaRata = Math.min(rest, rataTarget, capRes);
-    capitale += quotaRata;
-    rest -= quotaRata;
-  }
-
-  spese = Math.min(rest, speseRes);
+  const capitale = Math.min(rest, capRes);
+  rest -= capitale;
+  const interessi = Math.min(rest, intRes);
+  rest -= interessi;
+  const spese = Math.min(rest, speseRes);
   rest -= spese;
-
-  speseRec = Math.min(rest, speseRecRes);
-  rest -= speseRec;
-
-  const eccessoCap = Math.min(rest, Math.max(0, capRes - capitale));
-  capitale += eccessoCap;
-  rest -= eccessoCap;
-
-  interessi = Math.min(rest, intRes);
+  const speseRec = Math.min(rest, speseRecRes);
 
   return {
     capitale,

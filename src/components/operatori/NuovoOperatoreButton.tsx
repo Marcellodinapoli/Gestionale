@@ -18,6 +18,7 @@ export function NuovoOperatoreButton({
   roleDefaults,
   acronimiUsati,
   creditCalcModuleOn = false,
+  productStandalone = { legalAi: false, recruiting: false, formazione: false, dialer: false },
 }: {
   creatorRole: Role;
   sedi: SedeOpt[];
@@ -25,6 +26,7 @@ export function NuovoOperatoreButton({
   roleDefaults: NavRoleDefaults;
   acronimiUsati: string[];
   creditCalcModuleOn?: boolean;
+  productStandalone?: import("@/lib/platform/productStandalone").ProductStandaloneContext;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -55,6 +57,7 @@ export function NuovoOperatoreButton({
             roleDefaults={roleDefaults}
             acronimiUsati={acronimiUsati}
             creditCalcModuleOn={creditCalcModuleOn}
+            productStandalone={productStandalone}
             onSuccess={() => {
               setOpen(false);
               router.refresh();

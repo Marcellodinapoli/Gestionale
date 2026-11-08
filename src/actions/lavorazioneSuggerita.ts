@@ -24,15 +24,20 @@ async function resolveSupervisorId(
   raw: string
 ) {
   const supervisorId = raw.trim() || user.id;
-  if (user.role === "SUPERVISOR") {
-    if (supervisorId !== user.id) fail("Non autorizzato");
-    return user.id;
-  }
-  if (user.role !== "ADMIN" && user.role !== "BACK_OFFICE") {
+  if (
+    user.role !== "ADMIN" &&
+    user.role !== "BACK_OFFICE" &&
+    user.role !== "SUPERVISOR"
+  ) {
     fail("Non autorizzato");
   }
   const sup = await usersDbFromUser(user).findFirst({
-    where: { id: supervisorId, tenantId: user.tenantId, role: "SUPERVISOR" },
+    where: {
+      id: supervisorId,
+      tenantId: user.tenantId,
+      role: "SUPERVISOR",
+      active: true,
+    },
     select: { id: true },
   });
   if (!sup) fail("Supervisor non trovato");

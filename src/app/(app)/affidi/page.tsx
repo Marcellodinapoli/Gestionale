@@ -1,15 +1,14 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { mandantiDbFromUser } from "@/lib/mandantiRepo";
-import { praticaDbFromUser } from "@/lib/praticheRepo";
+import { praticaDb, resolveTenantSlug } from "@/lib/praticheRepo";
 import { requireModule, requireNavPage } from "@/lib/guard";
-import { praticaScopeWhere, resolveGruppoPerimetroContext } from "@/lib/gruppoPerimetroScope";
-import { getGruppoLavoro } from "@/lib/gruppoLavoro";
 import { isManutenzione } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
-import { AffidiDaAffidareTable } from "@/components/affidi/AffidiDaAffidareTable";
+import {
+  AffidiDaAffidareTable,
+  type AffidiRigaLista,
+} from "@/components/affidi/AffidiDaAffidareTable";
 import { AffidiPraticheOperatore } from "@/components/affidi/AffidiPraticheOperatore";
-import { AffidiPerimetroOverview } from "@/components/affidi/AffidiPerimetroOverview";
-import { AffidiFiltriBackOffice } from "@/components/affidi/AffidiFiltriBackOffice";
 import {
   AffidiCaricoOperatori,
   buildCaricoOperatori,
@@ -21,22 +20,13 @@ import {
 } from "@/components/affidi/AffidiCaricoOperatori";
 import Link from "next/link";
 import { Suspense } from "react";
-import { GruppoInlineEditor } from "@/components/affidi/GruppoInlineEditor";
-import { AffidiIndietroLink } from "@/components/affidi/AffidiIndietroLink";
 import { AffidiScrollAffida } from "@/components/affidi/AffidiScrollAffida";
 import { parsePerimetriList } from "@/lib/mandantePerimetri";
-import {
-  elencoPerimetriGruppoConfig,
-  elencoPerimetriTuttiMandanti,
-  filtraPratichePerPerimetro,
-  parsePerimetroAffidi,
-} from "@/lib/affidiPerimetro";
+import { parsePerimetroAffidi } from "@/lib/affidiPerimetro";
 import {
   etichettaAffidiAllerta,
   filtraPratichePerAllerta,
-  isPraticaNonAssegnata,
-  isPraticaSenzaCodiceScarico,
-  loadAffidiMonitoraggio,
+  computeAffidiMonitoraggioAllerte,
   parseAffidiAllerta,
   praticaMonitorWhere,
 } from "@/lib/affidi/loadAffidiMonitoraggio";
@@ -54,54 +44,23 @@ import {
 import { incassatoMesePerOperatore } from "@/lib/affidi/incassatoMeseOperatore";
 import { guadagnoMesePerOperatore } from "@/lib/affidi/guadagnoMeseOperatore";
 import { AffidiMonitoraggioPanel } from "@/components/affidi/AffidiMonitoraggioPanel";
-import { AffidiCaricoFiltri } from "@/components/affidi/AffidiCaricoFiltri";
+import { AffidiAllerteCards } from "@/components/affidi/AffidiAllerteCards";
 import { AffidiIncassiOperatori } from "@/components/affidi/AffidiIncassiOperatori";
 import { righeIncassoDaCarico } from "@/lib/affidi/righeIncassoOperatore";
 import { parseIncMeseParam, rangeMeseIncassi } from "@/lib/incassiMeseFiltro";
-import { prisma } from "@/lib/prisma";
-
-function mapPraticaAffidabile(
-  p: {
-    id: string;
-    numero: string;
-    stato: string;
-    residuo: number;
-    scadenza: Date | string | null;
-    assegnatarioId: string | null;
-    operatoreTitolareId: string | null;
-    codiceScarico?: string | null;
-    codiceScaricoBk?: string | null;
-    debitore: { nome: string; cognome: string };
-    assegnatario: { name: string } | null;
-    operatoreTitolare: { name: string } | null;
-  }
-) {
-  return {
-    id: p.id,
-    numero: p.numero,
-    stato: p.stato,
-    residuo: p.residuo,
-    scadenza: p.scadenza,
-    debitoreNome: `${p.debitore.cognome} ${p.debitore.nome}`.trim(),
-    assegnatarioId: p.assegnatarioId,
-    assegnatarioNome: p.assegnatario?.name ?? null,
-    operatoreTitolareId: p.operatoreTitolareId,
-    operatoreTitolareNome: p.operatoreTitolare?.name ?? null,
-    codiceScarico: p.codiceScarico ?? null,
-    codiceScaricoBk: p.codiceScaricoBk ?? null,
-  };
-}
-
-function ordinaPraticheAffidabili<
-  T extends { assegnatarioId: string | null; numero: string }
->(pratiche: T[]) {
-  return [...pratiche].sort((a, b) => {
-    const aNuova = a.assegnatarioId ? 1 : 0;
-    const bNuova = b.assegnatarioId ? 1 : 0;
-    if (aNuova !== bNuova) return aNuova - bNuova;
-    return a.numero.localeCompare(b.numero, "it");
-  });
-}
+import { getGruppoLavoro, getGruppoLavoroForSupervisor } from "@/lib/gruppoLavoro";
+import {
+  buildGruppoPerimetroContextFromGruppo,
+  resolveGruppoPerimetroContext,
+} from "@/lib/gruppoPerimetroScope";
+import { loadCodiciMandantePerimetroLikeHome } from "@/lib/homeKpi/loadCodiciMandantePerimetroHome";
+import { AffidiCodiciMandantePerimetroSection } from "@/components/affidi/AffidiCodiciMandantePerimetroSection";
+import { visibileInElencoAffidiSupervisor } from "@/lib/affidi/affidiPraticaStatoUi";
+import {
+  mapPraticaEntityToListaRow,
+  praticaListaInclude,
+  type PraticaListaRow,
+} from "@/lib/praticheListaRow";
 
 export default async function AffidiPage({
   searchParams,
@@ -120,10 +79,17 @@ export default async function AffidiPage({
     affidaPage?: string;
     allerta?: string;
     affidaCerca?: string;
+    gruppo?: string;
   }>;
 }) {
   await requireModule("affidi");
   const user = await requireNavPage("affidi");
+  const sp = await searchParams;
+  const affidaQueryString = new URLSearchParams(
+    Object.entries(sp).flatMap(([k, v]) =>
+      v != null && v !== "" ? [[k, v] as [string, string]] : []
+    )
+  ).toString();
   const {
     operatore: operatoreRaw,
     coda: codaRaw,
@@ -133,24 +99,27 @@ export default async function AffidiPage({
     caricoPerimetro: caricoPerimetroRaw,
     caricoMese: caricoMeseRaw,
     caricoCerca: caricoCercaRaw,
-    affidaSort: affidaSortRaw,
-    affidaDir: affidaDirRaw,
     affidaPage: affidaPageRaw,
     allerta: allertaRaw,
     affidaCerca: affidaCercaRaw,
-  } = await searchParams;
+    gruppo: gruppoRaw,
+  } = sp;
   const allertaOk = parseAffidiAllerta(allertaRaw);
   // Elenco Affida solo dopo Filtra o click su allerta.
   const showAffidaElenco = affidaCercaRaw === "1" || Boolean(allertaOk);
 
-  const gruppo = await getGruppoLavoro(user);
   const vuoto = isManutenzione(user);
-  const isSupervisor = user.role === "SUPERVISOR";
-  const isBackOffice = user.role === "BACK_OFFICE";
-  const isAdmin = user.role === "ADMIN";
-  const isVistaGruppo = isSupervisor || isBackOffice;
-  /** Stesse funzioni Affidi per chi ha pratiche:assign (ADMIN / SUPERVISOR / BACK_OFFICE). */
-  const mostraMonitor = isAdmin || isBackOffice || isSupervisor;
+  /** Vista Affidi come admin: ADMIN, SUPERVISOR e BACK_OFFICE. */
+  const mostraMonitor =
+    user.role === "ADMIN" || user.role === "BACK_OFFICE" || user.role === "SUPERVISOR";
+
+  if (!mostraMonitor) {
+    return (
+      <div className="h-full min-h-0 space-y-4 overflow-y-auto">
+        <PageHeader title="Affidi" subtitle="Accesso non disponibile per questo profilo." />
+      </div>
+    );
+  }
 
   const mandantiDb = vuoto
     ? []
@@ -169,78 +138,86 @@ export default async function AffidiPage({
 
   const mandantiMonitor = mandantiConPerimetriAffidi(mandantiDb);
 
-  const [operatori, tuttiOperatori, periCtx] = await Promise.all([
-    vuoto
-      ? Promise.resolve([])
-      : isSupervisor
-        ? usersDbFromUser(user).findMany({
-            where: {
-              tenantId: user.tenantId,
-              supervisorId: user.id,
-              active: true,
-              role: "OPERATOR",
-            },
-            orderBy: { name: "asc" },
-            select: { id: true, name: true, role: true, acronimo: true },
-          })
-        : usersDbFromUser(user).findMany({
-            where: {
-              tenantId: user.tenantId,
-              role: { in: ["OPERATOR", "SUPERVISOR"] },
-              active: true,
-            },
-            orderBy: { name: "asc" },
-            select: { id: true, name: true, role: true, acronimo: true },
-          }),
-    vuoto
-      ? Promise.resolve([])
-      : isSupervisor
-        ? usersDbFromUser(user).findMany({
-            where: { tenantId: user.tenantId, role: "OPERATOR", active: true },
-            orderBy: { name: "asc" },
-            select: {
-              id: true,
-              name: true,
-              supervisorId: true,
-              supervisor: { select: { name: true } },
-            },
-          })
-        : Promise.resolve([]),
-    isSupervisor ? resolveGruppoPerimetroContext(user) : Promise.resolve(null),
-  ]);
+  const operatori = vuoto
+    ? []
+    : await usersDbFromUser(user).findMany({
+        where: {
+          tenantId: user.tenantId,
+          role: { in: ["OPERATOR", "SUPERVISOR"] },
+          active: true,
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, role: true, acronimo: true },
+      });
 
-  const membriCarico = isSupervisor ? gruppo.members : operatori;
-  const memberIds = membriCarico.map((m) => m.id);
-  const idsOperatoriFiltro = isSupervisor ? memberIds : operatori.map((o) => o.id);
-  const baseScope = await praticaScopeWhere(user);
+  const membriCarico = operatori;
+  const idsOperatoriFiltro = operatori.map((o) => o.id);
 
-  const praticheScopeRaw = await praticaDbFromUser(user).findMany({
-    where: { AND: [baseScope] },
-    select: {
-      id: true,
-      numero: true,
-      stato: true,
-      residuo: true,
-      scadenza: true,
-      codiceScarico: true,
-      codiceScaricoBk: true,
-      mandanteId: true,
-      numeroMandante: true,
-      assegnatarioId: true,
-      operatoreTitolareId: true,
-      debitoreId: true,
-      debitore: { select: { nome: true, cognome: true } },
-      mandante: { select: { codice: true } },
-      assegnatario: { select: { id: true, name: true } },
-      operatoreTitolare: { select: { id: true, name: true } },
-      importBatch: { select: { perimetro: true } },
-    },
-    orderBy: { numero: "asc" },
-  });
+  const praticaAffidiSelect = {
+    id: true,
+    numero: true,
+    stato: true,
+    residuo: true,
+    capitale: true,
+    interessi: true,
+    spese: true,
+    scadenza: true,
+    dataAffido: true,
+    ultimaLavorazioneAt: true,
+    esitoContatto: true,
+    codiceScarico: true,
+    codiceScaricoBk: true,
+    mandanteId: true,
+    numeroMandante: true,
+    assegnatarioId: true,
+    operatoreTitolareId: true,
+    debitore: praticaListaInclude.debitore,
+    mandante: praticaListaInclude.mandante,
+    assegnatario: { select: { id: true, name: true } },
+    operatoreTitolare: { select: { id: true, name: true } },
+    rate: praticaListaInclude.rate,
+    incassi: praticaListaInclude.incassi,
+    garanti: praticaListaInclude.garanti,
+    importBatch: { select: { perimetro: true } },
+    dataPassaggioGiudiziale: true,
+    conferimentoTipo: true,
+    giudiziale: { select: { statoAvvio: true } },
+  } as const;
+
+  const praticheScopeRaw = vuoto
+    ? []
+    : await praticaDb({
+        tenantId: user.tenantId,
+        tenantSlug: resolveTenantSlug(user),
+        role: user.role,
+        userId: user.id,
+        skipRoleScope: true,
+      }).findMany({
+        where: { tenantId: user.tenantId },
+        select: praticaAffidiSelect,
+        orderBy: { numero: "asc" },
+      });
   const praticheScope = praticheScopeRaw.map((p) => ({
     ...p,
     importBatchPerimetro: p.importBatch?.perimetro ?? null,
+    statoAvvioGiudiziale: p.giudiziale?.statoAvvio ?? null,
   }));
+  const praticheScopeById = new Map(praticheScope.map((p) => [p.id, p]));
+  function affidiListaRow(id: string): PraticaListaRow {
+    const p = praticheScopeById.get(id);
+    if (!p) throw new Error(`Pratica ${id} non in scope Affidi`);
+    return mapPraticaEntityToListaRow(p, `/pratiche/${id}`);
+  }
+  function affidiRigaLista(p: { id: string; assegnatarioId: string | null; operatoreTitolareId: string | null }) {
+    const full = praticheScopeById.get(p.id);
+    if (!full) throw new Error(`Pratica ${p.id} non in scope Affidi`);
+    return {
+      lista: affidiListaRow(p.id),
+      assegnatarioId: p.assegnatarioId,
+      operatoreTitolareId: p.operatoreTitolareId,
+      operatoreTitolareNome: full.operatoreTitolare?.name ?? null,
+    } satisfies AffidiRigaLista;
+  }
   const praticheAffidabili = praticheScope;
   const daAssegnare = praticheScope.filter((p) => p.assegnatarioId == null);
   const affidate = praticheScope.filter((p) => p.assegnatarioId != null);
@@ -249,28 +226,17 @@ export default async function AffidiPage({
   const selezionatoId =
     operatoreRaw && idsOperatoriFiltro.includes(operatoreRaw) ? operatoreRaw : undefined;
   const coda = parseCodaAffidi(codaRaw);
+  const codaEff =
+    user.role === "SUPERVISOR" && coda === "scadute" ? undefined : coda;
   const selezionato = selezionatoId
     ? membriCarico.find((m) => m.id === selezionatoId) ??
       operatori.find((m) => m.id === selezionatoId)
     : undefined;
 
-  const perimetriDisponibili = isSupervisor
-    ? elencoPerimetriGruppoConfig(gruppo.gruppoMandanti, mandantiOptions)
-    : isBackOffice
-      ? elencoPerimetriTuttiMandanti(mandantiOptions)
-      : [];
-  const perimetroDecoded = parsePerimetroAffidi(perimetroRaw);
-  const refPerimetro =
-    isVistaGruppo && mandatoRaw && perimetroDecoded
-      ? perimetriDisponibili.find(
-          (r) => r.mandanteId === mandatoRaw && r.perimetro === perimetroDecoded
-        )
-      : undefined;
-
   const { mandanteOk: mandatoMonitorOk, perimetroOk: perimetroMonitorOk } = risolviFiltriMonitorAffidi(
     mandantiMonitor,
     mandatoRaw,
-    refPerimetro?.perimetro ?? parsePerimetroAffidi(perimetroRaw)
+    parsePerimetroAffidi(perimetroRaw)
   );
   const { mandanteOk: mandatoCaricoOk, perimetroOk: perimetroCaricoOk } = risolviFiltriMonitorAffidi(
     mandantiMonitor,
@@ -286,11 +252,6 @@ export default async function AffidiPage({
     caricoMandato: mandatoCaricoOk,
     caricoPerimetro: perimetroCaricoOk,
     caricoMese: caricoMeseRaw,
-  };
-  const caricoExtraParams: Pick<AffidiNavParams, "mandato" | "perimetro" | "coda" | "sezione"> = {
-    mandato: mandatoMonitorOk,
-    perimetro: perimetroMonitorOk,
-    coda: codaRaw as AffidiNavParams["coda"],
   };
   const filtroMonitorLabel = etichettaFiltriMonitorAffidi(
     mandantiMonitor,
@@ -310,23 +271,11 @@ export default async function AffidiPage({
     !vuoto &&
     (caricoCercaRaw === "1" ||
       Boolean(caricoMandatoRaw || caricoPerimetroRaw || caricoMeseRaw));
-  const numeriMonitor = numeriMandantePerFiltroPerimetro(
-    mandantiMonitor,
-    perimetroMonitorOk,
-    mandatoMonitorOk,
-    praticheScope
-  );
   const numeriCarico = numeriMandantePerFiltroPerimetro(
     mandantiMonitor,
     perimetroCaricoOk,
     mandatoCaricoOk,
     praticheScope
-  );
-  const praticaWhereMonitor = praticaMonitorWhere(
-    user.tenantId,
-    mandatoMonitorOk,
-    perimetroMonitorOk,
-    numeriMonitor
   );
   const praticaWhereCarico = praticaMonitorWhere(
     user.tenantId,
@@ -393,72 +342,15 @@ export default async function AffidiPage({
     operatore: selezionatoId,
     coda: codaRaw as AffidiNavParams["coda"],
   };
-  const monitor =
-    mostraMonitor && !vuoto
-      ? await loadAffidiMonitoraggio(user, {
-          mandanteId: mandatoMonitorOk,
-          perimetro: perimetroMonitorOk,
-          numeriMandante: numeriMonitor,
-        })
-      : null;
-  const caricoFiltriPanel =
-    mostraMonitor && !vuoto ? (
-      <Card title="Filtri · incassi e pratiche per operatore">
-        <AffidiCaricoFiltri
-          mandanti={mandantiMonitor}
-          operatori={membriCarico}
-          caricoMandato={mandatoCaricoOk}
-          caricoPerimetro={perimetroCaricoOk}
-          caricoMese={caricoMeseRaw}
-          operatoreId={selezionatoId}
-          extraParams={caricoExtraParams}
-          searchActive={showCaricoKpi}
-        />
-      </Card>
-    ) : null;
-
-  const filtraPerMandante = <T extends { mandanteId: string }>(rows: T[]) =>
-    isBackOffice && mandatoRaw && !refPerimetro
-      ? rows.filter((r) => r.mandanteId === mandatoRaw)
-      : rows;
-
-  const perimetriOverview =
-    isBackOffice && mandatoRaw && !refPerimetro
-      ? perimetriDisponibili.filter((r) => r.mandanteId === mandatoRaw)
-      : perimetriDisponibili;
-
-  const navPerimetro = refPerimetro
-    ? { mandato: refPerimetro.mandanteId, perimetro: refPerimetro.perimetro }
-    : undefined;
-
-  const affidatePerimetro = refPerimetro
-    ? filtraPratichePerPerimetro(affidate, refPerimetro)
-    : filtraPerMandante(affidate);
-  const daAssegnarePerimetro = refPerimetro
-    ? filtraPratichePerPerimetro(daAssegnare, refPerimetro)
-    : filtraPerMandante(daAssegnare);
-  const praticheAffidabiliPerimetro = refPerimetro
-    ? filtraPratichePerPerimetro(praticheAffidabili, refPerimetro)
-    : filtraPerMandante(praticheAffidabili);
-  const caricoPerimetro = refPerimetro
-    ? buildCaricoOperatori(
-        membriCarico,
-        affidatePerimetro,
-        new Date(),
-        scarichiDettaglio?.perOperatore,
-        incassatoMese?.perOperatore,
-        guadagnoMese?.perOperatore
-      )
-    : buildCaricoOperatori(
-        membriCarico,
-        mostraMonitor
-          ? affidateCarico
-          : filtraPerMandante(affidate),
-        new Date(),
-        scarichiDettaglio?.perOperatore,
-        incassatoMese?.perOperatore,
-        guadagnoMese?.perOperatore
-      );
+  const caricoPerimetro = buildCaricoOperatori(
+    membriCarico,
+    affidateCarico,
+    new Date(),
+    scarichiDettaglio?.perOperatore,
+    incassatoMese?.perOperatore,
+    guadagnoMese?.perOperatore
+  );
+  const mostraCaricoMonitor = showAffidaElenco && Boolean(mandatoMonitorOk);
   const caricoConScarichi =
     scarichiDettaglio || incassatoMese
       ? buildCaricoOperatori(
@@ -471,52 +363,31 @@ export default async function AffidiPage({
         )
       : carico;
 
-  const mostraElenco =
-    Boolean(selezionatoId || coda) &&
-    (Boolean(refPerimetro) || isBackOffice || isAdmin);
-  const praticheSelezionato = mostraElenco
-    ? filtraPraticheAffido(
-        refPerimetro
-          ? affidatePerimetro
-          : mostraMonitor
-            ? affidateCarico
-            : filtraPerMandante(affidate),
-        { operatoreId: selezionatoId, coda }
-      )
+  const mostraElenco = Boolean(selezionatoId || codaEff);
+  const affidatePerElencoOperatore =
+    mostraCaricoMonitor && !showCaricoKpi ? affidateMonitor : affidateCarico;
+  const praticheSelezionatoRaw = mostraElenco
+    ? filtraPraticheAffido(affidatePerElencoOperatore, {
+        operatoreId: selezionatoId,
+        coda: codaEff,
+      })
     : [];
+  const praticheSelezionato =
+    user.role === "SUPERVISOR"
+      ? praticheSelezionatoRaw.filter(visibileInElencoAffidiSupervisor)
+      : praticheSelezionatoRaw;
   const titoloElenco = [
-    refPerimetro
-      ? `${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro}`
-      : isBackOffice && mandatoRaw
-        ? mandantiOptions.find((m) => m.id === mandatoRaw)?.codice
-        : null,
+    mandatoRaw ? mandantiOptions.find((m) => m.id === mandatoRaw)?.codice : null,
     selezionato
       ? `Pratiche di ${selezionato.name}`
-      : refPerimetro
-        ? "Pratiche del perimetro"
-        : isBackOffice
-          ? "Pratiche filtrate"
-          : "Pratiche del gruppo",
-    coda ? `· ${etichettaCodaAffidi(coda)}` : "",
+      : "Pratiche filtrate",
+    codaEff ? `· ${etichettaCodaAffidi(codaEff)}` : "",
   ]
     .filter(Boolean)
     .join(" ");
 
-  const subtitle = isSupervisor
-    ? refPerimetro
-      ? `${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro} · ${operatori.length} operatori · ${daAssegnarePerimetro.length} da affidare`
-      : `Gruppo di ${user.name} · ${perimetriDisponibili.length} perimetri · ${operatori.length} operatori · ${daAssegnare.length} da affidare`
-    : isBackOffice
-      ? refPerimetro
-        ? `${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro} · ${operatori.length} operatori · ${daAssegnarePerimetro.length} da affidare`
-        : mandatoRaw
-          ? `${mandantiOptions.find((m) => m.id === mandatoRaw)?.codice ?? "Mandato"} · ${perimetriOverview.length} perimetri · ${daAssegnarePerimetro.length} da affidare`
-          : `${mandantiOptions.length} mandati · ${perimetriDisponibili.length} perimetri · ${daAssegnare.length} da affidare`
-      : `Assegna le pratiche nuove e monitora il carico operatori`;
+  const subtitle = `Assegna le pratiche nuove e monitora il carico operatori`;
 
-  const praticheAffidabiliOverview = refPerimetro
-    ? praticheAffidabiliPerimetro
-    : filtraPerMandante(praticheAffidabili);
   const praticheAffidabiliMonitor = mostraMonitor
     ? filtraPraticheAffidiMonitor(
         praticheAffidabili,
@@ -525,372 +396,96 @@ export default async function AffidiPage({
         perimetroMonitorOk
       )
     : praticheAffidabili;
-  const praticheAffidabiliAllerta = filtraPratichePerAllerta(
+  const praticheAffidabiliAllertaBase = filtraPratichePerAllerta(
     praticheAffidabiliMonitor,
     allertaOk
   );
+  const praticheAffidabiliAllerta =
+    user.role === "SUPERVISOR" && allertaOk !== "scadute"
+      ? praticheAffidabiliAllertaBase.filter(visibileInElencoAffidiSupervisor)
+      : praticheAffidabiliAllertaBase;
   const daAssegnareMonitor = praticheAffidabiliAllerta.filter((p) => p.assegnatarioId == null);
-  const daAssegnareOverview = refPerimetro ? daAssegnarePerimetro : filtraPerMandante(daAssegnare);
-  const STATI_CHIUSE_MONITOR = new Set(["INCASSO", "RESA", "INESIGIBILE"]);
-  // Nuove = senza codice scarico; Non assegnate = senza affidatario (metriche distinte).
+  const filtroMonitorAttivo = Boolean(mandatoMonitorOk || perimetroMonitorOk);
+  const praticheConteggioAllerte =
+    user.role === "BACK_OFFICE"
+      ? filtroMonitorAttivo
+        ? praticheAffidabiliMonitor
+        : praticheAffidabili
+      : praticheAffidabiliMonitor;
   const monitorAllineato =
-    monitor && mostraMonitor
-      ? {
-          ...monitor,
-          nuove: praticheAffidabiliMonitor.filter(
-            (p) =>
-              !STATI_CHIUSE_MONITOR.has(p.stato) &&
-              isPraticaSenzaCodiceScarico(p.codiceScarico)
-          ).length,
-          nonAssegnate: praticheAffidabiliMonitor.filter((p) =>
-            isPraticaNonAssegnata(p)
-          ).length,
-        }
-      : monitor;
+    mostraMonitor && !vuoto
+      ? computeAffidiMonitoraggioAllerte(praticheConteggioAllerte, user.role)
+      : null;
   const allertaLabel = etichettaAffidiAllerta(allertaOk);
-  const monitorPanel =
+  const allertePanel =
     monitorAllineato && mostraMonitor ? (
-      <AffidiMonitoraggioPanel
-        mandanti={mandantiMonitor}
+      <AffidiAllerteCards
         monitor={monitorAllineato}
         mandatoId={mandatoMonitorOk}
         perimetro={perimetroMonitorOk}
         allertaAttiva={allertaOk}
+        extraParams={monitorExtraParams}
+        layoutBackOffice={user.role === "BACK_OFFICE"}
+        filtroLabel={filtroMonitorAttivo ? filtroMonitorLabel : undefined}
+      />
+    ) : null;
+  const codiciMandantePerimetroAffidi =
+    mostraMonitor && !vuoto && showAffidaElenco
+      ? await (async () => {
+          let gruppo = await getGruppoLavoro(user);
+          let periCtx = await resolveGruppoPerimetroContext(user);
+          if (user.role === "SUPERVISOR" || user.role === "BACK_OFFICE") {
+            const supervisori = await usersDbFromUser(user).findMany({
+              where: { tenantId: user.tenantId, role: "SUPERVISOR", active: true },
+              orderBy: { name: "asc" },
+              select: { id: true },
+            });
+            const targetSupervisorId =
+              supervisori.length === 0
+                ? null
+                : gruppoRaw && supervisori.some((s) => s.id === gruppoRaw)
+                  ? gruppoRaw
+                  : user.role === "SUPERVISOR"
+                    ? user.id
+                    : supervisori[0]!.id;
+            if (targetSupervisorId) {
+              gruppo = await getGruppoLavoroForSupervisor(
+                user.tenantId,
+                targetSupervisorId
+              );
+              periCtx = await buildGruppoPerimetroContextFromGruppo(user.tenantId, gruppo);
+            }
+          }
+          const mostraGruppo =
+            Boolean(gruppo.supervisorName) &&
+            gruppo.members.some((m) => m.role === "SUPERVISOR") &&
+            (user.role === "SUPERVISOR" || user.role === "BACK_OFFICE");
+          return loadCodiciMandantePerimetroLikeHome(user, {
+            gruppo,
+            periCtx,
+            mostraGruppo,
+          });
+        })()
+      : null;
+
+  const monitorPanel = mostraMonitor ? (
+      <AffidiMonitoraggioPanel
+        mandanti={mandantiMonitor}
+        mandatoId={mandatoMonitorOk}
+        perimetro={perimetroMonitorOk}
         searchActive={showAffidaElenco}
         extraParams={monitorExtraParams}
       />
     ) : null;
 
-  const altriGruppiRaw = isSupervisor
-    ? await usersDbFromUser(user).findMany({
-        where: {
-          tenantId: user.tenantId,
-          role: "SUPERVISOR",
-          active: true,
-          id: { not: user.id },
-        },
-        orderBy: { name: "asc" },
-        select: {
-          id: true,
-          name: true,
-          gruppoNome: true,
-          gruppoMandanti: true,
-        },
-      })
-    : [];
-  const altriGruppiOperatori =
-    altriGruppiRaw.length > 0
-      ? await usersDbFromUser(user).findMany({
-          where: {
-            tenantId: user.tenantId,
-            role: "OPERATOR",
-            active: true,
-            supervisorId: { in: altriGruppiRaw.map((s) => s.id) },
-          },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true, supervisorId: true },
-        })
-      : [];
-  const altriGruppi = altriGruppiRaw.map((sup) => ({
-    ...sup,
-    operators: altriGruppiOperatori
-      .filter((o) => o.supervisorId === sup.id)
-      .map((o) => ({ id: o.id, name: o.name })),
-  }));
-
-  if (isVistaGruppo) {
-    return (
-      <div className="h-full min-h-0 space-y-4 overflow-y-auto pb-4">
-        <PageHeader title="Affidi" subtitle={subtitle} />
-
-        <Suspense fallback={null}>
-          <AffidiIndietroLink />
-          <AffidiScrollAffida />
-        </Suspense>
-
-        {caricoFiltriPanel}
-
-        {monitorPanel}
-
-        {isBackOffice ? (
-          <Card title="Filtri">
-            <AffidiFiltriBackOffice
-              mandanti={mandantiOptions}
-              perimetri={perimetriDisponibili}
-              operatori={operatori}
-              mandatoId={mandatoRaw}
-              perimetro={refPerimetro?.perimetro}
-              operatoreId={selezionatoId}
-              coda={codaRaw}
-            />
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Tutti i mandati e perimetri del tenant. Filtra per mandato, perimetro o operatore.
-            </p>
-          </Card>
-        ) : (
-          <Card
-            title={
-              gruppo.gruppoNome
-                ? `Gruppo di lavoro · ${gruppo.gruppoNome}`
-                : "Gruppo di lavoro"
-            }
-          >
-            <GruppoInlineEditor
-              supervisorId={user.id}
-              membri={gruppo.members}
-              gruppoNome={gruppo.gruppoNome}
-              gruppoMandanti={gruppo.gruppoMandanti}
-              mandanti={mandantiOptions}
-              tuttiOperatori={tuttiOperatori.map((o) => ({
-                id: o.id,
-                name: o.name,
-                supervisorId: o.supervisorId,
-                supervisorName: o.supervisor?.name ?? null,
-              }))}
-              altriGruppi={altriGruppi}
-            />
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Gli affidi riguardano solo pratiche nei mandati/perimetri assegnati al gruppo e gli
-              operatori sotto {user.name}.
-            </p>
-          </Card>
-        )}
-
-        {isSupervisor && periCtx?.nessunPerimetroGruppo ? (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Nessun mandato/perimetro configurato sul gruppo: non compaiono pratiche da affidare.
-            Configura mandanti e perimetri con <strong>Modifica gruppo</strong>.
-          </p>
-        ) : null}
-
-        {refPerimetro ? (
-          <>
-            <Card
-              id="affida"
-              title={`Affida / riaffida · ${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro}`}
-            >
-              {mostraMonitor && !showAffidaElenco ? (
-                <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
-                  Nessun elenco caricato. Imposta i filtri in Monitoraggio operativo e premi{" "}
-                  <span className="font-semibold text-[var(--navy)]">Filtra</span>, oppure clicca
-                  una card Allerte.
-                </p>
-              ) : !praticheAffidabiliPerimetro.length ? (
-                <p className="text-sm text-[var(--muted)]">Nessuna pratica nel perimetro.</p>
-              ) : (
-                <>
-                  <p className="mb-3 text-xs text-[var(--muted)]">
-                    {daAssegnarePerimetro.length} non assegnate ·{" "}
-                    {praticheAffidabiliPerimetro.length - daAssegnarePerimetro.length} già affidate
-                    (definitivo o temporaneo). Scegli tipo affido e operatore per ogni pratica o
-                    usa la selezione massiva.
-                  </p>
-                  <AffidiDaAffidareTable
-                    operatori={operatori}
-                    affidaSort={affidaSortRaw}
-                    affidaDir={affidaDirRaw}
-                    affidaPage={affidaPageRaw}
-                    pratiche={ordinaPraticheAffidabili(
-                      filtraPratichePerAllerta(praticheAffidabiliPerimetro, allertaOk)
-                    ).map(mapPraticaAffidabile)}
-                  />
-                </>
-              )}
-            </Card>
-
-            <Card title={`Pratiche per operatore · ${refPerimetro.mandanteCodice} · ${refPerimetro.perimetro}`}>
-              {!caricoPerimetro.length ? (
-                <p className="text-sm text-[var(--muted)]">Nessun operatore.</p>
-              ) : (
-                <>
-                  {incassatoMese ? (
-                    <div className="mb-5">
-                      <p className="mb-2 text-xs text-[var(--muted)]">
-                        Incassi · {filtroCaricoLabel} · Mese: {meseCaricoLabel}
-                      </p>
-                      <AffidiIncassiOperatori
-                        righe={righeIncassoDaCarico(caricoPerimetro)}
-                        selezionatoId={selezionatoId}
-                        nav={{
-                          ...navCarico,
-                          mandato: refPerimetro.mandanteId,
-                          perimetro: refPerimetro.perimetro,
-                        }}
-                        meseLabel={meseCaricoLabel}
-                        totaleGruppo={incassatoMese.totale}
-                        totaleGuadagno={guadagnoMese?.totale ?? 0}
-                        annoCarico={annoCarico}
-                        caricoMandato={mandatoCaricoOk}
-                        caricoPerimetro={perimetroCaricoOk}
-                        numeriMandante={numeriCarico}
-                        filtroCaricoLabel={filtroCaricoLabel}
-                      />
-                    </div>
-                  ) : null}
-                  <p className="mb-2 text-xs text-[var(--muted)]">
-                    Pratiche in carico
-                    {scarichiGruppo ? ` · Codici scarico · Mese: ${meseCaricoLabel}` : ""}
-                  </p>
-                  <AffidiCaricoOperatori
-                    carico={caricoPerimetro}
-                    selezionatoId={selezionatoId}
-                    coda={coda}
-                    nav={{
-                      ...navCarico,
-                      mandato: refPerimetro.mandanteId,
-                      perimetro: refPerimetro.perimetro,
-                    }}
-                    meseLabel={meseCaricoLabel}
-                    scarichiGruppo={scarichiGruppo}
-                  />
-                  {mostraElenco ? (
-                    <p className="mt-2 text-xs text-[var(--muted)]">
-                      <Link href={buildAffidiHref(navPerimetro)} className="underline">
-                        Chiudi dettaglio pratiche
-                      </Link>
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs text-[var(--muted)]">
-                      Clicca un numero o un operatore per le pratiche di questo perimetro.
-                    </p>
-                  )}
-                </>
-              )}
-            </Card>
-
-            {mostraElenco ? (
-              <Card title={titoloElenco}>
-                <AffidiPraticheOperatore
-                  nome={titoloElenco}
-                  pratiche={praticheSelezionato}
-                  showAssegnatario={!selezionatoId}
-                  operatori={operatori}
-                />
-              </Card>
-            ) : null}
-          </>
-        ) : (
-          <>
-            {!refPerimetro && isBackOffice && (selezionatoId || coda) ? (
-              <Card title="Pratiche per operatore">
-                {incassatoMese ? (
-                  <div className="mb-5">
-                    <p className="mb-2 text-xs text-[var(--muted)]">
-                      Incassi · {filtroCaricoLabel} · Mese: {meseCaricoLabel}
-                    </p>
-                    <AffidiIncassiOperatori
-                      righe={righeIncassoDaCarico(caricoPerimetro)}
-                      selezionatoId={selezionatoId}
-                      nav={navCarico}
-                      meseLabel={meseCaricoLabel}
-                      totaleGruppo={incassatoMese.totale}
-                      totaleGuadagno={guadagnoMese?.totale ?? 0}
-                      annoCarico={annoCarico}
-                      caricoMandato={mandatoCaricoOk}
-                      caricoPerimetro={perimetroCaricoOk}
-                      numeriMandante={numeriCarico}
-                      filtroCaricoLabel={filtroCaricoLabel}
-                    />
-                  </div>
-                ) : null}
-                <p className="mb-2 text-xs text-[var(--muted)]">
-                  Pratiche in carico
-                  {scarichiGruppo ? ` · Codici scarico · Mese: ${meseCaricoLabel}` : ""}
-                </p>
-                <AffidiCaricoOperatori
-                  carico={caricoPerimetro}
-                  selezionatoId={selezionatoId}
-                  coda={coda}
-                  nav={navCarico}
-                  meseLabel={meseCaricoLabel}
-                  scarichiGruppo={scarichiGruppo}
-                />
-              </Card>
-            ) : null}
-
-            {mostraElenco && !refPerimetro ? (
-              <Card title={titoloElenco}>
-                <AffidiPraticheOperatore
-                  nome={titoloElenco}
-                  pratiche={praticheSelezionato}
-                  showAssegnatario={!selezionatoId}
-                  operatori={operatori}
-                />
-              </Card>
-            ) : null}
-
-            <Card title="Affidi per mandato e perimetro">
-              <AffidiPerimetroOverview
-                refs={perimetriOverview}
-                daAssegnare={daAssegnareOverview}
-                affidate={filtraPerMandante(affidate)}
-                membri={membriCarico}
-              />
-            </Card>
-
-            <Card id="affida" title="Affida / riaffida pratiche">
-              {mostraMonitor && !showAffidaElenco ? (
-                <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
-                  Nessun elenco caricato. Imposta i filtri in Monitoraggio operativo e premi{" "}
-                  <span className="font-semibold text-[var(--navy)]">Filtra</span>, oppure clicca
-                  una card Allerte.
-                </p>
-              ) : (
-                (() => {
-                  const lista = filtraPratichePerAllerta(
-                    praticheAffidabiliOverview,
-                    allertaOk
-                  );
-                  const daAss = lista.filter((p) => p.assegnatarioId == null);
-                  if (!lista.length) {
-                    return (
-                      <p className="text-sm text-[var(--muted)]">
-                        {allertaOk
-                          ? "Nessuna pratica per questa allerta."
-                          : isBackOffice
-                            ? "Nessuna pratica con i filtri selezionati."
-                            : "Nessuna pratica nei perimetri del gruppo."}
-                      </p>
-                    );
-                  }
-                  return (
-                    <>
-                      {allertaLabel ? (
-                        <p className="mb-2 text-xs font-medium text-[var(--navy)]">
-                          Allerta: {allertaLabel}
-                        </p>
-                      ) : null}
-                      <p className="mb-3 text-xs text-[var(--muted)]">
-                        {daAss.length} non assegnate · {lista.length - daAss.length} già
-                        affidate (definitivo o temporaneo). Puoi riaffidare anche quelle già in
-                        carico: seleziona tipo affido e operatore.
-                      </p>
-                      <AffidiDaAffidareTable
-                        operatori={operatori}
-                        affidaSort={affidaSortRaw}
-                        affidaDir={affidaDirRaw}
-                        affidaPage={affidaPageRaw}
-                        pratiche={ordinaPraticheAffidabili(lista).map(mapPraticaAffidabile)}
-                      />
-                    </>
-                  );
-                })()
-              )}
-            </Card>
-          </>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full min-h-0 space-y-4 overflow-y-auto pb-4">
+    <div className="h-full min-h-0 space-y-4 overflow-y-auto">
       <PageHeader title="Affidi" subtitle={subtitle} />
       <Suspense fallback={null}>
         <AffidiScrollAffida />
       </Suspense>
 
-      {caricoFiltriPanel}
+      {allertePanel}
 
       {showCaricoKpi && incassatoMese ? (
         <Card title="Incassi per operatore">
@@ -966,27 +561,51 @@ export default async function AffidiPage({
           </>
         )}
       </Card>
-      ) : caricoFiltriPanel ? (
-        <Card title="Incassi e pratiche per operatore">
-          <p className="px-1 py-8 text-center text-sm text-[var(--muted)]">
-            Nessun riepilogo caricato. Imposta i filtri sopra e premi{" "}
-            <span className="font-semibold text-[var(--navy)]">Filtra</span>.
-          </p>
-        </Card>
       ) : null}
 
-      {mostraElenco ? (
+      {mostraElenco && showCaricoKpi ? (
         <Card title={titoloElenco}>
           <AffidiPraticheOperatore
             nome={titoloElenco}
-            pratiche={praticheSelezionato}
-            showAssegnatario={!selezionatoId}
+            righe={praticheSelezionato.map((p) => affidiListaRow(p.id))}
+            praticheStatoInput={praticheSelezionato.map((p) => ({
+              id: p.id,
+              assegnatarioId: p.assegnatarioId,
+              operatoreTitolareId: p.operatoreTitolareId,
+              stato: p.stato,
+            }))}
             operatori={operatori}
+            affidaQuery={affidaQueryString}
           />
         </Card>
       ) : null}
 
       {monitorPanel}
+
+      {codiciMandantePerimetroAffidi && mostraMonitor && showAffidaElenco ? (
+        <AffidiCodiciMandantePerimetroSection
+          user={user}
+          righe={codiciMandantePerimetroAffidi.righe}
+          righePerOperatore={codiciMandantePerimetroAffidi.righePerOperatore}
+        />
+      ) : null}
+
+      {mostraElenco && mostraCaricoMonitor ? (
+        <Card title={titoloElenco}>
+          <AffidiPraticheOperatore
+            nome={titoloElenco}
+            righe={praticheSelezionato.map((p) => affidiListaRow(p.id))}
+            praticheStatoInput={praticheSelezionato.map((p) => ({
+              id: p.id,
+              assegnatarioId: p.assegnatarioId,
+              operatoreTitolareId: p.operatoreTitolareId,
+              stato: p.stato,
+            }))}
+            operatori={operatori}
+            affidaQuery={affidaQueryString}
+          />
+        </Card>
+      ) : null}
 
       <Card id="affida" title="Affida / riaffida pratiche">
         {!showAffidaElenco ? (
@@ -1030,12 +649,9 @@ export default async function AffidiPage({
                 </p>
                 <AffidiDaAffidareTable
                   operatori={operatori}
-                  affidaSort={affidaSortRaw}
-                  affidaDir={affidaDirRaw}
                   affidaPage={affidaPageRaw}
-                  pratiche={ordinaPraticheAffidabili(praticheAffidabiliAllerta).map(
-                    mapPraticaAffidabile
-                  )}
+                  affidaQuery={affidaQueryString}
+                  righe={praticheAffidabiliAllerta.map(affidiRigaLista)}
                 />
               </>
             )}

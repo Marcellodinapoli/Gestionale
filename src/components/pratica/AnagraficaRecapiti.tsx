@@ -31,6 +31,7 @@ import {
   statoTelefonoClassi,
   statoTelefonoLabel,
 } from "@/lib/statoTelefono";
+import { anagraficaSplitCellClass } from "@/components/pratica/anagraficaUi";
 
 type Recapito = {
   id: string;
@@ -67,7 +68,7 @@ export function AnagraficaRecapiti({
   email: string | null;
   recapiti: Recapito[];
   canEdit: boolean;
-  layout?: "debitore" | "inline";
+  layout?: "debitore" | "inline" | "recapiti" | "recapiti-righe";
   codiceFiscale?: string | null;
   operatoreName?: string | null;
   prefissoChiamata?: string | null;
@@ -405,12 +406,17 @@ export function AnagraficaRecapiti({
     principaleStato: string | null | undefined,
     extra: Recapito[],
     tipo: "TELEFONO" | "EMAIL",
-    highlight?: boolean
+    highlight?: boolean,
+    stretch?: boolean
   ) {
     return (
-      <div className="min-w-0">
+      <div className={stretch ? "flex h-full min-h-0 flex-col" : "min-w-0"}>
         <div className={labelCls}>{label}</div>
-        <div className="space-y-0.5 border border-[var(--line)] bg-white p-1">
+        <div
+          className={`space-y-0.5 border border-[var(--line)] bg-white p-1${
+            stretch ? " flex min-h-[20px] flex-1 flex-col justify-center" : ""
+          }`}
+        >
           {riga({
             id: principaleId,
             valore: principale,
@@ -435,6 +441,8 @@ export function AnagraficaRecapiti({
     );
   }
 
+  const recapitiStretch = layout === "recapiti-righe";
+
   const telefonoBlocco = blocco(
     "Telefono",
     PRINCIPALE_TEL,
@@ -442,7 +450,8 @@ export function AnagraficaRecapiti({
     telefonoStato,
     telefoni,
     "TELEFONO",
-    true
+    true,
+    recapitiStretch
   );
 
   const emailBlocco = blocco(
@@ -451,7 +460,9 @@ export function AnagraficaRecapiti({
     emailPrincipale,
     null,
     emails,
-    "EMAIL"
+    "EMAIL",
+    undefined,
+    recapitiStretch
   );
 
   const popup = (
@@ -579,6 +590,40 @@ export function AnagraficaRecapiti({
         {popup}
         {smsMenuNode}
       </div>
+    );
+  }
+
+  if (layout === "recapiti") {
+    return (
+      <div className="min-w-0 space-y-1">
+        {telefonoBlocco}
+        {emailBlocco}
+        {error && !popupTipo ? (
+          <p className="text-[10px] text-[var(--danger)]">{error}</p>
+        ) : null}
+        {popup}
+        {smsMenuNode}
+      </div>
+    );
+  }
+
+  if (layout === "recapiti-righe") {
+    return (
+      <>
+        <div className={anagraficaSplitCellClass(1, 2)}>{telefonoBlocco}</div>
+        <div className={anagraficaSplitCellClass(2, 2)}>{emailBlocco}</div>
+        <div
+          className={`${anagraficaSplitCellClass(3, 2)} hidden sm:block`}
+          aria-hidden
+        />
+        {error && !popupTipo ? (
+          <p className="col-span-full text-[10px] text-[var(--danger)]">
+            {error}
+          </p>
+        ) : null}
+        {popup}
+        {smsMenuNode}
+      </>
     );
   }
 

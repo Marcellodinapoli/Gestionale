@@ -1,9 +1,9 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";import type { Prisma } from "@prisma/client";
+import { dialerDb, type DialerDb } from "@/lib/dialerRepo";
 
 const STATI_CODA_DISPONIBILI = ["disponibile", "richiamare", "non_risposta"] as const;
 
-type Tx = Prisma.TransactionClient;
+type Tx = DialerDb;
 
 export type LockPraticaOpts = {
   numero?: string;
@@ -18,7 +18,7 @@ export async function lockPraticaInCoda(
   opts: LockPraticaOpts,
   tx?: Tx
 ): Promise<boolean> {
-  const db = tx ?? prisma;
+  const db = tx ?? dialerDb();
   const now = new Date();
   const result = await db.dialerCampagnaPratica.updateMany({
     where: {
@@ -55,7 +55,7 @@ export async function releasePraticaInCoda(
   opts: ReleasePraticaOpts,
   tx?: Tx
 ) {
-  const db = tx ?? prisma;
+  const db = tx ?? dialerDb();
   await db.dialerCampagnaPratica.updateMany({
     where: {
       campagnaId,
@@ -83,7 +83,7 @@ export async function completePraticaInCoda(
   ultimoEsito: string,
   tx?: Tx
 ) {
-  const db = tx ?? prisma;
+  const db = tx ?? dialerDb();
   await db.dialerCampagnaPratica.updateMany({
     where: { campagnaId, praticaId },
     data: {

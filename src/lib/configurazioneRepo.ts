@@ -1,8 +1,9 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorConfigurazioneRepository } from "@/lib/data/connector/ConnectorConfigurazioneRepository";
+import { createNeonConfigurazioneRepository } from "@/lib/neon/NeonConfigurazioneRepository";
 import { prismaConfigurazioneRepository } from "@/lib/data/prisma/PrismaConfigurazioneRepository";
 import type { ConfigurazioneFilter, ConfigurazioneRepository } from "@/lib/data/contracts/configurazione";
 import { applySelect } from "@/lib/data/mapSqlRow";
@@ -18,6 +19,7 @@ async function connectorSlug(ctx: ConfigurazioneDbContext): Promise<string> {
 
 function repo(slug: string): ConfigurazioneRepository {
   if (isConnectorProvider()) return createConnectorConfigurazioneRepository(slug);
+  if (isNeonProvider()) return createNeonConfigurazioneRepository(slug);
   return prismaConfigurazioneRepository;
 }
 
@@ -26,7 +28,7 @@ export function configurazioneDbFromUser(user: SessionUser) {
 }
 
 export function configurazioneDb(ctx: ConfigurazioneDbContext): typeof prisma.configurazioneSistema {
-  if (!isConnectorProvider()) return prisma.configurazioneSistema;
+  if (!isConnectorProvider() && !isNeonProvider()) return prisma.configurazioneSistema;
 
   return {
     findMany: async (args: Prisma.ConfigurazioneSistemaFindManyArgs) => {

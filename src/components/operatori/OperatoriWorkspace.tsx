@@ -367,7 +367,7 @@ export function OperatoriWorkspace({
                 <option value="0">No</option>
               </select>
             </Field>
-            <Field label="CreditCalc">
+            <Field label="CredixaApp">
               <select
                 value={draft.creditCalc}
                 onChange={(e) =>

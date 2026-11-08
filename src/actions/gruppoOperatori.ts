@@ -7,6 +7,9 @@ import { writeAudit } from "@/lib/domain";
 import { requireWritableUser } from "@/lib/guard";
 import { rotateUserPassword } from "@/lib/passwordPolicy";
 import { parseGruppoMandanti, serializeGruppoMandanti } from "@/lib/gruppoMandanti";
+import { parsePerimetriList } from "@/lib/mandantePerimetri";
+import { messaggioErroreGruppoMandanti } from "@/lib/gruppoMandantiUi";
+import { resolveGruppoSupervisorTarget } from "@/lib/gruppoEditor/resolveGruppoSupervisorTarget";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -22,11 +25,16 @@ function revalidateGruppo() {
   revalidatePath("/affidi");
   revalidatePath("/statistiche");
   revalidatePath("/pratiche");
+  revalidatePath("/provigioni");
   revalidatePath("/");
 }
 
 export async function addOperatoreAlGruppoAction(formData: FormData) {
   const user = await requireSupervisor();
+  const supervisorId = await resolveGruppoSupervisorTarget(
+    user,
+    String(formData.get("gruppoSupervisorId") || "")
+  );
   const operatoreId = String(formData.get("operatoreId") || "");
   const userModel = usersDbFromUser(user);
   const op = await userModel.findUnique({ where: { id: operatoreId } });
@@ -35,7 +43,7 @@ export async function addOperatoreAlGruppoAction(formData: FormData) {
   }
   await userModel.update({
     where: { id: operatoreId },
-    data: { supervisorId: user.id },
+    data: { supervisorId },
   });
   await writeAudit({
     userId: user.id,
@@ -49,10 +57,14 @@ export async function addOperatoreAlGruppoAction(formData: FormData) {
 
 export async function removeOperatoreDalGruppoAction(formData: FormData) {
   const user = await requireSupervisor();
+  const supervisorId = await resolveGruppoSupervisorTarget(
+    user,
+    String(formData.get("gruppoSupervisorId") || "")
+  );
   const operatoreId = String(formData.get("operatoreId") || "");
   const userModel = usersDbFromUser(user);
   const op = await userModel.findUnique({ where: { id: operatoreId } });
-  if (!op || op.supervisorId !== user.id || op.tenantId !== user.tenantId) {
+  if (!op || op.supervisorId !== supervisorId || op.tenantId !== user.tenantId) {
     fail("Operatore non presente nel gruppo");
   }
   await userModel.update({
@@ -71,17 +83,21 @@ export async function removeOperatoreDalGruppoAction(formData: FormData) {
 
 export async function updateGruppoNomeAction(formData: FormData) {
   const user = await requireSupervisor();
+  const supervisorId = await resolveGruppoSupervisorTarget(
+    user,
+    String(formData.get("gruppoSupervisorId") || "")
+  );
   const userModel = usersDbFromUser(user);
   const nome = String(formData.get("gruppoNome") || "").trim() || null;
   await userModel.update({
-    where: { id: user.id },
+    where: { id: supervisorId },
     data: { gruppoNome: nome },
   });
   await writeAudit({
     userId: user.id,
     action: "update",
     entity: "gruppo",
-    entityId: user.id,
+    entityId: supervisorId,
     dettaglio: `nome gruppo: ${nome || "—"}`,
   });
   revalidateGruppo();
@@ -89,6 +105,10 @@ export async function updateGruppoNomeAction(formData: FormData) {
 
 export async function updateGruppoMandantiAction(formData: FormData) {
   const user = await requireSupervisor();
+  const supervisorId = await resolveGruppoSupervisorTarget(
+    user,
+    String(formData.get("gruppoSupervisorId") || "")
+  );
   const userModel = usersDbFromUser(user);
   const raw = String(formData.get("gruppoMandanti") || "").trim();
   let parsed: ReturnType<typeof parseGruppoMandanti> = [];
@@ -101,24 +121,35 @@ export async function updateGruppoMandantiAction(formData: FormData) {
     }
   }
 
+  const errMandanti = messaggioErroreGruppoMandanti(parsed);
+  if (errMandanti) fail(errMandanti);
+
   const mandanteIds = [...new Set(parsed.map((a) => a.mandanteId))];
-  if (mandanteIds.length) {
-    const count = await mandantiDbFromUser(user).count({
-      where: { tenantId: user.tenantId, id: { in: mandanteIds } },
-    });
-    if (count !== mandanteIds.length) fail("Una o più mandanti non sono valide");
+  const mandantiRows = await mandantiDbFromUser(user).findMany({
+    where: { tenantId: user.tenantId, id: { in: mandanteIds } },
+    select: { id: true, perimetri: true },
+  });
+  if (mandantiRows.length !== mandanteIds.length) fail("Una o più mandanti non sono valide");
+
+  for (const a of parsed) {
+    const row = mandantiRows.find((m) => m.id === a.mandanteId);
+    const perimetri = parsePerimetriList(row?.perimetri ?? null);
+    const validIds = new Set(perimetri.map((p) => p.id));
+    for (const pid of a.perimetriIds) {
+      if (!validIds.has(pid)) fail("Perimetro non valido per la mandante selezionata");
+    }
   }
 
   await userModel.update({
-    where: { id: user.id },
-    data: { gruppoMandanti: parsed.length ? serializeGruppoMandanti(parsed) : null },
+    where: { id: supervisorId },
+    data: { gruppoMandanti: serializeGruppoMandanti(parsed) },
   });
 
   await writeAudit({
     userId: user.id,
     action: "update",
     entity: "gruppo",
-    entityId: user.id,
+    entityId: supervisorId,
     dettaglio: `mandanti gruppo: ${mandanteIds.length}`,
   });
   revalidateGruppo();

@@ -14,6 +14,7 @@
     "postinstall": "prisma generate --schema src/lib/firebase/schema.prisma",
     "build:netlify": "prisma generate --schema src/lib/firebase/schema.prisma && next build --webpack",
     "firebase:verify": "node scripts/verify-firebase.mjs",
+    "check:firebase": "node scripts/check-firebase-admin.mjs",
     "neon:ping": "node scripts/neon-ping.mjs",
     "neon:migrate-from-sqlserver": "node scripts/migrate-sqlserver-to-neon.mjs --wipe-neon",
     "baseline": "tsx --tsconfig scripts/baseline/tsconfig.json scripts/baseline/run-baseline.ts",

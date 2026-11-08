@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { salvaMemoAgendaAction } from "@/actions/core";
 import { AgendaCalendarioPicker, toAgendaLocalValue } from "@/components/agenda/AgendaCalendarioPicker";
+import { avvisoAgendaNelPassato } from "@/lib/agenda/agendaNonNelPassato";
 
 type PraticaHit = {
   id: string;
@@ -55,6 +56,11 @@ export function ImpegnoPraticaForm({ onDone }: { onDone?: () => void }) {
     e.preventDefault();
     if (!selected) {
       setError("Seleziona una pratica dall'elenco");
+      return;
+    }
+    const passato = avvisoAgendaNelPassato(scheduledAt);
+    if (passato) {
+      setError(passato);
       return;
     }
     setError(null);

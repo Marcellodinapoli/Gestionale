@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -64,6 +65,12 @@ export function AltriGruppiToggle({ gruppi }: { gruppi: GruppoInfo[] }) {
                   Nessun operatore nel gruppo
                 </p>
               )}
+              <Link
+                href={`/?gruppo=${sup.id}`}
+                className="mt-2 inline-block text-xs font-semibold text-[var(--accent)] underline"
+              >
+                Apri in Home e gestisci
+              </Link>
             </div>
           ))}
         </div>

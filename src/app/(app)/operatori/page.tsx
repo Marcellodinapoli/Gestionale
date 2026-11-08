@@ -1,6 +1,6 @@
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { sediDbFromUser } from "@/lib/sediRepo";
-import { requireNavPage } from "@/lib/guard";
+import { requireOperatoriNavPage } from "@/lib/guard";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { condizioneEconomicaLabel, parseCondizioneEconomica } from "@/lib/condizioneEconomica";
 import { OperatoriWorkspace } from "@/components/operatori/OperatoriWorkspace";
@@ -10,7 +10,7 @@ import { loadOperatoriProfiliAll } from "@/lib/operatoriProfilo";
 import Link from "next/link";
 
 export default async function OperatoriPage() {
-  const user = await requireNavPage("operatori");
+  const user = await requireOperatoriNavPage();
 
   const userModel = usersDbFromUser(user);
   const [users, supervisori, sedi, roleDefaults, userOverrides, profili] = await Promise.all([
@@ -89,8 +89,10 @@ export default async function OperatoriPage() {
   const { getTenantPlatformConfig, tenantHasModule } = await import(
     "@/lib/platform/tenantProfile"
   );
+  const { getProductStandaloneContext } = await import("@/lib/platform/productStandalone");
   const platform = await getTenantPlatformConfig(user.tenantId, user.tenantSlug);
   const creditCalcModuleOn = tenantHasModule(platform, "creditcalc");
+  const productStandalone = getProductStandaloneContext(platform.enabledModules);
 
   return (
     <OperatoriWorkspace
@@ -117,6 +119,7 @@ export default async function OperatoriPage() {
             roleDefaults={roleDefaults}
             acronimiUsati={acronimiUsati}
             creditCalcModuleOn={creditCalcModuleOn}
+            productStandalone={productStandalone}
           />
         </>
       }

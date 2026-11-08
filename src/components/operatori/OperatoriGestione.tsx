@@ -73,7 +73,7 @@ export function OperatoriGestione({
             <th>Ruolo</th>
             <th>Condizione econ.</th>
             <th>Accesso</th>
-            <th>CreditCalc</th>
+            <th>CredixaApp</th>
             <th>Sede</th>
             <th>Team</th>
             <th>Acronimo</th>
@@ -270,10 +270,10 @@ function RigaOperatore({
           <span className={!creditCalcModuleOn ? "opacity-60" : undefined}>
             Esterno
             {utente.creditCalcEnabled && creditCalcModuleOn ? (
-              <span className="mt-0.5 block font-medium text-emerald-700">CreditCalc ON</span>
+              <span className="mt-0.5 block font-medium text-emerald-700">CredixaApp ON</span>
             ) : (
               <span className="mt-0.5 block text-[var(--muted)]">
-                {creditCalcModuleOn ? "CreditCalc off" : "CreditCalc (sezione non attiva)"}
+                {creditCalcModuleOn ? "CredixaApp off" : "CredixaApp (sezione non attiva)"}
               </span>
             )}
           </span>

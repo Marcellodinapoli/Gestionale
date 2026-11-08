@@ -13,6 +13,7 @@ export function ProvvigioniFiltriAmministrazione({
   perimetro,
   operatoreId,
   gruppoId,
+  mostraOperatore = true,
 }: {
   mandanti: Array<{ id: string; codice: string; ragioneSociale: string }>;
   perimetri: PerimetroGruppoRef[];
@@ -22,6 +23,7 @@ export function ProvvigioniFiltriAmministrazione({
   perimetro?: string;
   operatoreId?: string;
   gruppoId?: string;
+  mostraOperatore?: boolean;
 }) {
   const [mandanteSel, setMandanteSel] = useState(mandanteId || "");
   const [perimetroSel, setPerimetroSel] = useState(
@@ -89,23 +91,25 @@ export function ProvvigioniFiltriAmministrazione({
           ))}
         </select>
       </label>
-      <label className="text-sm">
-        <span className="mb-1 block text-xs font-medium text-[var(--muted)]">
-          Operatore
-        </span>
-        <select
-          name="operatore"
-          defaultValue={operatoreId || ""}
-          className={FILTRI_PAGE_SELECT_LG_CLASS}
-        >
-          <option value="">Tutti</option>
-          {operatori.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {mostraOperatore ? (
+        <label className="text-sm">
+          <span className="mb-1 block text-xs font-medium text-[var(--muted)]">
+            Operatore
+          </span>
+          <select
+            name="operatore"
+            defaultValue={operatoreId || ""}
+            className={FILTRI_PAGE_SELECT_LG_CLASS}
+          >
+            <option value="">Tutti</option>
+            {operatori.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {gruppi ? (
         <label className="text-sm">
           <span className="mb-1 block text-xs font-medium text-[var(--muted)]">

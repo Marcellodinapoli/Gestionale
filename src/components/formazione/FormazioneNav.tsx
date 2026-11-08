@@ -43,6 +43,9 @@ function isActive(pathname: string, href: string) {
   if (href === "/formazione/collaboratori") {
     return pathname === href || pathname.startsWith("/formazione/collaboratori/");
   }
+  if (href === "/formazione/progressi") {
+    return pathname === href || pathname.startsWith("/formazione/progressi/");
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

@@ -2,9 +2,56 @@ import { usersDb } from "@/lib/usersRepo";
 import type { Prisma } from "@prisma/client";
 import { isManutenzione, type SessionUser } from "@/lib/permissions";
 import { parseGruppoMandanti } from "@/lib/gruppoMandanti";
+import {
+  formatUtenteNome,
+  resolvePostazioneVisibile,
+} from "@/lib/sessionPresence";
 
 export type { GruppoLavoro } from "@/lib/gruppoLavoroUi";
 import type { GruppoLavoro } from "@/lib/gruppoLavoroUi";
+
+const membroGruppoSelect = {
+  id: true,
+  name: true,
+  cognome: true,
+  role: true,
+  email: true,
+  interno: true,
+  postazioneId: true,
+  postazioneFissa: true,
+  lastLoginAt: true,
+  lastLogoutAt: true,
+  postazione: {
+    select: {
+      interno: true,
+      email: true,
+      nome: true,
+    },
+  },
+} satisfies Prisma.UserSelect;
+
+type MembroGruppoRow = Prisma.UserGetPayload<{ select: typeof membroGruppoSelect }>;
+
+function toMembroGruppo(u: MembroGruppoRow) {
+  const desk = resolvePostazioneVisibile({
+    role: u.role,
+    interno: u.interno,
+    postazioneId: u.postazioneId,
+    postazioneFissa: u.postazioneFissa,
+    lastLoginAt: u.lastLoginAt,
+    lastLogoutAt: u.lastLogoutAt,
+    postazioneInterno: u.postazione?.interno,
+    postazioneEmail: u.postazione?.email,
+    postazioneNome: u.postazione?.nome,
+  });
+  return {
+    id: u.id,
+    name: formatUtenteNome(u),
+    role: u.role,
+    email: u.email,
+    internoVisibile: desk.interno,
+  };
+}
 
 export async function getGruppoLavoro(user: SessionUser): Promise<GruppoLavoro> {
   if (isManutenzione(user)) {
@@ -29,7 +76,15 @@ export async function getGruppoLavoro(user: SessionUser): Promise<GruppoLavoro> 
       supervisorName: null,
       gruppoNome: null,
       gruppoMandanti: [],
-      members: [{ id: user.id, name: user.name, role: user.role, email: user.email }],
+      members: [
+        {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          email: user.email,
+          internoVisibile: user.interno?.trim() || null,
+        },
+      ],
       memberIds: [user.id],
     };
   }
@@ -47,11 +102,8 @@ export async function getGruppoLavoroForSupervisor(
     userModel.findFirst({
       where: { id: supervisorId, tenantId },
       select: {
-        id: true,
-        name: true,
-        role: true,
+        ...membroGruppoSelect,
         active: true,
-        email: true,
         gruppoNome: true,
         gruppoMandanti: true,
         tenantId: true,
@@ -64,16 +116,14 @@ export async function getGruppoLavoroForSupervisor(
         role: "OPERATOR",
         tenantId,
       },
-      select: { id: true, name: true, role: true, email: true },
+      select: membroGruppoSelect,
       orderBy: { name: "asc" },
     }),
   ]);
 
   const members = [
-    ...(supervisor?.active
-      ? [{ id: supervisor.id, name: supervisor.name, role: supervisor.role, email: supervisor.email }]
-      : []),
-    ...operators.map((o) => ({ id: o.id, name: o.name, role: o.role, email: o.email })),
+    ...(supervisor?.active ? [toMembroGruppo(supervisor)] : []),
+    ...operators.map((o) => toMembroGruppo(o)),
   ];
 
   const memberIds = [...new Set(members.map((m) => m.id))];
@@ -91,5 +141,10 @@ export async function getGruppoLavoroForSupervisor(
 export function gruppoLavoroPraticaWhere(memberIds: string[]): Prisma.PraticaWhereInput {
   if (!memberIds.length) return { assegnatarioId: { in: [] } };
   // Sempre tutti i membri del gruppo (operatori + supervisor), mai solo l’utente corrente.
-  return { assegnatarioId: { in: memberIds } };
+  return {
+    OR: [
+      { assegnatarioId: { in: memberIds } },
+      { operatoreTitolareId: { in: memberIds } },
+    ],
+  };
 }

@@ -14,8 +14,12 @@ export type ProvvigioneFilter = {
   /** Filtro sulla data dell'incasso collegato (non CreatedAt provvigione). */
   incassoDataGte?: string;
   incassoDataLte?: string;
+  /** Mese elenco: data incasso OR data maturazione provvigione (stesso intervallo). */
+  meseCompetenzaOrGte?: string;
+  meseCompetenzaOrLte?: string;
   praticaMandanteId?: string;
   praticaNumeroMandante?: string;
+  praticaNumeriMandanteIn?: string[];
   praticaNumeroMandanteNull?: boolean;
   perimetroOr?: Array<{ mandanteId: string; numeriMandante?: string[] }>;
 };

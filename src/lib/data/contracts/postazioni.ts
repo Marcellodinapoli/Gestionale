@@ -18,6 +18,8 @@ export type PostazioneDto = {
   interno: string | null;
   email: string | null;
   numeroFisso: string | null;
+  numeroFax: string | null;
+  numeroWhatsapp: string | null;
   note: string | null;
   active: boolean;
   createdAt: string | Date;
@@ -40,6 +42,8 @@ export type PostazioneCreateInput = {
   interno?: string | null;
   email?: string | null;
   numeroFisso?: string | null;
+  numeroFax?: string | null;
+  numeroWhatsapp?: string | null;
   note?: string | null;
   active?: boolean;
 };

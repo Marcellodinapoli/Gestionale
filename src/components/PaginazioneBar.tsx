@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { FILTRO_SRC_PARAM } from "@/lib/filtroVeloceEsclusivo";
+import { buildPraticheQuery } from "@/lib/buildPraticheQuery";
+
+export { buildPraticheQuery };
 
 const PAGE_SIZE = 25;
 
@@ -9,122 +11,11 @@ export function paginateParams(pageRaw?: string) {
   return { page, pageSize: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE };
 }
 
-export function buildPraticheQuery(params: {
-  q?: string;
-  stato?: string;
-  esito?: string;
-  lavorate?: boolean;
-  lavorateData?: string;
-  lavorateOggi?: boolean;
-  nonToccateDa?: 10;
-  sort?: string;
-  dir?: string;
-  page?: number;
-  [key: string]: string | boolean | number | undefined;
-}) {
-  const sp = new URLSearchParams();
-  if (params.q) sp.set("q", String(params.q));
-  if (params.stato) sp.set("stato", String(params.stato));
-  if (params.esito) sp.set("esito", String(params.esito));
-  if (params.lavorate) sp.set("lavorate", "1");
-  if (params.lavorateDa) sp.set("lavorateDa", String(params.lavorateDa));
-  if (params.lavorateA) sp.set("lavorateA", String(params.lavorateA));
-  if (!params.lavorateDa && !params.lavorateA) {
-    if (params.lavorateData) sp.set("lavorateData", String(params.lavorateData));
-    else if (params.lavorateOggi) sp.set("lavorateOggi", "1");
-  }
-  if (params.lavorateFascia) sp.set("lavorateFascia", String(params.lavorateFascia));
-  if (params.nonToccateDa) sp.set("nonToccateDa", String(params.nonToccateDa));
-  if (params.sort) sp.set("sort", String(params.sort));
-  if (params.dir) sp.set("dir", String(params.dir));
-  if (params.page && Number(params.page) > 1) sp.set("page", String(params.page));
-
-  if (params.filtroSrc) sp.set(FILTRO_SRC_PARAM, String(params.filtroSrc));
-
-  const altriKeys = [
-    "debitore",
-    "debitoreOp",
-    "capDa",
-    "capA",
-    "citta",
-    "cittaOp",
-    "prov",
-    "provOp",
-    "telefono",
-    "telefonoOp",
-    "affidoDa",
-    "affidoA",
-    "scadenzaDa",
-    "scadenzaA",
-    "scadenzaStragiudizialeDa",
-    "scadenzaStragiudizialeA",
-    "mandato",
-    "mandatoOp",
-    "perimetro",
-    "perimetroOp",
-    "lotto",
-    "lottoOp",
-    "operatore",
-    "operatoreOp",
-    "codScarico",
-    "codScaricoOp",
-    "codScaricoBk",
-    "codScaricoBkOp",
-    "sitAffido",
-    "sitAffidoOp",
-    "affidoProvvisorio",
-    "importoRataDa",
-    "importoRataA",
-    "residuoDa",
-    "residuoA",
-    "totIncassatoDa",
-    "totIncassatoA",
-    "importoTotDa",
-    "importoTotA",
-    "cfPiva",
-    "cfPivaOp",
-    "garante",
-    "garanteOp",
-    "note",
-    "noteOp",
-    "nPraticaDa",
-    "nPraticaA",
-    "promPagDa",
-    "promPagA",
-    "incassatoDa",
-    "incassatoA",
-    "memoDa",
-    "memoA",
-    "rateScadute",
-    "aggiuntivoCampo",
-    "aggiuntivoValore",
-    "aggiuntivoOp",
-    "preavvisoStragiudiziale",
-    "attivitaGiudiziale",
-  ] as const;
-  for (const k of altriKeys) {
-    const v = params[k];
-    if (v !== undefined && v !== "" && v !== false) sp.set(k, String(v));
-  }
-
-  // Elenco pratiche solo dopo Filtra / deep-link intenzionale (cerca=1).
-  if (params.cerca !== "0" && params.cerca !== false) {
-    const hasFiltro = [...sp.keys()].some(
-      (k) => k !== "sort" && k !== "dir" && k !== "page" && k !== "cerca"
-    );
-    if (hasFiltro || params.cerca === "1" || params.cerca === true) {
-      sp.set("cerca", "1");
-    }
-  }
-
-  const qs = sp.toString();
-  return qs ? `/pratiche?${qs}` : "/pratiche";
-}
-
 export function PaginazioneBar({
   page,
   totalPages,
   hrefForPage,
+  onPageLinkClick,
   fixed,
   left,
   right,
@@ -138,6 +29,7 @@ export function PaginazioneBar({
   page: number;
   totalPages: number;
   hrefForPage: (page: number) => string;
+  onPageLinkClick?: (href: string) => void;
   fixed?: boolean;
   left?: ReactNode;
   right?: ReactNode;
@@ -151,6 +43,27 @@ export function PaginazioneBar({
     "inline-flex h-7 min-w-[28px] items-center justify-center border border-[#8a8a8a] bg-gradient-to-b from-[#f0f0f0] to-[#c8c8c8] px-1.5 text-sm font-bold text-[#1a1a1a] shadow-[inset_0_1px_0_#fff] hover:from-[#fafafa] hover:to-[#d8d8d8]";
   const btnDisabled =
     "inline-flex h-7 min-w-[28px] cursor-not-allowed items-center justify-center border border-[#b0b0b0] bg-[#d8d8d8] px-1.5 text-sm font-bold text-[#888] opacity-70";
+
+  function pageLink(targetPage: number, className: string, title: string, children: ReactNode) {
+    const href = hrefForPage(targetPage);
+    if (onPageLinkClick) {
+      return (
+        <Link
+          href={href}
+          className={className}
+          title={title}
+          onClick={() => onPageLinkClick(href)}
+        >
+          {children}
+        </Link>
+      );
+    }
+    return (
+      <Link href={href} className={className} title={title}>
+        {children}
+      </Link>
+    );
+  }
 
   const paginationButtons = (
     <div className="flex items-center gap-1">
@@ -173,12 +86,8 @@ export function PaginazioneBar({
         </>
       ) : (
         <>
-          <Link href={hrefForPage(1)} className={btnActive} title={labels.first}>
-            «
-          </Link>
-          <Link href={hrefForPage(page - 1)} className={btnActive} title={labels.prev}>
-            ‹
-          </Link>
+          {pageLink(1, btnActive, labels.first, "«")}
+          {pageLink(page - 1, btnActive, labels.prev, "‹")}
         </>
       )}
 
@@ -205,12 +114,8 @@ export function PaginazioneBar({
         </>
       ) : (
         <>
-          <Link href={hrefForPage(page + 1)} className={btnActive} title={labels.next}>
-            ›
-          </Link>
-          <Link href={hrefForPage(totalPages)} className={btnActive} title={labels.last}>
-            »
-          </Link>
+          {pageLink(page + 1, btnActive, labels.next, "›")}
+          {pageLink(totalPages, btnActive, labels.last, "»")}
         </>
       )}
     </div>
@@ -230,7 +135,7 @@ export function PaginazioneBar({
           <div className="flex items-center justify-center sm:pointer-events-none sm:absolute sm:inset-x-0">
             <div className="pointer-events-auto">{paginationButtons}</div>
           </div>
-          <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end sm:ml-auto sm:max-w-[40%]">
+          <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end pr-14 sm:ml-auto sm:max-w-[40%]">
             {right}
           </div>
         </div>

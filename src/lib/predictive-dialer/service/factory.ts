@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { configurazioneDbForTenant } from "@/lib/configurazioneRepo";
 import {
   DIALER_CONFIG_API_BASE,
   DIALER_CONFIG_CATEGORIA,
@@ -9,7 +9,7 @@ import { NullPredictiveDialerAdapter } from "@/lib/predictive-dialer/service/Nul
 import type { PredictiveDialerService } from "@/lib/predictive-dialer/service/PredictiveDialerService";
 
 export async function getPredictiveDialerService(tenantId: string): Promise<PredictiveDialerService> {
-  const rows = await prisma.configurazioneSistema.findMany({
+  const rows = await configurazioneDbForTenant(tenantId).findMany({
     where: { tenantId, categoria: DIALER_CONFIG_CATEGORIA },
     select: { chiave: true, valore: true },
   });

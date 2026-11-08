@@ -43,7 +43,7 @@ const FUNZIONI = [
   {
     icon: Lock,
     title: "Un operatore alla volta",
-    text: "Se la pratica è già aperta da un collega, CreditCalc la blocca in sola lettura.",
+    text: "Se la pratica è già aperta da un collega, CredixaApp la blocca in sola lettura.",
   },
   {
     icon: Smartphone,
@@ -71,7 +71,7 @@ export default async function CreditCalcPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="CreditCalc"
+        title="CredixaApp"
         subtitle="L’app mobile collegata al gestionale: pratiche in affido, note e scarico anche fuori dalla postazione."
       />
 
@@ -83,7 +83,7 @@ export default async function CreditCalcPage() {
           <div className="min-w-0 space-y-2">
             <h2 className="text-base font-semibold text-[var(--navy)]">Cos’è</h2>
             <p className="text-sm leading-relaxed text-[var(--muted)]">
-              CreditCalc è l’app per consulenti esterni e operatori sul campo. Si collega
+              CredixaApp è l’app per consulenti esterni e operatori sul campo. Si collega
               all’azienda con un QR: l’identità è quella dell’utente gestionale, senza
               configurare server o password extra. Non mostra il totale delle pratiche
               dell’azienda: solo quelle affidate a lui.
@@ -120,15 +120,16 @@ export default async function CreditCalcPage() {
             <li>
               Amministrazione abilita il profilo{" "}
               <span className="font-medium text-[var(--navy)]">consulente esterno</span> e la
-              spunta <span className="font-medium text-[var(--navy)]">CreditCalc</span> sulla
+              spunta <span className="font-medium text-[var(--navy)]">CredixaApp</span> sulla
               scheda operatore.
             </li>
             <li>
               L’operatore genera un QR da Account (o da questa pagina, se è abilitato).
             </li>
             <li>
-              Nell’app: <span className="font-medium text-[var(--navy)]">Impostazioni → Collegamenti</span>{" "}
-              e scansione del QR. Il collegamento è personale e temporaneo.
+              Nell’app: menu <span className="font-medium text-[var(--navy)]">Aziende</span>{" "}
+              (o Impostazioni → Collegamenti gestionale) e scansione del QR dal
+              gestionale Account.
             </li>
           </ol>
           {puoGestireOperatori ? (
@@ -147,7 +148,7 @@ export default async function CreditCalcPage() {
             <div className="space-y-2 text-sm leading-relaxed text-[var(--muted)]">
               <p>
                 L’app è per gli operatori abilitati come consulenti esterni. Questa pagina
-                invece è visibile a tutti, così ciascuno sa a cosa serve CreditCalc.
+                invece è visibile a tutti, così ciascuno sa a cosa serve CredixaApp.
               </p>
               <p>
                 Senza abilitazione l’app non apre le pratiche. Il QR si genera solo sul
@@ -168,7 +169,7 @@ export default async function CreditCalcPage() {
             <div className="flex gap-3 text-sm leading-relaxed text-[var(--muted)]">
               <ScanLine className="mt-0.5 h-4 w-4 shrink-0 text-[var(--navy)]" />
               <p>
-                Sei abilitato. Genera un QR e scansionarlo da CreditCalc → Impostazioni →
+                Sei abilitato. Genera un QR e scansionarlo da CredixaApp → Impostazioni →
                 Collegamenti.
               </p>
             </div>

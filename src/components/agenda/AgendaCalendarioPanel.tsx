@@ -115,12 +115,12 @@ function VoceChip({
     return (
       <Link
         href={`/pratiche/${voce.id}`}
-        className={`block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight text-[var(--navy)] hover:bg-white/80 ${
-          compact ? "bg-[#dbeafe]" : "bg-[#bfdbfe]"
+        className={`block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight text-white hover:brightness-110 ${
+          compact ? "bg-[#15803d]" : "bg-[#166534]"
         }`}
         title={`${ora} · ${label}`}
       >
-        <span className="tabular-nums text-[var(--muted)]">{ora}</span> {label}
+        <span className="tabular-nums text-[#bbf7d0]">{ora}</span> {label}
       </Link>
     );
   }
@@ -139,8 +139,8 @@ function VoceChip({
   }
   return (
     <span
-      className={`block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight text-[#1a365d] ${
-        compact ? "bg-[#e0e7ff]" : "bg-[#c7d2fe]"
+      className={`block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight text-[#4c1d95] ${
+        compact ? "bg-[#ede9fe]" : "bg-[#c4b5fd]"
       }`}
       title={`${ora} · ${label}`}
     >
@@ -248,10 +248,10 @@ export function AgendaCalendarioPanel({
         ) : (
           <>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#bfdbfe]" /> Richiamo pratica
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#166534]" /> Richiamo pratica
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#c7d2fe]" /> Impegno libero
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#c4b5fd]" /> Impegno libero
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#fbbf24]" /> Scadenza legale

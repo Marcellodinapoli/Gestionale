@@ -4,6 +4,7 @@ import { isNeonProvider, getTenantsRepository, getUsersRepository } from "@/lib/
 import { neonQuery } from "@/lib/neon/pool";
 import { isUuid } from "@/lib/tenant";
 import type { SessionUser } from "@/lib/permissions";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 
 export type CollaboratorRow = {
   id: string;
@@ -16,9 +17,12 @@ export type CollaboratorRow = {
 };
 
 async function resolveFirebaseUid(gestionaleUserId: string, email: string): Promise<string | null> {
-  const db = getFirebaseFirestore();
-  const auth = getFirebaseAuth();
-  const emailNorm = email.trim().toLowerCase();
+  if (!isFirebaseAvailable()) return null;
+
+  try {
+    const db = getFirebaseFirestore();
+    const auth = getFirebaseAuth();
+    const emailNorm = email.trim().toLowerCase();
 
   if (gestionaleUserId) {
     const linked = await db
@@ -40,9 +44,13 @@ async function resolveFirebaseUid(gestionaleUserId: string, email: string): Prom
         .get();
       if (!byEmail.empty) return byEmail.docs[0]!.id;
     }
-  }
+    }
 
-  return null;
+    return null;
+  } catch (err) {
+    console.error("[formazione] Errore resolve Firebase UID:", err);
+    return null;
+  }
 }
 
 /** Uid Firebase della sessione corrente (i miei progressi). */
@@ -63,19 +71,26 @@ export async function resolveOwnFirebaseUid(user: SessionUser): Promise<string |
 }
 
 async function isOwnFirebaseUid(user: SessionUser, firebaseUid: string): Promise<boolean> {
-  const own = await resolveOwnFirebaseUid(user);
-  if (own && own === firebaseUid) return true;
-  const emailNorm = user.email.trim().toLowerCase();
-  if (!emailNorm) return false;
+  if (!isFirebaseAvailable()) return false;
+
   try {
-    const authUser = await getFirebaseAuth().getUser(firebaseUid);
-    if (authUser.email?.trim().toLowerCase() === emailNorm) return true;
-  } catch {
-    /* ignore */
+    const own = await resolveOwnFirebaseUid(user);
+    if (own && own === firebaseUid) return true;
+    const emailNorm = user.email.trim().toLowerCase();
+    if (!emailNorm) return false;
+    try {
+      const authUser = await getFirebaseAuth().getUser(firebaseUid);
+      if (authUser.email?.trim().toLowerCase() === emailNorm) return true;
+    } catch {
+      /* ignore */
+    }
+    const snap = await getFirebaseFirestore().collection("users").doc(firebaseUid).get();
+    const fbEmail = String(snap.data()?.email ?? "").trim().toLowerCase();
+    return Boolean(fbEmail && fbEmail === emailNorm);
+  } catch (err) {
+    console.error("[formazione] Errore isOwnFirebaseUid:", err);
+    return false;
   }
-  const snap = await getFirebaseFirestore().collection("users").doc(firebaseUid).get();
-  const fbEmail = String(snap.data()?.email ?? "").trim().toLowerCase();
-  return Boolean(fbEmail && fbEmail === emailNorm);
 }
 
 async function resolveNeonTenantId(user: SessionUser): Promise<string | null> {
@@ -162,39 +177,68 @@ export async function listCollaboratorsForSupervisor(
 ): Promise<CollaboratorRow[]> {
   const operators = await listOperatorsForCollaboratori(user);
 
-  const rows = await Promise.all(
-    operators.map(async (op) => {
-      const firebaseUid = await resolveFirebaseUid(op.id, op.email);
-      let lastLoginAt: string | null = null;
-      if (firebaseUid) {
-        const snap = await getFirebaseFirestore().collection("users").doc(firebaseUid).get();
-        const raw = snap.data()?.lastLoginAt;
-        if (raw && typeof raw === "object" && "toDate" in raw) {
-          lastLoginAt = (raw as { toDate: () => Date }).toDate().toISOString();
-        }
-      }
-      return {
-        id: op.id,
-        name: op.name,
-        email: op.email,
-        active: op.active,
-        firebaseUid,
-        createdAt: op.createdAt.toISOString(),
-        lastLoginAt,
-      };
-    })
-  );
+  if (!isFirebaseAvailable()) {
+    return operators.map((op) => ({
+      id: op.id,
+      name: op.name,
+      email: op.email,
+      active: op.active,
+      firebaseUid: null,
+      createdAt: op.createdAt.toISOString(),
+      lastLoginAt: null,
+    }));
+  }
 
-  return rows;
+  try {
+    const rows = await Promise.all(
+      operators.map(async (op) => {
+        const firebaseUid = await resolveFirebaseUid(op.id, op.email);
+        let lastLoginAt: string | null = null;
+        if (firebaseUid) {
+          const snap = await getFirebaseFirestore().collection("users").doc(firebaseUid).get();
+          const raw = snap.data()?.lastLoginAt;
+          if (raw && typeof raw === "object" && "toDate" in raw) {
+            lastLoginAt = (raw as { toDate: () => Date }).toDate().toISOString();
+          }
+        }
+        return {
+          id: op.id,
+          name: op.name,
+          email: op.email,
+          active: op.active,
+          firebaseUid,
+          createdAt: op.createdAt.toISOString(),
+          lastLoginAt,
+        };
+      })
+    );
+    return rows;
+  } catch (err) {
+    console.error("[formazione] Errore list collaborators:", err);
+    return operators.map((op) => ({
+      id: op.id,
+      name: op.name,
+      email: op.email,
+      active: op.active,
+      firebaseUid: null,
+      createdAt: op.createdAt.toISOString(),
+      lastLoginAt: null,
+    }));
+  }
 }
 
 export async function assertSupervisorCanViewFirebaseUid(
   user: SessionUser,
   firebaseUid: string
 ): Promise<{ gestionaleUserId: string; name: string; email: string }> {
-  const db = getFirebaseFirestore();
-  const fbUser = await db.collection("users").doc(firebaseUid).get();
-  const data = fbUser.data();
+  if (!isFirebaseAvailable()) {
+    throw new Error("Formazione non disponibile: Firebase non configurato");
+  }
+
+  try {
+    const db = getFirebaseFirestore();
+    const fbUser = await db.collection("users").doc(firebaseUid).get();
+    const data = fbUser.data();
 
   let gestionaleUserId = String(data?.gestionaleUserId ?? "").trim();
   let email = String(data?.email ?? "").trim();
@@ -223,11 +267,16 @@ export async function assertSupervisorCanViewFirebaseUid(
     throw new Error("Operatore non trovato");
   }
 
-  if (user.role === "SUPERVISOR" && operator.supervisorId !== user.id) {
-    throw new Error("Non autorizzato");
-  }
+    if (user.role === "SUPERVISOR" && operator.supervisorId !== user.id) {
+      throw new Error("Non autorizzato");
+    }
 
-  return { gestionaleUserId: operator.id, name: operator.name, email: operator.email };
+    return { gestionaleUserId: operator.id, name: operator.name, email: operator.email };
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Firebase non configurato")) throw err;
+    console.error("[formazione] Errore assertSupervisor:", err);
+    throw err;
+  }
 }
 
 /** Il collaboratore può vedere il proprio corso; supervisor/admin i collaboratori. */

@@ -19,6 +19,8 @@ function mapRow(r: Record<string, unknown>) {
     interno: r.Interno != null ? String(r.Interno) : null,
     email: r.Email != null ? String(r.Email) : null,
     numeroFisso: r.NumeroFisso != null ? String(r.NumeroFisso) : null,
+    numeroFax: r.NumeroFax != null ? String(r.NumeroFax) : null,
+    numeroWhatsapp: r.NumeroWhatsapp != null ? String(r.NumeroWhatsapp) : null,
     note: r.Note != null ? String(r.Note) : null,
     active: Boolean(r.Active),
     createdAt: new Date(String(r.CreatedAt)).toISOString(),
@@ -171,6 +173,8 @@ export async function createPostazione(
     interno?: string | null;
     email?: string | null;
     numeroFisso?: string | null;
+    numeroFax?: string | null;
+    numeroWhatsapp?: string | null;
     note?: string | null;
     active?: boolean;
   }
@@ -184,12 +188,14 @@ export async function createPostazione(
     .input("interno", sql.NVarChar(30), data.interno ?? null)
     .input("email", sql.NVarChar(200), data.email ?? null)
     .input("numeroFisso", sql.NVarChar(30), data.numeroFisso ?? null)
+    .input("numeroFax", sql.NVarChar(30), data.numeroFax ?? null)
+    .input("numeroWhatsapp", sql.NVarChar(30), data.numeroWhatsapp ?? null)
     .input("note", sql.NVarChar(sql.MAX), data.note ?? null)
     .input("active", sql.Bit, data.active !== false ? 1 : 0)
     .query(`
-      INSERT INTO dbo.Postazioni (TenantId, SedeId, Nome, Interno, Email, NumeroFisso, Note, Active, CreatedAt)
+      INSERT INTO dbo.Postazioni (TenantId, SedeId, Nome, Interno, Email, NumeroFisso, NumeroFax, NumeroWhatsapp, Note, Active, CreatedAt)
       OUTPUT INSERTED.*
-      VALUES (@tenantId, @sedeId, @nome, @interno, @email, @numeroFisso, @note, @active, SYSUTCDATETIME())
+      VALUES (@tenantId, @sedeId, @nome, @interno, @email, @numeroFisso, @numeroFax, @numeroWhatsapp, @note, @active, SYSUTCDATETIME())
     `);
   return mapRow(res.recordset[0] as Record<string, unknown>);
 }
@@ -207,6 +213,8 @@ export async function updatePostazione(
     interno: "Interno",
     email: "Email",
     numeroFisso: "NumeroFisso",
+    numeroFax: "NumeroFax",
+    numeroWhatsapp: "NumeroWhatsapp",
     note: "Note",
     active: "Active",
   };

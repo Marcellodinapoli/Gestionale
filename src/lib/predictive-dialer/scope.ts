@@ -2,18 +2,22 @@ import "server-only";
 import type { SessionUser } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 
-export function dialerCampagnaScopeWhere(user: SessionUser): Prisma.DialerCampagnaWhereInput {
+export function dialerCampagnaScopeWhere(
+  user: SessionUser,
+  opts?: { gruppoSupervisorId?: string | null }
+): Prisma.DialerCampagnaWhereInput {
   const base: Prisma.DialerCampagnaWhereInput = { tenantId: user.tenantId };
   if (user.role === "ADMIN") return base;
   if (user.role === "SUPERVISOR") {
+    const supId = String(opts?.gruppoSupervisorId || "").trim() || user.id;
     return {
       AND: [
         base,
         {
           OR: [
-            { supervisorId: user.id },
-            { createdById: user.id },
-            { operatori: { some: { operatore: { supervisorId: user.id } } } },
+            { supervisorId: supId },
+            ...(supId === user.id ? [{ createdById: user.id }] : []),
+            { operatori: { some: { operatore: { supervisorId: supId } } } },
           ],
         },
       ],
@@ -22,10 +26,15 @@ export function dialerCampagnaScopeWhere(user: SessionUser): Prisma.DialerCampag
   return { id: "__nessuna__" };
 }
 
-export function canManageDialerCampagna(user: SessionUser, campagna: { supervisorId: string | null; createdById: string }) {
+export function canManageDialerCampagna(
+  user: SessionUser,
+  campagna: { supervisorId: string | null; createdById: string }
+) {
   if (user.role === "ADMIN") return true;
   if (user.role === "SUPERVISOR") {
-    return campagna.supervisorId === user.id || campagna.createdById === user.id;
+    if (campagna.createdById === user.id) return true;
+    if (campagna.supervisorId) return true;
+    return false;
   }
   return false;
 }

@@ -1,4 +1,5 @@
 import { requireNavPage } from "@/lib/guard";
+import { canReceiveInboundScreenPop } from "@/lib/permissions";
 import {
   CounterPathSoftphoneProvider,
   DefaultTelProvider,
@@ -41,6 +42,7 @@ export default async function TelefoniaPage() {
       providerCapabilities={TelephonyRegistry.active()?.capabilities ?? null}
       providerDisponibili={TelephonyRegistry.list()}
       tenantConfig={cfg}
+      screenPopSimulazione={canReceiveInboundScreenPop(user.role)}
     />
   );
 }

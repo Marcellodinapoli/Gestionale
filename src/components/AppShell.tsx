@@ -46,12 +46,24 @@ import {
   GraduationCap,
   Wrench,
   MapPin,
+  Sparkles,
   Scale,
   Layers,
   Ticket,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { logoutAction } from "@/actions/core";
+
+const GestionaleHelpWidget = dynamic(
+  () =>
+    import("@/components/assistenza/GestionaleHelpWidget").then(
+      (m) => m.GestionaleHelpWidget,
+    ),
+  { ssr: false },
+);
 import { MemoPopupWatcher } from "@/components/agenda/MemoPopupWatcher";
+import { InboundCallScreenPopWatcher } from "@/components/telefonia/InboundCallScreenPopWatcher";
+import { InboundCallScreenPopDevFab } from "@/components/telefonia/InboundCallScreenPopDevFab";
 import { PreavvisoStragiudizialeWatcher } from "@/components/agenda/PreavvisoStragiudizialeWatcher";
 import {
   PrivacyLockButton,
@@ -61,8 +73,24 @@ import {
   PraticaHeaderSlotDisplay,
   PraticaHeaderSlotProvider,
 } from "@/components/layout/PraticaHeaderSlot";
-import { ROLE_LABELS, can, canManageSedi, isFormazioneOnly, type SessionUser } from "@/lib/permissions";
+import {
+  ROLE_LABELS,
+  can,
+  canManageSedi,
+  canReceiveInboundScreenPop,
+  isFormazioneOnly,
+  type SessionUser,
+} from "@/lib/permissions";
 import { hasModule, isAwaitingSectionActivation, type ModuleId, type TenantPlatformConfig } from "@/lib/platform/modules";
+import {
+  ADDON_ONLY_ADMIN_HREFS,
+  addonOnlyMainNavHrefs,
+} from "@/lib/platform/legalAiStandalone";
+import {
+  addonAdminHrefsExcludingPostazioni,
+  isFormazioneProductTenant,
+  supervisorCanManageOperatoriFormazione,
+} from "@/lib/platform/formazioneProduct";
 import { resolveAffidiBackNav } from "@/lib/affidiNavBack";
 import { navigateBack } from "@/lib/navBack";
 import { labelForNavBackHref, navBackDisplayLabel } from "@/lib/navBackLabel";
@@ -126,6 +154,12 @@ const NAV_ACCENT: Record<string, NavAccent> = {
     iconLight: "text-[#8a6a3d]",
     badgeDark: "bg-[#d4b896]/25 ring-1 ring-[#e8d5b5]/50",
     badgeLight: "bg-[#f4ead8] ring-1 ring-[#d4b896]/60",
+  },
+  legalAi: {
+    iconDark: "text-[#c4b5fd]",
+    iconLight: "text-[#6d28d9]",
+    badgeDark: "bg-violet-400/25 ring-1 ring-violet-300/55",
+    badgeLight: "bg-violet-50 ring-1 ring-violet-300/75",
   },
   formazione: {
     iconDark: "text-[#5eead4]",
@@ -267,8 +301,8 @@ const MAIN_LINKS: NavLink[] = [
     show: (u) => !isFormazioneOnly(u) && can(u, "lavorazione:view"),
   },
   {
-    href: "/predictive-dialer",
-    label: "Dialer",
+    href: "/predictive",
+    label: "Predictive",
     icon: PhoneForwarded,
     moduleId: "dialer",
     navPageId: "dialer",
@@ -278,7 +312,7 @@ const MAIN_LINKS: NavLink[] = [
   { href: "/account", label: "Account", icon: UserCircle, moduleId: "core", navPageId: "account", show: () => true },
   {
     href: "/creditcalc",
-    label: "CreditCalc",
+    label: "CredixaApp",
     icon: Calculator,
     moduleId: "creditcalc",
     navPageId: "creditcalc",
@@ -310,7 +344,15 @@ const MAIN_LINKS: NavLink[] = [
     moduleId: "legale",
     navPageId: "legal",
     show: (u) => !isFormazioneOnly(u) && can(u, "legal:view"),
-    accent: NAV_ACCENT.legal,
+  },
+  {
+    href: "/legal-ai",
+    label: "Credixa Legal AI",
+    icon: Sparkles,
+    moduleId: "legal-ai",
+    navPageId: "legalAi",
+    show: (u) => !isFormazioneOnly(u) && can(u, "legal-ai:view"),
+    accent: NAV_ACCENT.legalAi,
   },
   {
     href: "/recruiting",
@@ -412,6 +454,41 @@ function navActive(pathname: string, href: string) {
     : pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/** Elenco Pratiche, scheda pratica (`/pratiche/[id]`), Affidi: niente padding inferiore su main. */
+function mainBottomPaddingClass(pathname: string | null): string {
+  const p = pathname ?? "";
+  if (p === "/affidi" || p === "/pratiche" || /^\/pratiche\/[^/]+$/.test(p)) {
+    return "pb-0";
+  }
+  return "pb-[1cm]";
+}
+
+/** Prefissi sezione: la voce menu resta attiva su tutte le pagine interne (es. Formazione → Corsi). */
+const NAV_SECTION_ACTIVE_PREFIX: Partial<
+  Record<NonNullable<NavLink["navPageId"]>, string>
+> = {
+  formazione: "/formazione",
+  strumenti: "/strumenti",
+  legal: "/legal",
+  legalAi: "/legal-ai",
+  recruiting: "/recruiting",
+  dialer: "/predictive",
+  portafogli: "/portafogli",
+  mandanti: "/mandanti",
+  configurazione: "/configurazione",
+  import: "/import",
+};
+
+function navLinkActive(pathname: string, link: Pick<NavLink, "href" | "navPageId">) {
+  const sectionPrefix = link.navPageId
+    ? NAV_SECTION_ACTIVE_PREFIX[link.navPageId]
+    : undefined;
+  if (sectionPrefix) {
+    return pathname === sectionPrefix || pathname.startsWith(`${sectionPrefix}/`);
+  }
+  return navActive(pathname, link.href);
+}
+
 function NavItem({
   link,
   pathname,
@@ -431,7 +508,7 @@ function NavItem({
 }) {
   const router = useRouter();
   const Icon = link.icon;
-  const active = navActive(pathname, link.href);
+  const active = navLinkActive(pathname, link);
   const moduleOn = link.enabled !== false;
   const showBack = Boolean(backHref) && active && link.href === backNavHref && moduleOn;
   const backDisplayLabel = showBack
@@ -523,6 +600,17 @@ function HeaderUserActions({
   ruoloVisibile: boolean;
   compact?: boolean;
 }) {
+  const emailInHeader = user.postazioneEmail?.trim() || user.email?.trim() || null;
+  const headerTitle = [
+    user.tenantNome,
+    user.name,
+    ruoloVisibile ? roleLabel : null,
+    user.interno ? `int. ${user.interno}` : null,
+    emailInHeader,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <>
       <Link
@@ -530,9 +618,7 @@ function HeaderUserActions({
         className={`font-medium hover:text-white ${
           compact ? "max-w-[9rem] truncate" : "max-w-[14rem] truncate xl:max-w-none xl:whitespace-nowrap"
         }`}
-        title={[user.tenantNome, user.name, ruoloVisibile ? roleLabel : null]
-          .filter(Boolean)
-          .join(" · ")}
+        title={headerTitle}
       >
         {compact ? (
           user.name
@@ -546,15 +632,15 @@ function HeaderUserActions({
               <span className="font-normal text-white/55"> · {roleLabel}</span>
             ) : null}
             {user.interno ? (
-              <span className="hidden font-normal text-white/55 2xl:inline">
+              <span className="hidden font-normal text-white/55 lg:inline">
                 {" "}
                 · int. {user.interno}
               </span>
             ) : null}
-            {user.postazioneEmail ? (
-              <span className="hidden font-normal text-white/55 2xl:inline">
+            {emailInHeader ? (
+              <span className="hidden font-normal text-white/55 lg:inline">
                 {" "}
-                · {user.postazioneEmail}
+                · {emailInHeader}
               </span>
             ) : null}
           </>
@@ -592,7 +678,7 @@ function NavDropdownMenu({
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const active = links.some((l) => navActive(pathname, l.href));
+  const active = links.some((l) => navLinkActive(pathname, l));
 
   useEffect(() => setMounted(true), []);
 
@@ -644,7 +730,7 @@ function NavDropdownMenu({
             {links.map((link) => {
               const ItemIcon = link.icon;
               const moduleOn = link.enabled !== false;
-              const itemActive = moduleOn && navActive(pathname, link.href);
+              const itemActive = moduleOn && navLinkActive(pathname, link);
               if (!moduleOn) {
                 return (
                   <span
@@ -1104,9 +1190,13 @@ export function AppShell({
     };
   }, [router]);
 
+  const mainPb = mainBottomPaddingClass(pathname);
+
   if (embedded) {
     return (
-      <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-[var(--bg)] px-[1cm] pt-2 pb-[1cm]">
+      <main
+        className={`flex h-dvh min-h-0 flex-col overflow-hidden bg-[var(--bg)] px-[1cm] pt-2 ${mainPb}`}
+      >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </main>
     );
@@ -1115,18 +1205,26 @@ export function AppShell({
   const enabledModules = liveModules ?? platform?.enabledModules;
   const awaiting = isAwaitingSectionActivation(enabledModules);
   const hasGestionaleBase = hasModule(enabledModules, "recovery");
+  const addonOnlyNav = addonOnlyMainNavHrefs(enabledModules);
+  const formazioneProduct = isFormazioneProductTenant(enabledModules);
+  const addonAdminHrefs = formazioneProduct
+    ? addonAdminHrefsExcludingPostazioni(ADDON_ONLY_ADMIN_HREFS)
+    : ADDON_ONLY_ADMIN_HREFS;
 
   const moduleEnabledFor = (l: NavLink): boolean => {
     if (awaiting && l.href !== "/account") return false;
     if (!hasModule(enabledModules, l.moduleId)) return false;
     if (l.moduleId === "core" && l.href !== "/account" && !hasGestionaleBase) {
+      if (addonOnlyNav && addonAdminHrefs.has(l.href)) {
+        return true;
+      }
       return false;
     }
     return true;
   };
 
   // Visibili in base a ruolo/visibilità; sezioni modulo off restano in menu ma disabilitate.
-  const mainLinks = MAIN_LINKS.filter((l) => {
+  const mainLinksRaw = MAIN_LINKS.filter((l) => {
     if (l.navPageId && navVisibility && navVisibility[l.navPageId] === false) {
       return false;
     }
@@ -1137,9 +1235,21 @@ export function AppShell({
     badgeCount: l.href === "/avvisi" ? unreadAvvisi : undefined,
   }));
 
+  const mainLinks =
+    addonOnlyNav != null
+      ? mainLinksRaw.filter((l) => addonOnlyNav.has(l.href))
+      : mainLinksRaw;
+
   const adminLinks = ADMIN_LINKS.filter((l) => {
     if (l.navPageId && navVisibility && navVisibility[l.navPageId] === false) {
       return false;
+    }
+    if (l.href === "/postazioni" && formazioneProduct) return false;
+    if (
+      l.href === "/operatori" &&
+      supervisorCanManageOperatoriFormazione(user, enabledModules)
+    ) {
+      return true;
     }
     return l.show(user);
   }).map((l) => ({ ...l, enabled: moduleEnabledFor(l) }));
@@ -1154,8 +1264,8 @@ export function AppShell({
       <header className="relative z-40 shrink-0 bg-[var(--navy)] text-white shadow-md print:hidden">
         <div className="flex flex-col gap-1.5 px-[1cm] py-1.5 xl:flex-row xl:items-center xl:gap-x-3">
           <div className="flex min-w-0 items-center justify-between gap-2 xl:order-1 xl:shrink-0">
-            <p className="truncate text-sm font-semibold tracking-tight" title="Credixa">
-              Credixa
+            <p className="truncate text-sm font-semibold tracking-tight" title="Credixa Suite">
+              Credixa Suite
             </p>
             <div className="flex shrink-0 items-center gap-1.5 text-xs xl:hidden">
               <HeaderUserActions
@@ -1191,12 +1301,21 @@ export function AppShell({
         </p>
       ) : null}
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-[1cm] pt-2 pb-[1cm] print:h-auto print:overflow-visible print:p-0">
+      <main
+        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-[1cm] pt-2 ${mainPb} print:h-auto print:overflow-visible print:p-0`}
+      >
         <div className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto print:h-auto print:overflow-visible">
           {children}
         </div>
         <MemoPopupWatcher userName={user.name} />
+        {canReceiveInboundScreenPop(user.role) ? (
+          <>
+            <InboundCallScreenPopWatcher />
+            <InboundCallScreenPopDevFab />
+          </>
+        ) : null}
         <PreavvisoStragiudizialeWatcher />
+        <GestionaleHelpWidget user={user} />
       </main>
     </div>
     </NavBackProvider>

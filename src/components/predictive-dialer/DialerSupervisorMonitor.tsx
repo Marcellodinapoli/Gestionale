@@ -112,6 +112,7 @@ export function DialerSupervisorMonitor({
   initialStats = null,
   initialMonitor = [],
   showCampagnaHeader = false,
+  gruppoSupervisorId,
 }: {
   campagnaId?: string;
   /** Campagne ATTIVA selezionabili (solo pagina Monitor). */
@@ -119,6 +120,7 @@ export function DialerSupervisorMonitor({
   initialStats?: DialerCampagnaStatsDto | null;
   initialMonitor?: DialerMonitorOperatoreDto[];
   showCampagnaHeader?: boolean;
+  gruppoSupervisorId?: string;
 }) {
   const router = useRouter();
   const [data, setData] = useState<StreamPayload>({
@@ -157,11 +159,11 @@ export function DialerSupervisorMonitor({
     : null;
 
   function onSelezionaCampagna(id: string) {
-    if (!id) {
-      router.push("/predictive-dialer/monitor");
-      return;
-    }
-    router.push(`/predictive-dialer/monitor?campagnaId=${encodeURIComponent(id)}`);
+    const qs = new URLSearchParams();
+    if (id) qs.set("campagnaId", id);
+    if (gruppoSupervisorId) qs.set("gruppo", gruppoSupervisorId);
+    const tail = qs.toString();
+    router.push(tail ? `/predictive/monitor?${tail}` : "/predictive/monitor");
   }
 
   return (
@@ -203,7 +205,7 @@ export function DialerSupervisorMonitor({
           </div>
           {activeId ? (
             <Link
-              href={`/predictive-dialer/campagne/${activeId}`}
+              href={`/predictive/campagne/${activeId}`}
               className="text-sm font-semibold text-[var(--navy)] underline"
             >
               Apri dettaglio campagna
@@ -365,7 +367,7 @@ export function DialerCampagneList({ campagne }: { campagne: CampagnaRow[] }) {
       {campagne.map((c) => (
         <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
           <div>
-            <Link href={`/predictive-dialer/campagne/${c.id}`} className="font-semibold underline">
+            <Link href={`/predictive/campagne/${c.id}`} className="font-semibold underline">
               {c.nome}
             </Link>
             <p className="text-xs text-[var(--muted)]">

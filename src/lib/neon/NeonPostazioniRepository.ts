@@ -48,6 +48,10 @@ export class NeonPostazioniRepository implements PostazioniRepository {
       parts.push(`p."Nome" = $${i++}`);
       params.push(filter.nome);
     }
+    if (filter?.excludeId) {
+      parts.push(`p."Id" <> $${i++}::uuid`);
+      params.push(filter.excludeId);
+    }
     if (filter?.interno) {
       parts.push(`(p."Interno" = $${i} OR p."Nome" = $${i})`);
       params.push(filter.interno);
@@ -142,8 +146,8 @@ export class NeonPostazioniRepository implements PostazioniRepository {
   async create(_tenantSlug: string, data: PostazioneCreateInput): Promise<PostazioneDto> {
     const id = crypto.randomUUID();
     await neonQuery(
-      `INSERT INTO "Postazioni" ("Id","TenantId","SedeId","Nome","Interno","Email","NumeroFisso","Note","Active","CreatedAt")
-       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,true,NOW())`,
+      `INSERT INTO "Postazioni" ("Id","TenantId","SedeId","Nome","Interno","Email","NumeroFisso","NumeroFax","NumeroWhatsapp","Note","Active","CreatedAt")
+       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10,true,NOW())`,
       [
         id,
         data.tenantId,
@@ -152,6 +156,8 @@ export class NeonPostazioniRepository implements PostazioniRepository {
         data.interno ?? null,
         data.email ?? null,
         data.numeroFisso ?? null,
+        data.numeroFax ?? null,
+        data.numeroWhatsapp ?? null,
         data.note ?? null,
       ]
     );
@@ -187,6 +193,26 @@ export class NeonPostazioniRepository implements PostazioniRepository {
         sets.push(`"SedeId" = $${i++}::uuid`);
         params.push(data.sedeId);
       }
+    }
+    if (data.email !== undefined) {
+      sets.push(`"Email" = $${i++}`);
+      params.push(data.email);
+    }
+    if (data.numeroFisso !== undefined) {
+      sets.push(`"NumeroFisso" = $${i++}`);
+      params.push(data.numeroFisso);
+    }
+    if (data.numeroFax !== undefined) {
+      sets.push(`"NumeroFax" = $${i++}`);
+      params.push(data.numeroFax);
+    }
+    if (data.numeroWhatsapp !== undefined) {
+      sets.push(`"NumeroWhatsapp" = $${i++}`);
+      params.push(data.numeroWhatsapp);
+    }
+    if (data.note !== undefined) {
+      sets.push(`"Note" = $${i++}`);
+      params.push(data.note);
     }
     if (sets.length) {
       params.push(id, tenantId);

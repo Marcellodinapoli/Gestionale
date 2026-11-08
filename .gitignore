@@ -59,3 +59,7 @@ next-env.d.ts
 
 tools/cloudflared.exe
 
+# Local Netlify CLI (cache, edge bundle, deploy blobs)
+.netlify
+deno.lock
+

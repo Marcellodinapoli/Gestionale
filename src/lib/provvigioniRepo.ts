@@ -145,6 +145,33 @@ function mapFindManyRow(row: Record<string, unknown>, args: Prisma.ProvvigioneFi
   return mapped;
 }
 
+function extractMesePeriodoOr(or: unknown[]): { gte: string; lte: string } | null {
+  let incGte: Date | undefined;
+  let incLte: Date | undefined;
+  let crGte: Date | undefined;
+  let crLte: Date | undefined;
+  for (const item of or) {
+    if (!item || typeof item !== "object") continue;
+    const n = item as Record<string, unknown>;
+    if (n.incasso && typeof n.incasso === "object") {
+      const data = (n.incasso as Record<string, unknown>).data;
+      if (data && typeof data === "object") {
+        const d = data as Record<string, unknown>;
+        if (d.gte instanceof Date) incGte = d.gte;
+        if (d.lte instanceof Date) incLte = d.lte;
+      }
+    }
+    if (n.createdAt && typeof n.createdAt === "object") {
+      const d = n.createdAt as Record<string, unknown>;
+      if (d.gte instanceof Date) crGte = d.gte;
+      if (d.lte instanceof Date) crLte = d.lte;
+    }
+  }
+  if (!incGte || !incLte || !crGte || !crLte) return null;
+  if (incGte.getTime() !== crGte.getTime() || incLte.getTime() !== crLte.getTime()) return null;
+  return { gte: incGte.toISOString(), lte: incLte.toISOString() };
+}
+
 function prismaWhereToFilter(where: unknown, tenantId: string): ProvvigioneFilter | undefined {
   if (!where) return { tenantId };
   const filter: ProvvigioneFilter = { tenantId };
@@ -184,7 +211,13 @@ function prismaWhereToFilter(where: unknown, tenantId: string): ProvvigioneFilte
     }
     if (node.operatore && typeof node.operatore === "object") {
       const op = node.operatore as Record<string, unknown>;
-      if (typeof op.sedeId === "string") filter.operatoreSedeId = op.sedeId;
+      if (typeof op.sedeId === "string") {
+        if (op.sedeId === "__no-sede__" || op.sedeId === "__nessuna__") {
+          filter.none = true;
+        } else {
+          filter.operatoreSedeId = op.sedeId;
+        }
+      }
       if (op.OR && Array.isArray(op.OR)) {
         for (const orItem of op.OR) {
           if (orItem && typeof orItem === "object") {
@@ -200,6 +233,16 @@ function prismaWhereToFilter(where: unknown, tenantId: string): ProvvigioneFilte
       if (typeof p.tenantId === "string") filter.tenantId = p.tenantId;
       if (typeof p.mandanteId === "string") filter.praticaMandanteId = p.mandanteId;
       if (typeof p.numeroMandante === "string") filter.praticaNumeroMandante = p.numeroMandante;
+      if (
+        p.numeroMandante &&
+        typeof p.numeroMandante === "object" &&
+        !Array.isArray(p.numeroMandante)
+      ) {
+        const nm = p.numeroMandante as { in?: unknown[] };
+        if (Array.isArray(nm.in) && nm.in.length) {
+          filter.praticaNumeriMandanteIn = nm.in.map(String);
+        }
+      }
       if (p.OR && Array.isArray(p.OR)) {
         const nullOr = p.OR.some(
           (x) =>
@@ -226,7 +269,15 @@ function prismaWhereToFilter(where: unknown, tenantId: string): ProvvigioneFilte
       walk(p, depth + 1);
     }
     if (node.AND && Array.isArray(node.AND)) node.AND.forEach((x) => walk(x, depth + 1));
-    if (node.OR && Array.isArray(node.OR) && depth === 0) node.OR.forEach((x) => walk(x, depth + 1));
+    if (node.OR && Array.isArray(node.OR)) {
+      const meseOr = extractMesePeriodoOr(node.OR);
+      if (meseOr) {
+        filter.meseCompetenzaOrGte = meseOr.gte;
+        filter.meseCompetenzaOrLte = meseOr.lte;
+      } else {
+        node.OR.forEach((x) => walk(x, depth + 1));
+      }
+    }
   };
   walk(where);
   return filter;

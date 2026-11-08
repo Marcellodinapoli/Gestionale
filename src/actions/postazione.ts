@@ -8,7 +8,12 @@ import { sediDbFromUser } from "@/lib/sediRepo";
 import { writeAudit } from "@/lib/domain";
 import { requireUser, requireWritablePermission } from "@/lib/guard";
 import { isCurrentUserPasswordExpired } from "@/lib/auth";
-import { canImpostarePostazioneFissa, canEnterWithoutPostazione } from "@/lib/permissions";
+import {
+  canImpostarePostazioneFissa,
+  canEnterWithoutPostazione,
+  canCambiarePostazioneDaAccount,
+  type Role,
+} from "@/lib/permissions";
 import { clearPostazioneSkip, setPostazioneSkip } from "@/lib/postazioneGate";
 import {
   liberaPostazioneDaResidui,
@@ -86,6 +91,9 @@ export async function entraSenzaPostazioneAction() {
 
 export async function updateAccountPostazioneAction(formData: FormData) {
   const user = await requireUser();
+  if (!canCambiarePostazioneDaAccount(user.role as Role)) {
+    throw new Error("Non consentito");
+  }
 
   const postazioneId = String(formData.get("postazioneId") || "");
   if (!postazioneId) throw new Error("Seleziona una postazione");
@@ -155,6 +163,8 @@ export async function creaPostazioneAction(formData: FormData) {
   const interno = String(formData.get("interno") || "").trim() || null;
   const email = String(formData.get("email") || "").trim() || null;
   const numeroFisso = String(formData.get("numeroFisso") || "").trim() || null;
+  const numeroFax = String(formData.get("numeroFax") || "").trim() || null;
+  const numeroWhatsapp = String(formData.get("numeroWhatsapp") || "").trim() || null;
   const note = String(formData.get("note") || "").trim() || null;
 
   const postazioneModel = postazioniDbFromUser(user);
@@ -171,6 +181,8 @@ export async function creaPostazioneAction(formData: FormData) {
       interno,
       email,
       numeroFisso,
+      numeroFax,
+      numeroWhatsapp,
       sedeId,
       note,
     },
@@ -208,6 +220,8 @@ export async function aggiornaPostazioneAction(formData: FormData) {
   const interno = String(formData.get("interno") || "").trim() || null;
   const email = String(formData.get("email") || "").trim() || null;
   const numeroFisso = String(formData.get("numeroFisso") || "").trim() || null;
+  const numeroFax = String(formData.get("numeroFax") || "").trim() || null;
+  const numeroWhatsapp = String(formData.get("numeroWhatsapp") || "").trim() || null;
   const note = String(formData.get("note") || "").trim() || null;
 
   const postazioneModel = postazioniDbFromUser(user);
@@ -217,18 +231,31 @@ export async function aggiornaPostazioneAction(formData: FormData) {
   });
   if (!current) throw new Error("Postazione non trovata");
 
-  const duplicato = await postazioneModel.findFirst({
-    where: { tenantId: user.tenantId, nome, NOT: { id } },
-  });
-  if (duplicato) throw new Error("Nome postazione già esistente");
+  const nomeCorrente = String(current.nome || "").trim();
+  if (nome !== nomeCorrente) {
+    const duplicato = await postazioneModel.findFirst({
+      where: { tenantId: user.tenantId, nome, NOT: { id } },
+    });
+    if (duplicato) throw new Error("Nome postazione già esistente");
+  }
 
   await postazioneModel.update({
     where: { id },
-    data: { nome, interno, email, numeroFisso, sedeId, note },
+    data: {
+      nome,
+      interno,
+      email,
+      numeroFisso,
+      numeroFax,
+      numeroWhatsapp,
+      sedeId,
+      note,
+    },
   });
 
   revalidatePath("/postazioni");
-  redirect("/postazioni");
+  revalidatePath("/account");
+  revalidatePath("/rubrica");
 }
 
 export async function togglePostazioneAction(formData: FormData) {
@@ -254,7 +281,8 @@ export async function togglePostazioneAction(formData: FormData) {
   }
 
   revalidatePath("/postazioni");
-  redirect("/postazioni");
+  revalidatePath("/account");
+  revalidatePath("/rubrica");
 }
 
 export async function eliminaPostazioneAction(formData: FormData) {
@@ -275,5 +303,6 @@ export async function eliminaPostazioneAction(formData: FormData) {
   await postazioneModel.delete({ where: { id } });
 
   revalidatePath("/postazioni");
-  redirect("/postazioni");
+  revalidatePath("/account");
+  revalidatePath("/rubrica");
 }

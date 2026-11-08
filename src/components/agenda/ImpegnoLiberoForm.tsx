@@ -4,6 +4,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { salvaImpegnoLiberoAction } from "@/actions/impegnoAgenda";
 import { AgendaCalendarioPicker, toAgendaLocalValue } from "@/components/agenda/AgendaCalendarioPicker";
+import { avvisoAgendaNelPassato } from "@/lib/agenda/agendaNonNelPassato";
 
 export function ImpegnoLiberoForm({ onDone }: { onDone?: () => void }) {
   const router = useRouter();
@@ -19,6 +20,11 @@ export function ImpegnoLiberoForm({ onDone }: { onDone?: () => void }) {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    const passato = avvisoAgendaNelPassato(scheduledAt);
+    if (passato) {
+      setError(passato);
+      return;
+    }
     setError(null);
     setSaving(true);
     try {

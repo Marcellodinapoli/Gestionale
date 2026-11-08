@@ -1,5 +1,6 @@
 import "server-only";
 import { getFirebaseFirestore, firebaseFieldValue } from "@/lib/firebase/admin";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 
 export const CREDIXA_ANNOUNCEMENTS_COLLECTION = "credixa_announcements";
 export const CREDIXA_ANNOUNCEMENT_READS_COLLECTION = "credixa_announcement_reads";
@@ -58,47 +59,65 @@ function mapAnnouncement(
   };
 }
 
+
 /** Avvisi attivi per un tenant gestionale (all + specifico). */
 export async function listAnnouncementsForTenant(
   tenantId: string
 ): Promise<CredixaAnnouncement[]> {
-  const db = getFirebaseFirestore();
-  const snap = await db
-    .collection(CREDIXA_ANNOUNCEMENTS_COLLECTION)
-    .where("active", "==", true)
-    .limit(100)
-    .get();
+  if (!isFirebaseAvailable()) {
+    console.warn("[avvisi] Firebase non configurato: avvisi disabilitati");
+    return [];
+  }
 
-  const items = snap.docs
-    .map((d) => mapAnnouncement(d.id, d.data() as Record<string, unknown>))
-    .filter(
-      (a) =>
-        a.target === "all" ||
-        (a.target === "tenant" && a.tenantId === tenantId)
-    );
+  try {
+    const db = getFirebaseFirestore();
+    const snap = await db
+      .collection(CREDIXA_ANNOUNCEMENTS_COLLECTION)
+      .where("active", "==", true)
+      .limit(100)
+      .get();
 
-  items.sort((a, b) => {
-    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
-    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
-    return tb - ta;
-  });
-  return items;
+    const items = snap.docs
+      .map((d) => mapAnnouncement(d.id, d.data() as Record<string, unknown>))
+      .filter(
+        (a) =>
+          a.target === "all" ||
+          (a.target === "tenant" && a.tenantId === tenantId)
+      );
+
+    items.sort((a, b) => {
+      const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return tb - ta;
+    });
+    return items;
+  } catch (err) {
+    console.error("[avvisi] Errore caricamento da Firebase:", err);
+    return [];
+  }
 }
 
 export async function listReadAnnouncementIds(
   tenantId: string,
   userId: string
 ): Promise<Set<string>> {
-  const db = getFirebaseFirestore();
-  const snap = await db
-    .collection(CREDIXA_ANNOUNCEMENT_READS_COLLECTION)
-    .where("tenantId", "==", tenantId)
-    .where("userId", "==", userId)
-    .limit(200)
-    .get();
-  return new Set(
-    snap.docs.map((d) => String((d.data() as { announcementId?: string }).announcementId || ""))
-  );
+  if (!isFirebaseAvailable()) return new Set();
+
+  try {
+    const db = getFirebaseFirestore();
+    const snap = await db
+      .collection(CREDIXA_ANNOUNCEMENT_READS_COLLECTION)
+      .where("tenantId", "==", tenantId)
+      .where("userId", "==", userId)
+      .limit(200)
+      .get();
+    return new Set(
+      snap.docs.map((d) => String((d.data() as { announcementId?: string }).announcementId || ""))
+    );
+  } catch (err) {
+    console.error("[avvisi] Errore caricamento IDs letti:", err);
+    return new Set();
+  }
 }
 
 /** Numero avvisi attivi non ancora segnati come letti dall’utente. */
@@ -118,18 +137,24 @@ export async function markAnnouncementRead(input: {
   tenantId: string;
   userId: string;
 }): Promise<void> {
-  const db = getFirebaseFirestore();
-  const FieldValue = firebaseFieldValue();
-  const id = `${input.announcementId}_${input.userId}`;
-  await db.collection(CREDIXA_ANNOUNCEMENT_READS_COLLECTION).doc(id).set(
-    {
-      announcementId: input.announcementId,
-      tenantId: input.tenantId,
-      userId: input.userId,
-      seenAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  if (!isFirebaseAvailable()) return;
+
+  try {
+    const db = getFirebaseFirestore();
+    const FieldValue = firebaseFieldValue();
+    const id = `${input.announcementId}_${input.userId}`;
+    await db.collection(CREDIXA_ANNOUNCEMENT_READS_COLLECTION).doc(id).set(
+      {
+        announcementId: input.announcementId,
+        tenantId: input.tenantId,
+        userId: input.userId,
+        seenAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error("[avvisi] Errore mark read:", err);
+  }
 }
 
 /** Segna più avvisi come letti (apertura pagina Avvisi). */
@@ -140,21 +165,28 @@ export async function markAnnouncementsReadMany(input: {
 }): Promise<void> {
   const ids = [...new Set(input.announcementIds.map((x) => x.trim()).filter(Boolean))];
   if (!ids.length) return;
-  const db = getFirebaseFirestore();
-  const FieldValue = firebaseFieldValue();
-  const batch = db.batch();
-  for (const announcementId of ids) {
-    const docId = `${announcementId}_${input.userId}`;
-    batch.set(
-      db.collection(CREDIXA_ANNOUNCEMENT_READS_COLLECTION).doc(docId),
-      {
-        announcementId,
-        tenantId: input.tenantId,
-        userId: input.userId,
-        seenAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+  if (!isFirebaseAvailable()) return;
+
+  try {
+    const db = getFirebaseFirestore();
+    const FieldValue = firebaseFieldValue();
+    const batch = db.batch();
+    for (const announcementId of ids) {
+      const docId = `${announcementId}_${input.userId}`;
+      batch.set(
+        db.collection(CREDIXA_ANNOUNCEMENT_READS_COLLECTION).doc(docId),
+        {
+          announcementId,
+          tenantId: input.tenantId,
+          userId: input.userId,
+          seenAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+  } catch (err) {
+    console.error("[avvisi] Errore mark many read:", err);
   }
-  await batch.commit();
 }
+

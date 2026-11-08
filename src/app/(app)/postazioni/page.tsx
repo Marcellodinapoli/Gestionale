@@ -55,6 +55,8 @@ export default async function PostazioniPage({
     interno: p.interno,
     email: p.email,
     numeroFisso: p.numeroFisso,
+    numeroFax: p.numeroFax,
+    numeroWhatsapp: p.numeroWhatsapp,
     sedeId: p.sedeId,
     sedeNome: p.sedeRef?.nome || null,
     note: p.note,

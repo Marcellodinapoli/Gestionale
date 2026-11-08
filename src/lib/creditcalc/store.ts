@@ -14,8 +14,14 @@ import {
   type CreditCalcLinkRequest,
   type LinkRequestStatus,
 } from "./types";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 
 function db() {
+  if (!isFirebaseAvailable()) {
+    throw new Error(
+      "CredixaApp non disponibile. Contatta l'amministratore."
+    );
+  }
   return getFirebaseFirestore();
 }
 
@@ -193,6 +199,18 @@ export async function consumeLinkRequest(input: {
   return { ok: true, request: req, connection };
 }
 
+export async function listConnectionsForGestionaleUser(
+  gestionaleUserId: string
+): Promise<CreditCalcConnection[]> {
+  const snap = await db()
+    .collection(COL_CONNECTIONS)
+    .where("gestionaleUserId", "==", gestionaleUserId)
+    .get();
+  return snap.docs
+    .map((d) => d.data() as CreditCalcConnection)
+    .filter((c) => c.status === "active");
+}
+
 export async function listConnectionsForCreditCalcUser(
   creditCalcUserId: string
 ): Promise<CreditCalcConnection[]> {
@@ -267,6 +285,34 @@ export async function revokeConnection(
   if (!owned.ok) return owned;
   const updated: CreditCalcConnection = {
     ...owned.connection,
+    status: "revoked",
+    revokedAt: nowIso(),
+  };
+  await db().collection(COL_CONNECTIONS).doc(connectionId).set(updated);
+  return { ok: true, connection: updated };
+}
+
+/** Revoca da Account gestionale (stesso operatore collegato al QR). */
+export async function revokeConnectionForGestionaleUser(
+  gestionaleUserId: string,
+  tenantId: string,
+  connectionId: string
+): Promise<
+  | { ok: true; connection: CreditCalcConnection }
+  | { ok: false; error: string; status: number }
+> {
+  const connection = await getConnectionById(connectionId);
+  if (!connection || connection.status !== "active") {
+    return { ok: false, error: "Collegamento non trovato", status: 404 };
+  }
+  if (
+    connection.gestionaleUserId !== gestionaleUserId ||
+    connection.tenantId !== tenantId
+  ) {
+    return { ok: false, error: "Non autorizzato", status: 403 };
+  }
+  const updated: CreditCalcConnection = {
+    ...connection,
     status: "revoked",
     revokedAt: nowIso(),
   };

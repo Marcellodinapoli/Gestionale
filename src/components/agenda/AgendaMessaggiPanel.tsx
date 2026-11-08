@@ -11,23 +11,21 @@ import {
   SegnaMessaggioInternoLettoButton,
 } from "@/components/agenda/SegnaLettoButton";
 import { GestisciMessaggioInviato } from "@/components/agenda/GestisciMessaggioInviato";
+import { MessaggiInterniTuttiView } from "@/components/agenda/MessaggiInterniTuttiView";
+import { groupConversazioniInterne } from "@/lib/messaggi/groupConversazioniInterne";
+import type { MessaggioInternoSerialized } from "@/lib/messaggi/messaggioInternoUi";
 
-type FiltroMessaggi = "da_leggere" | "letti" | "inviati" | "tutti";
+export type { MessaggioInternoSerialized };
 
-export type MessaggioInternoSerialized = {
-  id: string;
-  fromUserId: string;
-  toUserId: string;
-  fromName: string;
-  toName: string;
-  testo: string;
-  createdAt: string;
-  letto: boolean;
-  lettoAt: string | null;
-  praticaId: string | null;
-  praticaNumero: string | null;
-  debitore: string | null;
-};
+type FiltroMessaggi = "da_leggere" | "inviati" | "ricevuti" | "tutti";
+
+function parseFiltroMessaggi(raw?: string): FiltroMessaggi {
+  const v = raw?.trim().toLowerCase();
+  if (v === "inviati") return "inviati";
+  if (v === "ricevuti" || v === "letti") return "ricevuti";
+  if (v === "tutti") return "tutti";
+  return "da_leggere";
+}
 
 export type MessaggioAgendaSerialized = {
   id: string;
@@ -36,6 +34,7 @@ export type MessaggioAgendaSerialized = {
   debitore: string;
   line: string;
   autore: string;
+  autoreUserId: string;
   createdAt: string;
   letto: boolean;
   lettoAt: string | null;
@@ -90,10 +89,7 @@ export function AgendaMessaggiPanel({
   filtroRaw?: string;
 }) {
   const [nuovoOpen, setNuovoOpen] = useState(false);
-  const filtro: FiltroMessaggi =
-    filtroRaw === "letti" || filtroRaw === "inviati" || filtroRaw === "tutti"
-      ? filtroRaw
-      : "da_leggere";
+  const filtro = parseFiltroMessaggi(filtroRaw);
 
   const ricevuti = useMemo(
     () => interni.filter((m) => m.toUserId === userId),
@@ -109,19 +105,31 @@ export function AgendaMessaggiPanel({
 
   const colleghiFiltrati = useMemo(() => {
     if (filtro === "inviati") return inviati;
-    if (filtro === "letti") return ricevuti.filter((m) => m.letto);
-    if (filtro === "da_leggere") return ricevuti.filter((m) => !m.letto);
-    return [...ricevuti, ...inviati].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    if (filtro === "ricevuti") {
+      return [...ricevuti].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    }
+    if (filtro === "tutti") {
+      return [...ricevuti, ...inviati].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    }
+    return ricevuti.filter((m) => !m.letto);
   }, [filtro, ricevuti, inviati]);
+
+  const conversazioniTutti = useMemo(() => {
+    if (filtro !== "tutti") return [];
+    return groupConversazioniInterne(colleghiFiltrati, userId);
+  }, [filtro, colleghiFiltrati, userId]);
 
   const praticheFiltrati = useMemo(() => {
     if (filtro === "inviati") return [];
-    if (filtro === "letti") return messaggiPratica.filter((m) => m.letto);
-    if (filtro === "da_leggere") return messaggiPratica.filter((m) => !m.letto);
-    return messaggiPratica;
+    if (filtro === "ricevuti" || filtro === "tutti") return messaggiPratica;
+    return messaggiPratica.filter((m) => !m.letto);
   }, [filtro, messaggiPratica]);
+
+  const totaleRicevuti = ricevuti.length + messaggiPratica.length;
 
   function hrefFiltro(f: FiltroMessaggi) {
     if (f === "da_leggere") return "/messaggi";
@@ -135,18 +143,20 @@ export function AgendaMessaggiPanel({
           <p className="text-[11px] font-semibold uppercase text-amber-800">Da leggere</p>
           <p className="text-2xl font-bold text-amber-900">{daLeggereColleghi + daLeggerePratiche}</p>
           <p className="text-xs text-amber-800">
-            {daLeggereColleghi} da colleghi · {daLeggerePratiche} su pratiche
-          </p>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase text-slate-600">Già letti</p>
-          <p className="text-2xl font-bold text-slate-800">
-            {ricevuti.filter((m) => m.letto).length + messaggiPratica.filter((m) => m.letto).length}
+            {daLeggereColleghi} da interni · {daLeggerePratiche} su pratiche
           </p>
         </div>
         <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
           <p className="text-[11px] font-semibold uppercase text-indigo-800">Inviati</p>
           <p className="text-2xl font-bold text-indigo-900">{inviati.length}</p>
+          <p className="text-xs text-indigo-800">Messaggi interni inviati</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-[11px] font-semibold uppercase text-slate-600">Ricevuti</p>
+          <p className="text-2xl font-bold text-slate-800">{totaleRicevuti}</p>
+          <p className="text-xs text-slate-600">
+            {ricevuti.length} da interni · {messaggiPratica.length} su pratiche
+          </p>
         </div>
       </div>
 
@@ -155,8 +165,8 @@ export function AgendaMessaggiPanel({
           {(
             [
               ["da_leggere", "Da leggere"],
-              ["letti", "Letti"],
               ["inviati", "Inviati"],
+              ["ricevuti", "Ricevuti"],
               ["tutti", "Tutti"],
             ] as const
           ).map(([key, label]) => (
@@ -181,72 +191,80 @@ export function AgendaMessaggiPanel({
         </button>
       </div>
 
-      <div className="rounded-xl border border-[var(--line)] bg-white">
-        <div className="border-b border-[var(--line)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Messaggi da colleghi
+      <div className="overflow-hidden rounded-xl border border-sky-200 bg-white">
+        <div className="border-b border-sky-200 bg-sky-100/90 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950">
+          Messaggio interno
         </div>
         <ul className="divide-y divide-[var(--line)] text-sm">
-          {colleghiFiltrati.map((m) => {
-            const inviato = m.fromUserId === userId;
-            const indipendente = !m.praticaId;
-            return (
-              <li key={m.id} className="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-[var(--muted)]">
-                    {inviato ? `Inviato a ${m.toName}` : `Ricevuto da ${m.fromName}`}
-                    {indipendente ? " · senza pratica" : ""}
-                  </p>
-                  {m.praticaId ? (
-                    <p className="mt-0.5">
-                      <Link
-                        className="font-medium text-[var(--accent)] underline"
-                        href={`/pratiche/${m.praticaId}`}
-                      >
-                        {m.praticaNumero}
-                      </Link>
-                      {m.debitore ? ` · ${m.debitore}` : null}
-                    </p>
-                  ) : null}
-                  {indipendente && !inviato ? (
-                    <ApriMessaggioIndipendente
-                      fromName={m.fromName}
-                      testo={m.testo}
-                      createdAtLabel={formatData(m.createdAt)}
-                    />
-                  ) : (
-                    <p className="mt-1 whitespace-pre-wrap">{m.testo}</p>
-                  )}
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    {formatData(m.createdAt)}
-                    {m.lettoAt ? ` · letto ${formatData(m.lettoAt)}` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <BadgeStato inviato={inviato} letto={m.letto} />
-                  {inviato ? (
-                    <GestisciMessaggioInviato messageId={m.id} testoIniziale={m.testo} />
-                  ) : null}
-                  {!inviato && !m.letto ? (
-                    <SegnaMessaggioInternoLettoButton
-                      messageId={m.id}
-                      label="Setta già letto"
-                    />
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-          {!colleghiFiltrati.length ? (
-            <li className="px-3 py-6 text-center text-[var(--muted)]">
-              Nessun messaggio in questa sezione.
-            </li>
-          ) : null}
+          {filtro === "tutti" ? (
+            <MessaggiInterniTuttiView userId={userId} conversazioni={conversazioniTutti} />
+          ) : (
+            <>
+              {colleghiFiltrati.map((m) => {
+                const inviato = m.fromUserId === userId;
+                const indipendente = !m.praticaId;
+                return (
+                  <li key={m.id} className="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-[var(--muted)]">
+                        {inviato ? `Inviato a ${m.toName}` : `Ricevuto da ${m.fromName}`}
+                        {indipendente ? " · senza pratica" : ""}
+                      </p>
+                      {m.praticaId ? (
+                        <p className="mt-0.5">
+                          <Link
+                            className="font-medium text-[var(--accent)] underline"
+                            href={`/pratiche/${m.praticaId}`}
+                          >
+                            {m.praticaNumero}
+                          </Link>
+                          {m.debitore ? ` · ${m.debitore}` : null}
+                        </p>
+                      ) : null}
+                      {!inviato ? (
+                        <ApriMessaggioIndipendente
+                          fromName={m.fromName}
+                          fromUserId={m.fromUserId}
+                          testo={m.testo}
+                          createdAtLabel={formatData(m.createdAt)}
+                          praticaId={m.praticaId}
+                        />
+                      ) : (
+                        <p className="mt-1 whitespace-pre-wrap">{m.testo}</p>
+                      )}
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {formatData(m.createdAt)}
+                        {m.lettoAt ? ` · letto ${formatData(m.lettoAt)}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <BadgeStato inviato={inviato} letto={m.letto} />
+                      {inviato ? (
+                        <GestisciMessaggioInviato messageId={m.id} testoIniziale={m.testo} />
+                      ) : null}
+                      {!inviato && !m.letto ? (
+                        <SegnaMessaggioInternoLettoButton
+                          messageId={m.id}
+                          label="Setta già letto"
+                        />
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+              {!colleghiFiltrati.length ? (
+                <li className="px-3 py-6 text-center text-[var(--muted)]">
+                  Nessun messaggio in questa sezione.
+                </li>
+              ) : null}
+            </>
+          )}
         </ul>
       </div>
 
       {filtro !== "inviati" ? (
-        <div className="rounded-xl border border-[var(--line)] bg-white">
-          <div className="border-b border-[var(--line)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+        <div className="overflow-hidden rounded-xl border border-amber-200 bg-white">
+          <div className="border-b border-amber-200 bg-amber-100/90 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-amber-950">
             Messaggi su pratiche
           </div>
           <ul className="divide-y divide-[var(--line)] text-sm">
@@ -260,7 +278,17 @@ export function AgendaMessaggiPanel({
                     {m.praticaNumero}
                   </Link>{" "}
                   {m.debitore}
-                  <p className="mt-1 font-mono text-xs">{m.line}</p>
+                  {m.autoreUserId && m.autoreUserId !== userId ? (
+                    <ApriMessaggioIndipendente
+                      fromName={m.autore}
+                      fromUserId={m.autoreUserId}
+                      testo={m.line}
+                      createdAtLabel={`${formatData(m.createdAt)}`}
+                      praticaId={m.praticaId}
+                    />
+                  ) : (
+                    <p className="mt-1 font-mono text-xs">{m.line}</p>
+                  )}
                   <p className="text-xs text-[var(--muted)]">
                     {m.autore} · {formatData(m.createdAt)}
                     {m.lettoAt ? ` · letto ${formatData(m.lettoAt)}` : ""}

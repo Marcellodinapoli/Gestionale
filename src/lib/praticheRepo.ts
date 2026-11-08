@@ -6,6 +6,7 @@ import { createConnectorPraticheRepository } from "@/lib/data/connector/Connecto
 import { createNeonPraticheRepository } from "@/lib/neon/NeonPraticheRepository";
 import { prismaPraticheRepository } from "@/lib/data/prisma/PrismaPraticheRepository";
 import type { PraticaListRequest, PraticaScope, PraticheRepository } from "@/lib/data/contracts/pratiche";
+import { prismaOrderByToSort } from "@/lib/praticaOrdine";
 import type { Role, SessionUser } from "@/lib/permissions";
 
 export type PraticaDbContext = {
@@ -272,24 +273,6 @@ function isRelationSelectKey(key: string) {
     "garanti",
     "debitoreRecapiti",
   ].includes(key);
-}
-
-function prismaOrderByToSort(orderBy: unknown): PraticaListRequest["sort"] | undefined {
-  if (!orderBy || typeof orderBy !== "object") return undefined;
-  const ob = orderBy as Record<string, unknown>;
-  if ("updatedAt" in ob) return { field: "ultimaLavorazione", dir: ob.updatedAt === "asc" ? "asc" : "desc" };
-  if ("numero" in ob) return { field: "numero", dir: ob.numero === "asc" ? "asc" : "desc" };
-  if ("ultimaLavorazioneAt" in ob) {
-    return { field: "ultimaLavorazione", dir: ob.ultimaLavorazioneAt === "asc" ? "asc" : "desc" };
-  }
-  if ("residuo" in ob) return { field: "residuo", dir: ob.residuo === "asc" ? "asc" : "desc" };
-  if ("debitore" in ob && typeof ob.debitore === "object") {
-    const d = ob.debitore as Record<string, string>;
-    if (d.cognome) return { field: "debitore", dir: d.cognome === "asc" ? "asc" : "desc" };
-    if (d.cap) return { field: "cap", dir: d.cap === "asc" ? "asc" : "desc" };
-  }
-  if ("mandante" in ob) return { field: "mandante", dir: "asc" };
-  return undefined;
 }
 
 function prismaWhereToFilter(where: unknown): PraticaListRequest["filter"] {

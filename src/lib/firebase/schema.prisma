@@ -178,7 +178,9 @@ model Postazione {
   nome        String
   interno     String?
   email       String?
-  numeroFisso String?
+  numeroFisso     String?
+  numeroFax       String?
+  numeroWhatsapp  String?
   // Legacy testo libero (colonna DB sede); migrato in sedeId
   sedeLegacy  String?  @map("sede")
   sedeId      String?

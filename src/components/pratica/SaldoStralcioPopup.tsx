@@ -366,7 +366,7 @@ export function SaldoStralcioPopup({
       ) : (
         <p className="text-[11px] text-[var(--muted)]">
           Nessun vincolo % stralcio sul perimetro collegato: puoi negoziare
-          liberamente (come CreditCalc). Configura min/max/proposta in Anagrafica
+          liberamente (come CredixaApp). Configura min/max/proposta in Anagrafica
           mandante → Perimetri.
         </p>
       )}
@@ -557,7 +557,7 @@ export function SaldoStralcioPopup({
 
       {error ? <p className="text-xs text-[var(--danger)]">{error}</p> : null}
       <p className="text-[11px] text-[var(--muted)]">
-        Come CreditCalc: i campi si aggiornano a vicenda. «Sviluppa» calcola le
+        Come CredixaApp: i campi si aggiornano a vicenda. «Sviluppa» calcola le
         rate; «Salva in note» registra il riepilogo nel registro (senza elenco
         completo delle rate).
       </p>

@@ -1,6 +1,7 @@
 import "server-only";
-import { isConnectorProvider } from "@/lib/data/factory";
+import { isConnectorProvider, isNeonProvider } from "@/lib/data/factory";
 import { createConnectorMessaggiAgendaRepository } from "@/lib/data/connector/ConnectorMessaggiAgendaRepository";
+import { createNeonMessaggiAgendaRepository } from "@/lib/neon/NeonMessaggiAgendaRepository";
 import { prismaMessaggiAgendaRepository } from "@/lib/data/prisma/PrismaMessaggiAgendaRepository";
 import type { MessaggiAgendaRepository } from "@/lib/data/contracts/messaggiAgenda";
 import { resolveTenantSlug, type PraticaDbContext } from "@/lib/praticheRepo";
@@ -10,6 +11,7 @@ export type AgendaDbContext = Pick<PraticaDbContext, "tenantId" | "tenantSlug">;
 
 function repo(ctx: AgendaDbContext): MessaggiAgendaRepository {
   if (isConnectorProvider()) return createConnectorMessaggiAgendaRepository(ctx.tenantSlug);
+  if (isNeonProvider()) return createNeonMessaggiAgendaRepository(ctx.tenantSlug);
   return prismaMessaggiAgendaRepository;
 }
 

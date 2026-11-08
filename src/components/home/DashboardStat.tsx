@@ -1,20 +1,34 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
-const base =
+export const dashboardKpiBase =
   "group flex h-full flex-col rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 shadow-sm transition hover:border-[#c5cdd8] hover:shadow";
+
+export type DashboardKpiAccent = "accent" | "amber" | "slate";
+
+export function dashboardKpiAccentClass(accent?: DashboardKpiAccent): string {
+  if (accent === "amber") return "border-l-[3px] border-l-amber-500";
+  if (accent === "slate") return "border-l-[3px] border-l-slate-400";
+  if (accent === "accent") return "border-l-[3px] border-l-[var(--accent)]";
+  return "";
+}
 
 export function DashboardKpi({
   title,
   value,
   hint,
   href,
+  accentBar,
 }: {
   title: string;
   value: ReactNode;
   hint?: string;
   href?: string;
+  /** Bordo sinistro come le altre card home (es. In lavorazione). */
+  accentBar?: DashboardKpiAccent;
 }) {
+  const accent = accentBar ?? (href ? "accent" : undefined);
+  const surface = `${dashboardKpiBase} ${dashboardKpiAccentClass(accent)}`.trim();
   const body = (
     <>
       <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
@@ -31,13 +45,13 @@ export function DashboardKpi({
 
   if (href) {
     return (
-      <Link href={href} className={`${base} border-l-[3px] border-l-[var(--accent)]`}>
+      <Link href={href} className={surface}>
         {body}
       </Link>
     );
   }
 
-  return <section className={base}>{body}</section>;
+  return <section className={surface}>{body}</section>;
 }
 
 const STATO_ACCENT: Record<string, string> = {
@@ -67,7 +81,7 @@ export function DashboardStato({
   return (
     <Link
       href={href}
-      className={`${base} border-l-[3px] ${accent} hover:bg-[#fafbfc]`}
+      className={`${dashboardKpiBase} border-l-[3px] ${accent} hover:bg-[#fafbfc]`}
     >
       <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
         {label}

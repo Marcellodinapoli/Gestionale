@@ -42,6 +42,8 @@ import { PraticaLockWatcher } from "@/components/pratica/PraticaLockWatcher";
 import { isGiudizialePrevistoSulLotto } from "@/lib/conferimentoLegale";
 import { getPraticaGiudizialeByPraticaId } from "@/lib/giudiziale/praticaGiudizialeRepo";
 import { isGiudizialeAvviato } from "@/lib/giudiziale/avvioGiudiziale";
+import { resolvePraticaVistaFaseLimitata } from "@/lib/telephony/inboundPraticaAccesso";
+import { PraticaAccessoLimitatoView } from "@/components/pratica/PraticaAccessoLimitatoView";
 
 export default async function PraticaDetailPage({
   params,
@@ -92,7 +94,13 @@ export default async function PraticaDetailPage({
       ? loadPraticheStessoDebitorePayload(user.tenantId, id, user.tenantSlug ?? user.tenantId)
       : Promise.resolve(null),
   ]);
-  if (!accessOk) notFound();
+  if (!accessOk) {
+    const vistaFase = await resolvePraticaVistaFaseLimitata(user, id);
+    if (vistaFase) {
+      return <PraticaAccessoLimitatoView pratica={vistaFase} />;
+    }
+    notFound();
+  }
 
   let collegataIds: string[] | null = null;
   if (filtroCollegata) {

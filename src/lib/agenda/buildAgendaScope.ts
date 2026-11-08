@@ -22,6 +22,7 @@ async function resolvePerimetroOr(
   const mandanti = mandantiRows.map((m) => ({
     id: m.id as string,
     perimetri: parsePerimetriList(m.perimetri),
+    perimetriRaw: m.perimetri,
   }));
   const prismaOr = gruppoMandantiPraticaWhere(gruppoMandanti, mandanti);
   if (!prismaOr?.OR) return undefined;

@@ -1,5 +1,8 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { praticaDbFromUser } from "@/lib/praticheRepo";
+import { impegniAgendaFromUser } from "@/lib/impegniAgendaRepo";
+import { messaggiInterniFromUser } from "@/lib/messaggiInterniRepo";
+import { messaggiAgendaFromUser } from "@/lib/messaggiAgendaRepo";
 import { praticaScopeWhere } from "@/lib/gruppoPerimetroScope";
 import type { SessionUser } from "@/lib/permissions";
 import type {
@@ -14,7 +17,7 @@ async function loadGiudizialiScadenze(
   range?: { start?: Date; end?: Date }
 ) {
   const baseScope = await praticaScopeWhere(user);
-  const rows = await prisma.pratica.findMany({
+  const rows = await praticaDbFromUser(user).findMany({
     where: {
       AND: [
         baseScope,
@@ -60,7 +63,7 @@ export async function loadPrismaAgendaCalendario(
 ): Promise<AgendaCalendarioBundle> {
   const baseScope = await praticaScopeWhere(user);
   const [pratiche, impegni, giudiziali] = await Promise.all([
-    prisma.pratica.findMany({
+    praticaDbFromUser(user).findMany({
       where: { AND: [baseScope, { memoAt: { not: null } }] },
       include: {
         debitore: { select: { nome: true, cognome: true } },
@@ -70,12 +73,10 @@ export async function loadPrismaAgendaCalendario(
       orderBy: { memoAt: "asc" },
       take: 200,
     }),
-    prisma.impegnoAgenda.findMany({
-      where: { userId: impegniUserId, completato: false },
-      include: { user: { select: { name: true } } },
-      orderBy: { memoAt: "asc" },
-      take: 200,
-    }),
+    impegniAgendaFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+      userId: impegniUserId,
+      completato: false,
+    }, 200),
     loadGiudizialiScadenze(user),
   ]);
 
@@ -83,7 +84,7 @@ export async function loadPrismaAgendaCalendario(
     pratiche: pratiche.map((p) => ({
       id: p.id,
       numero: p.numero,
-      memoAt: p.memoAt!.toISOString(),
+      memoAt: p.memoAt instanceof Date ? p.memoAt.toISOString() : String(p.memoAt ?? ""),
       tipoContatto: p.tipoContatto,
       esitoContatto: p.esitoContatto,
       debitore: p.debitore,
@@ -96,9 +97,9 @@ export async function loadPrismaAgendaCalendario(
       userId: i.userId,
       titolo: i.titolo,
       nota: i.nota,
-      memoAt: i.memoAt.toISOString(),
+      memoAt: i.memoAt,
       completato: i.completato,
-      userName: i.user?.name,
+      userName: i.userName,
     })),
     giudiziali,
   };
@@ -112,7 +113,7 @@ export async function loadPrismaAgendaGiorno(
 ): Promise<AgendaCalendarioBundle> {
   const baseScope = await praticaScopeWhere(user);
   const [pratiche, impegni, giudiziali] = await Promise.all([
-    prisma.pratica.findMany({
+    praticaDbFromUser(user).findMany({
       where: { AND: [baseScope, { memoAt: { gte: dayStart, lte: dayEnd } }] },
       include: {
         debitore: { select: { nome: true, cognome: true } },
@@ -122,15 +123,12 @@ export async function loadPrismaAgendaGiorno(
       orderBy: { memoAt: "asc" },
       take: 100,
     }),
-    prisma.impegnoAgenda.findMany({
-      where: {
-        userId: impegniUserId,
-        completato: false,
-        memoAt: { gte: dayStart, lte: dayEnd },
-      },
-      orderBy: { memoAt: "asc" },
-      take: 100,
-    }),
+    impegniAgendaFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+      userId: impegniUserId,
+      completato: false,
+      memoAtGte: dayStart.toISOString(),
+      memoAtLte: dayEnd.toISOString(),
+    }, 100),
     loadGiudizialiScadenze(user, { start: dayStart, end: dayEnd }),
   ]);
 
@@ -138,7 +136,7 @@ export async function loadPrismaAgendaGiorno(
     pratiche: pratiche.map((p) => ({
       id: p.id,
       numero: p.numero,
-      memoAt: p.memoAt!.toISOString(),
+      memoAt: p.memoAt instanceof Date ? p.memoAt.toISOString() : String(p.memoAt ?? ""),
       debitore: p.debitore,
       assegnatario: p.assegnatario,
       mandante: p.mandante,
@@ -148,7 +146,7 @@ export async function loadPrismaAgendaGiorno(
       userId: i.userId,
       titolo: i.titolo,
       nota: i.nota,
-      memoAt: i.memoAt.toISOString(),
+      memoAt: i.memoAt,
       completato: i.completato,
     })),
     giudiziali,
@@ -167,7 +165,7 @@ export async function loadPrismaMemoAlertsRaw(
   const baseScope = await praticaScopeWhere(user);
 
   const pratiche = opts.canAgenda
-    ? await prisma.pratica.findMany({
+    ? await praticaDbFromUser(user).findMany({
         where: {
           AND: [baseScope, { memoAt: { gte: opts.memoAtGte, lte: opts.memoAtLte } }],
         },
@@ -184,15 +182,12 @@ export async function loadPrismaMemoAlertsRaw(
     : [];
 
   const impegni = opts.canAgenda
-    ? await prisma.impegnoAgenda.findMany({
-        where: {
-          userId: opts.impegniUserId,
-          completato: false,
-          memoAt: { gte: opts.memoAtGte, lte: opts.memoAtLte },
-        },
-        orderBy: { memoAt: "asc" },
-        take: 50,
-      })
+    ? await impegniAgendaFromUser(user).list(user.tenantSlug ?? user.tenantId, user.tenantId, {
+        userId: opts.impegniUserId,
+        completato: false,
+        memoAtGte: opts.memoAtGte.toISOString(),
+        memoAtLte: opts.memoAtLte.toISOString(),
+      }, 50)
     : [];
 
   const giudiziali = opts.canAgenda
@@ -202,26 +197,17 @@ export async function loadPrismaMemoAlertsRaw(
       })
     : [];
 
-  const intern = await prisma.messaggioInterno.findMany({
-    where: { toUserId: user.id, letto: false },
-    include: {
-      fromUser: { select: { name: true } },
-      pratica: {
-        select: {
-          numero: true,
-          debitore: { select: { nome: true, cognome: true } },
-        },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-    take: 30,
-  });
+  const intern = await messaggiInterniFromUser(user).list(
+    user.tenantSlug ?? user.tenantId,
+    user.tenantId,
+    { toUserId: user.id, letto: false, take: 30 }
+  );
 
   return {
     pratiche: pratiche.map((p) => ({
       id: p.id,
       numero: p.numero,
-      memoAt: p.memoAt!.toISOString(),
+      memoAt: p.memoAt instanceof Date ? p.memoAt.toISOString() : String(p.memoAt ?? ""),
       debitore: p.debitore,
       mandante: p.mandante,
       telefono: p.debitore.telefono,
@@ -231,7 +217,7 @@ export async function loadPrismaMemoAlertsRaw(
       userId: i.userId,
       titolo: i.titolo,
       nota: i.nota,
-      memoAt: i.memoAt.toISOString(),
+      memoAt: i.memoAt,
       completato: i.completato,
     })),
     giudiziali,
@@ -240,22 +226,14 @@ export async function loadPrismaMemoAlertsRaw(
 }
 
 export async function loadPrismaMessaggiAgendaScoped(user: SessionUser) {
-  const praticaScope = await praticaScopeWhere(user);
-  return prisma.messaggioAgenda.findMany({
-    where: { pratica: praticaScope },
-    include: {
-      pratica: {
-        select: {
-          id: true,
-          numero: true,
-          debitore: { select: { nome: true, cognome: true } },
-        },
-      },
-      user: { select: { id: true, name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  // I messaggi agenda con praticaScope si caricano dalla lista generale
+  // Il filtro praticaScope non è supportato direttamente dal repository messaggi agenda
+  // Questo viene gestito dal ConnectorAgendaRepository quando necessario
+  return messaggiAgendaFromUser(user).list(
+    user.tenantSlug ?? user.tenantId,
+    user.tenantId,
+    { praticaScope: "tenant", take: 100 }
+  );
 }
 
 export async function loadAgendaCalendarioAuto(

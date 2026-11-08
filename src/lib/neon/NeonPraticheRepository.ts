@@ -14,6 +14,7 @@ import type {
   PraticheRepository,
   PraticaDto,
 } from "@/lib/data/contracts/pratiche";
+import { neonPraticheOrderBySql } from "@/lib/praticaOrdine";
 
 function coerceMoney(mapped: Record<string, unknown>, keys: string[]) {
   for (const k of keys) {
@@ -780,8 +781,7 @@ export class NeonPraticheRepository implements PraticheRepository {
       params
     );
     const total = Number((countRows[0] as { c: number })?.c ?? 0);
-    const sortField = req.sort?.field === "numero" ? `"Numero"` : `"UpdatedAt"`;
-    const sortDir = req.sort?.dir === "asc" ? "ASC" : "DESC";
+    const orderBy = neonPraticheOrderBySql(req.sort);
     const items = await neonQuery(
       `SELECT ${LIST_SELECT}
        FROM "Pratiche" p
@@ -789,7 +789,7 @@ export class NeonPraticheRepository implements PraticheRepository {
        LEFT JOIN "Mandanti" m ON m."Id" = p."MandanteId"
        LEFT JOIN "Users" a ON a."Id" = p."AssegnatarioId"
        WHERE ${where}
-       ORDER BY p.${sortField} ${sortDir} NULLS LAST
+       ORDER BY ${orderBy}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, pageSize, skip]
     );

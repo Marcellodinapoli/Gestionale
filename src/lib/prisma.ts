@@ -1,6 +1,6 @@
 import "server-only";
 import type { PrismaClient as PrismaClientType } from "@prisma/client";
-import { assertOperationalBackendReady } from "@/lib/dataAccess";
+import { assertOperationalBackendReady, getOperationalBackend } from "@/lib/dataAccess";
 import { createFirebasePrisma } from "@/lib/firebase/firebasePrisma";
 
 /** Bump per forzare reload dello shim dopo HMR (evita client stale in globalThis). */
@@ -13,8 +13,17 @@ const globalForPrisma = globalThis as unknown as {
 
 function getFirebaseClient(): PrismaClientType {
   if (typeof window !== "undefined") {
-    throw new Error("Firebase ops solo lato server");
+    throw new Error("Prisma ops solo lato server");
   }
+  
+  const backend = getOperationalBackend();
+  if (backend === "neon" || backend === "connector") {
+    throw new Error(
+      `prisma non disponibile con DATABASE_PROVIDER=${backend}. ` +
+      `Usa i repository tipizzati (praticaDbFromUser, usersDbFromUser, ecc.) invece di prisma diretto.`
+    );
+  }
+
   assertOperationalBackendReady();
   if (
     globalForPrisma.firebasePrisma &&

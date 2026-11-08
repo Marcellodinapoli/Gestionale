@@ -37,6 +37,7 @@ export function ContabilePreviewLazy({
   scadenza,
   affidato,
   definito,
+  alignToAnagraficaRow,
 }: {
   praticaId: string;
   canEditFatture?: boolean;
@@ -48,6 +49,8 @@ export function ContabilePreviewLazy({
   scadenza: Date | null;
   affidato: number;
   definito: number;
+  /** Altezza = riga anagrafica/garanti (scroll interno), non tutta la sezione dati. */
+  alignToAnagraficaRow?: boolean;
 }) {
   const [extra, setExtra] = useState<PraticaExtraPayload | null>(null);
   const [pending, setPending] = useState(true);
@@ -55,11 +58,15 @@ export function ContabilePreviewLazy({
   useEffect(() => {
     let cancelled = false;
     setPending(true);
-    fetchPraticaExtra(praticaId, { force: true }).then((data) => {
-      if (cancelled) return;
-      if (data) setExtra(data);
-      setPending(false);
-    });
+    
+    // Differisci caricamento per non competere con apertura pratica
+    const loadTimer = setTimeout(() => {
+      fetchPraticaExtra(praticaId, { force: true }).then((data) => {
+        if (cancelled) return;
+        if (data) setExtra(data);
+        setPending(false);
+      });
+    }, 150); // Carica dopo che la pratica è renderizzata
 
     function onInvalidate(ev: Event) {
       const detail = (ev as CustomEvent<{ praticaId?: string | null }>).detail;
@@ -73,6 +80,7 @@ export function ContabilePreviewLazy({
 
     return () => {
       cancelled = true;
+      clearTimeout(loadTimer);
       window.removeEventListener(PRATICA_EXTRA_INVALIDATE_EVENT, onInvalidate);
     };
   }, [praticaId]);
@@ -89,7 +97,13 @@ export function ContabilePreviewLazy({
   }));
 
   return (
-    <div className="relative flex min-h-[200px] min-w-0 flex-col lg:col-span-4 lg:h-0 lg:min-h-full">
+    <div
+      className={`relative flex min-w-0 flex-col border-b border-[var(--line)] lg:col-span-4 lg:border-b-0 lg:border-l lg:border-[var(--line)] ${
+        alignToAnagraficaRow
+          ? "min-h-0 overflow-hidden lg:h-0 lg:min-h-full"
+          : "min-h-[200px] lg:h-full lg:min-h-0"
+      }`}
+    >
       {pending ? (
         <div className="absolute right-1 top-1 z-10 rounded bg-[#1a4f7a]/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">
           …
@@ -133,6 +147,7 @@ export function RegistroNoteLazy({
     let cancelled = false;
     let es: EventSource | null = null;
     let fallbackTimer: number | undefined;
+    let streamDelayTimer: number | undefined;
 
     async function loadOnce(showPending: boolean) {
       if (showPending) setPending(true);
@@ -143,50 +158,60 @@ export function RegistroNoteLazy({
       setPending(false);
     }
 
-    void loadOnce(true);
+    // Differisci caricamento iniziale per non bloccare apertura pratica
+    const initialLoadTimer = setTimeout(() => {
+      void loadOnce(true);
+    }, 100);
 
-    const streamUrl = `/api/pratiche/${encodeURIComponent(praticaId)}/notes/stream`;
-    try {
-      es = new EventSource(streamUrl);
-      es.addEventListener("notes", (ev) => {
-        if (cancelled) return;
-        try {
-          const payload = JSON.parse(
-            (ev as MessageEvent).data
-          ) as NotaStreamPayload;
-          if (!Array.isArray(payload.attivita)) return;
+    // Differisci apertura EventSource ancora di più (dopo che note sono caricate)
+    function startStream() {
+      if (cancelled) return;
+      const streamUrl = `/api/pratiche/${encodeURIComponent(praticaId)}/notes/stream`;
+      try {
+        es = new EventSource(streamUrl);
+        es.addEventListener("notes", (ev) => {
+          if (cancelled) return;
+          try {
+            const payload = JSON.parse(
+              (ev as MessageEvent).data
+            ) as NotaStreamPayload;
+            if (!Array.isArray(payload.attivita)) return;
+            setLive(true);
+            setExtra((prev) => ({
+              attivita: payload.attivita,
+              incassi: prev?.incassi || [],
+              fatture: prev?.fatture || [],
+            }));
+            setPending(false);
+          } catch {
+            /* ignore parse */
+          }
+        });
+        es.onerror = () => {
+          setLive(false);
+          // Fallback polling se lo stream cade
+          if (fallbackTimer == null) {
+            fallbackTimer = window.setInterval(() => {
+              void loadOnce(false);
+            }, 1000);
+          }
+        };
+        es.onopen = () => {
           setLive(true);
-          setExtra((prev) => ({
-            attivita: payload.attivita,
-            incassi: prev?.incassi || [],
-            fatture: prev?.fatture || [],
-          }));
-          setPending(false);
-        } catch {
-          /* ignore parse */
-        }
-      });
-      es.onerror = () => {
-        setLive(false);
-        // Fallback polling se lo stream cade
-        if (fallbackTimer == null) {
-          fallbackTimer = window.setInterval(() => {
-            void loadOnce(false);
-          }, 1000);
-        }
-      };
-      es.onopen = () => {
-        setLive(true);
-        if (fallbackTimer != null) {
-          window.clearInterval(fallbackTimer);
-          fallbackTimer = undefined;
-        }
-      };
-    } catch {
-      fallbackTimer = window.setInterval(() => {
-        void loadOnce(false);
-      }, 1000);
+          if (fallbackTimer != null) {
+            window.clearInterval(fallbackTimer);
+            fallbackTimer = undefined;
+          }
+        };
+      } catch {
+        fallbackTimer = window.setInterval(() => {
+          void loadOnce(false);
+        }, 1000);
+      }
     }
+
+    // Apri stream solo dopo 1.5s (quando pratica è già renderizzata e interattiva)
+    streamDelayTimer = window.setTimeout(startStream, 1500);
 
     function onVisible() {
       if (document.visibilityState === "visible") void loadOnce(false);
@@ -196,6 +221,8 @@ export function RegistroNoteLazy({
 
     return () => {
       cancelled = true;
+      clearTimeout(initialLoadTimer);
+      if (streamDelayTimer != null) window.clearTimeout(streamDelayTimer);
       es?.close();
       if (fallbackTimer != null) window.clearInterval(fallbackTimer);
       document.removeEventListener("visibilitychange", onVisible);

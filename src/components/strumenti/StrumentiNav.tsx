@@ -19,7 +19,18 @@ export const STRUMENTI_MENU_ITEMS = [
 ] as const;
 
 function isStrumentiActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
+  if (pathname === href || pathname.startsWith(`${href}/`)) return true;
+  // Pagine sotto /strumenti senza tab dedicata (es. /strumenti/ai) → prima voce
+  if (href === STRUMENTI_MENU_ITEMS[0].href) {
+    if (pathname === "/strumenti" || pathname === "/strumenti/ai") return true;
+    if (!pathname.startsWith("/strumenti/")) return false;
+    return !STRUMENTI_MENU_ITEMS.some(
+      (item) =>
+        item.href !== href &&
+        (pathname === item.href || pathname.startsWith(`${item.href}/`))
+    );
+  }
+  return false;
 }
 
 export function StrumentiNav() {

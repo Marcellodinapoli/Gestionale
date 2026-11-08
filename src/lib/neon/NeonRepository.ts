@@ -377,6 +377,18 @@ function homePraticheScopeSql(
     sql += ` AND ("AssegnatarioId" = ANY($${i}::uuid[]) OR "OperatoreTitolareId" = ANY($${i}::uuid[]))`;
     params.push(ids);
     i += 1;
+  } else if (scope.mode === "members") {
+    const ids = [
+      ...new Set(
+        (scope.memberIds || memberIds || []).filter(
+          (id): id is string => Boolean(id) && isUuid(id)
+        )
+      ),
+    ];
+    if (!ids.length) return { sql: " AND FALSE", params };
+    sql += ` AND ("AssegnatarioId" = ANY($${i}::uuid[]) OR "OperatoreTitolareId" = ANY($${i}::uuid[]))`;
+    params.push(ids);
+    i += 1;
   }
 
   if (scope.perimetroOr?.length) {
@@ -410,12 +422,14 @@ class NeonDashboardRepository implements DashboardRepository {
         shared: {
           totali: 0,
           scadute: 0,
+          inScadenza7gg: 0,
           incassiOggiSum: 0,
           inLavoroPerPerimetro: [],
           lavoratePerOperatore: [],
           praticheLavorateGruppo: [],
           praticheCambioCodice: [],
           codiciMandantePerimetro: [],
+          codiciMandantePerimetroOperatore: [],
           daAffidareGruppo: [],
         },
         meta: { queryMs: Date.now() - t0, sqlQueries: 0, roundTrips: 0 },
@@ -687,12 +701,14 @@ class NeonDashboardRepository implements DashboardRepository {
       shared: {
         totali: Number(p.totali ?? 0),
         scadute: Number(p.scadute ?? 0),
+        inScadenza7gg: Number(p.in_scadenza_7 ?? 0),
         incassiOggiSum: incassiOggi,
         inLavoroPerPerimetro: [],
         lavoratePerOperatore: [],
         praticheLavorateGruppo: [],
         praticheCambioCodice: [],
         codiciMandantePerimetro: [],
+        codiciMandantePerimetroOperatore: [],
         daAffidareGruppo: [],
       },
       admin,

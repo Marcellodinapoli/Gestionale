@@ -2,8 +2,10 @@ import { requireApiUser } from "@/lib/guard";
 import { can } from "@/lib/permissions";
 import { usersDbFromUser } from "@/lib/usersRepo";
 import { findTenantById } from "@/lib/data/operationalAccess";
+import { resolveCreditcalcBffPublicUrl } from "@/lib/creditcalc/bffPublicUrl";
 import { createLinkRequest } from "@/lib/creditcalc/store";
 import { assertTenantCreditCalcModule } from "@/lib/creditcalc/tenantAccess";
+import { isFirebaseAvailable } from "@/lib/formazione/firebaseGuard";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "L’operatore deve essere consulente esterno con CreditCalc abilitato",
+          "L’operatore deve essere consulente esterno con CredixaApp abilitato",
       },
       { status: 403 }
     );
@@ -69,23 +71,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Tenant non trovato" }, { status: 404 });
   }
 
-  const link = await createLinkRequest({
-    tenantId: tenant.id,
-    tenantSlug: tenant.slug,
-    tenantName: tenant.nome,
-    gestionaleUserId: target.id,
-    operatorName: target.name,
-    operatorEmail: target.email,
-    createdByUserId: user.id,
-  });
+  if (!isFirebaseAvailable()) {
+    return NextResponse.json(
+      {
+        error:
+          "Il collegamento QR non è attivo su questo server. Contatta l'amministratore di sistema.",
+      },
+      { status: 503 }
+    );
+  }
 
-  return NextResponse.json({
-    linkRequestId: link.linkRequestId,
-    /** Unico contenuto del QR — nessun secret. */
-    qrPayload: link.linkRequestId,
-    expiresAt: link.expiresAt,
-    status: link.status,
-    operatorName: link.operatorName,
-    tenantName: link.tenantName,
-  });
+  try {
+    const link = await createLinkRequest({
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      tenantName: tenant.nome,
+      gestionaleUserId: target.id,
+      operatorName: target.name,
+      operatorEmail: target.email,
+      createdByUserId: user.id,
+    });
+
+    const bffBaseUrl = resolveCreditcalcBffPublicUrl(req);
+    return NextResponse.json({
+      linkRequestId: link.linkRequestId,
+      bffBaseUrl,
+      /** URL pubblico BFF + UUID (l’app ricava host e id; compatibile anche UUID grezzo legacy). */
+      qrPayload: `${bffBaseUrl}/creditcalc/pair/${link.linkRequestId}`,
+      expiresAt: link.expiresAt,
+      status: link.status,
+      operatorName: link.operatorName,
+      tenantName: link.tenantName,
+    });
+  } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Errore durante la generazione del QR";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

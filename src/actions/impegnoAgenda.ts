@@ -5,6 +5,7 @@ import { writeAudit } from "@/lib/domain";
 import { requireWritableUser } from "@/lib/guard";
 import { impegniAgendaFromUser } from "@/lib/impegniAgendaRepo";
 import { resolveTenantSlug } from "@/lib/praticheRepo";
+import { assertAgendaNonNelPassato } from "@/lib/agenda/agendaNonNelPassato";
 
 function fail(message: string): never {
   throw new Error(message);
@@ -19,6 +20,7 @@ export async function salvaImpegnoLiberoAction(formData: FormData) {
   if (!scheduledAtRaw) fail("Seleziona data e ora");
   const memoAt = new Date(scheduledAtRaw);
   if (Number.isNaN(memoAt.getTime())) fail("Data/ora non valida");
+  assertAgendaNonNelPassato(memoAt);
 
   const repo = impegniAgendaFromUser(user);
   const tenantSlug = resolveTenantSlug(user);

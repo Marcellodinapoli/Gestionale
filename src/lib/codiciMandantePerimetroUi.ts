@@ -14,8 +14,17 @@ export type RigaCodiciMandantePerimetro = {
   perimetro: string;
   /** Pratiche con operatore assegnato (sit. affido = affidata). */
   affidate: number;
+  /** Scadenza già passata (aperte, come card Home). */
+  scadute: number;
+  /** Stato AFFIDATA, IN_LAVORAZIONE o PROMESSA. */
+  inLavorazione: number;
   conteggi: Record<CodiceConteggioKey, number>;
   totale: number;
+};
+
+export type RigaCodiciMandantePerimetroOperatore = RigaCodiciMandantePerimetro & {
+  operatoreId: string;
+  operatoreNome: string;
 };
 
 export type RigaInLavorazionePerimetro = {

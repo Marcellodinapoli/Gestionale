@@ -80,6 +80,10 @@ export function provvigioniWhere(
   const tenantScope = { pratica: { tenantId: user.tenantId } };
   const sedeId = opts?.sedeId !== undefined ? opts.sedeId : null;
 
+  if (sedeId === "__no-sede__" || sedeId === "__nessuna__") {
+    return { id: "__nessun-dato__" };
+  }
+
   if (user.role === "ADMIN" || user.role === "AMMINISTRAZIONE") {
     if (sedeId) {
       return { AND: [tenantScope, { operatore: { sedeId } }] };

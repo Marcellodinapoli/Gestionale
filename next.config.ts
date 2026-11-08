@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
     "tedious",
     "@azure/identity",
   ],
+  // Le pagine Predictive sono passate da /predictive-dialer a /predictive (le API /api/predictive-dialer restano invariate).
+  async redirects() {
+    return [
+      { source: "/predictive-dialer", destination: "/predictive", permanent: true },
+      { source: "/predictive-dialer/:path*", destination: "/predictive/:path*", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -26,9 +26,10 @@ const MAIN_SECTION_LABELS: Record<string, string> = {
   "/lavorazione": "Lavorazione",
   "/account": "Account",
   "/portafogli": "Portafogli",
-  "/creditcalc": "CreditCalc",
+  "/creditcalc": "CredixaApp",
   "/formazione/progressi": "Formazione",
   "/strumenti/ricerca-normativa": "Strumenti AI",
+  "/legal-ai": "Credixa Legal AI",
 };
 
 /** Etichetta leggibile per il pulsante ← in base alla pagina di provenienza. */
@@ -75,6 +76,7 @@ export function labelForNavBackHref(href: string): string {
 
   if (path.startsWith("/formazione/")) return "Formazione";
   if (path.startsWith("/strumenti/")) return "Strumenti AI";
+  if (path.startsWith("/legal-ai")) return "Credixa Legal AI";
 
   return "Indietro";
 }

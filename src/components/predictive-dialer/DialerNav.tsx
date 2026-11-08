@@ -12,11 +12,17 @@ type NavItem = {
 };
 
 function isActive(pathname: string, href: string) {
-  if (href === "/predictive-dialer") {
+  if (href === "/predictive") {
     return pathname === href;
   }
-  if (href === "/predictive-dialer/campagne") {
-    return pathname === href || pathname.startsWith("/predictive-dialer/campagne/");
+  if (href === "/predictive/campagne") {
+    return pathname === href || pathname.startsWith("/predictive/campagne/");
+  }
+  if (href === "/predictive/admin") {
+    return pathname === href || pathname.startsWith("/predictive/admin/");
+  }
+  if (href === "/predictive/monitor") {
+    return pathname === href || pathname.startsWith("/predictive/monitor/");
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -31,24 +37,24 @@ export function DialerNav({
   const pathname = usePathname();
 
   const items: NavItem[] = [
-    { href: "/predictive-dialer", label: "Operatore", icon: PhoneForwarded },
+    { href: "/predictive", label: "Operatore", icon: PhoneForwarded },
   ];
   if (canManage) {
     items.push(
-      { href: "/predictive-dialer/campagne", label: "Campagne", icon: Target },
-      { href: "/predictive-dialer/monitor", label: "Monitor", icon: Activity }
+      { href: "/predictive/campagne", label: "Campagne", icon: Target },
+      { href: "/predictive/monitor", label: "Monitor", icon: Activity }
     );
   }
   if (canAdmin) {
     items.push({
-      href: "/predictive-dialer/admin",
+      href: "/predictive/admin",
       label: "Configurazione",
       icon: Settings,
     });
   }
 
   return (
-    <SectionTabNav label="Sezioni Dialer">
+    <SectionTabNav label="Sezioni Predictive">
       {items.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
         return (

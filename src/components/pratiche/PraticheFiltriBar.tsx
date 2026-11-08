@@ -348,9 +348,6 @@ export function PraticheFiltriBar({
             name="stato"
             key={`stato-${statoEffettivo || "none"}`}
             defaultValue={statoEffettivo}
-            onChange={(e) => {
-              e.currentTarget.form?.requestSubmit();
-            }}
             className={`notranslate ${QUICK_BAR_FIELD_CLASS} w-[8.75rem] shrink-0 px-2`}
             aria-label="Stato operativo"
             translate="no"

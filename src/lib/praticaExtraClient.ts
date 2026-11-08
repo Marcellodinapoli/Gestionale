@@ -39,7 +39,7 @@ export type PraticaExtraPayload = {
   }>;
 };
 
-const TTL_MS = 30_000;
+const TTL_MS = 90_000; // Aumentato da 30s a 90s per cache più duratura
 const cache = new Map<string, { at: number; data: PraticaExtraPayload }>();
 const inflight = new Map<string, Promise<PraticaExtraPayload | null>>();
 
@@ -58,6 +58,30 @@ export function invalidatePraticaExtra(praticaId?: string) {
         detail: { praticaId: praticaId ?? null },
       })
     );
+  }
+}
+
+/** Prefetch intelligente durante idle time (non bloccante). */
+export function prefetchPraticaExtraIdle(praticaId: string) {
+  if (typeof window === "undefined") return;
+  
+  // Non prefetch se già in cache valida
+  const hit = cache.get(praticaId);
+  if (hit && Date.now() - hit.at < TTL_MS) return;
+  
+  // Prefetch durante idle time per non impattare UI
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(
+      () => {
+        void fetchPraticaExtra(praticaId, { force: false });
+      },
+      { timeout: 2000 }
+    );
+  } else {
+    // Fallback: timeout con priorità bassa
+    setTimeout(() => {
+      void fetchPraticaExtra(praticaId, { force: false });
+    }, 500);
   }
 }
 

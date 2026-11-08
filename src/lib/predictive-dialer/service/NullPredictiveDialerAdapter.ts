@@ -34,7 +34,7 @@ export class NullPredictiveDialerAdapter implements PredictiveDialerService {
     return {
       connesso: false,
       actualCallsPerMinute: null,
-      messaggio: "Provider dialer non configurato",
+      messaggio: "Provider predictive non configurato",
     };
   }
 }

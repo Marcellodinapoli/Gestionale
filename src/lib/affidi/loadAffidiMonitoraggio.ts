@@ -2,27 +2,47 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import type { SessionUser } from "@/lib/permissions";
 import { praticaDbFromUser } from "@/lib/praticheRepo";
+import {
+  affidiPraticaInFaseGiudizialeAffidiCard,
+  affidiPraticaInLavorazioneStragiudizialeAffidi,
+  affidiPraticaInScadenza7ggAffidi,
+  isPraticaDaAffidareGruppoHome,
+  isPraticaGiudizialeDaAffidareAffidi,
+} from "@/lib/affidi/affidiPraticaStatoUi";
 
 export type AffidiMonitoraggioDto = {
   nuove: number;
   nonAssegnate: number;
+  scadute: number;
+  affidate: number;
   inLavorazione: number;
   inScadenza7gg: number;
+  /** Card Allerte back office */
+  inFaseGiudiziale?: number;
+  giudizialiDaAffidare?: number;
 };
 
 export type AffidiAllerta =
   | "nuove"
   | "non_assegnate"
+  | "scadute"
+  | "affidate"
   | "in_lavorazione"
-  | "in_scadenza";
+  | "in_scadenza"
+  | "in_fase_giudiziale"
+  | "giudiziali_da_affidare";
 
 export function parseAffidiAllerta(raw?: string | null): AffidiAllerta | undefined {
   const v = raw?.trim();
   if (
     v === "nuove" ||
     v === "non_assegnate" ||
+    v === "scadute" ||
+    v === "affidate" ||
     v === "in_lavorazione" ||
-    v === "in_scadenza"
+    v === "in_scadenza" ||
+    v === "in_fase_giudiziale" ||
+    v === "giudiziali_da_affidare"
   ) {
     return v;
   }
@@ -31,9 +51,13 @@ export function parseAffidiAllerta(raw?: string | null): AffidiAllerta | undefin
 
 export function etichettaAffidiAllerta(a?: AffidiAllerta) {
   if (a === "nuove") return "Nuove (senza codice scarico)";
-  if (a === "non_assegnate") return "Non assegnate (senza affidatario)";
+  if (a === "non_assegnate") return "Da affidare (senza affidatario)";
+  if (a === "scadute") return "Pratiche scadute";
+  if (a === "affidate") return "Pratiche affidate";
   if (a === "in_lavorazione") return "In lavorazione";
   if (a === "in_scadenza") return "In scadenza 7 gg";
+  if (a === "in_fase_giudiziale") return "In fase giudiziale";
+  if (a === "giudiziali_da_affidare") return "Giudiziali da affidare";
   return null;
 }
 
@@ -81,6 +105,14 @@ export function isPraticaNonAssegnata(p: {
   return p.assegnatarioId == null && !isChiusa(p.stato);
 }
 
+/** Affidate = con affidatario (definitivo o temporaneo), escluse chiuse. */
+export function isPraticaAffidata(p: {
+  stato: string;
+  assegnatarioId?: string | null;
+}) {
+  return p.assegnatarioId != null && !isChiusa(p.stato);
+}
+
 export function wherePraticheSenzaCodiceScarico(): Prisma.PraticaWhereInput {
   return {
     OR: [{ codiceScarico: null }, { codiceScarico: "" }],
@@ -94,20 +126,50 @@ export function wherePraticheNonAssegnate(): Prisma.PraticaWhereInput {
   };
 }
 
+function inizioOggiLocale() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Mandato scaduto, pratica aperta (anche senza affidatario). */
+export function isPraticaScadutaAperta(p: {
+  stato: string;
+  scadenza?: Date | string | null;
+}) {
+  if (isChiusa(p.stato) || !p.scadenza) return false;
+  const d = p.scadenza instanceof Date ? p.scadenza : new Date(p.scadenza);
+  if (Number.isNaN(d.getTime())) return false;
+  const oggi = inizioOggiLocale();
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  return day < oggi;
+}
+
+export function wherePraticheScaduteAperte(): Prisma.PraticaWhereInput {
+  const oggi = inizioOggiLocale();
+  return {
+    scadenza: { lt: oggi },
+    stato: { notIn: [...STATI_CHIUSE] },
+  };
+}
+
 /** Filtra l’elenco Affida in base alla card Allerte cliccata. */
 export function filtraPratichePerAllerta<
   T extends {
     stato: string;
     assegnatarioId?: string | null;
     codiceScarico?: string | null;
+    codiceScaricoBk?: string | null;
     scadenza?: Date | string | null;
+    statoAvvioGiudiziale?: string | null;
+    dataPassaggioGiudiziale?: Date | string | null;
+    conferimentoTipo?: string | null;
   },
 >(pratiche: T[], allerta?: AffidiAllerta): T[] {
   if (!allerta) return pratiche;
   const oggi = new Date();
   oggi.setHours(0, 0, 0, 0);
-  const tra7gg = new Date(oggi);
-  tra7gg.setDate(tra7gg.getDate() + 7);
 
   if (allerta === "nuove") {
     return pratiche.filter(
@@ -115,21 +177,27 @@ export function filtraPratichePerAllerta<
     );
   }
   if (allerta === "non_assegnate") {
-    return pratiche.filter((p) => isPraticaNonAssegnata(p));
+    return pratiche.filter((p) => isPraticaDaAffidareGruppoHome(p));
+  }
+  if (allerta === "scadute") {
+    return pratiche.filter((p) => isPraticaScadutaAperta(p));
+  }
+  if (allerta === "affidate") {
+    return pratiche.filter((p) => isPraticaAffidata(p));
   }
   if (allerta === "in_lavorazione") {
-    return pratiche.filter((p) =>
-      (STATI_IN_LAVORAZIONE as readonly string[]).includes(p.stato)
-    );
+    return pratiche.filter((p) => affidiPraticaInLavorazioneStragiudizialeAffidi(p));
   }
-  return pratiche.filter((p) => {
-    if (isChiusa(p.stato) || !p.scadenza) return false;
-    const d = p.scadenza instanceof Date ? p.scadenza : new Date(p.scadenza);
-    if (Number.isNaN(d.getTime())) return false;
-    const day = new Date(d);
-    day.setHours(0, 0, 0, 0);
-    return day >= oggi && day <= tra7gg;
-  });
+  if (allerta === "in_fase_giudiziale") {
+    return pratiche.filter((p) => affidiPraticaInFaseGiudizialeAffidiCard(p));
+  }
+  if (allerta === "giudiziali_da_affidare") {
+    return pratiche.filter((p) => isPraticaGiudizialeDaAffidareAffidi(p));
+  }
+  if (allerta === "in_scadenza") {
+    return pratiche.filter((p) => affidiPraticaInScadenza7ggAffidi(p, oggi));
+  }
+  return pratiche;
 }
 
 export async function loadAffidiMonitoraggio(
@@ -155,7 +223,7 @@ export async function loadAffidiMonitoraggio(
 
   const praticaModel = praticaDbFromUser(user);
 
-  const [nuove, inLavorazione, inScadenza7gg, nonAssegnate] = await Promise.all([
+  const [nuove, inLavorazione, inScadenza7gg, nonAssegnate, scadute, affidate] = await Promise.all([
     // Nuove ≠ Non assegnate: solo senza codice scarico.
     praticaModel.count({
       where: {
@@ -183,12 +251,69 @@ export async function loadAffidiMonitoraggio(
     praticaModel.count({
       where: { ...praticaWhere, ...wherePraticheNonAssegnate() },
     }),
+    praticaModel.count({
+      where: { AND: [praticaWhere, wherePraticheScaduteAperte()] },
+    }),
+    praticaModel.count({
+      where: {
+        AND: [
+          praticaWhere,
+          { assegnatarioId: { not: null } },
+          { stato: { notIn: [...STATI_CHIUSE] } },
+        ],
+      },
+    }),
   ]);
 
   return {
     nuove,
     nonAssegnate,
+    scadute,
+    affidate,
     inLavorazione,
     inScadenza7gg,
+  };
+}
+
+export type PraticaAffidiMonitoraggioConteggio = {
+  stato: string;
+  assegnatarioId?: string | null;
+  codiceScarico?: string | null;
+  codiceScaricoBk?: string | null;
+  scadenza?: Date | string | null;
+  statoAvvioGiudiziale?: string | null;
+  dataPassaggioGiudiziale?: Date | string | null;
+  conferimentoTipo?: string | null;
+};
+
+const STATI_CHIUSE_MONITOR_ALLERTE = new Set(["INCASSO", "RESA", "INESIGIBILE"]);
+
+/** Conteggi card Allerte sullo stesso elenco filtrato mandato/perimetro (admin, supervisor, back office). */
+export function computeAffidiMonitoraggioAllerte(
+  pratiche: PraticaAffidiMonitoraggioConteggio[],
+  role: SessionUser["role"]
+): AffidiMonitoraggioDto {
+  const daAffidare = (p: PraticaAffidiMonitoraggioConteggio) =>
+    role === "ADMIN" || role === "SUPERVISOR" || role === "BACK_OFFICE"
+      ? isPraticaDaAffidareGruppoHome(p)
+      : isPraticaNonAssegnata(p);
+
+  return {
+    nuove: pratiche.filter(
+      (p) =>
+        !STATI_CHIUSE_MONITOR_ALLERTE.has(p.stato) &&
+        isPraticaSenzaCodiceScarico(p.codiceScarico)
+    ).length,
+    nonAssegnate: pratiche.filter(daAffidare).length,
+    scadute: pratiche.filter((p) => isPraticaScadutaAperta(p)).length,
+    affidate: pratiche.filter((p) => isPraticaAffidata(p)).length,
+    inLavorazione: pratiche.filter((p) => affidiPraticaInLavorazioneStragiudizialeAffidi(p)).length,
+    inScadenza7gg: pratiche.filter((p) => affidiPraticaInScadenza7ggAffidi(p)).length,
+    ...(role === "BACK_OFFICE"
+      ? {
+          inFaseGiudiziale: pratiche.filter((p) => affidiPraticaInFaseGiudizialeAffidiCard(p)).length,
+          giudizialiDaAffidare: pratiche.filter((p) => isPraticaGiudizialeDaAffidareAffidi(p)).length,
+        }
+      : {}),
   };
 }

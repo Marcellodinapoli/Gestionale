@@ -128,7 +128,7 @@ export default async function StampaPraticaPage({
       <div className="text-[13px] leading-5 text-[#132033]">
         <header className="mb-4 border-b border-[#132033] pb-2">
           <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-            Credixa
+            Credixa Suite
           </p>
           <h1 className="text-xl font-semibold">
             Pratica {pratica.numero}

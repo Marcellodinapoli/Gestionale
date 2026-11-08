@@ -5,7 +5,7 @@ import {
 } from "@/lib/platform/tenantProfile";
 
 export const CREDITCALC_MODULE_DISABLED_MSG =
-  "CreditCalc non attivo per questa azienda. Contattare amministrazione.";
+  "CredixaApp non attivo per questa azienda. Contattare amministrazione.";
 
 /** Pacchetto CreditCalc attivo nel Back Office per il tenant. */
 export async function isTenantCreditCalcEnabled(

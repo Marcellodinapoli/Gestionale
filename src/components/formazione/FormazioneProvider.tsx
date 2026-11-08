@@ -31,6 +31,9 @@ type FormazioneContextValue = {
   loading: boolean;
   bootstrapped: boolean;
   error: string | null;
+  /** Lettura corsi/progressi via API gestionale (senza Firestore client). */
+  apiMode: boolean;
+  firebaseUid: string | null;
   user: User | null;
   db: Firestore | null;
   functions: Functions | null;
@@ -49,6 +52,8 @@ export function FormazioneProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiMode, setApiMode] = useState(false);
+  const [firebaseUid, setFirebaseUid] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -69,6 +74,7 @@ export function FormazioneProvider({ children }: { children: ReactNode }) {
 
     async function bootstrap() {
       setError(null);
+      setApiMode(false);
 
       try {
         await auth.authStateReady();
@@ -76,6 +82,7 @@ export function FormazioneProvider({ children }: { children: ReactNode }) {
 
         if (auth.currentUser) {
           setUser(auth.currentUser);
+          setFirebaseUid(auth.currentUser.uid);
           setReady(true);
           return;
         }
@@ -83,20 +90,37 @@ export function FormazioneProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         setReady(false);
 
-        const res = await fetch("/api/formazione/session");
-        const payload = (await res.json()) as {
+        const meRes = await fetch("/api/formazione/me/progress");
+        const mePayload = (await meRes.json()) as {
+          uid?: string;
           token?: string;
           error?: string;
         };
 
-        if (!res.ok) {
-          throw new Error(payload.error ?? "Sessione CreditForm non disponibile");
-        }
-        if (!payload.token) {
-          throw new Error("Token CreditForm mancante");
+        if (!meRes.ok) {
+          throw new Error(mePayload.error ?? "Formazione non disponibile");
         }
 
-        await signInWithCustomToken(auth, payload.token);
+        if (!mePayload.uid) {
+          throw new Error("Profilo formazione non collegato");
+        }
+
+        setFirebaseUid(mePayload.uid);
+
+        let clientReady = false;
+        if (mePayload.token) {
+          try {
+            await signInWithCustomToken(auth, mePayload.token);
+            clientReady = true;
+          } catch {
+            clientReady = false;
+          }
+        }
+
+        if (!clientReady) {
+          setApiMode(true);
+        }
+
         if (!cancelled) setReady(true);
       } catch (e) {
         if (!cancelled) {
@@ -114,7 +138,13 @@ export function FormazioneProvider({ children }: { children: ReactNode }) {
     void bootstrap();
 
     const unsub = onAuthStateChanged(auth, (u) => {
-      if (!cancelled) setUser(u);
+      if (!cancelled) {
+        setUser(u);
+        if (u) {
+          setFirebaseUid(u.uid);
+          setApiMode(false);
+        }
+      }
     });
 
     return () => {
@@ -124,8 +154,30 @@ export function FormazioneProvider({ children }: { children: ReactNode }) {
   }, [auth, attempt]);
 
   const value = useMemo(
-    () => ({ ready, loading, bootstrapped, error, user, db, functions, retry }),
-    [ready, loading, bootstrapped, error, user, db, functions, retry]
+    () => ({
+      ready,
+      loading,
+      bootstrapped,
+      error,
+      apiMode,
+      firebaseUid,
+      user,
+      db: apiMode ? null : db,
+      functions: apiMode ? null : functions,
+      retry,
+    }),
+    [
+      ready,
+      loading,
+      bootstrapped,
+      error,
+      apiMode,
+      firebaseUid,
+      user,
+      db,
+      functions,
+      retry,
+    ]
   );
 
   return (

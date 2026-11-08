@@ -3,10 +3,11 @@ import { can, isManutenzione, type SessionUser } from "@/lib/permissions";
 import { nessunDatoWhere } from "@/lib/domain";
 import type { GruppoPerimetroContext } from "@/lib/gruppoPerimetroScope";
 import type { GruppoLavoro } from "@/lib/gruppoLavoro";
-import { mandantiDb } from "@/lib/mandantiRepo";
-import { parsePerimetriList } from "@/lib/mandantePerimetri";
-import { gruppoMandantiPraticaWhere } from "@/lib/gruppoMandanti";
 import type { HomeKpiContext, HomeScopeFilter } from "@/lib/data/contracts/dashboard";
+import { resolvePerimetroOr } from "@/lib/homeKpi/resolvePerimetroOr";
+import { supervisorHomeKpiScopeFilter } from "@/lib/homeKpi/supervisorGruppoKpiScope";
+
+export { resolvePerimetroOr } from "@/lib/homeKpi/resolvePerimetroOr";
 import { formatDataIso, parseDataIso, startOfToday } from "@/lib/lavorateOggiUi";
 import { sedeScopeForRendimento, canViewRicaviFatturatiSede } from "@/lib/sedeScope";
 
@@ -19,33 +20,6 @@ export type HomeSearchParams = {
   gruppo?: string;
   sede?: string;
 };
-
-async function resolvePerimetroOr(
-  tenantId: string,
-  gruppoMandanti: Array<{ mandanteId: string; perimetriIds: string[] }>
-): Promise<HomeScopeFilter["perimetroOr"]> {
-  if (!gruppoMandanti.length) return undefined;
-  const mandantiRows = await mandantiDb({ tenantId, tenantSlug: tenantId }).findMany({
-    where: { tenantId, id: { in: [...new Set(gruppoMandanti.map((a) => a.mandanteId))] } },
-    select: { id: true, perimetri: true },
-  });
-  const mandanti = mandantiRows.map((m) => ({
-    id: m.id as string,
-    perimetri: parsePerimetriList(m.perimetri),
-  }));
-  const prismaOr = gruppoMandantiPraticaWhere(gruppoMandanti, mandanti);
-  if (!prismaOr?.OR) return undefined;
-  const out: NonNullable<HomeScopeFilter["perimetroOr"]> = [];
-  for (const clause of prismaOr.OR as Array<Record<string, unknown>>) {
-    const mandanteId = String(clause.mandanteId || "");
-    const nm = clause.numeroMandante as { in?: string[] } | undefined;
-    out.push({
-      mandanteId,
-      numeriMandante: nm?.in?.map(String),
-    });
-  }
-  return out.length ? out : undefined;
-}
 
 export async function buildHomeKpiContext(
   user: SessionUser,
@@ -73,23 +47,20 @@ export async function buildHomeKpiContext(
   if (isManutenzione(user)) {
     scope = { mode: "none" };
   } else if (user.role === "OPERATOR") {
+    const perimetroOr =
+      opts.periCtx.nelGruppo && !opts.periCtx.nessunPerimetroGruppo
+        ? await resolvePerimetroOr(user.tenantId, opts.periCtx.gruppoMandanti)
+        : undefined;
     scope = {
       mode: "operator",
       userId: user.id,
-      perimetroOr: opts.periCtx.nelGruppo
-        ? await resolvePerimetroOr(user.tenantId, opts.periCtx.gruppoMandanti)
-        : undefined,
+      perimetroOr,
     };
-    if (opts.periCtx.nelGruppo && opts.periCtx.nessunPerimetroGruppo) scope = { mode: "none" };
   } else if (user.role === "SUPERVISOR") {
-    scope = {
-      mode: "supervisor",
-      userId: user.id,
-      perimetroOr: opts.periCtx.nelGruppo
-        ? await resolvePerimetroOr(user.tenantId, opts.periCtx.gruppoMandanti)
-        : undefined,
-    };
-    if (opts.periCtx.nelGruppo && opts.periCtx.nessunPerimetroGruppo) scope = { mode: "none" };
+    scope = await supervisorHomeKpiScopeFilter(user, opts.periCtx);
+    if (scope.mode === "none" && !opts.periCtx.nelGruppo) {
+      scope = { mode: "supervisor", userId: user.id };
+    }
   } else if (user.role === "BACK_OFFICE" && opts.targetSupervisorId && opts.periCtx.nelGruppo) {
     if (opts.periCtx.nessunPerimetroGruppo) scope = { mode: "none" };
     else {

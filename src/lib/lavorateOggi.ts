@@ -392,3 +392,21 @@ export function applicaCambiCodicePerOperatore(
     cambiCodice: byUser.get(op.userId) ?? 0,
   }));
 }
+
+/** Home operatore: una sola riga, sempre l'utente in sessione (anche con 0 lavorate). */
+export function sintesiLavoratePerUtenteCorrente(
+  operatori: OperatoreLavorateGiorno[],
+  user: { id: string; name: string },
+): OperatoreLavorateGiorno[] {
+  const hit = operatori.find((o) => o.userId === user.id);
+  if (hit) return [hit];
+  return [
+    {
+      userId: user.id,
+      name: user.name,
+      sigla: operatorSigla(user.name),
+      count: 0,
+      cambiCodice: 0,
+    },
+  ];
+}

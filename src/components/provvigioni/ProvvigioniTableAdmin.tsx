@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pencil, Check, X } from "lucide-react";
@@ -10,9 +10,15 @@ import {
   updateImportoProvvigioneAction,
 } from "@/actions/provvigioniAdmin";
 import { isImportoFissoProvvigioneId } from "@/lib/provvigioniImportoFisso";
-import { isModoNonProvvigionabile } from "@/lib/incassoFattura";
+import {
+  isModoNonProvvigionabile,
+  MODI_INCASSO_PROVV,
+  normalizeModoIncasso,
+} from "@/lib/incassoFattura";
 import type { SezioneProvvigioni } from "@/lib/provvigioniDisplay";
 import { ProvvigioniPannelloEconomico } from "@/components/provvigioni/ProvvigioniListaPerimetro";
+import { ProvvigioniTabellaHead } from "@/components/provvigioni/ProvvigioniTabellaHead";
+import { useProvvigioniTableSort } from "@/components/provvigioni/useProvvigioniTableSort";
 
 type Riga = {
   id: string;
@@ -42,10 +48,14 @@ function euro(value: number) {
 
 export function ProvvigioniTableAdmin({
   sezioni,
+  mostraSelezioneLiquidazione = true,
 }: {
   sezioni: SezioneProvvigioni<Riga>[];
+  /** Selezione, liquidazione massiva e modifica importo (solo admin / amministrazione). */
+  mostraSelezioneLiquidazione?: boolean;
 }) {
   const router = useRouter();
+  const { sortField, sortDir, onSort, sorted } = useProvvigioniTableSort("data", "desc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [liquidando, setLiquidando] = useState(false);
 
@@ -100,7 +110,7 @@ export function ProvvigioniTableAdmin({
 
   return (
     <div>
-      {maturate.length > 0 && (
+      {mostraSelezioneLiquidazione && maturate.length > 0 && (
         <div className="mb-3 flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white px-3 py-2">
           <label className="flex items-center gap-1.5 text-xs">
             <input
@@ -147,32 +157,25 @@ export function ProvvigioniTableAdmin({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-left text-[var(--muted)]">
-                  <tr>
-                    <th className="w-8 px-2 py-2" />
-                    <th className="px-3 py-2">Perimetro</th>
-                    <th className="px-3 py-2">Data</th>
-                    <th className="px-3 py-2">Operatore</th>
-                    <th className="px-3 py-2">Codice scarico</th>
-                    <th className="px-3 py-2">Esito</th>
-                    <th className="px-3 py-2">Fattura</th>
-                    <th className="px-3 py-2">Pratica</th>
-                    <th className="px-3 py-2">Debitore</th>
-                    <th className="px-3 py-2 text-right">Incasso</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-right">
-                      % adottata
-                    </th>
-                    <th className="px-3 py-2 text-right">Provvigione</th>
-                    <th className="px-3 py-2">Stato</th>
-                    <th className="w-16 px-2 py-2" />
-                  </tr>
+                  <ProvvigioniTabellaHead
+                    sortField={sortField}
+                    sortDir={sortDir}
+                    onSort={onSort}
+                    showOperatore
+                    checkboxCol
+                    actionsCol
+                  />
                 </thead>
                 <tbody>
-                  {sez.righe.map((r) => (
+                  {sorted(sez.righe).map((r) => (
                     <RigaProvvigione
                       key={r.id}
                       r={r}
                       checked={selected.has(r.id)}
                       onToggle={() => toggle(r.id)}
+                      mostraSelezione={mostraSelezioneLiquidazione}
+                      mostraModifica={mostraSelezioneLiquidazione}
+                      mostraLiquidazioneRiga={mostraSelezioneLiquidazione}
                     />
                   ))}
                   {!sez.righe.length ? (
@@ -196,17 +199,31 @@ function RigaProvvigione({
   r,
   checked,
   onToggle,
+  mostraSelezione,
+  mostraModifica,
+  mostraLiquidazioneRiga,
 }: {
   r: Riga;
   checked: boolean;
   onToggle: () => void;
+  mostraSelezione: boolean;
+  mostraModifica: boolean;
+  mostraLiquidazioneRiga: boolean;
 }) {
   const router = useRouter();
   const fisso = isImportoFissoProvvigioneId(r.id);
   const [editing, setEditing] = useState(false);
   const [importo, setImporto] = useState(String(r.importo));
   const [perc, setPerc] = useState(String(r.percentuale));
+  const [modo, setModo] = useState(normalizeModoIncasso(r.modo));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (editing && isModoNonProvvigionabile(modo)) {
+      setImporto("0");
+      setPerc("0");
+    }
+  }, [modo, editing]);
 
   async function salva() {
     setSaving(true);
@@ -215,6 +232,7 @@ function RigaProvvigione({
       fd.set("id", r.id);
       fd.set("importo", importo);
       fd.set("percentuale", perc);
+      fd.set("modo", modo);
       await updateImportoProvvigioneAction(fd);
       setEditing(false);
       router.refresh();
@@ -235,21 +253,33 @@ function RigaProvvigione({
   return (
     <tr className="border-t border-[var(--line)]">
       <td className="px-2 py-2">
-        {r.stato === "MATURATA" && !fisso && (
+        {mostraSelezione && r.stato === "MATURATA" && !fisso ? (
           <input
             type="checkbox"
             checked={checked}
             onChange={onToggle}
             className="h-3.5 w-3.5"
           />
-        )}
+        ) : null}
       </td>
       <td className="px-3 py-2">{r.perimetroLabel || r.perimetro}</td>
       <td className="px-3 py-2 whitespace-nowrap">{r.data}</td>
       <td className="px-3 py-2">{r.operatoreNome}</td>
       <td className="px-3 py-2 font-mono text-xs">{r.codiceScarico}</td>
       <td className="px-3 py-2 font-mono text-xs">
-        {isModoNonProvvigionabile(r.modo) ? (
+        {editing ? (
+          <select
+            value={modo}
+            onChange={(e) => setModo(e.target.value)}
+            className="h-7 max-w-[11rem] rounded border border-[var(--line)] bg-white px-1 text-xs"
+          >
+            {MODI_INCASSO_PROVV.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        ) : isModoNonProvvigionabile(r.modo) ? (
           <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900">
             np
           </span>
@@ -276,7 +306,8 @@ function RigaProvvigione({
           <input
             value={perc}
             onChange={(e) => setPerc(e.target.value)}
-            className="h-6 w-14 rounded border border-[var(--line)] px-1 text-xs"
+            disabled={isModoNonProvvigionabile(modo)}
+            className="h-6 w-14 rounded border border-[var(--line)] px-1 text-xs disabled:opacity-50"
           />
         ) : (
           `${r.percentuale.toFixed(1)}%`
@@ -287,7 +318,8 @@ function RigaProvvigione({
           <input
             value={importo}
             onChange={(e) => setImporto(e.target.value)}
-            className="h-6 w-20 rounded border border-[var(--line)] px-1 text-xs"
+            disabled={isModoNonProvvigionabile(modo)}
+            className="h-6 w-20 rounded border border-[var(--line)] px-1 text-xs disabled:opacity-50"
           />
         ) : (
           euro(r.importo)
@@ -304,7 +336,7 @@ function RigaProvvigione({
           >
             {r.statoLabel}
           </span>
-        ) : (
+        ) : mostraLiquidazioneRiga ? (
           <button onClick={toggleStato} title="Cambia stato">
             <span
               className={`inline-flex cursor-pointer rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -316,10 +348,20 @@ function RigaProvvigione({
               {r.statoLabel}
             </span>
           </button>
+        ) : (
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+              r.stato === "LIQUIDATA"
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {r.statoLabel}
+          </span>
         )}
       </td>
       <td>
-        {fisso ? null : editing ? (
+        {fisso || !mostraModifica ? null : editing ? (
           <span className="flex items-center gap-1">
             <button onClick={salva} disabled={saving} className="text-emerald-600">
               <Check className="h-3.5 w-3.5" />
@@ -329,6 +371,7 @@ function RigaProvvigione({
                 setEditing(false);
                 setImporto(String(r.importo));
                 setPerc(String(r.percentuale));
+                setModo(normalizeModoIncasso(r.modo));
               }}
               className="text-[var(--muted)]"
             >

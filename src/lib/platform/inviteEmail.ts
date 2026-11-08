@@ -29,6 +29,8 @@ export type SendInviteEmailInput = {
   companyName: string;
   activationUrl: string;
   expiresAt: string;
+  /** es. reclutatore, avvocato, amministratore */
+  inviteRolePhrase?: string;
 };
 
 export type SendInviteEmailResult =
@@ -65,12 +67,13 @@ export async function sendAdminInviteEmail(
   }
 
   const company = String(input.companyName || "la tua azienda").trim() || "la tua azienda";
+  const rolePhrase = String(input.inviteRolePhrase || "amministratore").trim() || "amministratore";
   const expiresLabel = formatExpiry(input.expiresAt);
   const subject = `Attiva il tuo account Credixa — ${company}`;
   const text = [
     `Ciao,`,
     ``,
-    `Sei stato invitato come amministratore di ${company} su Credixa.`,
+    `Sei stato invitato come ${rolePhrase} di ${company} su Credixa.`,
     ``,
     `Apri questo link per impostare la password e attivare l'account:`,
     input.activationUrl,
@@ -86,7 +89,7 @@ export async function sendAdminInviteEmail(
 
   const html = `
     <p>Ciao,</p>
-    <p>Sei stato invitato come amministratore di <strong>${escapeHtml(company)}</strong> su Credixa.</p>
+    <p>Sei stato invitato come <strong>${escapeHtml(rolePhrase)}</strong> di <strong>${escapeHtml(company)}</strong> su Credixa.</p>
     <p><a href="${escapeHtml(input.activationUrl)}">Attiva il tuo account</a></p>
     <p style="word-break:break-all;font-size:12px;color:#555">${escapeHtml(input.activationUrl)}</p>
     ${

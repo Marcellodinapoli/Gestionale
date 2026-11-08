@@ -320,35 +320,60 @@ export class NeonUsersAdminRepository implements UsersOperationalRepository {
     let i = 1;
     const map: Record<string, string> = {
       name: "Name",
+      cognome: "Cognome",
       email: "Email",
       passwordHash: "PasswordHash",
       passwordChangedAt: "PasswordChangedAt",
       lastLoginAt: "LastLoginAt",
       lastLogoutAt: "LastLogoutAt",
       role: "Role",
+      acronimo: "Acronimo",
+      formazioneOnly: "FormazioneOnly",
+      consulenteEsterno: "ConsulenteEsterno",
+      creditCalcEnabled: "CreditCalcEnabled",
       interno: "Interno",
       prefissoChiamata: "PrefissoChiamata",
       postazioneId: "PostazioneId",
       postazioneFissa: "PostazioneFissa",
       sedeId: "SedeId",
+      supervisorId: "SupervisorId",
       active: "Active",
+      condizioneEconomica: "CondizioneEconomica",
+      importoFisso: "ImportoFisso",
+      gruppoNome: "GruppoNome",
+      gruppoMandanti: "GruppoMandantiJson",
+      lavorazioneSuggerita: "LavorazioneSuggerita",
     };
+    const uuidCols = new Set(["PostazioneId", "SedeId", "SupervisorId"]);
+    const boolCols = new Set([
+      "FormazioneOnly",
+      "ConsulenteEsterno",
+      "CreditCalcEnabled",
+      "Active",
+      "PostazioneFissa",
+    ]);
+    const dateCols = new Set(["PasswordChangedAt", "LastLoginAt", "LastLogoutAt"]);
     for (const [k, col] of Object.entries(map)) {
       if ((data as Record<string, unknown>)[k] !== undefined) {
         const val = (data as Record<string, unknown>)[k];
-        if (col === "PostazioneId" || col === "SedeId") {
+        if (uuidCols.has(col)) {
           if (val == null) sets.push(`"${col}" = NULL`);
           else {
             sets.push(`"${col}" = $${i++}::uuid`);
             params.push(val);
           }
-        } else if (
-          col === "PasswordChangedAt" ||
-          col === "LastLoginAt" ||
-          col === "LastLogoutAt"
-        ) {
+        } else if (boolCols.has(col)) {
+          sets.push(`"${col}" = $${i++}`);
+          params.push(Boolean(val));
+        } else if (dateCols.has(col)) {
           sets.push(`"${col}" = $${i++}`);
           params.push(val instanceof Date ? val.toISOString() : val);
+        } else if (col === "ImportoFisso") {
+          if (val == null) sets.push(`"${col}" = NULL`);
+          else {
+            sets.push(`"${col}" = $${i++}`);
+            params.push(val);
+          }
         } else {
           sets.push(`"${col}" = $${i++}`);
           params.push(val);

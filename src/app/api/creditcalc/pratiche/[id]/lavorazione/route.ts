@@ -54,7 +54,7 @@ export async function POST(
         ? Number((e as { status: number }).status)
         : 502;
     return jsonErr(
-      e instanceof Error ? e.message : "Errore connettore",
+      e instanceof Error ? e.message : "Errore lavorazione",
       status >= 400 && status < 600 ? status : 502,
       req
     );

@@ -540,15 +540,24 @@ function buildOrderBy(sortField?: string, sortDir: "asc" | "desc" = "desc") {
     case "telefono": return `d.Telefono ${dir}`;
     case "dataAffido": return `p.DataAffido ${dir}`;
     case "scadenza": return `p.Scadenza ${dir}`;
+    case "scadenzaStragiud": return `p.DataPassaggioGiudiziale ${dir}`;
     case "mandante": return `m.Codice ${dir}`;
     case "lotto": return `p.NumeroMandante ${dir}`;
+    case "assegnatario": return `u.Name ${dir}`;
     case "codScarico": return `p.CodiceScarico ${dir}`;
+    case "affidoProvv": return `p.OperatoreTitolareId ${dir}`;
     case "stato": return `p.Stato ${dir}`;
     case "esito": return `p.EsitoContatto ${dir}`;
     case "residuo": return `p.Residuo ${dir}`;
+    case "importoRata": return `p.ImportoRata ${dir}`;
+    case "rateScadute": return `p.RateArretrate ${dir}`;
     case "importoTot": return `p.ImportoTotale ${dir}`;
     case "totIncassato": return `p.TotIncassato ${dir}`;
+    case "cfPiva": return `d.CodiceFiscale ${dir}`;
+    case "garante":
+      return `(SELECT COUNT(*) FROM dbo.Garanti g WHERE g.PraticaId = p.Id) ${dir}`;
     case "ultimaLavorazione":
+    case "ultimaLavorazioneOra":
     default:
       return `p.UltimaLavorazioneAt ${sortDir === "asc" ? "ASC" : "DESC"}, p.Numero ASC`;
   }

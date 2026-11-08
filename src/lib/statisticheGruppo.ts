@@ -6,7 +6,11 @@ import type { GruppoLavoro } from "@/lib/gruppoLavoro";
 import { gruppoLavoroPraticaWhere } from "@/lib/gruppoLavoro";
 import { STATI_PRATICA_CHIUSA } from "@/lib/praticheInattive";
 import type { PerimetroGruppoRef } from "@/lib/affidiPerimetro";
-import { acronimoPerimetroChiave, codiciScaricoPerAcronimo } from "@/lib/mandantePerimetri";
+import {
+  acronimoPerimetroChiave,
+  acronimoPerimetroLotto,
+  codiciScaricoPerAcronimo,
+} from "@/lib/mandantePerimetri";
 import {
   CODICI_SCARICO,
   codiceScaricoPratica,
@@ -29,6 +33,7 @@ import type {
   StatisticheRiga,
   StatisticheSezione,
   StatisticheFiltri,
+  PerimetroLottiGruppoFiltro,
 } from "@/lib/statisticheGruppoUi";
 
 function defaultCodiciScarico(): string[] {
@@ -194,8 +199,40 @@ export function parseLottiFiltro(raw?: string | string[] | null): string[] {
       parts
         .map((s) => s.trim())
         .filter(Boolean)
+        .filter((s) => !s.startsWith("peri:"))
     ),
   ];
+}
+
+export function buildLottiPerPerimetroFiltro(
+  mandanteId: string,
+  rows: Array<{ numeroMandante: string | null; mandanteId: string }>,
+  mandantePerimetri: string | null,
+  lottoPerimetroByKey: Map<string, string>
+): PerimetroLottiGruppoFiltro[] {
+  const byAcronimo = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.mandanteId !== mandanteId) continue;
+    const lotto = row.numeroMandante?.trim();
+    if (!lotto) continue;
+    const chiaveImport = lottoPerimetroByKey.get(`${mandanteId}|${lotto}`) ?? null;
+    const acronimo = acronimoPerimetroLotto(
+      mandantePerimetri,
+      lotto,
+      chiaveImport
+    );
+    const list = byAcronimo.get(acronimo) ?? [];
+    if (!list.includes(lotto)) list.push(lotto);
+    byAcronimo.set(acronimo, list);
+  }
+  return [...byAcronimo.entries()]
+    .map(([acronimo, values]) => ({
+      acronimo,
+      lotti: [...values]
+        .sort((a, b) => a.localeCompare(b, "it"))
+        .map((value) => ({ value })),
+    }))
+    .sort((a, b) => a.acronimo.localeCompare(b.acronimo, "it"));
 }
 
 export async function buildStatisticheGruppo(

@@ -100,6 +100,18 @@ export function NuovaPostazioneButton({ sedi }: { sedi: SedeOpt[] }) {
             />
           </label>
           <label>
+            <span className={labelCls}>Fax</span>
+            <input name="numeroFax" className={inputCls} placeholder="es. 06 1234568" />
+          </label>
+          <label>
+            <span className={labelCls}>WhatsApp</span>
+            <input
+              name="numeroWhatsapp"
+              className={inputCls}
+              placeholder="es. +39 333 1234567"
+            />
+          </label>
+          <label>
             <span className={labelCls}>Note</span>
             <input name="note" className={inputCls} />
           </label>

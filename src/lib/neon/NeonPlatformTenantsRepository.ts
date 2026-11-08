@@ -27,6 +27,9 @@ import {
   type VerticalProfile,
 } from "@/lib/platform/modules";
 import {
+  resolvePlatformInvitePolicy,
+} from "@/lib/platform/productStandalone";
+import {
   activeFromStatus,
   isStatoPagamento,
   isTenantStatus,
@@ -805,9 +808,13 @@ export class NeonPlatformTenantsRepository {
     const email = String(input.email || "").trim().toLowerCase();
     if (!email || !email.includes("@")) throw new Error("Email non valida");
 
-    const role = String(input.role || "ADMIN").trim().toUpperCase() || "ADMIN";
-    if (role !== "ADMIN") {
-      throw new Error("In questa fase l'invito supporta solo il ruolo ADMIN");
+    const modulesDto = await loadModulesForTenant(input.tenantId);
+    const invitePolicy = resolvePlatformInvitePolicy(modulesDto.enabledModules);
+    const defaultRole = invitePolicy.defaultRole;
+    const role = String(input.role || defaultRole).trim().toUpperCase() || defaultRole;
+    const allowedRoles = invitePolicy.allowedRoles;
+    if (!allowedRoles.includes(role)) {
+      throw new Error(invitePolicy.invalidRoleMessage);
     }
 
     const hours = Math.min(Math.max(input.expiresInHours ?? 72, 1), 24 * 30);

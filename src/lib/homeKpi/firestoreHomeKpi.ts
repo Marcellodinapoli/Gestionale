@@ -27,6 +27,7 @@ import {
 import type { GruppoLavoro } from "@/lib/gruppoLavoro";
 import type { HomeKpiBundle, HomeKpiContext } from "@/lib/data/contracts/dashboard";
 import { amministrazioneRicaviFlags } from "@/lib/homeKpi/buildContext";
+import { supervisorHomePraticaCountWhere } from "@/lib/homeKpi/supervisorGruppoKpiScope";
 import { parsePerimetriList, chiaviMatchPerimetro, resolvePerimetroPratica } from "@/lib/mandantePerimetri";
 import { resolveProvvigionePercentualeLato, calcolaProvvigione } from "@/lib/provvigioni";
 import { isModoNonProvvigionabile } from "@/lib/incassoFattura";
@@ -174,11 +175,23 @@ export async function loadFirestoreHomeKpi(
     incPerimetro,
   } = deps;
 
+  let kpiPerimetroOpts = gruppoPerimetroOpts ?? undefined;
+  let countWhere = where;
+  if (user.role === "SUPERVISOR" && mostraGruppo && gruppo.memberIds.length) {
+    countWhere = await supervisorHomePraticaCountWhere(
+      user,
+      gruppo.memberIds,
+      gruppo.gruppoMandanti
+    );
+    kpiPerimetroOpts = { portfolioMemberIds: gruppo.memberIds };
+  }
+
   const lavorateOpts = { data: dataLavorate, scopeWhere: where };
 
   const [
     totali,
     inLavoroPerPerimetro,
+    inScadenza7gg,
     scadute,
     incassiOggi,
     lavoratePerOperatoreRaw,
@@ -187,8 +200,8 @@ export async function loadFirestoreHomeKpi(
     codiciMandantePerimetro,
     daAffidareGruppo,
   ] = await Promise.all([
-    prisma.pratica.count({ where }),
-    inLavorazionePerPerimetro(user, gruppoPerimetroOpts ?? undefined),
+    prisma.pratica.count({ where: countWhere }),
+    inLavorazionePerPerimetro(user, kpiPerimetroOpts),
     (() => {
       const oggi = new Date();
       oggi.setHours(0, 0, 0, 0);
@@ -196,9 +209,20 @@ export async function loadFirestoreHomeKpi(
       tra7gg.setDate(tra7gg.getDate() + 7);
       return prisma.pratica.count({
         where: {
-          ...where,
+          ...countWhere,
           scadenza: { gte: oggi, lte: tra7gg },
           stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE"] },
+        },
+      });
+    })(),
+    (() => {
+      const oggi = new Date();
+      oggi.setHours(0, 0, 0, 0);
+      return prisma.pratica.count({
+        where: {
+          ...countWhere,
+          scadenza: { lt: oggi },
+          stato: { notIn: ["INCASSO", "RESA", "INESIGIBILE", "CHIUSA"] },
         },
       });
     })(),
@@ -213,7 +237,7 @@ export async function loadFirestoreHomeKpi(
     lavoratePerOperatoreInGiornata(user, lavorateOpts),
     vistaGruppoLavorate ? praticheLavorateInGiornata(user, lavorateOpts) : Promise.resolve([]),
     praticheConCambioCodiceInGiornata(user, lavorateOpts),
-    isManutenzione(user) ? Promise.resolve([]) : codiciPerMandantePerimetro(user, gruppoPerimetroOpts ?? undefined),
+    isManutenzione(user) ? Promise.resolve([]) : codiciPerMandantePerimetro(user, kpiPerimetroOpts),
     mostraGruppo && !isManutenzione(user)
       ? daAffidarePerPerimetroGruppo(user.tenantId, gruppo.gruppoMandanti, user.tenantSlug ?? user.tenantId)
       : Promise.resolve([]),
@@ -230,12 +254,14 @@ export async function loadFirestoreHomeKpi(
     shared: {
       totali,
       scadute,
+      inScadenza7gg,
       incassiOggiSum: incassiOggi._sum.importo || 0,
       inLavoroPerPerimetro,
       lavoratePerOperatore,
       praticheLavorateGruppo,
       praticheCambioCodice,
       codiciMandantePerimetro,
+      codiciMandantePerimetroOperatore: [],
       daAffidareGruppo,
     },
     meta: { queryMs: 0, sqlQueries: 0, roundTrips: 0 },
